@@ -38,7 +38,7 @@ PROJECT_NUMBER         = "Version 1.0 (release candidate). Click the \"Classes\"
 # If a relative path is entered, it will be relative to the location 
 # where doxygen was started. If left blank the current directory will be used.
 
-OUTPUT_DIRECTORY       = E:\my-projects\Robotics\SLAM_plus_plus\build\
+OUTPUT_DIRECTORY       = E:\my-projects\Robotics\SLAM_plus_plus\sourceforge_svn\code\documentation\
 
 # If the CREATE_SUBDIRS tag is set to YES, then doxygen will create 
 # 4096 sub-directories (in 2 levels) under the output directory of each output 
@@ -574,8 +574,8 @@ WARN_LOGFILE           =
 # directories like "/usr/src/myproject". Separate the files or directories 
 # with spaces.
 
-INPUT                  = E:\my-projects\Robotics\SLAM_plus_plus\include\slam \
-                         E:\my-projects\Robotics\SLAM_plus_plus\src\slam
+INPUT                  = E:\my-projects\Robotics\SLAM_plus_plus\sourceforge_svn\code\trunk\include\slam \
+                         E:\my-projects\Robotics\SLAM_plus_plus\sourceforge_svn\code\trunk\src\slam
 
 # This tag can be used to specify the character encoding of the source files 
 # that doxygen parses. Internally doxygen uses the UTF-8 encoding, which is 
@@ -606,7 +606,7 @@ RECURSIVE              = YES
 
 EXCLUDE                = e:/my-projects/Robotics/SLAM_plus_plus/src/slam/FBS.cpp \
                          E:/my-projects/Robotics/SLAM_plus_plus/include/cholmod/CAMD/camd_internal.h \
-                         E:/my-projects/Robotics/SLAM_plus_plus/include/cholmod/CAMD/camd.h \
+                         E:/my-projects/Robotics/SLAM_plus_plus/sourceforge_svn/code/trunk/include/cholmod/CAMD/camd.h \
                          cholmod/CAMD/camd_internal.h \
                          cholmod/CAMD/camd.h
 
@@ -622,7 +622,9 @@ EXCLUDE_SYMLINKS       = NO
 # against the file with absolute path, so to exclude all test directories 
 # for example use the pattern */test/*
 
-EXCLUDE_PATTERNS       = FBS.cpp
+EXCLUDE_PATTERNS       = FBS.cpp \
+                         camd_internal.h \
+                         camd.h
 
 # The EXCLUDE_SYMBOLS tag can be used to specify one or more symbol names 
 # (namespaces, classes, functions, etc.) that should be excluded from the 
@@ -1522,4 +1524,4 @@ GENERATE_LEGEND        = YES
 # remove the intermediate dot files that are used to generate 
 # the various graphs.
 
-DOT_CLEANUP            = NO
+DOT_CLEANUP            = YES

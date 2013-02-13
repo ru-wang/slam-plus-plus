@@ -1,7 +1,7 @@
 === Building ===
 
 This library was tested on Windows (using MSVC 2008 and above),
-Linux and BSD. There is an optimizer issue in g++ 4.2 or earlier
+Mac, Linux and BSD. There is an optimizer issue in g++ 4.2 or earlier
 which causes the code to crash at runtime.
 
 There is a CMakeFile. To be able to change the code and commit back
