@@ -1,0 +1,75 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 10.00
+# Visual Studio 2008
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "SLAM_plus_plus", "SLAM_plus_plus.vcproj", "{999461D9-FEE4-4D9E-8226-58B4600F55F2}"
+	ProjectSection(ProjectDependencies) = postProject
+		{48ADC413-9EE9-4E3E-8E66-C862AA2B06F0} = {48ADC413-9EE9-4E3E-8E66-C862AA2B06F0}
+		{9E10FA4D-EB3D-4FD9-AD51-1A431B0545D8} = {9E10FA4D-EB3D-4FD9-AD51-1A431B0545D8}
+		{A8289168-385D-4B64-9EF9-C9DAAA99EA8C} = {A8289168-385D-4B64-9EF9-C9DAAA99EA8C}
+		{FE594D71-3BF3-4BEF-B15A-F3D5073C1A5E} = {FE594D71-3BF3-4BEF-B15A-F3D5073C1A5E}
+	EndProjectSection
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "CSparse3", "CSparse3.vcproj", "{A8289168-385D-4B64-9EF9-C9DAAA99EA8C}"
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "eigen3", "eigen3.vcproj", "{FE594D71-3BF3-4BEF-B15A-F3D5073C1A5E}"
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "Cholmod", "Cholmod.vcproj", "{48ADC413-9EE9-4E3E-8E66-C862AA2B06F0}"
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "CXSparse", "CXSparse.vcproj", "{9E10FA4D-EB3D-4FD9-AD51-1A431B0545D8}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Win32 = Debug|Win32
+		Debug|x64 = Debug|x64
+		Release|Win32 = Release|Win32
+		Release|x64 = Release|x64
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{999461D9-FEE4-4D9E-8226-58B4600F55F2}.Debug|Win32.ActiveCfg = Debug|Win32
+		{999461D9-FEE4-4D9E-8226-58B4600F55F2}.Debug|Win32.Build.0 = Debug|Win32
+		{999461D9-FEE4-4D9E-8226-58B4600F55F2}.Debug|x64.ActiveCfg = Debug|x64
+		{999461D9-FEE4-4D9E-8226-58B4600F55F2}.Debug|x64.Build.0 = Debug|x64
+		{999461D9-FEE4-4D9E-8226-58B4600F55F2}.Release|Win32.ActiveCfg = Release|Win32
+		{999461D9-FEE4-4D9E-8226-58B4600F55F2}.Release|Win32.Build.0 = Release|Win32
+		{999461D9-FEE4-4D9E-8226-58B4600F55F2}.Release|x64.ActiveCfg = Release|x64
+		{999461D9-FEE4-4D9E-8226-58B4600F55F2}.Release|x64.Build.0 = Release|x64
+		{A8289168-385D-4B64-9EF9-C9DAAA99EA8C}.Debug|Win32.ActiveCfg = Debug|Win32
+		{A8289168-385D-4B64-9EF9-C9DAAA99EA8C}.Debug|Win32.Build.0 = Debug|Win32
+		{A8289168-385D-4B64-9EF9-C9DAAA99EA8C}.Debug|x64.ActiveCfg = Debug|x64
+		{A8289168-385D-4B64-9EF9-C9DAAA99EA8C}.Debug|x64.Build.0 = Debug|x64
+		{A8289168-385D-4B64-9EF9-C9DAAA99EA8C}.Release|Win32.ActiveCfg = Release|Win32
+		{A8289168-385D-4B64-9EF9-C9DAAA99EA8C}.Release|Win32.Build.0 = Release|Win32
+		{A8289168-385D-4B64-9EF9-C9DAAA99EA8C}.Release|x64.ActiveCfg = Release|x64
+		{A8289168-385D-4B64-9EF9-C9DAAA99EA8C}.Release|x64.Build.0 = Release|x64
+		{FE594D71-3BF3-4BEF-B15A-F3D5073C1A5E}.Debug|Win32.ActiveCfg = Debug|Win32
+		{FE594D71-3BF3-4BEF-B15A-F3D5073C1A5E}.Debug|Win32.Build.0 = Debug|Win32
+		{FE594D71-3BF3-4BEF-B15A-F3D5073C1A5E}.Debug|x64.ActiveCfg = Debug|x64
+		{FE594D71-3BF3-4BEF-B15A-F3D5073C1A5E}.Debug|x64.Build.0 = Debug|x64
+		{FE594D71-3BF3-4BEF-B15A-F3D5073C1A5E}.Release|Win32.ActiveCfg = Release|Win32
+		{FE594D71-3BF3-4BEF-B15A-F3D5073C1A5E}.Release|Win32.Build.0 = Release|Win32
+		{FE594D71-3BF3-4BEF-B15A-F3D5073C1A5E}.Release|x64.ActiveCfg = Release|x64
+		{FE594D71-3BF3-4BEF-B15A-F3D5073C1A5E}.Release|x64.Build.0 = Release|x64
+		{48ADC413-9EE9-4E3E-8E66-C862AA2B06F0}.Debug|Win32.ActiveCfg = Debug|Win32
+		{48ADC413-9EE9-4E3E-8E66-C862AA2B06F0}.Debug|Win32.Build.0 = Debug|Win32
+		{48ADC413-9EE9-4E3E-8E66-C862AA2B06F0}.Debug|x64.ActiveCfg = Debug|x64
+		{48ADC413-9EE9-4E3E-8E66-C862AA2B06F0}.Debug|x64.Build.0 = Debug|x64
+		{48ADC413-9EE9-4E3E-8E66-C862AA2B06F0}.Release|Win32.ActiveCfg = Release|Win32
+		{48ADC413-9EE9-4E3E-8E66-C862AA2B06F0}.Release|Win32.Build.0 = Release|Win32
+		{48ADC413-9EE9-4E3E-8E66-C862AA2B06F0}.Release|x64.ActiveCfg = Release|x64
+		{48ADC413-9EE9-4E3E-8E66-C862AA2B06F0}.Release|x64.Build.0 = Release|x64
+		{9E10FA4D-EB3D-4FD9-AD51-1A431B0545D8}.Debug|Win32.ActiveCfg = Debug|Win32
+		{9E10FA4D-EB3D-4FD9-AD51-1A431B0545D8}.Debug|Win32.Build.0 = Debug|Win32
+		{9E10FA4D-EB3D-4FD9-AD51-1A431B0545D8}.Debug|x64.ActiveCfg = Debug|x64
+		{9E10FA4D-EB3D-4FD9-AD51-1A431B0545D8}.Debug|x64.Build.0 = Debug|x64
+		{9E10FA4D-EB3D-4FD9-AD51-1A431B0545D8}.Release|Win32.ActiveCfg = Release|Win32
+		{9E10FA4D-EB3D-4FD9-AD51-1A431B0545D8}.Release|Win32.Build.0 = Release|Win32
+		{9E10FA4D-EB3D-4FD9-AD51-1A431B0545D8}.Release|x64.ActiveCfg = Release|x64
+		{9E10FA4D-EB3D-4FD9-AD51-1A431B0545D8}.Release|x64.Build.0 = Release|x64
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		AMDCaProjectFile = E:\my-projects\Robotics\SLAM_plus_plus\build\CodeAnalyst\SLAM_plus_plus.caw
+	EndGlobalSection
+EndGlobal
