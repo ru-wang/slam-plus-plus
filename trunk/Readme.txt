@@ -4,17 +4,21 @@ This library was tested on Windows (using MSVC 2008 and above),
 Mac, Linux and BSD. There is an optimizer issue in g++ 4.2 or earlier
 which causes the code to crash at runtime.
 
-There is a CMakeFile. To be able to change the code and commit back
-to the svn, do an out-of-source build, like this:
+You can download thestable sources in a zip file from SourceForge,
+or checkout the newest sources from the svn:
 
 $ mkdir slam
 $ cd slam
 $ svn co svn+ssh://svn.code.sf.net/p/slam-plus-plus/code/
+
+There is a CMakeFile. To be able to change the code and commit back
+to the svn, do an out-of-source build, like this:
+
 $ cd build
 $ cmake -i ..
 $ <press enter 100x, real fast>
 $ make
-$ ../bin/slam_plus_plus -i ../data/manhattanOlson3500.txt -10k
+$ ../bin/slam_plus_plus -i ../data/manhattanOlson3500.txt --pose-only
 
 You can also use fast parallel build, like this:
 
