@@ -10,12 +10,11 @@ to the svn, do an out-of-source build, like this:
 $ mkdir slam
 $ cd slam
 $ svn co svn+ssh://svn.code.sf.net/p/slam-plus-plus/code/
-$ mkdir build
 $ cd build
 $ cmake -i ..
 $ <press enter 100x, real fast>
 $ make
-$ ../bin/slam_plus_plus -i ../data/10K.graph
+$ ../bin/slam_plus_plus -i ../data/manhattanOlson3500.txt -10k
 
 You can also use fast parallel build, like this:
 
