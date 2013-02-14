@@ -31,8 +31,7 @@
  *	@code{.sh}
  *	$ mkdir slam
  *	$ cd slam
- *	$ <your favorite SVN checkout command here>
- *	$ mkdir build
+ *	$ svn checkout svn://svn.code.sf.net/p/slam-plus-plus/code/trunk .
  *	$ cd build
  *	$ cmake -i ..
  *	@endcode
@@ -57,7 +56,7 @@
  *
  *	The simplest use case is:
  *
- *	@code{.sh} $ ../bin/SLAM_plus_plus -i ../data/10K.graph @endcode
+ *	@code{.sh} $ ../bin/SLAM_plus_plus -i ../data/manhattanOlson3500.txt --pose-only @endcode
  *
  *	Which should reveal something like this (also depending on the actual configuration):
  *
@@ -65,7 +64,7 @@
  *	General use:
  *		./SLAM_plus_plus -i <filename> --no-detailed-timing
  *
- *	To run 2D pose-only datasets more quickly:
+ *	To run the pose-only datasets more quickly:
  *		./SLAM_plus_plus -i <filename> --pose-only --no-detailed-timing
  *
  *	To run incrementally:
@@ -136,7 +135,7 @@
  *	In order to implement solver for your problem of desired dimensionality and
  *	with appropriate jacobians, one needs to execute the following steps:
  *
- *	* implement a new parser code if required (the parser now only processes 2D types)
+ *	* implement a new parser code if required (the parser now only processes 2D and 3D types)
  *		* note that this might not be required if you are going to use your own means of passing data to the solver
  *	* create a new header file for the new code
  *	* implement new vertex types (contain "smart" plus code)
@@ -784,7 +783,7 @@ static void PrintHelp()
 	printf("General use:\n"
 		"    ./SLAM_plus_plus -i <filename> --no-detailed-timing\n"
 		"\n"
-		"To run 2D pose-only datasets more quickly:\n"
+		"To run the pose-only datasets more quickly:\n"
 		"    ./SLAM_plus_plus -i <filename> --pose-only --no-detailed-timing\n"
 		"\n"
 		"To run incrementally:\n"
