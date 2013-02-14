@@ -66,7 +66,7 @@
  *		./SLAM_plus_plus -i <filename> --no-detailed-timing
  *
  *	To run 2D pose-only datasets more quickly:
- *		./SLAM_plus_plus -i <filename> --10k --no-detailed-timing
+ *		./SLAM_plus_plus -i <filename> --pose-only --no-detailed-timing
  *
  *	To run incrementally:
  *		./SLAM_plus_plus -lsp <optimize-each-N-steps> -i <filename> --no-detailed-timing
@@ -87,7 +87,7 @@
  *					  get confused)
  *	--no-bitmaps      doesn't write bitmaps initial.tga and solution.tga (neither
  *					  the text files)
- *	--10k|-10k        enables optimisation for pose-only slam (will warn and ignore
+ *	--pose-only|-po   enables optimisation for pose-only slam (will warn and ignore
  *					  on datasets with landmarks (only the first 1000 lines checked
  *					  in case there are landmarks later, it would segfault))
  *	--use-old-code|-uogc    uses the old CSparse code (no block matrices in it)
@@ -785,7 +785,7 @@ static void PrintHelp()
 		"    ./SLAM_plus_plus -i <filename> --no-detailed-timing\n"
 		"\n"
 		"To run 2D pose-only datasets more quickly:\n"
-		"    ./SLAM_plus_plus -i <filename> --10k --no-detailed-timing\n"
+		"    ./SLAM_plus_plus -i <filename> --pose-only --no-detailed-timing\n"
 		"\n"
 		"To run incrementally:\n"
 		"    ./SLAM_plus_plus -lsp <optimize-each-N-steps> -i <filename> --no-detailed-timing\n"
@@ -806,7 +806,7 @@ static void PrintHelp()
 		"                  get confused)\n"
 		"--no-bitmaps      doesn't write bitmaps initial.tga and solution.tga (neither\n"
 		"                  the text files)\n"
-		"--10k|-10k        enables optimisation for pose-only slam (will warn and ignore\n"
+		"--pose-only|-po   enables optimisation for pose-only slam (will warn and ignore\n"
 		"                  on datasets with landmarks (only the first 1000 lines checked\n"
 		"                  in case there are landmarks later, it would segfault))\n"
 		"--use-old-code|-uogc    uses the old CSparse code (no block matrices in it)\n"
@@ -865,7 +865,7 @@ struct TDatasetPeeker : public CParserBase::CParserAdaptor {
 			b_has_landmark = true;
 			b_has_edge2d = true;
 			b_has_vertex = true;*/
-			// don't do that, it will fail anyway and this only makes up for the --10k error
+			// don't do that, it will fail anyway and this only makes up for the -po error
 			// which will confuse everyone in this case
 		}
 	}
@@ -1241,7 +1241,7 @@ int main(int UNUSED(n_arg_num), const char **UNUSED(p_arg_list))
 		else if(!strcmp(p_arg_list[i], "--no-bitmaps") || !strcmp(p_arg_list[i], "-nb")) {
 			b_write_bitmaps = false;
 			b_no_show = true; // no bitmaps ... what can it show?
-		} else if(!strcmp(p_arg_list[i], "--10k") || !strcmp(p_arg_list[i], "-10k"))
+		} else if(!strcmp(p_arg_list[i], "--pose-only") || !strcmp(p_arg_list[i], "-po"))
 			b_10k_opts = true;
 		else if(!strcmp(p_arg_list[i], "--a-slam") || !strcmp(p_arg_list[i], "-A")) {
 			n_solver_choice = nlsolver_A;
@@ -1389,11 +1389,11 @@ int main(int UNUSED(n_arg_num), const char **UNUSED(p_arg_list))
 
 	TDatasetPeeker peek(p_s_input_file, n_max_lines_to_process);
 	if(b_10k_opts && peek.b_has_landmark) {
-		fprintf(stderr, "error: --10k flag detected, but the system has landmarks (flag cleared)\n");
+		fprintf(stderr, "error: --pose-only flag detected, but the system has landmarks (flag cleared)\n");
 		b_10k_opts = false;
 	} else if(!b_10k_opts && !peek.b_has_landmark) {
 		fprintf(stderr, "warning: the system doesn't seem to have landmarks"
-			" and --10k flag not present: could run faster\n");
+			" and --pose-only flag not present: could run faster\n");
 	}
 	if(peek.b_has_edge3d || peek.b_has_vertex3d) {
 		b_use_SE3 = true;
