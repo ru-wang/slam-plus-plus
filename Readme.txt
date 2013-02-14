@@ -9,7 +9,7 @@ or checkout the newest sources from the svn:
 
 $ mkdir slam
 $ cd slam
-$ svn co svn+ssh://svn.code.sf.net/p/slam-plus-plus/code/
+$ svn checkout svn://svn.code.sf.net/p/slam-plus-plus/code/trunk .
 
 There is a CMakeFile. To be able to change the code and commit back
 to the svn, do an out-of-source build, like this:
