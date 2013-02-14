@@ -115,7 +115,7 @@ protected:
 				r_rep_edge.Update(r_edge); // t_odo - not implemented for SE2 or SE3
 				// update the reading
 
-				printf("handling dup edge ...\n");
+				//printf("handling dup edge ...\n");
 				r_solver.Incremental_Step(r_rep_edge);
 				// notify the solver of change
 			} else {
