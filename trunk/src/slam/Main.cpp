@@ -80,8 +80,8 @@
  *					  especially in windows and if running incrementally)
  *	--silent|-s       suppresses displaying verbose output
  *	--no-show|-ns     doesn't show output image (windows only)
- *	--no-commandline  doesn't echo command line
- *	--no-flags        doesn't show compiler flags
+ *	--no-commandline|-nc    doesn't echo command line
+ *	--no-flags|-nf    doesn't show compiler flags
  *	--no-detailed-timing    doesn't show detailed timing breakup (use this, you'll
  *					  get confused)
  *	--no-bitmaps      doesn't write bitmaps initial.tga and solution.tga (neither
@@ -799,8 +799,8 @@ static void PrintHelp()
 		"                  especially in windows and if running incrementally)\n"
 		"--silent|-s       suppresses displaying verbose output\n"
 		"--no-show|-ns     doesn't show output image (windows only)\n"
-		"--no-commandline  doesn't echo command line\n"
-		"--no-flags        doesn't show compiler flags\n"
+		"--no-commandline|-nc    doesn't echo command line\n"
+		"--no-flags|-nf    doesn't show compiler flags\n"
 		"--no-detailed-timing    doesn't show detailed timing breakup (use this, you'll\n"
 		"                  get confused)\n"
 		"--no-bitmaps      doesn't write bitmaps initial.tga and solution.tga (neither\n"
@@ -810,7 +810,7 @@ static void PrintHelp()
 		"                  in case there are landmarks later, it would segfault))\n"
 		"--use-old-code|-uogc    uses the old CSparse code (no block matrices in it)\n"
 		"--a-slam|-A       uses A-SLAM (default)\n"
-		"--lambda|-,\\     uses lambda-SLAM (preferred batch solver)\n"
+		"--lambda|-,\\      uses lambda-SLAM (preferred batch solver)\n"
 		"--l-slam|-L       uses L-SLAM\n"
 		"--fast-l-slam|-fL uses the new fast L-SLAM solver (preferred incremental solver)\n"
 		"--infile|-i <filename>    specifies input file <filename>; it can cope with\n"

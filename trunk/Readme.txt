@@ -45,5 +45,5 @@ enable OpenMP support.
 
 === Data ===
 
-For the default optimization framework, it is mostly safe to use iSAM
-(http://people.csail.mit.edu/kaess/isam/) datafiles.
+Data can be downloaded from SourceForge, at:
+http://sourceforge.net/projects/slam-plus-plus/files/data/

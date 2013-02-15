@@ -13,7 +13,7 @@ vertices:
 
 edges:
     EDGE_SE2/EDGE2/ODOMETRY <node_id_from> <node_id_to> <X> <Y> <Theta> <XX> <XY> <XT> <YY> <YT> <TT>
-	where node_id_from < node_id_to
+    where node_id_from < node_id_to
 
 Variable initialization entries are supproted and marked by tag VERTEX_SE2 or VERTEX2.
 Edges are marked by tags EDGE_SE2, EDGE2 or ODOMETRY.
