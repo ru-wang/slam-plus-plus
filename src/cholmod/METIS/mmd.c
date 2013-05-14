@@ -16,10 +16,10 @@
  * The meaning of invperm, and perm vectors is different from that
  * in genqmd_ of SparsPak
  *
- * $Id: mmd.c 5993 2009-01-07 02:09:57Z karypis $
+ * $Id: mmd.c,v 1.1 1998/11/27 17:59:25 karypis Exp $
  */
 
-#include "metislib.h"
+#include <metis.h>
 
 
 /*************************************************************************
@@ -50,11 +50,11 @@
 *     marker -- a temporary marker vector.
 *  Subroutines used -- mmdelm, mmdint, mmdnum, mmdupd.
 **************************************************************************/
-void genmmd(idx_t neqns, idx_t *xadj, idx_t *adjncy, idx_t *invp, idx_t *perm,
-     idx_t delta, idx_t *head, idx_t *qsize, idx_t *list, idx_t *marker,
-     idx_t maxint, idx_t *ncsub)
+void genmmd(int neqns, idxtype *xadj, idxtype *adjncy, idxtype *invp, idxtype *perm,
+     int delta, idxtype *head, idxtype *qsize, idxtype *list, idxtype *marker,
+     int maxint, int *ncsub)
 {
-    idx_t  ehead, i, mdeg, mdlmt, mdeg_node, nextmd, num, tag;
+    int  ehead, i, mdeg, mdlmt, mdeg_node, nextmd, num, tag;
 
     if (neqns <= 0)  
       return;
@@ -168,10 +168,10 @@ n1000:
 *     marker -- marker vector.
 *     list -- temporary linked list of eliminated nabors.
 ***************************************************************************/
-void mmdelm(idx_t mdeg_node, idx_t *xadj, idx_t *adjncy, idx_t *head, idx_t *forward,
-     idx_t *backward, idx_t *qsize, idx_t *list, idx_t *marker, idx_t maxint, idx_t tag)
+void mmdelm(int mdeg_node, idxtype *xadj, idxtype *adjncy, idxtype *head, idxtype *forward,
+     idxtype *backward, idxtype *qsize, idxtype *list, idxtype *marker, int maxint,int tag)
 {
-    idx_t   element, i,   istop, istart, j,
+    int   element, i,   istop, istart, j,
           jstop, jstart, link,
           nabor, node, npv, nqnbrs, nxnode,
           pvnode, rlmt, rloc, rnode, xqnbr;
@@ -302,10 +302,10 @@ n1100:
 *       list -- linked list.
 *       marker -- marker vector.
 ****************************************************************************/
-idx_t  mmdint(idx_t neqns, idx_t *xadj, idx_t *adjncy, idx_t *head, idx_t *forward,
-     idx_t *backward, idx_t *qsize, idx_t *list, idx_t *marker)
+int  mmdint(int neqns, idxtype *xadj, idxtype *adjncy, idxtype *head, idxtype *forward,
+     idxtype *backward, idxtype *qsize, idxtype *list, idxtype *marker)
 {
-    idx_t  fnode, ndeg, node;
+    int  fnode, ndeg, node;
 
     for ( node = 1; node <= neqns; node++ ) {
         head[node] = 0;
@@ -345,9 +345,9 @@ idx_t  mmdint(idx_t neqns, idx_t *xadj, idx_t *adjncy, idx_t *head, idx_t *forwa
 * output parameters --
 *     perm -- the permutation vector.
 ****************************************************************************/
-void mmdnum(idx_t neqns, idx_t *perm, idx_t *invp, idx_t *qsize)
+void mmdnum(int neqns, idxtype *perm, idxtype *invp, idxtype *qsize)
 {
-  idx_t father, nextf, node, nqsize, num, root;
+  int father, nextf, node, nqsize, num, root;
 
   for ( node = 1; node <= neqns; node++ ) {
       nqsize = qsize[node];
@@ -409,11 +409,11 @@ void mmdnum(idx_t neqns, idx_t *perm, idx_t *invp, idx_t *qsize)
 *    list -- marker vector for degree update.
 *    *tag   -- tag value.
 ****************************************************************************/
-void mmdupd(idx_t ehead, idx_t neqns, idx_t *xadj, idx_t *adjncy, idx_t delta, idx_t *mdeg,
-     idx_t *head, idx_t *forward, idx_t *backward, idx_t *qsize, idx_t *list,
-     idx_t *marker, idx_t maxint, idx_t *tag)
+void mmdupd(int ehead, int neqns, idxtype *xadj, idxtype *adjncy, int delta, int *mdeg,
+     idxtype *head, idxtype *forward, idxtype *backward, idxtype *qsize, idxtype *list,
+     idxtype *marker, int maxint,int *tag)
 {
- idx_t  deg, deg0, element, enode, fnode, i, iq2, istop,
+ int  deg, deg0, element, enode, fnode, i, iq2, istop,
       istart, j, jstop, jstart, link, mdeg0, mtag, nabor,
       node, q2head, qxhead;
 

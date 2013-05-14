@@ -9,26 +9,25 @@
  * Started 7/25/97
  * George
  *
+ * $Id: bucketsort.c,v 1.1 1998/11/27 17:59:11 karypis Exp $
+ *
  */
 
-#include "metislib.h"
+#include <metis.h>
 
 
 
 /*************************************************************************
 * This function uses simple counting sort to return a permutation array
-* corresponding to the sorted order. The keys are arsumed to start from
+* corresponding to the sorted order. The keys are assumed to start from
 * 0 and they are positive.  This sorting is used during matching.
 **************************************************************************/
-void BucketSortKeysInc(ctrl_t *ctrl, idx_t n, idx_t max, idx_t *keys, 
-         idx_t *tperm, idx_t *perm)
+void BucketSortKeysInc(int n, int max, idxtype *keys, idxtype *tperm, idxtype *perm)
 {
-  idx_t i, ii;
-  idx_t *counts;
+  int i, ii;
+  idxtype *counts;
 
-  WCOREPUSH;
-
-  counts = iset(max+2, 0, iwspacemalloc(ctrl, max+2));
+  counts = idxsmalloc(max+2, 0, "BucketSortKeysInc: counts");
 
   for (i=0; i<n; i++)
     counts[keys[i]]++;
@@ -39,6 +38,6 @@ void BucketSortKeysInc(ctrl_t *ctrl, idx_t n, idx_t max, idx_t *keys,
     perm[counts[keys[i]]++] = i;
   }
 
-  WCOREPOP;
+  free(counts);
 }
 

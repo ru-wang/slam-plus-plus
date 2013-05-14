@@ -45,7 +45,7 @@
 				Name="VCCLCompilerTool"
 				Optimization="0"
 				AdditionalIncludeDirectories="../include/cholmod;../include/cholmod/AMD;../include/cholmod/CAMD;../include/cholmod/CCOLAMD;../include/cholmod/COLAMD;../include/cholmod/GKlib;../include/cholmod/METIS;../include/cholmod/CHOLMOD;../include/cholmod/SuiteSparse"
-				PreprocessorDefinitions="WIN32;_DEBUG;_LIB;USE_GKREGEX;__thread="
+				PreprocessorDefinitions="WIN32;_DEBUG;_LIB;USE_GKREGEX;__thread=;NPARTITION"
 				MinimalRebuild="true"
 				BasicRuntimeChecks="3"
 				RuntimeLibrary="3"
@@ -108,7 +108,7 @@
 				Name="VCCLCompilerTool"
 				Optimization="0"
 				AdditionalIncludeDirectories="../include/cholmod;../include/cholmod/AMD;../include/cholmod/CAMD;../include/cholmod/CCOLAMD;../include/cholmod/COLAMD;../include/cholmod/GKlib;../include/cholmod/METIS;../include/cholmod/CHOLMOD;../include/cholmod/SuiteSparse"
-				PreprocessorDefinitions="WIN32;_WIN64;_DEBUG;_LIB;DLONG;USE_GKREGEX;__thread="
+				PreprocessorDefinitions="WIN32;_WIN64;_DEBUG;_LIB;DLONG;USE_GKREGEX;__thread=;NPARTITION"
 				MinimalRebuild="true"
 				BasicRuntimeChecks="3"
 				RuntimeLibrary="3"
@@ -178,7 +178,7 @@
 				OmitFramePointers="true"
 				WholeProgramOptimization="false"
 				AdditionalIncludeDirectories="../include/cholmod;../include/cholmod/AMD;../include/cholmod/CAMD;../include/cholmod/CCOLAMD;../include/cholmod/COLAMD;../include/cholmod/GKlib;../include/cholmod/METIS;../include/cholmod/CHOLMOD;../include/cholmod/SuiteSparse"
-				PreprocessorDefinitions="WIN32;NDEBUG;_LIB;USE_GKREGEX;__thread="
+				PreprocessorDefinitions="WIN32;NDEBUG;_LIB;USE_GKREGEX;__thread=;NPARTITION"
 				RuntimeLibrary="2"
 				EnableFunctionLevelLinking="true"
 				RuntimeTypeInfo="false"
@@ -247,7 +247,7 @@
 				FavorSizeOrSpeed="1"
 				WholeProgramOptimization="true"
 				AdditionalIncludeDirectories="../include/cholmod;../include/cholmod/AMD;../include/cholmod/CAMD;../include/cholmod/CCOLAMD;../include/cholmod/COLAMD;../include/cholmod/GKlib;../include/cholmod/METIS;../include/cholmod/CHOLMOD;../include/cholmod/SuiteSparse"
-				PreprocessorDefinitions="WIN32;NDEBUG;_LIB;DLONG;USE_GKREGEX;__thread="
+				PreprocessorDefinitions="WIN32;NDEBUG;_LIB;DLONG;USE_GKREGEX;__thread=;NPARTITION"
 				RuntimeLibrary="2"
 				EnableFunctionLevelLinking="true"
 				RuntimeTypeInfo="false"
@@ -584,6 +584,10 @@
 						RelativePath="..\src\cholmod\CHOLMOD\Core\cholmod_triplet.c"
 						>
 					</File>
+					<File
+						RelativePath="..\src\cholmod\CHOLMOD\Core\cholmod_version.c"
+						>
+					</File>
 				</Filter>
 				<Filter
 					Name="Cholesky"
@@ -773,6 +777,22 @@
 						>
 					</File>
 				</Filter>
+				<Filter
+					Name="Check"
+					>
+					<File
+						RelativePath="..\src\cholmod\CHOLMOD\Check\cholmod_check.c"
+						>
+					</File>
+					<File
+						RelativePath="..\src\cholmod\CHOLMOD\Check\cholmod_read.c"
+						>
+					</File>
+					<File
+						RelativePath="..\src\cholmod\CHOLMOD\Check\cholmod_write.c"
+						>
+					</File>
+				</Filter>
 			</Filter>
 			<Filter
 				Name="SuiteSparse"
@@ -786,10 +806,6 @@
 				Name="METIS"
 				>
 				<File
-					RelativePath="..\src\cholmod\METIS\auxapi.c"
-					>
-				</File>
-				<File
 					RelativePath="..\src\cholmod\METIS\balance.c"
 					>
 				</File>
@@ -798,7 +814,7 @@
 					>
 				</File>
 				<File
-					RelativePath="..\src\cholmod\METIS\checkgraph.c"
+					RelativePath="..\src\cholmod\METIS\ccgraph.c"
 					>
 				</File>
 				<File
@@ -810,11 +826,11 @@
 					>
 				</File>
 				<File
-					RelativePath="..\src\cholmod\METIS\contig.c"
+					RelativePath="..\src\cholmod\METIS\debug.c"
 					>
 				</File>
 				<File
-					RelativePath="..\src\cholmod\METIS\debug.c"
+					RelativePath="..\src\cholmod\METIS\estmem.c"
 					>
 				</File>
 				<File
@@ -830,10 +846,6 @@
 					>
 				</File>
 				<File
-					RelativePath="..\src\cholmod\METIS\gklib.c"
-					>
-				</File>
-				<File
 					RelativePath="..\src\cholmod\METIS\graph.c"
 					>
 				</File>
@@ -846,6 +858,10 @@
 					>
 				</File>
 				<File
+					RelativePath="..\src\cholmod\METIS\kvmetis.c"
+					>
+				</File>
+				<File
 					RelativePath="..\src\cholmod\METIS\kwayfm.c"
 					>
 				</File>
@@ -854,11 +870,35 @@
 					>
 				</File>
 				<File
+					RelativePath="..\src\cholmod\METIS\kwayvolfm.c"
+					>
+				</File>
+				<File
+					RelativePath="..\src\cholmod\METIS\kwayvolrefine.c"
+					>
+				</File>
+				<File
 					RelativePath="..\src\cholmod\METIS\LICENSE.txt"
 					>
 				</File>
 				<File
-					RelativePath="..\src\cholmod\METIS\mcutil.c"
+					RelativePath="..\src\cholmod\METIS\match.c"
+					>
+				</File>
+				<File
+					RelativePath="..\src\cholmod\METIS\mbalance.c"
+					>
+				</File>
+				<File
+					RelativePath="..\src\cholmod\METIS\mbalance2.c"
+					>
+				</File>
+				<File
+					RelativePath="..\src\cholmod\METIS\mcoarsen.c"
+					>
+				</File>
+				<File
+					RelativePath="..\src\cholmod\METIS\memory.c"
 					>
 				</File>
 				<File
@@ -870,7 +910,11 @@
 					>
 				</File>
 				<File
-					RelativePath="..\src\cholmod\METIS\minconn.c"
+					RelativePath="..\src\cholmod\METIS\mfm.c"
+					>
+				</File>
+				<File
+					RelativePath="..\src\cholmod\METIS\mfm2.c"
 					>
 				</File>
 				<File
@@ -878,15 +922,55 @@
 					>
 				</File>
 				<File
+					RelativePath="..\src\cholmod\METIS\minitpart.c"
+					>
+				</File>
+				<File
+					RelativePath="..\src\cholmod\METIS\minitpart2.c"
+					>
+				</File>
+				<File
+					RelativePath="..\src\cholmod\METIS\mkmetis.c"
+					>
+				</File>
+				<File
+					RelativePath="..\src\cholmod\METIS\mkwayfmh.c"
+					>
+				</File>
+				<File
+					RelativePath="..\src\cholmod\METIS\mkwayrefine.c"
+					>
+				</File>
+				<File
+					RelativePath="..\src\cholmod\METIS\mmatch.c"
+					>
+				</File>
+				<File
 					RelativePath="..\src\cholmod\METIS\mmd.c"
 					>
 				</File>
 				<File
-					RelativePath="..\src\cholmod\METIS\ometis.c"
+					RelativePath="..\src\cholmod\METIS\mpmetis.c"
 					>
 				</File>
 				<File
-					RelativePath="..\src\cholmod\METIS\options.c"
+					RelativePath="..\src\cholmod\METIS\mrefine.c"
+					>
+				</File>
+				<File
+					RelativePath="..\src\cholmod\METIS\mrefine2.c"
+					>
+				</File>
+				<File
+					RelativePath="..\src\cholmod\METIS\mutil.c"
+					>
+				</File>
+				<File
+					RelativePath="..\src\cholmod\METIS\myqsort.c"
+					>
+				</File>
+				<File
+					RelativePath="..\src\cholmod\METIS\ometis.c"
 					>
 				</File>
 				<File
@@ -895,6 +979,10 @@
 				</File>
 				<File
 					RelativePath="..\src\cholmod\METIS\pmetis.c"
+					>
+				</File>
+				<File
+					RelativePath="..\src\cholmod\METIS\pqueue.c"
 					>
 				</File>
 				<File
@@ -918,15 +1006,15 @@
 					>
 				</File>
 				<File
+					RelativePath="..\src\cholmod\METIS\subdomains.c"
+					>
+				</File>
+				<File
 					RelativePath="..\src\cholmod\METIS\timing.c"
 					>
 				</File>
 				<File
 					RelativePath="..\src\cholmod\METIS\util.c"
-					>
-				</File>
-				<File
-					RelativePath="..\src\cholmod\METIS\wspace.c"
 					>
 				</File>
 			</Filter>

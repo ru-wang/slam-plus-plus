@@ -1,0 +1,6 @@
+Changes from 1.0 to 1.01 (2013-05-14):
+
+* updated Cholmod to 2.1.2 and selected the fast supernodal analysis as default
+* updated METIS to 4.0.1, and selected it to be disabled by default as it was
+  causing problems while compiling on some Linux systems
+* disabled -march=native on Apple systems, as it was causing problems

@@ -52,6 +52,8 @@
 /* METIS has its own ASSERT that it reveals to the user, so remove it here: */
 #undef ASSERT
 
+//typedef idx_t idxtype;
+
 /* and redefine it back again */
 #ifndef NDEBUG
 #define ASSERT(expression) (assert (expression))
