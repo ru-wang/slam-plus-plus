@@ -192,9 +192,7 @@ int CHOLMOD(start)
     /* GPU initializations */
     /* ---------------------------------------------------------------------- */
 
-	//printf("cholmod_start()\n");
 #ifdef GPU_BLAS
-	//printf("cholmod_start() with GPU_BLAS\n");
     Common->cublasHandle = NULL ;
     Common->cudaStreamSyrk = NULL ;
     Common->cudaStreamGemm = NULL ;

@@ -8,10 +8,10 @@
  * Started 8/1/97
  * George
  *
- * $Id: mincover.c 9942 2011-05-17 22:09:52Z karypis $
+ * $Id: mincover.c,v 1.1 1998/11/27 17:59:22 karypis Exp $
  */
 
-#include "metislib.h"
+#include <metis.h>
 
 /*************************************************************************
 * Constants used by mincover algorithm
@@ -39,18 +39,18 @@
 *  cover : the actual cover (array)
 *  csize : the size of the cover
 **************************************************************************/
-void MinCover(idx_t *xadj, idx_t *adjncy, idx_t asize, idx_t bsize, idx_t *cover, idx_t *csize)
+void MinCover(idxtype *xadj, idxtype *adjncy, int asize, int bsize, idxtype *cover, int *csize)
 {
-  idx_t i, j;
-  idx_t *mate, *queue, *flag, *level, *lst;
-  idx_t fptr, rptr, lstptr;
-  idx_t row, maxlevel, col;
+  int i, j;
+  idxtype *mate, *queue, *flag, *level, *lst;
+  int fptr, rptr, lstptr;
+  int row, maxlevel, col;
 
-  mate = ismalloc(bsize, -1, "MinCover: mate");
-  flag = imalloc(bsize, "MinCover: flag");
-  level = imalloc(bsize, "MinCover: level");
-  queue = imalloc(bsize, "MinCover: queue");
-  lst = imalloc(bsize, "MinCover: lst");
+  mate = idxsmalloc(bsize, -1, "MinCover: mate");
+  flag = idxmalloc(bsize, "MinCover: flag");
+  level = idxmalloc(bsize, "MinCover: level");
+  queue = idxmalloc(bsize, "MinCover: queue");
+  lst = idxmalloc(bsize, "MinCover: lst");
 
   /* Get a cheap matching */
   for (i=0; i<asize; i++) {
@@ -96,7 +96,7 @@ void MinCover(idx_t *xadj, idx_t *adjncy, idx_t asize, idx_t bsize, idx_t *cover
             }
             else { /* This column node is matched */
               if (flag[mate[col]]) 
-                printf("\nSomething wrong, flag[%"PRIDX"] is 1",mate[col]);
+                printf("\nSomething wrong, flag[%d] is 1",mate[col]);
               queue[rptr++] = mate[col];
               level[mate[col]] = level[row] + 1;
             }
@@ -115,7 +115,7 @@ void MinCover(idx_t *xadj, idx_t *adjncy, idx_t asize, idx_t bsize, idx_t *cover
 
   MinCover_Decompose(xadj, adjncy, asize, bsize, mate, cover, csize);
 
-  gk_free((void **)&mate, &flag, &level, &queue, &lst, LTERM);
+  GKfree(&mate, &flag, &level, &queue, &lst, LTERM);
 
 }
 
@@ -123,11 +123,11 @@ void MinCover(idx_t *xadj, idx_t *adjncy, idx_t asize, idx_t bsize, idx_t *cover
 /*************************************************************************
 * This function perfoms a restricted DFS and augments matchings
 **************************************************************************/
-idx_t MinCover_Augment(idx_t *xadj, idx_t *adjncy, idx_t col, idx_t *mate, idx_t *flag, idx_t *level, idx_t maxlevel)
+int MinCover_Augment(idxtype *xadj, idxtype *adjncy, int col, idxtype *mate, idxtype *flag, idxtype *level, int maxlevel)
 {
-  idx_t i;
-  idx_t row = -1;
-  idx_t status;
+  int i;
+  int row = -1;
+  int status;
 
   flag[col] = 2;
   for (i=xadj[col]; i<xadj[col+1]; i++) {
@@ -160,13 +160,13 @@ idx_t MinCover_Augment(idx_t *xadj, idx_t *adjncy, idx_t col, idx_t *mate, idx_t
 * min-cover.
 * REF: Pothen ACMTrans. on Amth Software
 **************************************************************************/
-void MinCover_Decompose(idx_t *xadj, idx_t *adjncy, idx_t asize, idx_t bsize, idx_t *mate, idx_t *cover, idx_t *csize)
+void MinCover_Decompose(idxtype *xadj, idxtype *adjncy, int asize, int bsize, idxtype *mate, idxtype *cover, int *csize)
 {
-  idx_t i, k;
-  idx_t *where;
-  idx_t card[10];
+  int i, k;
+  idxtype *where;
+  int card[10];
 
-  where = imalloc(bsize, "MinCover_Decompose: where");
+  where = idxmalloc(bsize, "MinCover_Decompose: where");
   for (i=0; i<10; i++)
     card[i] = 0;
 
@@ -186,21 +186,21 @@ void MinCover_Decompose(idx_t *xadj, idx_t *adjncy, idx_t asize, idx_t bsize, id
     card[where[i]]++;
 
   k = 0;
-  if (iabs(card[VC]+card[SC]-card[HR]) < iabs(card[VC]-card[SR]-card[HR])) {  /* S = VC+SC+HR */
-    /* printf("%"PRIDX" %"PRIDX" ",vc+sc, hr); */
+  if (abs(card[VC]+card[SC]-card[HR]) < abs(card[VC]-card[SR]-card[HR])) {  /* S = VC+SC+HR */
+    /* printf("%d %d ",vc+sc, hr); */
     for (i=0; i<bsize; i++) 
       if (where[i] == VC || where[i] == SC || where[i] == HR)
         cover[k++] = i;
   }
   else {  /* S = VC+SR+HR */
-    /* printf("%"PRIDX" %"PRIDX" ",vc, hr+sr); */
+    /* printf("%d %d ",vc, hr+sr); */
     for (i=0; i<bsize; i++) 
       if (where[i] == VC || where[i] == SR || where[i] == HR)
         cover[k++] = i;
   }
 
   *csize = k;
-  gk_free((void **)&where, LTERM);
+  free(where);
 
 }
 
@@ -209,9 +209,9 @@ void MinCover_Decompose(idx_t *xadj, idx_t *adjncy, idx_t asize, idx_t bsize, id
 * This function perfoms a dfs starting from an unmatched col node
 * forming alternate paths
 **************************************************************************/
-void MinCover_ColDFS(idx_t *xadj, idx_t *adjncy, idx_t root, idx_t *mate, idx_t *where, idx_t flag)
+void MinCover_ColDFS(idxtype *xadj, idxtype *adjncy, int root, idxtype *mate, idxtype *where, int flag)
 {
-  idx_t i;
+  int i;
 
   if (flag == INCOL) {
     if (where[root] == HC)
@@ -234,9 +234,9 @@ void MinCover_ColDFS(idx_t *xadj, idx_t *adjncy, idx_t root, idx_t *mate, idx_t 
 * This function perfoms a dfs starting from an unmatched col node
 * forming alternate paths
 **************************************************************************/
-void MinCover_RowDFS(idx_t *xadj, idx_t *adjncy, idx_t root, idx_t *mate, idx_t *where, idx_t flag)
+void MinCover_RowDFS(idxtype *xadj, idxtype *adjncy, int root, idxtype *mate, idxtype *where, int flag)
 {
-  idx_t i;
+  int i;
 
   if (flag == INROW) {
     if (where[root] == VR)

@@ -85,7 +85,7 @@ protected:
 	 */
 	enum {
 		ordering_Method = CHOLMOD_AMD, /**< @brief symbolic ordering method (one of CHOLMOD_METIS, CHOLMOD_NESDIS, CHOLMOD_AMD or CHOLMOD_COLAMD) */
-		analysis_Type = CHOLMOD_SIMPLICIAL /**< @brief symbolic analysis type (one of CHOLMOD_AUTO, CHOLMOD_SIMPLICIAL or CHOLMOD_SUPERNODAL) */
+		analysis_Type = CHOLMOD_SUPERNODAL /**< @brief symbolic analysis type (one of CHOLMOD_AUTO, CHOLMOD_SIMPLICIAL or CHOLMOD_SUPERNODAL) */
 	};
 
 #ifdef __CHOLMOD_x64_BUT_SHORT
