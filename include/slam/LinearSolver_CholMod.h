@@ -40,7 +40,7 @@
  *	@def __CHOLMOD_BLOCKY_LINEAR_SOLVER
  *	@brief if defined, CLinearSolver_CholMod will be a blocky linear solver
  */
-#define __CHOLMOD_BLOCKY_LINEAR_SOLVER
+//#define __CHOLMOD_BLOCKY_LINEAR_SOLVER
 
 #include "slam/LinearSolverTags.h"
 #include "csparse/cs.hpp"
@@ -94,9 +94,9 @@ protected:
 	typedef csi _TyCSIntType; /**< @brief integer type to be used by CSparse data structures */
 #endif // __CHOLMOD_x64_BUT_SHORT
 
-#ifdef __CHOLMOD_BLOCKY_LINEAR_SOLVER
 	cholmod_factor *m_p_factor; /**< @brief cholmod factorization */
 	cs *m_p_block_structure; /**< @brief memory for block structure of the lambda matrix */
+#ifdef __CHOLMOD_BLOCKY_LINEAR_SOLVER
 	cholmod_sparse m_t_block_structure; /**< @brief block structure of the lambda matrix in cholmod format */ // t_odo - make this preinit member
 #ifdef __CHOLMOD_x64
 	typedef SuiteSparse_long _TyPerm; /**< @brief integer type, used by cholmod */ // possibly int64 (avoid signed/unsigned mismatches)
