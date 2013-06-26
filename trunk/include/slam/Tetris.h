@@ -3,7 +3,7 @@
 								|                                  |
 								| *** Tetris pattern generator *** |
 								|                                  |
-								|   Copyright © -tHE SWINe- 2012   |
+								|  Copyright (c) -tHE SWINe- 2012  |
 								|                                  |
 								|             Tetris.h             |
 								|                                  |
@@ -108,7 +108,7 @@ public:
 	 */
 	CTetrisGame(bool b_vertical_fill, bool b_backwards_fill, bool b_fill_tile_first,
 		bool b_row_major_fill, int n_field_width, int n_field_height,
-		int n_block_cols = 3, int n_block_rows = 3, int n_scalar_size = 5) // throws(std::bad_alloc)
+		int n_block_cols = 3, int n_block_rows = 3, int n_scalar_size = 5) // throw(std::bad_alloc)
 		:m_n_field_width(n_field_width), m_n_field_height(n_field_height),
 		m_n_window_width(n_field_width * n_block_cols * (n_scalar_size - 1) + 1),
 		m_n_window_height(m_n_field_height * n_block_rows * (n_scalar_size - 1) + 1),
@@ -915,7 +915,7 @@ protected:
 	 *	@param[out] bm is the output block matrix
 	 *	@note This function throws std::bad_alloc.
 	 */
-	void Fill_Tile(CUberBlockMatrix &bm) // throws(std::bad_alloc)
+	void Fill_Tile(CUberBlockMatrix &bm) // throw(std::bad_alloc)
 	{
 		if(m_b_game_over)
 			return;
@@ -997,7 +997,7 @@ protected:
 	 *	@param[out] bm is the output block matrix
 	 *	@note This function throws std::bad_alloc.
 	 */
-	void Fill_Field(CUberBlockMatrix &bm) // throws(std::bad_alloc)
+	void Fill_Field(CUberBlockMatrix &bm) // throw(std::bad_alloc)
 	{
 		if(m_b_backwards_fill) {
 			if(m_b_swap_loops) {
@@ -1061,7 +1061,7 @@ protected:
 	 *
 	 *	@note This function throws std::bad_alloc.
 	 */
-	inline LRESULT CALLBACK WndProc(HWND h_wnd, UINT n_msg, WPARAM n_w_param, LPARAM n_l_param) // throws(std::bad_alloc)
+	inline LRESULT CALLBACK WndProc(HWND h_wnd, UINT n_msg, WPARAM n_w_param, LPARAM n_l_param) // throw(std::bad_alloc)
 	{
 		switch(n_msg) {
 		case WM_TIMER:
@@ -1225,7 +1225,7 @@ protected:
 	 *
 	 *	@note This function throws std::bad_alloc.
 	 */
-	static LRESULT CALLBACK _WndProc(HWND h_wnd, UINT n_msg, WPARAM n_w_param, LPARAM n_l_param) // throws(std::bad_alloc)
+	static LRESULT CALLBACK _WndProc(HWND h_wnd, UINT n_msg, WPARAM n_w_param, LPARAM n_l_param) // throw(std::bad_alloc)
 	{
 		_ASSERTE(m_p_instance);
 		return m_p_instance->WndProc(h_wnd, n_msg, n_w_param, n_l_param);

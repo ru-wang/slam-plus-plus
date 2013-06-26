@@ -3,7 +3,7 @@
 								|                                  |
 								| *** Base class for 3D solver *** |
 								|                                  |
-								|   Copyright © -tHE SWINe- 2013   |
+								|  Copyright (c) -tHE SWINe- 2013  |
 								|                                  |
 								|          3DSolverBase.h          |
 								|                                  |
@@ -41,6 +41,14 @@
 #ifdef __3D_SOLVER_BASE_COMPILE_LEGACY_CODE
 #include "slam/System.h"
 #endif // __3D_SOLVER_BASE_COMPILE_LEGACY_CODE
+
+void Calculate3DJacobians(double Ju[6][6], double Jv[6][6], double theta, double omega,
+						  double ux, double uy, double uz, double ua, double ub, double uc,
+						  double vx, double vy, double vz, double va, double vb, double vc);
+void CalculateD(double d[6][1], double theta, double omega,
+				double ux, double uy, double uz, double ua, double ub, double uc,
+				double vx, double vy, double vz, double va, double vb, double vc);
+// from 3DJacs.cpp
 
 #ifdef __3D_SOLVER_BASE_COMPILE_LEGACY_CODE
 
@@ -256,6 +264,8 @@ public:
 			if(fabs(matrace - 3.0) <= epsilon)
 				r << 0, 1, 0, 0;
 			else if(fabs(matrace + 1.0) <= epsilon) {
+				printf("fabs(matrace + 1.0) <= epsilon\n");
+
 				for(int a = 0; a < 3; a ++) {
 					double f_axis_a = (Q(a, a) + 1) / 2;
 					axis(a) = sqrt((f_axis_a > 0)? f_axis_a : 0);
@@ -381,6 +391,7 @@ public:
 		{
 			_ASSERTE(r_t_vertex1.rows() == 6 && r_t_vertex2.rows() == 6);
 
+#if 0
 			/* TODO: make more efficient */
 
 			//r_t_dest.resize(6, 1); // no need to resize, it is 6D vector at compile time
@@ -401,6 +412,20 @@ public:
 			//r_t_dest(3) = axis(0);
 			//r_t_dest(4) = axis(1);
 			//r_t_dest(5) = axis(2);
+#else
+			Eigen::Vector3d p1 = r_t_vertex1.head<3>();
+			Eigen::Quaterniond q1;
+			AxisAngle_to_Quat(r_t_vertex1.tail<3>(), q1);
+
+			Eigen::Vector3d p2 = r_t_vertex2.head<3>();
+			Eigen::Quaterniond q2;
+			AxisAngle_to_Quat(r_t_vertex2.tail<3>(), q2);
+
+			r_t_dest.head<3>() = p1 + p2;
+			Eigen::Vector3d v_aang;
+			Quat_to_AxisAngle((q1 * q2).normalized(), v_aang);
+			r_t_dest.tail<3>() = v_aang;
+#endif
 		}
 
 		/**
@@ -413,17 +438,32 @@ public:
 		static void Relative_to_Absolute(const Eigen::Matrix<double, 6, 1> &r_t_vertex1,
 			const Eigen::Matrix<double, 6, 1> &r_t_vertex2, Eigen::Matrix<double, 6, 1> &r_t_dest)
 		{
+#if 0
 			/* TODO: make more efficient */
 			//r_t_dest.resize(6, 1); // no need to resize fixed size expressions
-			Eigen::Vector3d p = r_t_vertex1.head(3);
+			Eigen::Vector3d p = r_t_vertex1.head<3>();
 			Eigen::Matrix3d pQ = Operator_rot(r_t_vertex1.tail<3>());
-			Eigen::Vector3d d = r_t_vertex2.head(3);
+			Eigen::Vector3d d = r_t_vertex2.head<3>();
 			Eigen::Matrix3d dQ = Operator_rot(r_t_vertex2.tail<3>());
 			r_t_dest.head<3>() = p + pQ * d;
 
 			Eigen::Matrix3d QQ;// = pQ * dQ;
 			QQ.noalias() = pQ * dQ; // multiplication without intermediate storage
 			r_t_dest.tail<3>() = Operator_arot(QQ);
+#else
+			Eigen::Vector3d p1 = r_t_vertex1.head<3>();
+			Eigen::Quaterniond q1;
+			AxisAngle_to_Quat(r_t_vertex1.tail<3>(), q1);
+
+			Eigen::Vector3d p2 = r_t_vertex2.head<3>();
+			Eigen::Quaterniond q2;
+			AxisAngle_to_Quat(r_t_vertex2.tail<3>(), q2);
+
+			r_t_dest.head<3>() = p1 + q1._transformVector(p2);
+			Eigen::Vector3d v_aang;
+			Quat_to_AxisAngle((q1 * q2).normalized(), v_aang);
+			r_t_dest.tail<3>() = v_aang;
+#endif
 		}
 
 		/**
@@ -437,21 +477,124 @@ public:
 		static void Absolute_to_Relative(const Eigen::Matrix<double, 6, 1> &r_t_vertex1,
 			const Eigen::Matrix<double, 6, 1> &r_t_vertex2, Eigen::Matrix<double, 6, 1> &r_t_dest)
 		{
+#if 0
 			/* TODO: make more efficient */
-			Eigen::Vector3d p1 = r_t_vertex1.head(3);
+			Eigen::Vector3d p1 = r_t_vertex1.head<3>();
 			Eigen::Matrix3d pQ1 = Operator_rot(r_t_vertex1.tail<3>());
 
-			Eigen::Vector3d p2 = r_t_vertex2.head(3);
+			Eigen::Vector3d p2 = r_t_vertex2.head<3>();
 			Eigen::Matrix3d pQ2 = Operator_rot(r_t_vertex2.tail<3>());
 
 			Eigen::Matrix3d pQ1_inv = pQ1.inverse();
 			//Eigen::Matrix3d pQ2_inv = pQ2.inverse();
 
 			//r_t_dest.resize(6, 1); // no need to resize fixed size expressions
-			r_t_dest.head(3) = pQ1_inv * (p2 - p1);
+			r_t_dest.head<3>() = pQ1_inv * (p2 - p1);
 
 			Eigen::Matrix3d QQ = pQ1_inv * pQ2;
-			r_t_dest.tail(3) = Operator_arot(QQ);	//TODO: is this right??
+			r_t_dest.tail<3>() = Operator_arot(QQ);	//TODO: is this right??
+#else
+			Eigen::Vector3d p1 = r_t_vertex1.head<3>();
+			Eigen::Quaterniond q1;
+			AxisAngle_to_Quat(r_t_vertex1.tail<3>(), q1);
+
+			//Eigen::Matrix3d pQ1 = Operator_rot(r_t_vertex1.tail<3>());
+			//Eigen::Matrix3d pQ1_inv = pQ1.inverse();
+			// matrix not required after all
+
+			Eigen::Vector3d p2 = r_t_vertex2.head<3>();
+			Eigen::Quaterniond q2;
+			AxisAngle_to_Quat(r_t_vertex2.tail<3>(), q2);
+
+			Eigen::Quaterniond q1_inv = q1.conjugate(); // the inverse rotation (also have .inverse() but that is not needed)
+
+			r_t_dest.head<3>() = q1_inv._transformVector(p2 - p1); // this is precise enough
+			//r_t_dest.head<3>() = pQ1_inv * (p2 - p1); // or can use matrix to transform position
+
+			Eigen::Quaterniond prod = (q1_inv * q2).normalized();
+			//if(1 || (prod.w()) >= 0) { //printf("bloop %f\n", prod.w());
+				Eigen::Vector3d v_aang;
+				Quat_to_AxisAngle(prod, v_aang); // use quaternion to calculate the rotation
+				r_t_dest.tail<3>() = v_aang;
+			//} else { //printf("bleep %f\n", prod.w());
+			//	//r_t_dest.tail<3>() = Operator_arot(pQ1_inv * q2); // use quaternion to calculate the rotation
+			//	r_t_dest.tail<3>() = Operator_arot((q1_inv * q2).toRotationMatrix()); // use quaternion to calculate the rotation
+			//}
+			// arot is needed, but toRotationMatrix() immediately followed by arot() can likely be optimized
+#endif
+		}
+
+		static void AxisAngle_to_Quat(const Eigen::Vector3d &r_axis_angle, Eigen::Quaterniond &r_quat)
+		{
+			double f_angle = r_axis_angle.norm();
+			if(f_angle < 1e-12)
+				r_quat = Eigen::Quaterniond(1, 0, 0, 0); // cos(0) = 1
+			else {
+				//_ASSERTE(f_angle <= M_PI); // sometimes broken
+				f_angle = fmod(f_angle, M_PI * 2);
+				double q = (sin(f_angle * .5) / f_angle);
+				r_quat = Eigen::Quaterniond(cos(f_angle * .5), r_axis_angle(0) * q,
+					r_axis_angle(1) * q, r_axis_angle(2) * q);
+				r_quat.normalize();
+			}
+		}
+
+		static double f_AxisAngle_to_Quat(const Eigen::Vector3d &r_axis_angle, Eigen::Quaterniond &r_quat)
+		{
+			double f_angle = r_axis_angle.norm();
+			if(f_angle < 1e-12) { // increasing this does not help
+				r_quat = Eigen::Quaterniond(1, 0, 0, 0); // cos(0) = 1
+				return 0;//M_PI * 2;
+			} else {
+				//_ASSERTE(f_angle <= M_PI); // sometimes broken
+				f_angle = fmod(f_angle, M_PI * 2);
+				double q = (sin(f_angle * .5) / f_angle);
+				r_quat = Eigen::Quaterniond(cos(f_angle * .5), r_axis_angle(0) * q,
+					r_axis_angle(1) * q, r_axis_angle(2) * q);
+				r_quat.normalize();
+			}
+			return f_angle;
+		}
+
+		static void Quat_to_AxisAngle(const Eigen::Quaterniond &r_quat, Eigen::Vector3d &r_axis_angle)
+		{
+			double f_half_angle = /*(r_quat.w() <= 0)? asin(r_quat.vec().norm()) :*/ acos(r_quat.w()); // 0 .. pi
+			_ASSERTE(f_half_angle >= 0);
+			if(f_half_angle < 1e-12)
+				r_axis_angle = Eigen::Vector3d(0, 0, 0); // lim(sin(x) / x) for x->0 equals 1, we're therefore multiplying a null vector by 1
+			else {
+				double f_angle = 2 * ((r_quat.w() <= 0)? f_half_angle - M_PI : f_half_angle);
+				r_axis_angle = r_quat.vec() * (f_angle / sin(f_half_angle));
+			}
+		}
+
+		static double f_Quat_to_AxisAngle(const Eigen::Quaterniond &r_quat, Eigen::Vector3d &r_axis_angle)
+		{
+			double f_half_angle = /*(r_quat.w() <= 0)? asin(r_quat.vec().norm()) :*/ acos(r_quat.w()); // 0 .. pi
+			_ASSERTE(f_half_angle >= 0);
+			if(f_half_angle < 1e-12) {
+				r_axis_angle = Eigen::Vector3d(0, 0, 0); // lim(sin(x) / x) for x->0 equals 1, we're therefore multiplying a null vector by 1
+				return 0;
+			} else {
+				double f_angle = 2 * ((r_quat.w() <= 0)? f_half_angle - M_PI : f_half_angle);
+				r_axis_angle = r_quat.vec() * (f_angle / sin(f_half_angle));
+				return f_angle;
+			}
+		}
+
+		static inline double sqr(double x)
+		{
+			return x * x;
+		}
+
+		static inline double conjugate(double x)
+		{
+			return x;
+		}
+
+		static inline double abs(double x, double y) // complex abs
+		{
+			return sqrt(x * x + y * y);
 		}
 
 		/**
@@ -469,6 +612,195 @@ public:
 			const Eigen::Matrix<double, 6, 1> &r_t_vertex2, _TyDestVector &r_t_dest,
 			_TyDestMatrix0 &r_t_pose3_pose1, _TyDestMatrix1 &r_t_pose3_pose2)
 		{
+#if 0
+			// use the magical analytical jacobians (magobians)
+
+			Eigen::Vector3d p1 = r_t_vertex1.head<3>();
+			Eigen::Quaterniond q1;
+			double f_theta = f_AxisAngle_to_Quat(r_t_vertex1.tail<3>(), q1);
+			_ASSERTE(f_theta >= 0);
+
+			Eigen::Vector3d p2 = r_t_vertex2.head<3>();
+			Eigen::Quaterniond q2;
+			double f_omega = f_AxisAngle_to_Quat(r_t_vertex2.tail<3>(), q2);
+			_ASSERTE(f_omega >= 0);
+
+			Eigen::Quaterniond q1_inv = q1.conjugate(); // the inverse rotation (also have .inverse() but that is not needed)
+
+			r_t_dest./*template*/ head<3>() = q1_inv._transformVector(p2 - p1); // this is precise enough
+
+			Eigen::Vector3d v_aang;
+			Eigen::Quaterniond qdest = (q1_inv * q2).normalized();
+			double fullangle = f_Quat_to_AxisAngle(qdest, v_aang); // use quaternion to calculate the rotation
+			double fixup = 2 * acos(qdest.w()) - fullangle;
+			_ASSERTE(fixup >= 0);
+			r_t_dest./*template*/ tail<3>() = v_aang;
+
+			double f_theta2 = f_theta * f_theta;
+			double f_omega2 = f_omega * f_omega;
+			double f_theta3 = f_theta2 * f_theta;
+			double f_omega3 = f_omega2 * f_omega;
+			double f_sin_theta = sin(.5 * f_theta);
+			double f_cos_theta = cos(.5 * f_theta);
+			double f_sin_omega = sin(.5 * f_omega);
+			double f_cos_omega = cos(.5 * f_omega);
+			double f_sin_theta2 = f_sin_theta * f_sin_theta;
+			double f_cos_theta2 = f_cos_theta * f_cos_theta;
+			double f_sin_omega2 = f_sin_omega * f_sin_omega;
+			double f_cos_omega2 = f_cos_omega * f_cos_omega;
+			double ux = r_t_vertex1(0);
+			double uy = r_t_vertex1(1);
+			double uz = r_t_vertex1(2);
+			double ua = r_t_vertex1(3);
+			double ub = r_t_vertex1(4);
+			double uc = r_t_vertex1(5);
+			double vx = r_t_vertex2(0);
+			double vy = r_t_vertex2(1);
+			double vz = r_t_vertex2(2);
+			double va = r_t_vertex2(3);
+			double vb = r_t_vertex2(4);
+			double vc = r_t_vertex2(5);
+			double ua2 = ua * ua;
+			double ub2 = ub * ub;
+			double uc2 = uc * uc;
+			double va2 = va * va;
+			double vb2 = vb * vb;
+			double vc2 = vc * vc;
+
+			double thetaMLVar = f_theta, sintheta = f_sin_theta, costheta = f_cos_theta, omega = f_omega, cosomega = f_cos_omega, sinomega = f_sin_omega;
+
+			if(omega < 0.1 || thetaMLVar < 0.1 || /*fabs(omega - M_PI) < 0.1 || fabs(thetaMLVar - M_PI) < 0.1 ||*/ omega >= 2 * M_PI - 0.1 || thetaMLVar >= 2 * M_PI - 0.1) {
+				// use the numerical jacobians
+				/* TODO: make more efficient */
+
+				//lets try it according to g2o
+				const double delta = 1e-9;
+				const double scalar = 1.0 / (delta);
+
+
+				Eigen::Matrix<double, 6, 6> Eps;// = delta * Eigen::MatrixXd::Identity(6, 6); // MatrixXd needs to allocate storage on heap ... many milliseconds lost
+				Eps = Eigen::Matrix<double, 6, 6>::Identity() * delta; // faster, all memory on stack
+
+				_TyDestMatrix0 &H1 = r_t_pose3_pose1;
+				_TyDestMatrix1 &H2 = r_t_pose3_pose2;
+				_ASSERTE(H1.rows() == 6 && H1.cols() == 6 && H2.rows() == 6 && H2.cols() == 6); // just make sure the shape is right
+				// can actually work inplace
+
+				//Absolute_to_Relative(r_t_vertex1, r_t_vertex2, r_t_dest);
+				for(int j = 0; j < 6; ++ j) {
+					Eigen::Matrix<double, 6, 1> d1, p_delta;
+					Smart_Plus(r_t_vertex1, Eps.col(j), p_delta);
+					Absolute_to_Relative(p_delta, r_t_vertex2, d1);
+					H1.col(j) = (d1 - r_t_dest) * scalar;
+
+					Eigen::Matrix<double, 6, 1> d2;
+					Smart_Plus(r_t_vertex2, Eps.col(j), p_delta);
+					Absolute_to_Relative(r_t_vertex1, p_delta, d2);
+					H2.col(j) = (d2 - r_t_dest) * scalar;
+				}
+				// return jacobs
+
+				return;
+			}
+
+			double Ju[6][6] = {0}, Jv[6][6] = {0}, d[6][1] = {0};
+
+			Calculate3DJacobians(Ju, Jv, thetaMLVar, omega, 
+				ux, uy, uz, ua, ub, uc,
+				vx, vy, vz, va, vb, vc);
+			CalculateD(d, thetaMLVar, omega, 
+				ux, uy, uz, ua, ub, uc,
+				vx, vy, vz, va, vb, vc);
+
+			_TyDestMatrix0 &ju = r_t_pose3_pose1;
+			_TyDestMatrix1 &jv = r_t_pose3_pose2;
+			for(int i = 0; i < 6; ++ i) {
+				for(int j = 0; j < 6; ++ j) {
+					ju(i, j) = Ju[i][j];
+					jv(i, j) = Jv[i][j];
+				}
+			}
+
+			Eigen::Matrix<double, 6, 6> num_H1;
+			Eigen::Matrix<double, 6, 6> num_H2;
+			Eigen::Matrix<double, 6, 6> num_H1_skew;
+			Eigen::Matrix<double, 6, 6> num_H2_skew;
+			// can actually work inplace
+
+			{
+				const double delta = 1e-9;
+				const double scalar = 1.0 / (delta);
+
+				Eigen::Matrix<double, 6, 6> Eps;// = delta * Eigen::MatrixXd::Identity(6, 6); // MatrixXd needs to allocate storage on heap ... many milliseconds lost
+				Eps = Eigen::Matrix<double, 6, 6>::Identity() * delta; // faster, all memory on stack
+
+				//Absolute_to_Relative(r_t_vertex1, r_t_vertex2, r_t_dest); // already did that
+				for(int j = 0; j < 6; ++ j) {
+					{
+						Eigen::Matrix<double, 6, 1> d1, p_delta;
+						Smart_Plus(r_t_vertex1, Eps.col(j), p_delta);
+						//p_delta = r_t_vertex1 + Eps.col(j);
+						Absolute_to_Relative(p_delta, r_t_vertex2, d1);
+						num_H1.col(j) = (d1 - r_t_dest) * scalar;
+
+						Eigen::Matrix<double, 6, 1> d2;
+						Smart_Plus(r_t_vertex2, Eps.col(j), p_delta);
+						//p_delta = r_t_vertex2 + Eps.col(j);
+						Absolute_to_Relative(r_t_vertex1, p_delta, d2);
+						num_H2.col(j) = (d2 - r_t_dest) * scalar;
+					}
+					// proper jacobians
+
+					{
+						Eigen::Matrix<double, 6, 1> d1, p_delta;
+						//Smart_Plus(r_t_vertex1, Eps.col(j), p_delta);
+						p_delta = r_t_vertex1 + Eps.col(j);
+						Absolute_to_Relative(p_delta, r_t_vertex2, d1);
+						num_H1_skew.col(j) = (d1 - r_t_dest) * scalar;
+
+						Eigen::Matrix<double, 6, 1> d2;
+						//Smart_Plus(r_t_vertex2, Eps.col(j), p_delta);
+						p_delta = r_t_vertex2 + Eps.col(j);
+						Absolute_to_Relative(r_t_vertex1, p_delta, d2);
+						num_H2_skew.col(j) = (d2 - r_t_dest) * scalar;
+					}
+					// jacobians missing [+] at the input (skewed)
+				}
+				// return jacobs
+			}
+
+			Eigen::Matrix<double, 6, 1> dv;
+			for(int i = 0; i < 6; ++ i)
+				dv(i, 0) = d[i][0];
+			// convert to a vector
+
+			double f_norm_vertex = (dv - r_t_dest).norm();
+			_ASSERTE(f_norm_vertex < 1e-10);
+
+			double f_norm1 = (ju - num_H1).norm();
+			double f_norm2 = (jv - num_H2).norm();
+			/*double f_norm1t = (ju.transpose() - num_H1).norm();
+			double f_norm2t = (jv.transpose() - num_H2).norm();*/
+			double f_norm11 = (ju.block<3, 3>(0, 0) - num_H1.block<3, 3>(0, 0)).norm();
+			double f_norm12 = (ju.block<3, 3>(3, 0) - num_H1.block<3, 3>(3, 0)).norm();
+			double f_norm13 = (ju.block<3, 3>(0, 3) - num_H1.block<3, 3>(0, 3)).norm();
+			double f_norm14 = (ju.block<3, 3>(3, 3) - num_H1.block<3, 3>(3, 3)).norm();
+			double f_norm21 = (jv.block<3, 3>(0, 0) - num_H2.block<3, 3>(0, 0)).norm();
+			double f_norm22 = (jv.block<3, 3>(3, 0) - num_H2.block<3, 3>(3, 0)).norm();
+			double f_norm23 = (jv.block<3, 3>(0, 3) - num_H2.block<3, 3>(0, 3)).norm();
+			double f_norm24 = (jv.block<3, 3>(3, 3) - num_H2.block<3, 3>(3, 3)).norm();
+			/*double f_norm11t = (ju.transpose().block<3, 3>(0, 0) - num_H1.block<3, 3>(0, 0)).norm();
+			double f_norm12t = (ju.transpose().block<3, 3>(3, 0) - num_H1.block<3, 3>(3, 0)).norm();
+			double f_norm13t = (ju.transpose().block<3, 3>(0, 3) - num_H1.block<3, 3>(0, 3)).norm();
+			double f_norm14t = (ju.transpose().block<3, 3>(3, 3) - num_H1.block<3, 3>(3, 3)).norm();
+			double f_norm21t = (jv.transpose().block<3, 3>(0, 0) - num_H2.block<3, 3>(0, 0)).norm();
+			double f_norm22t = (jv.transpose().block<3, 3>(3, 0) - num_H2.block<3, 3>(3, 0)).norm();
+			double f_norm23t = (jv.transpose().block<3, 3>(0, 3) - num_H2.block<3, 3>(0, 3)).norm();
+			double f_norm24t = (jv.transpose().block<3, 3>(3, 3) - num_H2.block<3, 3>(3, 3)).norm();*/
+			double f_worse = std::max(f_norm1, f_norm2); // useless, just let the debugger break after all is calculated
+
+#else // 1
+			// use the numerical jacobians
 			/* TODO: make more efficient */
 
 			//lets try it according to g2o
@@ -492,22 +824,45 @@ public:
 			_ASSERTE(H1.rows() == 6 && H1.cols() == 6 && H2.rows() == 6 && H2.cols() == 6); // just make sure the shape is right
 			// can actually work inplace
 
+#if 1
 			//Eigen::Matrix<double, 6, 1> d;
 			Absolute_to_Relative(r_t_vertex1, r_t_vertex2, r_t_dest);
 			//r_t_dest = d; // possibly an unnecessary copy
 
 			for(int j = 0; j < 6; ++ j) {
 				Eigen::Matrix<double, 6, 1> d1, p_delta;
-				Smart_Plus(r_t_vertex1, Eps.block(0, j, 6, 1), p_delta);
+				Smart_Plus(r_t_vertex1, Eps.col(j), p_delta);
 				Absolute_to_Relative(p_delta, r_t_vertex2, d1);
-				H1.block(0, j, 6, 1) = (d1 - r_t_dest) * scalar;
+				H1.col(j) = (d1 - r_t_dest) * scalar;
 
 				Eigen::Matrix<double, 6, 1> d2;
-				Smart_Plus(r_t_vertex2, Eps.block(0, j, 6, 1), p_delta);
+				Smart_Plus(r_t_vertex2, Eps.col(j), p_delta);
 				Absolute_to_Relative(r_t_vertex1, p_delta, d2);
-				H2.block(0, j, 6, 1) = (d2 - r_t_dest) * scalar;
+				H2.col(j) = (d2 - r_t_dest) * scalar;
 			}
 			// return jacobs
+#else
+#pragma message("double-sided jacobians used: this code does not work especially well.")
+
+			const double _scalar = scalar * .5; // 1.0 / (2 * delta) since we move to both sides here
+			for(int j = 0; j < 6; ++ j) {
+				Eigen::Matrix<double, 6, 1> d1, dneg1, p_delta;
+				Smart_Plus(r_t_vertex1, Eps.col(j), p_delta);
+				Absolute_to_Relative(p_delta, r_t_vertex2, d1);
+				Smart_Plus(r_t_vertex1, -Eps.col(j), p_delta); // probably can't just negate
+				Absolute_to_Relative(p_delta, r_t_vertex2, dneg1);
+				H1.col(j) = (d1 - dneg1) * _scalar;
+
+				Eigen::Matrix<double, 6, 1> d2, dneg2;
+				Smart_Plus(r_t_vertex2, Eps.col(j), p_delta);
+				Absolute_to_Relative(r_t_vertex1, p_delta, d2);
+				Smart_Plus(r_t_vertex2, -Eps.col(j), p_delta); // probably can't just negate
+				Absolute_to_Relative(r_t_vertex1, p_delta, dneg2);
+				H2.col(j) = (d2 - dneg2) * _scalar;
+			}
+			// return double-sided jacobs
+#endif
+#endif // 1
 		}
 
 #ifdef __3D_SOLVER_BASE_COMPILE_LEGACY_CODE
@@ -626,7 +981,7 @@ public:
 	 *	@copydoc CParser::CParserAdaptor::AppendSystem(const CParser::TEdge3D&)
 	 *	@return Returns reference to the new edge.
 	 */
-	TEdge3D &r_AppendSystemWith_XYZ_Edge(const CParser::CParseEntity_XYZ_Edge_3D &r_t_edge) // throws(std::bad_alloc)
+	TEdge3D &r_AppendSystemWith_XYZ_Edge(const CParser::CParseEntity_XYZ_Edge_3D &r_t_edge) // throw(std::bad_alloc)
 	{
 		TVertex3D &r_t_vertex_0 = m_r_system.r_Get_Vertex(r_t_edge.m_n_node_0,
 			C3DJacobians::C3DVertex_Null_Initializer());

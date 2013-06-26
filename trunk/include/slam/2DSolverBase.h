@@ -3,7 +3,7 @@
 								|                                  |
 								| *** Base class for 2D solver *** |
 								|                                  |
-								|   Copyright © -tHE SWINe- 2012   |
+								|  Copyright (c) -tHE SWINe- 2012  |
 								|                                  |
 								|          2DSolverBase.h          |
 								|                                  |
@@ -694,7 +694,7 @@ public:
 	 *	@copydoc CParser::CParserAdaptor::AppendSystem(const CParser::TEdge2D&)
 	 *	@return Returns reference to the new edge.
 	 */
-	TEdge2D &r_AppendSystemWith_RangeBearing_Edge(const CParser::CParseEntity_RangeBearing_Edge_2D &r_t_edge) // throws(std::bad_alloc)
+	TEdge2D &r_AppendSystemWith_RangeBearing_Edge(const CParser::CParseEntity_RangeBearing_Edge_2D &r_t_edge) // throw(std::bad_alloc)
 	{
 		TVertex2D &r_t_vertex_0 = m_r_system.r_Get_Vertex(r_t_edge.m_n_node_0,
 			C2DJacobians::C2DVertex_Null_Initializer());
@@ -740,7 +740,7 @@ public:
 	 *	@copydoc CParser::CParserAdaptor::AppendSystem(const CParser::TEdge2D&)
 	 *	@return Returns reference to the new edge.
 	 */
-	TEdge2D &r_AppendSystemWith_XYT_Edge(const CParser::CParseEntity_XYT_Edge_2D &r_t_edge) // throws(std::bad_alloc)
+	TEdge2D &r_AppendSystemWith_XYT_Edge(const CParser::CParseEntity_XYT_Edge_2D &r_t_edge) // throw(std::bad_alloc)
 	{
 		TVertex2D &r_t_vertex_0 = m_r_system.r_Get_Vertex(r_t_edge.m_n_node_0,
 			C2DJacobians::C2DVertex_Null_Initializer());

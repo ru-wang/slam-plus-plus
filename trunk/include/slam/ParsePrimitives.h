@@ -3,7 +3,7 @@
 								|                                   |
 								|      ***  .graph Parser  ***      |
 								|                                   |
-								|   Copyright  © -tHE SWINe- 2013   |
+								|  Copyright  (c) -tHE SWINe- 2013  |
 								|                                   |
 								|         ParsePrimitives.h         |
 								|                                   |
@@ -35,7 +35,7 @@ public:
 	 *	@param[in] n_assigned_id is id assigned by the parser to this primitive
 	 */
 	static void EnumerateTokens(std::map<std::string, int> &r_token_name_map,
-		int n_assigned_id) // throws(std::bad_alloc)
+		int n_assigned_id) // throw(std::bad_alloc)
 	{
 		r_token_name_map["EQUIV"] = n_assigned_id;
 		// list of standard tokens that are ignored
@@ -74,7 +74,7 @@ public:
 	 *	@param[in] n_assigned_id is id assigned by the parser to this primitive
 	 */
 	static void EnumerateTokens(std::map<std::string, int> &r_token_name_map,
-		int n_assigned_id) // throws(std::bad_alloc)
+		int n_assigned_id) // throw(std::bad_alloc)
 	{
 		r_token_name_map["EDGE2"] = n_assigned_id;
 		r_token_name_map["EDGE_SE2"] = n_assigned_id;
@@ -233,7 +233,7 @@ public:
 	 *	@param[in] n_assigned_id is id assigned by the parser to this primitive
 	 */
 	static void EnumerateTokens(std::map<std::string, int> &r_token_name_map,
-		int n_assigned_id) // throws(std::bad_alloc)
+		int n_assigned_id) // throw(std::bad_alloc)
 	{
 		r_token_name_map["LANDMARK2:XY"] = n_assigned_id;
 		//r_token_name_map["LANDMARK2:RB"] = n_assigned_id; // this is a different kind of landmark, needs to be processed separately
@@ -298,7 +298,7 @@ public:
 	 *	@param[in] n_assigned_id is id assigned by the parser to this primitive
 	 */
 	static void EnumerateTokens(std::map<std::string, int> &r_token_name_map,
-		int n_assigned_id) // throws(std::bad_alloc)
+		int n_assigned_id) // throw(std::bad_alloc)
 	{
 		r_token_name_map["VERTEX2"] = n_assigned_id;
 		r_token_name_map["VERTEX_SE2"] = n_assigned_id;
@@ -352,7 +352,7 @@ public:
 	 *	@param[in] n_assigned_id is id assigned by the parser to this primitive
 	 */
 	static void EnumerateTokens(std::map<std::string, int> &r_token_name_map,
-		int n_assigned_id) // throws(std::bad_alloc)
+		int n_assigned_id) // throw(std::bad_alloc)
 	{
 		r_token_name_map["EDGE3"] = n_assigned_id;
 		r_token_name_map["EDGE_SE3"] = n_assigned_id;
@@ -443,7 +443,7 @@ public:
 	 *	@param[in] n_assigned_id is id assigned by the parser to this primitive
 	 */
 	static void EnumerateTokens(std::map<std::string, int> &r_token_name_map,
-		int n_assigned_id) // throws(std::bad_alloc)
+		int n_assigned_id) // throw(std::bad_alloc)
 	{
 		r_token_name_map["VERTEX3"] = n_assigned_id;
 		r_token_name_map["VERTEX_SE3"] = n_assigned_id;
@@ -500,9 +500,190 @@ public:
 	}
 };
 
-typedef MakeTypelist_Safe((CEdge2DParsePrimitive, CLandmark2DParsePrimitive,
+/**
+ *	@brief 3D vertex parse primitive handler
+ */
+class CVertexXYZParsePrimitive {
+public:
+	/**
+	 *	@brief enumerates all tokens that identify this parsed primitive
+	 *
+	 *	@param[in,out] r_token_name_map is map of token names
+	 *	@param[in] n_assigned_id is id assigned by the parser to this primitive
+	 */
+	static void EnumerateTokens(std::map<std::string, int> &r_token_name_map,
+		int n_assigned_id) // throws(std::bad_alloc)
+	{
+		r_token_name_map["VERTEX_XYZ"] = n_assigned_id;
+		// add as uppercase!
+	}
+
+	/**
+	 *	@brief parses this primitive and dispatches it to the parse loop
+	 *
+	 *	@param[in] n_line_no is zero-based line number (for error reporting)
+	 *	@param[in] r_s_line is string, containing the current line (without the token)
+	 *	@param[in] r_s_token is string, containing the token name (in uppercase)
+	 *	@param[in,out] r_parse_loop is target for passing the parsed primitives to
+	 *
+	 *	@return Returns true on success, false on failure.
+	 */
+	template <class _TyParseLoop>
+	static bool Parse_and_Dispatch(size_t n_line_no, const std::string &r_s_line,
+		const std::string &UNUSED(r_s_token), _TyParseLoop &r_parse_loop)
+	{
+		int n_pose_id;
+		double p_vertex[3];
+		if(sscanf(r_s_line.c_str(), "%d %lf %lf %lf",
+		   &n_pose_id, p_vertex, p_vertex + 1, p_vertex + 2) != 1 + 3) {
+		   	_ASSERTE(n_line_no < SIZE_MAX);
+			fprintf(stderr, "error: line " PRIsize ": line is truncated\n", n_line_no + 1);
+			return false;
+		}
+		// read the individual numbers
+
+		CParserBase::TVertexXYZ vert(n_pose_id, p_vertex[0], p_vertex[1], p_vertex[2]);
+		// process the measurement
+
+		r_parse_loop.AppendSystem(vert);
+		// t_odo - append the measurement to the system, or something
+
+		return true;
+	}
+};
+
+/**
+ *	@brief 3D vertex parse primitive handler
+ */
+class CVertexCam3DParsePrimitive {
+public:
+	/**
+	 *	@brief enumerates all tokens that identify this parsed primitive
+	 *
+	 *	@param[in,out] r_token_name_map is map of token names
+	 *	@param[in] n_assigned_id is id assigned by the parser to this primitive
+	 */
+	static void EnumerateTokens(std::map<std::string, int> &r_token_name_map,
+		int n_assigned_id) // throws(std::bad_alloc)
+	{
+		r_token_name_map["VERTEX_CAM"] = n_assigned_id;
+		// add as uppercase!
+	}
+
+	/**
+	 *	@brief parses this primitive and dispatches it to the parse loop
+	 *
+	 *	@param[in] n_line_no is zero-based line number (for error reporting)
+	 *	@param[in] r_s_line is string, containing the current line (without the token)
+	 *	@param[in] r_s_token is string, containing the token name (in uppercase)
+	 *	@param[in,out] r_parse_loop is target for passing the parsed primitives to
+	 *
+	 *	@return Returns true on success, false on failure.
+	 */
+	template <class _TyParseLoop>
+	static bool Parse_and_Dispatch(size_t n_line_no, const std::string &r_s_line,
+		const std::string &UNUSED(r_s_token), _TyParseLoop &r_parse_loop)
+	{
+		int n_pose_id;
+		double p_vertex[12];
+		if(sscanf(r_s_line.c_str(), "%d %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf", //fixed by ELA
+		   &n_pose_id, p_vertex, p_vertex + 1, p_vertex + 2,
+		   p_vertex + 3, p_vertex + 4, p_vertex + 5, p_vertex + 6, p_vertex + 7, p_vertex + 8, p_vertex + 9, p_vertex + 10, p_vertex + 11) != 1 + 7 + 5) {
+		   	_ASSERTE(n_line_no < SIZE_MAX);
+			fprintf(stderr, "error: line " PRIsize ": line is truncated\n", n_line_no + 1);
+			return false;
+		}
+		// read the individual numbers
+
+		Eigen::Quaternion<double> quat(p_vertex[3], p_vertex[4], p_vertex[5], p_vertex[6]);
+		Eigen::Matrix3d Q = quat.toRotationMatrix();
+
+		Eigen::Vector3d t_vec(p_vertex[0], p_vertex[1], p_vertex[2]);
+		//rotate
+		Eigen::Vector3d c = -Q*t_vec;
+
+		Eigen::Vector3d axis;
+		CBase3DSolver::C3DJacobians::Quat_to_AxisAngle(quat, axis);
+
+		CParserBase::TVertexCam3D vert(n_pose_id, c[0],
+			c[1], c[2], axis(0), axis(1), axis(2), p_vertex[7], p_vertex[8], .0, .0);
+		// process the measurement
+
+		r_parse_loop.AppendSystem(vert);
+		// t_odo - append the measurement to the system, or something
+
+		return true;
+	}
+};
+
+/**
+ *	@brief point - camera projection
+ */
+class CEdgeP2C3DParsePrimitive {
+public:
+	/**
+	 *	@brief enumerates all tokens that identify this parsed primitive
+	 *
+	 *	@param[in,out] r_token_name_map is map of token names
+	 *	@param[in] n_assigned_id is id assigned by the parser to this primitive
+	 */
+	static void EnumerateTokens(std::map<std::string, int> &r_token_name_map,
+		int n_assigned_id) // throws(std::bad_alloc)
+	{
+		r_token_name_map["EDGE_PROJECT_P2MC"] = n_assigned_id;
+		r_token_name_map["EDGE_P2MC"] = n_assigned_id;
+		r_token_name_map["EDGE_P2C"] = n_assigned_id;
+		// add as uppercase!
+	}
+
+	/**
+	 *	@brief parses this primitive and dispatches it to the parse loop
+	 *
+	 *	@param[in] n_line_no is zero-based line number (for error reporting)
+	 *	@param[in] r_s_line is string, containing the current line (without the token)
+	 *	@param[in] r_s_token is string, containing the token name (in uppercase)
+	 *	@param[in,out] r_parse_loop is target for passing the parsed primitives to
+	 *
+	 *	@return Returns true on success, false on failure.
+	 */
+	template <class _TyParseLoop>
+	static bool Parse_and_Dispatch(size_t n_line_no, const std::string &r_s_line,
+		const std::string &UNUSED(r_s_token), _TyParseLoop &r_parse_loop)
+	{
+		int p_pose_idx[2];
+		double p_measurement[2];
+		double p_matrix[3];
+		if(sscanf(r_s_line.c_str(), "%d %d %lf %lf %lf %lf %lf",
+		   p_pose_idx, p_pose_idx + 1, p_measurement, p_measurement + 1,
+		   p_matrix, p_matrix + 1, p_matrix + 2) != 2 + 2 + 3) {
+		   	_ASSERTE(n_line_no < SIZE_MAX);
+			fprintf(stderr, "error: line " PRIsize ": line is truncated\n", n_line_no + 1);
+			return false;
+		}
+		// read the individual numbers
+
+		//if(p_pose_idx[0] > p_pose_idx[1])
+		//	fprintf(stderr, "warning: don't know how to do landmark inversion\n");
+		// rubbish! can't detect this, landmarks and poses must be ordered up front.
+		// both orders are correct in a single datafile.
+
+		CParserBase::TEdgeP2C3D landmark(p_pose_idx[0], p_pose_idx[1],
+			p_measurement[0], p_measurement[1], p_matrix);
+		// process the measurement
+
+		r_parse_loop.AppendSystem(landmark);
+		// t_odo - append the measurement to the system, or something
+
+		return true;
+	}
+};
+
+typedef CConcatTypelist<
+	MakeTypelist_Safe((CEdge2DParsePrimitive, CLandmark2DParsePrimitive,
 	CEdge3DParsePrimitive, CVertex2DParsePrimitive, CVertex3DParsePrimitive,
-	CIgnoreParsePrimitive)) CStandardParsedPrimitives; /**< @brief a list of standard parsed primitives @note If you are going to modify this, you will have to modify CParserBase::CParserAdaptor and CDatasetPeeker which implements it. */
+	CIgnoreParsePrimitive)),
+	MakeTypelist_Safe((CVertexXYZParsePrimitive,
+	CEdgeP2C3DParsePrimitive, CVertexCam3DParsePrimitive))>::_TyResult CStandardParsedPrimitives; /**< @brief a list of standard parsed primitives @note If you are going to modify this, you will have to modify CParserBase::CParserAdaptor and CDatasetPeeker which implements it. */
 
 typedef CParserTemplate<CParserBase::CParserAdaptor, CStandardParsedPrimitives> CStandardParser; /**< @brief standard parser */
 

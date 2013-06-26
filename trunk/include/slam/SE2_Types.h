@@ -3,7 +3,7 @@
 								|                                   |
 								|       ***  SE(2) types  ***       |
 								|                                   |
-								|   Copyright  © -tHE SWINe- 2012   |
+								|  Copyright  (c) -tHE SWINe- 2012  |
 								|                                   |
 								|            SE2_Types.h            |
 								|                                   |
@@ -60,14 +60,6 @@ public:
 	{}
 
 	/**
-	 *	@copydoc CSEBaseVertex::SwapState()
-	 */
-	inline void SwapState(Eigen::VectorXd &r_v_x)
-	{
-		m_v_state.swap(r_v_x.segment<3>(m_n_order)); // swap the numbers
-	}
-
-	/**
 	 *	@copydoc CSEBaseVertex::Operator_Plus()
 	 */
 	inline void Operator_Plus(const Eigen::VectorXd &r_v_delta) // "smart" plus
@@ -106,14 +98,6 @@ public:
 	inline CVertexLandmark2D(const Eigen::Vector2d &r_v_state)
 		:CSEBaseVertexImpl<CVertexLandmark2D, 2>(r_v_state)
 	{}
-
-	/**
-	 *	@copydoc CSEBaseVertex::SwapState()
-	 */
-	inline void SwapState(Eigen::VectorXd &r_v_x)
-	{
-		m_v_state.swap(r_v_x.segment<2>(m_n_order)); // swap the numbers
-	}
 
 	/**
 	 *	@copydoc CSEBaseVertex::Operator_Plus()

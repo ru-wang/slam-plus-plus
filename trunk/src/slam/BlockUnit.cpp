@@ -3,7 +3,7 @@
 								|                                 |
 								| *** Block matrix unit tests *** |
 								|                                 |
-								|  Copyright  © -tHE SWINe- 2012  |
+								| Copyright  (c) -tHE SWINe- 2012 |
 								|                                 |
 								|          BlockUnit.cpp          |
 								|                                 |
@@ -28,6 +28,7 @@
 bool CBlockMatrixUnitTests::RunAll()
 {
 	try {
+		MatrixDecomposition_UnitTest();
 		MatrixMultiplication_UnitTest();
 		MatrixAddition_UnitTest();
 	} catch(std::runtime_error &r_exc) {
@@ -67,12 +68,217 @@ bool CBlockMatrixUnitTests::ReadLine(FILE *p_fr, std::string &r_s_line, int &r_n
 	return false;
 }
 
+cs *CBlockMatrixUnitTests::p_LoadMM(const char *p_s_filename)
+{
+	FILE *p_fr;
+	if(!(p_fr = fopen(p_s_filename, "r")))
+		return 0;
+	std::string s_line;
+	int n_line;
+	if(!ReadLine(p_fr, s_line, n_line)) {
+		fclose(p_fr);
+		return 0;
+	}
+	// read the first line
+
+	int m, n, nnz;
+	if(sscanf(s_line.c_str(), "%d %d %d", &m, &n, &nnz) != 3) {
+		fclose(p_fr);
+		return 0;
+	}
+	// read m, n and nnz
+
+	cs *A = cs_spalloc(m, n, nnz, 1, 0);
+	/*try {
+		A = new cs;
+		A->m = m;
+		A->n = n;
+		A->nz = -1;
+		A->nzmax = nnz;
+		A->p = new int[n + 1];
+		A->i = new int[nnz];
+		A->x = new double[nnz];
+	} catch(std::bad_alloc&) {
+		cs_spfree(A);
+		fclose(p_fr);
+		return 0;
+	}*/
+	if(!A) {
+		fclose(p_fr);
+		return 0;
+	}
+	// alloc dest structure
+
+	int nz = 0, oc = 0;
+	A->p[0] = 0; // starting at the beginning
+	for(int i = 0; i < nnz; ++ i) {
+		int r, c;
+		double v;
+		if(!ReadLine(p_fr, s_line, n_line) ||
+		   sscanf(s_line.c_str(), "%d %d %lf", &r, &c, &v) != 3) {
+			cs_spfree(A);
+			fclose(p_fr);
+			return 0;
+		}
+		-- r;
+		-- c; // want zero-based!
+		// read value triplet
+
+		if(c != oc) {
+			if(c < oc && c >= n) {
+				cs_spfree(A);
+				fclose(p_fr);
+				return 0;
+			}
+			// columns must be sorted
+
+			while(oc < c) {
+				++ oc;
+				A->p[oc] = nz;
+			}
+			// finalize columns
+		}
+		// handle column switch
+
+		A->i[nz] = r;
+		A->x[nz] = v;
+		++ nz;
+		// write ccs
+	}
+
+	while(oc < n) {
+		++ oc;
+		A->p[oc] = nz;
+	}
+	//A->p[n] = nz; // redundant
+	// write the last column delim
+
+	fclose(p_fr);
+
+	return A;
+}
+
+void CBlockMatrixUnitTests::Simple_UFLSMC_CholTest(const char *p_s_filename)
+{
+	cs *p_test_matrix;
+	if(!(p_test_matrix = p_LoadMM(p_s_filename))) {
+		cs_spfree(p_test_matrix);
+		throw std::runtime_error("MatrixDecomposition_UnitTest() failed : unable to load test matrix");
+	}
+	// this is stored as lower-triangular because it is symmetric
+
+	if(p_test_matrix->m != p_test_matrix->n) {
+		cs_spfree(p_test_matrix);
+		throw std::runtime_error("MatrixDecomposition_UnitTest() failed : test matrix not square");
+	}
+	if(p_test_matrix->n % block_Size) {
+		cs_spfree(p_test_matrix);
+		throw std::runtime_error("MatrixDecomposition_UnitTest() failed : test matrix not multiple of block_Size");
+	}
+	// test some assumptions
+
+	cs *p_test_supper = cs_transpose(p_test_matrix, 1);
+	for(size_t i = 0, n = p_test_matrix->n; i < n; ++ i) {
+		csi p = p_test_supper->p[i + 1] - 1;
+		//csi r = p_test_supper->i[p];
+		_ASSERTE(/*r*/p_test_supper->i[p] == i);
+		p_test_supper->x[p] = 0;
+	}
+	// make strictly upper
+
+	cs *p_test_full = cs_add(p_test_matrix, p_test_supper, 1, 1);
+	//csi nnz = p_test_full->p[p_test_full->n];
+	// add lower + strictly upper to get the full matrix
+
+	for(size_t i = 0, n = p_test_matrix->n; i < n; ++ i) {
+		csi b = p_test_full->p[i], e = p_test_full->p[i + 1];
+		bool b_change;
+		do {
+			b_change = false;
+			for(csi p = b + 1; p < e; ++ p) {
+				if(p_test_full->i[p] < p_test_full->i[p - 1]) {
+					std::swap(p_test_full->i[p], p_test_full->i[p - 1]);
+					std::swap(p_test_full->x[p], p_test_full->x[p - 1]);
+					b_change = true;
+				}
+			}
+		} while(b_change);
+	}
+	// add produces unsorted matrices, need to sort rows in order to be able to do From_Sparse()
+
+	std::vector<size_t> cumsums;
+	for(size_t i = block_Size, n = p_test_matrix->n; i <= n; i += block_Size)
+		cumsums.push_back(i);
+
+	CUberBlockMatrix A(cumsums.begin(), cumsums.end(), cumsums.begin(), cumsums.end());
+	_ASSERTE(A.b_Square() && A.n_Column_Num() == p_test_matrix->n);
+	// prepare a block matrix with the given layout
+
+	std::vector<size_t> w;
+	A.From_Sparse(0, 0, p_test_full, false, w);
+
+	CUberBlockMatrix R;
+	R.CholeskyOf(A);
+	// calculate decomposition
+
+	CUberBlockMatrix RT;
+	RT.TransposeOf(R);
+
+	CUberBlockMatrix A_back;
+	A_back.ProductOf(RT, R); // RTR = LLT, right?
+
+	A.AddTo(A_back, -1);
+	double f_diff = A_back.f_Norm();
+
+	css *sym_anal = cs_schol(0, p_test_full);
+	csn *p_L = cs_chol(p_test_full, sym_anal);
+
+	cs *p_LT = cs_transpose(p_L->L, 1);
+	cs *p_LLT = cs_multiply(p_L->L, p_LT);
+	cs *p_diff = cs_add(p_LLT, p_test_full, -1, 1);
+	double f_diff_ref = cs_norm(p_diff);
+
+	printf("difference A - LLT = %.15g\n", f_diff);
+	printf("difference A - LLT_ref = %.15g\n", f_diff_ref);
+	cs *p_R = R.p_Convert_to_Sparse();
+	cs *p_diffRLT = cs_add(p_LT, p_R, -1, 1);
+	printf("difference L - L_ref = %.15g\n", cs_norm(p_diffRLT));
+
+	cs_sfree(sym_anal);
+	cs_nfree(p_L);
+	cs_spfree(p_LT);
+	cs_spfree(p_LLT);
+	cs_spfree(p_diff);
+	cs_spfree(p_R);
+	cs_spfree(p_diffRLT);
+	cs_spfree(p_test_matrix);
+	cs_spfree(p_test_supper);
+	cs_spfree(p_test_full);
+}
+
+/**
+ *	@brief unit test for block matrix decomposition functions (Cholesky)
+ *	@todo Add rectangular block tests.
+ */
+void CBlockMatrixUnitTests::MatrixDecomposition_UnitTest()
+{
+	Simple_UFLSMC_CholTest("data/chol/mesh1e1.mtx"); // 48 x 48 matrix; should be divisible by 1, 2, 3, 4 and maybe some more
+	Simple_UFLSMC_CholTest("data/chol/LF10.mtx"); // 18 x 18 matrix; should be divisible by 1, 2, 3, 6 and maybe some more
+	Simple_UFLSMC_CholTest("data/chol/nos6.mtx"); // 675 x 675 matrix; should be divisible by 1, 3, 5 and maybe some more
+	// simple ordering
+
+	Simple_UFLSMC_CholTest("data/chol/mesh2e1.mtx"); // 306 x 306 matrix; should be divisible by 1, 2, 3, 6 and maybe some more
+	// ereach not monotonous
+
+	exit(-1); // don't want any more tests
+}
+
 /**
  *	@brief unit test for block matrix multiplication functions (A * B, A^T * A)
  *	@note This also tests the _FBS A^T * A function.
  *	@todo Add rectangular block tests.
  */
-void CBlockMatrixUnitTests::MatrixMultiplication_UnitTest() // throws(std::bad_alloc, std::runtime_error)
+void CBlockMatrixUnitTests::MatrixMultiplication_UnitTest() // throw(std::bad_alloc, std::runtime_error)
 {
 	_TyBlockMatrix t_block_A, t_block_B, t_block_C;
 	for(int i = 0, k = 0; i < block_Size; ++ i) {
@@ -570,7 +776,7 @@ void CBlockMatrixUnitTests::MatrixMultiplication_UnitTest() // throws(std::bad_a
 	printf("matrix multiplication unit tests passed\n");
 }
 
-void CBlockMatrixUnitTests::MatrixAddition_UnitTest() // throws(std::bad_alloc, std::runtime_error)
+void CBlockMatrixUnitTests::MatrixAddition_UnitTest() // throw(std::bad_alloc, std::runtime_error)
 {
 	_TyBlockMatrix t_block_A, t_block_B, t_block_C;
 	for(int i = 0, k = 0; i < block_Size; ++ i) {
@@ -2292,7 +2498,7 @@ void CBlockMatrixUnitTests::MatrixAddition_UnitTest() // throws(std::bad_alloc, 
 
 void CBlockMatrixUnitTests::Test_Add(CUberBlockMatrix &r_A, CUberBlockMatrix &r_B,
 	double f_factor_A, double f_factor_B, const CUberBlockMatrix &UNUSED(r_C),
-	bool b_polarity, int n_method) // throws(std::bad_alloc, std::runtime_error)
+	bool b_polarity, int n_method) // throw(std::bad_alloc, std::runtime_error)
 {
 #ifdef __BLOCK_ADD_UNIT_TEST_DUMP_MATRIX_IMAGES
 	r_A.Rasterize("0_A.tga");
@@ -2378,7 +2584,7 @@ void CBlockMatrixUnitTests::Test_Add(CUberBlockMatrix &r_A, CUberBlockMatrix &r_
 }
 
 void CBlockMatrixUnitTests::Test_AddFailure(CUberBlockMatrix &r_A, CUberBlockMatrix &r_B,
-	bool b_polarity, int n_method) // throws(std::bad_alloc, std::runtime_error)
+	bool b_polarity, int n_method) // throw(std::bad_alloc, std::runtime_error)
 {
 #ifdef __BLOCK_ADD_UNIT_TEST_DUMP_MATRIX_IMAGES
 	A.Rasterize("0_A.tga");

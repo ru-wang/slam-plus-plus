@@ -3,7 +3,7 @@
 								|                                   |
 								|   ***  A non-linear solver  ***   |
 								|                                   |
-								|   Copyright  © -tHE SWINe- 2012   |
+								|  Copyright  (c) -tHE SWINe- 2012  |
 								|                                   |
 								|        NonlinearSolver_A.h        |
 								|                                   |
@@ -32,7 +32,7 @@
 template <class CSystem, class CLinearSolver, class CAMatrixBlockSizes = typename CSystem::_TyJacobianMatrixBlockList>
 class CNonlinearSolver_A {
 public:
-	typedef CSystem _TySystem; /**< @brief system type */
+	typedef CSystem _TySystem; /**< @brief sy	stem type */
 	typedef CLinearSolver _TyLinearSolver; /**< @brief linear solver type */
 
 	typedef typename CSystem::_TyBaseVertex _TyBaseVertex; /**< @brief the data type for storing vertices */
@@ -328,7 +328,7 @@ public:
 	 *	@brief incremental optimization function
 	 *	@param[in] r_last_edge is the last edge that was added to the system
 	 */
-	void Incremental_Step(_TyBaseEdge &r_last_edge) // throws(std::bad_alloc)
+	void Incremental_Step(_TyBaseEdge &r_last_edge) // throw(std::bad_alloc)
 	{
 		size_t n_vertex_num = m_r_system.r_Vertex_Pool().n_Size();
 		if(!m_b_had_loop_closure) {
@@ -395,7 +395,7 @@ public:
 	 *	@param[in] n_max_iteration_num is the maximal number of iterations
 	 *	@param[in] f_min_dx_norm is the residual norm threshold
 	 */
-	void Optimize(size_t n_max_iteration_num, double f_min_dx_norm) // throws(std::bad_alloc)
+	void Optimize(size_t n_max_iteration_num, double f_min_dx_norm) // throw(std::bad_alloc)
 	{
 		const size_t n_variables_size = m_r_system.n_VertexElement_Num();
 		const size_t n_measurements_size = m_r_system.n_EdgeElement_Num();
@@ -592,7 +592,7 @@ protected:
 		 *	@note This function throws std::bad_alloc.
 		 */
 		template <class _TyEdge>
-		inline void operator ()(_TyEdge &r_t_edge) // throws(std::bad_alloc)
+		inline void operator ()(_TyEdge &r_t_edge) // throw(std::bad_alloc)
 		{
 			r_t_edge.Alloc_JacobianBlocks(m_r_A);
 		}
@@ -682,7 +682,7 @@ protected:
 	/**
 	 *	@brief creates the A matrix from scratch
 	 */
-	inline void AddEntriesInSparseSystem() // throws(std::bad_alloc)
+	inline void AddEntriesInSparseSystem() // throw(std::bad_alloc)
 	{
 		if(m_r_system.r_Edge_Pool().n_Size() > 1000) { // wins 2.42237 - 2.48938 = .06701 seconds on 10k.graph, likely more on larger graphs
 			//printf("building large matrix from scratch ...\n"); // debug
@@ -721,7 +721,7 @@ protected:
 	 *	@param[in] n_skip_edges is number of edges, already in the system
 	 *	@note This function throws std::bad_alloc.
 	 */
-	inline void UpdateSparseSystem(size_t n_skip_edges) // throws(std::bad_alloc)
+	inline void UpdateSparseSystem(size_t n_skip_edges) // throw(std::bad_alloc)
 	{
 		_ASSERTE(m_A.n_Row_Num() > 0 && m_A.n_Column_Num() > 0); // make sure A is not empty
 		m_r_system.r_Edge_Pool().For_Each(n_skip_edges, m_r_system.r_Edge_Pool().n_Size(), CAlloc_JacobianBlocks(m_A));
@@ -733,7 +733,7 @@ protected:
 	 *	@param[in] n_edges_already_in_A is number of edges, already in the system
 	 *	@note This function throws std::bad_alloc.
 	 */
-	inline void Extend_A(size_t n_edges_already_in_A) // throws(std::bad_alloc)
+	inline void Extend_A(size_t n_edges_already_in_A) // throw(std::bad_alloc)
 	{
 		if(!n_edges_already_in_A)
 			AddEntriesInSparseSystem();
@@ -744,12 +744,12 @@ protected:
 
 	/**
 	 *	@brief refreshes the A matrix by recalculating edge hessians
-	 *	@param[in] n_referesh_from_edge is zero-based index of the first edge to be refreshed
+	 *	@param[in] n_refresh_from_edge is zero-based index of the first edge to be refreshed
 	 */
-	inline void Refresh_A(size_t n_referesh_from_edge = 0)
+	inline void Refresh_A(size_t n_refresh_from_edge = 0)
 	{
-		if(n_referesh_from_edge) {
-			m_r_system.r_Edge_Pool().For_Each_Parallel(n_referesh_from_edge,
+		if(n_refresh_from_edge) {
+			m_r_system.r_Edge_Pool().For_Each_Parallel(n_refresh_from_edge,
 				m_r_system.r_Edge_Pool().n_Size(), CCalculate_Jacobians());
 		} else
 			m_r_system.r_Edge_Pool().For_Each_Parallel(CCalculate_Jacobians());

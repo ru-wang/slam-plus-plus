@@ -11,8 +11,8 @@
 */
 
 #pragma once
-#ifndef __NONLINEAR_BLOCKY_SOLVER_LAMBDA_INCLUDED
-#define __NONLINEAR_BLOCKY_SOLVER_LAMBDA_INCLUDED
+#ifndef __NONLINEAR_BLOCKY_SOLVER_LAMBDA_LM_INCLUDED
+#define __NONLINEAR_BLOCKY_SOLVER_LAMBDA_LM_INCLUDED
 
 /**
  *	@file include/slam/NonlinearSolver_Lambda.h
@@ -22,6 +22,7 @@
  */
 
 #include "slam/FlatSystem.h"
+#include <iostream>			// SOSO
 
 /**
  *	@def __NONLINEAR_SOLVER_LAMBDA_DUMP_CHI2
@@ -30,27 +31,13 @@
 //#define __NONLINEAR_SOLVER_LAMBDA_DUMP_CHI2
 
 /**
- *	@def __NONLINEAR_SOLVER_LAMBDA_DUMP_ICRA2013_ANIMATION_DATA
- *	@brief dump ICRA 2013 slam race data
- */
-//#define __NONLINEAR_SOLVER_LAMBDA_DUMP_ICRA2013_ANIMATION_DATA
-
-/**
- *	@def __NONLINEAR_SOLVER_LAMBDA_DUMP_RSS2013_PRESENTATION_ANIMATION_DATA
- *	@brief dump RSS 2013 matrix animation data
- */
-//#define __NONLINEAR_SOLVER_LAMBDA_DUMP_RSS2013_PRESENTATION_ANIMATION_DATA
-
-//extern int n_dummy_param; // remove me
-
-/**
  *	@brief nonlinear blocky solver working above the lambda matrix
  *
  *	@tparam CSystem is the system type
  *	@tparam CLinearSolver is a linear solver
  */
 template <class CSystem, class CLinearSolver, class CAMatrixBlockSizes = typename CSystem::_TyJacobianMatrixBlockList>
-class CNonlinearSolver_Lambda {
+class CNonlinearSolver_Lambda_LM {
 public:
 	typedef CSystem _TySystem; /**< @brief system type */
 	typedef CLinearSolver _TyLinearSolver; /**< @brief linear solver type */
@@ -91,11 +78,11 @@ protected:
 	bool m_b_system_dirty; /**< @brief system updated without relinearization flag */
 
 	size_t m_n_iteration_num; /**< @brief number of linear solver iterations */
-	double m_f_lambda_time; /**< @brief time spent updating lambda */
-	double m_f_rhs_time; /**< @brief time spent gathering the right-hand-side vector */
+	double m_f_serial_time; /**< @brief time spent in serial section */
+	double m_f_ata_time; /**< @brief time spent in A^T * A section */
+	double m_f_premul_time; /**< @brief time spent in b * A section */
 	double m_f_chol_time; /**< @brief time spent in Choleski() section */
 	double m_f_norm_time; /**< @brief time spent in norm calculation section */
-	double m_f_vert_upd_time; /**< @brief time spent updating the system */
 
 	CTimer m_timer; /**< @brief timer object */
 
@@ -196,7 +183,7 @@ public:
 	 *	@param[in] b_verbose is verbosity flag
 	 *	@param[in] linear_solver is linear solver instance
 	 */
-	CNonlinearSolver_Lambda(CSystem &r_system, size_t n_linear_solve_threshold,
+	CNonlinearSolver_Lambda_LM(CSystem &r_system, size_t n_linear_solve_threshold,
 		size_t n_nonlinear_solve_threshold, size_t n_nonlinear_solve_max_iteration_num,
 		double f_nonlinear_solve_error_threshold, bool b_verbose,
 		CLinearSolver linear_solver = CLinearSolver())
@@ -212,8 +199,8 @@ public:
 		m_n_nonlinear_solve_max_iteration_num(n_nonlinear_solve_max_iteration_num),
 		m_f_nonlinear_solve_error_threshold(f_nonlinear_solve_error_threshold),
 		m_b_verbose(b_verbose), m_n_real_step(0), m_b_system_dirty(false),
-		m_n_iteration_num(0), m_f_lambda_time(0), m_f_rhs_time(0), m_f_chol_time(0),
-		m_f_norm_time(0), m_f_vert_upd_time(0), m_b_had_loop_closure(false)
+		m_n_iteration_num(0), m_f_serial_time(0), m_f_ata_time(0), m_f_premul_time(0),
+		m_f_chol_time(0), m_f_norm_time(0), m_b_had_loop_closure(false)
 	{
 		_ASSERTE(!m_n_nonlinear_solve_threshold || !m_n_linear_solve_threshold); // only one of those
 	}
@@ -225,18 +212,15 @@ public:
 	void Dump(double f_total_time = -1) const
 	{
 		printf("solver took " PRIsize " iterations\n", m_n_iteration_num); // debug, to be able to say we didn't botch it numerically
-		printf("solver spent %f seconds in parallelizable section (disparity %f seconds)\n",
-			m_f_lambda_time + m_f_rhs_time, (f_total_time > 0)? f_total_time -
-			(m_f_lambda_time + m_f_rhs_time + m_f_chol_time + m_f_norm_time + m_f_vert_upd_time) : 0);
+		if(f_total_time > 0)
+			printf("solver spent %f seconds in parallelizable section (updating lambda)\n", f_total_time - m_f_serial_time);
+		printf("solver spent %f seconds in serial section\n", m_f_serial_time);
 		printf("out of which:\n");
-		printf("\t   ,\\: %f\n", m_f_lambda_time);
-		printf("\t  rhs: %f\n", m_f_rhs_time);
-		printf("solver spent %f seconds in serial section\n",
-			m_f_chol_time + m_f_norm_time + m_f_vert_upd_time);
-		printf("out of which:\n");
+		printf("\t  ata: %f\n", m_f_ata_time);
+		printf("\tgaxpy: %f\n", m_f_premul_time);
 		printf("\t chol: %f\n", m_f_chol_time);
 		printf("\t norm: %f\n", m_f_norm_time);
-		printf("\tv-upd: %f\n", m_f_vert_upd_time);
+		printf("\ttotal: %f\n", m_f_ata_time + m_f_premul_time + m_f_chol_time + m_f_norm_time);
 	}
 
 	/**
@@ -413,12 +397,6 @@ public:
 		++ m_n_step;
 #endif // __SLAM_COUNT_ITERATIONS_AS_VERTICES
 
-#ifdef __NONLINEAR_SOLVER_LAMBDA_DUMP_RSS2013_PRESENTATION_ANIMATION_DATA
-		n_new_vertex_num = m_n_nonlinear_solve_threshold;
-		m_b_had_loop_closure = true;
-		// make it trigger
-#endif // __NONLINEAR_SOLVER_LAMBDA_DUMP_RSS2013_PRESENTATION_ANIMATION_DATA
-
 #ifdef __SLAM_COUNT_ITERATIONS_AS_VERTICES
 		if(m_n_nonlinear_solve_threshold && n_new_vertex_num >= m_n_nonlinear_solve_threshold) {
 #else // __SLAM_COUNT_ITERATIONS_AS_VERTICES
@@ -432,10 +410,8 @@ public:
 			// do this first, in case Optimize() threw
 
 			if(m_b_had_loop_closure) {
-				Optimize((m_b_had_loop_closure)?
-					m_n_nonlinear_solve_max_iteration_num : 0,
-					m_f_nonlinear_solve_error_threshold);
 				m_b_had_loop_closure = false;
+				Optimize(m_n_nonlinear_solve_max_iteration_num, m_f_nonlinear_solve_error_threshold);
 			}
 			// nonlinear optimization
 
@@ -472,25 +448,10 @@ public:
 			FILE *p_fw = fopen("chi2perVert.txt", (m_n_real_step > 0)? "a" : "w");
 			fprintf(p_fw, "%f\n", f_Chi_Squared_Error_Denorm());
 			fclose(p_fw);
-			// dump chi2
-
-            //printf("time is %lf\n", m_timer.f_Time()); // print incremental times (ICRA 2013)
-#ifdef __NONLINEAR_SOLVER_LAMBDA_DUMP_ICRA2013_ANIMATION_DATA
-			char p_s_filename[256];
-			sprintf(p_s_filename, "icra2013/sys%05" _PRIsize ".txt", m_r_system.r_Vertex_Pool().n_Size());
-			m_r_system.Dump(p_s_filename);
-			//sprintf(p_s_filename, "icra2013/sys%05" _PRIsize ".tga", m_r_system.r_Vertex_Pool().n_Size());
-			//m_r_system.Plot2D(p_s_filename); // no plot, takes a ton of memory
-			// dump vertices for the ICRA animation
-#endif // __NONLINEAR_SOLVER_LAMBDA_DUMP_ICRA2013_ANIMATION_DATA
 		}
+		// dump chi2
 #endif // __NONLINEAR_SOLVER_LAMBDA_DUMP_CHI2
 	}
-
-#ifdef __NONLINEAR_SOLVER_LAMBDA_DUMP_RSS2013_PRESENTATION_ANIMATION_DATA
-	CMatrixOrdering mord100;
-	CUberBlockMatrix lambda_prev;
-#endif // __NONLINEAR_SOLVER_LAMBDA_DUMP_RSS2013_PRESENTATION_ANIMATION_DATA
 
 	/**
 	 *	@brief final optimization function
@@ -500,8 +461,6 @@ public:
 	 */
 	void Optimize(size_t n_max_iteration_num, double f_min_dx_norm) // throw(std::bad_alloc)
 	{
-		CTimerSampler timer(m_timer);
-
 		const size_t n_variables_size = m_r_system.n_VertexElement_Num();
 		const size_t n_measurements_size = m_r_system.n_EdgeElement_Num();
 		if(n_variables_size > n_measurements_size) {
@@ -512,10 +471,34 @@ public:
 			return; // nothing to solve (but no results need to be generated so it's ok)
 		// can't solve in such conditions
 		Extend_Lambda(m_n_verts_in_lambda, m_n_edges_in_lambda); // recalculated all the jacobians inside Extend_Lambda()
+
 		if(!m_b_system_dirty) {
-			Refresh_Lambda(0/*m_n_verts_in_lambda*/, m_n_edges_in_lambda); // calculate only for new edges // @todo - but how to mark affected vertices?
+			m_r_system.r_Edge_Pool().For_Each_Parallel(m_n_edges_in_lambda,
+				m_r_system.r_Edge_Pool().n_Size(), CCalculate_Hessians());
 		} else {
-			Refresh_Lambda(); // calculate for entire system
+			m_r_system.r_Edge_Pool().For_Each_Parallel(CCalculate_Hessians());
+		}
+
+		double alpha = 0.0;
+		const double tau = 1e-3;
+		/*for(size_t i = 0, n = m_lambda.n_BlockColumn_Num(); i < n; ++ i) {
+			size_t last = m_lambda.n_BlockColumn_Block_Num(i) - 1;
+			CUberBlockMatrix::_TyMatrixXdRef block = m_lambda.t_BlockAt(last, i);
+			for(size_t j = 0, m = block.rows(); j < m; ++ j)
+				alpha = std::max(block(j, j),alpha);
+		}*/
+		for(size_t i = 0, n = m_r_system.n_Edge_Num(); i < n; ++ i) {
+			const _TyBaseEdge &e = m_r_system.r_Edge_Pool()[i];
+			alpha = std::max(e.f_Max_VertexHessianDiagValue(),alpha);
+		}
+		alpha *= tau;
+		//alpha = 1.44; // copy from g2op for 10khogman
+		std::cout << "alfa: " << alpha << std::endl;
+
+		if(!m_b_system_dirty) {
+			Refresh_Lambda(0/*m_n_verts_in_lambda*/, m_n_edges_in_lambda, alpha); // calculate only for new edges // @todo - but how to mark affected vertices?
+		} else {
+			Refresh_Lambda(0, 0, alpha); // calculate for entire system
 		}
 		m_b_system_dirty = false;
 		m_n_verts_in_lambda = m_r_system.r_Vertex_Pool().n_Size();
@@ -525,203 +508,19 @@ public:
 			m_lambda.n_Column_Num() == n_variables_size); // lambda is square, blocks on either side = number of vertices
 		// need to have lambda
 
-#ifdef __NONLINEAR_SOLVER_LAMBDA_DUMP_RSS2013_PRESENTATION_ANIMATION_DATA
-		char p_s_filename[256];
-
-		sprintf(p_s_filename, "rss2013/%05d_0_lambda.tga", m_n_edges_in_lambda);
-		m_lambda.Rasterize_Symmetric(p_s_filename); // this lambda
-		sprintf(p_s_filename, "rss2013/%05d_1_lambda2.tga", m_n_edges_in_lambda);
-		m_lambda.Rasterize_Symmetric(lambda_prev, true, p_s_filename); // with changes marked, not symmetric
-
-		CUberBlockMatrix Lprev;
-		Lprev.CholeskyOf(lambda_prev);
-		// do it now, will damage lambda_prev
-
-		_TyBaseEdge &r_last_edge = m_r_system.r_Edge_Pool()[m_r_system.r_Edge_Pool().n_Size() - 1];
-		size_t v0 = r_last_edge.n_Vertex_Id(0);
-		size_t v1 = r_last_edge.n_Vertex_Id(1);
-		if(lambda_prev.n_BlockColumn_Num()) {
-			size_t v = std::min(v0, v1);
-			lambda_prev.t_GetBlock_Log(v, v).setZero(); // make sure this is clear
-		}
-
-		sprintf(p_s_filename, "rss2013/%05d_2_lambda3.tga", m_n_edges_in_lambda);
-		m_lambda.CopyTo(lambda_prev);
-		lambda_prev.Scale(0); // zero out the whole thing
-		m_lambda.Rasterize_Symmetric(lambda_prev, true, p_s_filename); // all changed, not symmetric
-
-		CUberBlockMatrix L;
-		CUberBlockMatrix Lem;
-		L.CopyLayoutTo(Lem);
-		L.CholeskyOf(m_lambda);
-		sprintf(p_s_filename, "rss2013/%05d_3_Lnoord.tga", m_n_edges_in_lambda);
-		L.Rasterize(p_s_filename); // no fill-in highlighting
-		sprintf(p_s_filename, "rss2013/%05d_4_Lnoord_fill-in.tga", m_n_edges_in_lambda);
-		L.Rasterize(m_lambda, false, p_s_filename); // highlight fill-in
-		sprintf(p_s_filename, "rss2013/%05d_a_Lnoord_red.tga", m_n_edges_in_lambda);
-		L.Rasterize(Lem, false, p_s_filename); // highlight fill-in
-		sprintf(p_s_filename, "rss2013/%05d_b_Lnoord_inc.tga", m_n_edges_in_lambda);
-		L.Rasterize(Lprev, true, p_s_filename); // highlight fill-in
-
-		m_lambda.CopyTo(lambda_prev);
-		// copy the lambda matrix
-
-		std::vector<size_t> cumsum, ccumsum;
-		for(size_t i = 0, n_csum = 0, n = m_lambda.n_BlockColumn_Num(); i < n; ++ i) {
-			n_csum += m_lambda.n_BlockColumn_Column_Num(i);
-			cumsum.push_back(n_csum);
-		}
-		size_t p_cumsum[1] = {1};
-		ccumsum.insert(ccumsum.begin(), p_cumsum, p_cumsum + 1);
-		CUberBlockMatrix rhs(cumsum.begin(), cumsum.end(), ccumsum.begin(), ccumsum.end());
-		m_v_dx.resize(n_variables_size, 1);
-		Collect_RightHandSide_Vector(m_v_dx);
-		for(size_t i = 0, n_csum = 0, n = m_lambda.n_BlockColumn_Num(); i < n; ++ i) {
-			size_t n_w = m_lambda.n_BlockColumn_Column_Num(i);
-			if(!rhs.Append_Block(m_v_dx.segment(n_csum, n_w), n_csum, 0))
-				throw std::runtime_error("segment size fail");
-			n_csum += n_w;
-		}
-		sprintf(p_s_filename, "rss2013/%05d_5_rhs.tga", m_n_edges_in_lambda);
-		rhs.Rasterize(p_s_filename);
-
-		CUberBlockMatrix rhs_nonzero, rhs_hl;
-		rhs.CopyLayoutTo(rhs_nonzero);
-		rhs.CopyLayoutTo(rhs_hl);
-		m_v_dx.setConstant(1);
-		for(size_t i = 0, n_csum = 0, n = m_lambda.n_BlockColumn_Num(); i < n; ++ i) {
-			size_t n_w = m_lambda.n_BlockColumn_Column_Num(i);
-			if(!(i == v0 || i == v1)) {
-				if(!rhs_hl.Append_Block(m_v_dx.segment(n_csum, n_w), n_csum, 0))
-					throw std::runtime_error("segment size fail");
-			}
-			n_csum += n_w;
-		}
-		for(size_t i = 0, n_csum = 0, n = m_lambda.n_BlockColumn_Num(); i < n; ++ i) {
-			size_t n_w = m_lambda.n_BlockColumn_Column_Num(i);
-			if(!rhs_nonzero.Append_Block(m_v_dx.segment(n_csum, n_w), n_csum, 0))
-				throw std::runtime_error("segment size fail");
-			n_csum += n_w;
-		}
-		sprintf(p_s_filename, "rss2013/%05d_9_rhs_add.tga", m_n_edges_in_lambda);
-		rhs_nonzero.Rasterize(rhs_hl, true, p_s_filename);
-		rhs.Scale(0);
-		sprintf(p_s_filename, "rss2013/%05d_6_rhs_red.tga", m_n_edges_in_lambda);
-		rhs_nonzero.Rasterize(rhs, true, p_s_filename);
-		sprintf(p_s_filename, "rss2013/%05d_7_rhs_nnz.tga", m_n_edges_in_lambda);
-		rhs_nonzero.Rasterize(p_s_filename);
-		sprintf(p_s_filename, "rss2013/%05d_8_rhs_z.tga", m_n_edges_in_lambda);
-		rhs.Rasterize(p_s_filename);
-
-#if 0
-		/*sprintf(p_s_filename, "rss2013/%05d_0_lambda.tga", m_n_verts_in_lambda);
-		m_lambda.Rasterize_Symmetric(p_s_filename);*/ // probably don't need lambdas
-
-		CUberBlockMatrix lambda_perm;
-
-		CMatrixOrdering mord;
-		mord.p_BlockOrdering(m_lambda, true);
-		const size_t *p_perm = mord.p_Get_InverseOrdering();
-
-		if(mord100.n_Ordering_Size() < m_lambda.n_BlockColumn_Num()) {
-			if(!(m_lambda.n_BlockColumn_Num() % 100))
-				mord100.p_BlockOrdering(m_lambda, true); // do full every 100
-			else {
-				mord100.p_InvertOrdering(mord100.p_ExtendBlockOrdering_with_Identity(
-					m_lambda.n_BlockColumn_Num()), m_lambda.n_BlockColumn_Num());
-			}
-		}
-		// maintain an "every 100" ordering as well
-
-		m_lambda.Permute_UpperTriangluar_To(lambda_perm, p_perm, mord.n_Ordering_Size(), true);
-		sprintf(p_s_filename, "rss2013/%05d_1_lambda-perm.tga", m_n_verts_in_lambda);
-		//if(m_n_verts_in_lambda > size_t(n_dummy_param)) // continue from before
-		//	lambda_perm.Rasterize_Symmetric(p_s_filename, (m_n_verts_in_lambda < 750 * 6 / _TyAMatrixBlockSizes::_TyHead::ColsAtCompileTime)? 5 : 3); // do not really need lambdas right now
-
-		L.CholeskyOf(lambda_perm);
-		size_t n_L_good_blocks = L.n_Block_Num();
-		sprintf(p_s_filename, "rss2013/%05d_2_L.tga", m_n_verts_in_lambda);
-		//if(m_n_verts_in_lambda > size_t(n_dummy_param)) // continue from before
-			L.Rasterize(lambda_perm, false, p_s_filename, (m_n_verts_in_lambda < 750 * 6 / _TyAMatrixBlockSizes::_TyHead::ColsAtCompileTime)? 3 : 2); // highlight fill-in
-
-		L.CholeskyOf(m_lambda);
-		sprintf(p_s_filename, "rss2013/%05d_9_Lnoord.tga", m_n_verts_in_lambda);
-		//if(m_n_verts_in_lambda > size_t(n_dummy_param)) // continue from before
-			L.Rasterize(lambda_perm, false, p_s_filename, (m_n_verts_in_lambda < 750 * 6 / _TyAMatrixBlockSizes::_TyHead::ColsAtCompileTime)? 5 : 2); // highlight fill-in
-
-		const size_t *p_perm100 = mord100.p_Get_InverseOrdering();
-		m_lambda.Permute_UpperTriangluar_To(lambda_perm, p_perm100, mord100.n_Ordering_Size(), true);
-		sprintf(p_s_filename, "rss2013/%05d_4_lambda-perm-100.tga", m_n_verts_in_lambda);
-		//if(m_n_verts_in_lambda > size_t(n_dummy_param)) // continue from before
-		//	lambda_perm.Rasterize_Symmetric(p_s_filename, (m_n_verts_in_lambda < 750 * 6 / _TyAMatrixBlockSizes::_TyHead::ColsAtCompileTime)? 5 : 3); // do not really need lambdas right now
-
-		L.CholeskyOf(lambda_perm);
-		sprintf(p_s_filename, "rss2013/%05d_5_L100.tga", m_n_verts_in_lambda);
-		//if(m_n_verts_in_lambda > size_t(n_dummy_param)) // continue from before
-			L.Rasterize(lambda_perm, false, p_s_filename, (m_n_verts_in_lambda < 750 * 6 / _TyAMatrixBlockSizes::_TyHead::ColsAtCompileTime)? 3 : 2); // highlight fill-in
-
-		sprintf(p_s_filename, "rss2013/%05d_3_stats.txt", m_n_verts_in_lambda);
-		FILE *p_fw;
-		if((p_fw = fopen(p_s_filename, "w"))) {
-			fprintf(p_fw, PRIsize "\n", lambda_perm.n_Block_Num()); // save density of lambda
-			fprintf(p_fw, PRIsize "\n", n_L_good_blocks); // save density of L
-			fprintf(p_fw, PRIsize "\n", L.n_Block_Num()); // save density of L at every100
-			fclose(p_fw);
-		}
-#endif // 0
-#endif // __NONLINEAR_SOLVER_LAMBDA_DUMP_RSS2013_PRESENTATION_ANIMATION_DATA
-
-#ifdef __ICRA_GET_PRESENTATION_ANIMATION_DATA
-		char p_s_filename[256];
-		sprintf(p_s_filename, "lambda_%03d.tga", m_n_real_step);
-		m_lambda.Rasterize(p_s_filename);
-		// dump lambda
-
-		sprintf(p_s_filename, "lambda_%03d.txt", m_n_real_step);
-		cs *p_lam = m_lambda.p_BlockStructure_to_Sparse();
-		FILE *p_fw = fopen(p_s_filename, "w");
-		fprintf(p_fw, "%d x %d\n", p_lam->m, p_lam->n);
-
-		{
-			cs *m = p_lam;
-			int cols = m->n;
-			int rows = m->m;
-			int size_i = m->p[cols];
-			int col = 0;
-			for(int i = 0; i < size_i; ++ i) { // 8x if, 8x add
-				int row = m->i[i]; // 7x read
-				while(m->p[col + 1] <= i) // 7x if / 10x if (in case of while), the same amount of reads
-					col ++; // 4x add
-				fprintf(p_fw, "%d, %d\n", row, col);
-			}
-			// 14 - 17x read, 12x add, 15 - 18x if
-		}
-		fclose(p_fw);
-		sprintf(p_s_filename, "lambda_%03d_ref.txt", m_n_real_step);
-		p_fw = fopen(p_s_filename, "w");
-		fprintf(p_fw, "%d x %d\n", p_lam->m, p_lam->n);
-		{
-			cs *m = p_lam;
-			int cols = m->n;
-			int rows = m->m;
-			for(int j = 0; j < cols; ++ j) { // 5x if, 5x add
-				int col = j;
-				int first_i = m->p[j]; // 4x read
-				int last_i = m->p[j + 1]; // 4x read
-				for(int i = first_i; i < last_i; ++ i) { // 7+4=11x if, 11x add
-					int row = m->i[i]; // 7x read
-					fprintf(p_fw, "%d, %d\n", row, col);
-				}
-			}
-			// 15x read, 16x add, 16x if
-		}
-		fclose(p_fw);
-		cs_spfree(p_lam);
-#endif // __ICRA_GET_PRESENTATION_ANIMATION_DATA
-
 		m_v_dx.resize(n_variables_size, 1);
 
+		double last_error = f_Chi_Squared_Error_Denorm();
+		std::cout << "initial chi2: " << last_error << std::endl;
+
+		//initialize vertex saver
+		Eigen::VectorXd v_saved_state;
+		v_saved_state.resize(n_variables_size, 1);
+
+		//n_max_iteration_num = 20;
+		int fail = 10;
 		for(size_t n_iteration = 0; n_iteration < n_max_iteration_num; ++ n_iteration) {
+			std::cout << "alfa: " << alpha << std::endl;
 
 			++ m_n_iteration_num;
 			// debug
@@ -735,17 +534,13 @@ public:
 			// verbose
 
 			if(n_iteration && m_b_system_dirty) {
-				Refresh_Lambda();
+				Refresh_Lambda(0, 0, alpha);
 				m_b_system_dirty = false;
 			}
 			// no need to rebuild lambda, just refresh the values that are being referenced
 
-			timer.Accum_DiffSample(m_f_lambda_time);
-
 			Collect_RightHandSide_Vector(m_v_dx);
 			// collects the right-hand side vector
-
-			timer.Accum_DiffSample(m_f_rhs_time);
 
 #ifdef _DEBUG
 			/*_ASSERTE(m_lambda.n_Row_Num() == n_variables_size); // should be the same
@@ -788,7 +583,19 @@ public:
 			// calculate eta = A^T * b
 #endif // _DEBUG
 
+			double f_serial_start = m_timer.f_Time();
+
 			{
+				{}
+				// no AtA :(
+
+				double f_ata_end = f_serial_start;//m_timer.f_Time();
+
+				{}
+				// no mul :(
+
+				double f_mul_end = f_ata_end;//m_timer.f_Time();
+
 				bool b_cholesky_result;
 				{
 					Eigen::VectorXd &v_eta = m_v_dx; // dx is calculated inplace from eta
@@ -797,9 +604,18 @@ public:
 							if(!n_iteration &&
 							   !_TyLinearSolverWrapper::FinalBlockStructure(m_linear_solver, m_lambda)) {
 								b_cholesky_result = false;
+
 								break;
 							}
 							// prepare symbolic decomposition, structure of lambda won't change in the next steps
+							//fprintf( stderr, "*\n" );
+							/*int r = (int)m_lambda.n_Row_Num();
+							int c = (int)m_lambda.n_Column_Num();
+							Eigen::MatrixXd lambada(r, c);
+							m_lambda.Convert_to_Dense(lambada);*/
+							/*std::cout << "-------------------------------------------------" << std::endl;
+							std::cout << lambada << std::endl;
+							std::cout << "-------------------------------------------------" << std::endl;*/
 							b_cholesky_result = _TyLinearSolverWrapper::Solve(m_linear_solver, m_lambda, v_eta);
 							// p_dx = eta = lambda / eta
 						} while(0);
@@ -811,7 +627,7 @@ public:
 				}
 				// calculate cholesky, reuse block ordering if the linear solver supports it
 
-				timer.Accum_DiffSample(m_f_chol_time);
+				double f_chol_end = m_timer.f_Time();
 
 #ifdef _DEBUG
 				for(size_t i = 0; i < n_variables_size; ++ i) {
@@ -827,25 +643,51 @@ public:
 					if(m_b_verbose)
 						printf("residual norm: %.4f\n", f_residual_norm);
 				}
+
 				// calculate residual norm
 
-				timer.Accum_DiffSample(m_f_norm_time);
+				double f_norm_end = m_timer.f_Time();
+				double f_serial_time = f_norm_end - f_serial_start;
+				m_f_ata_time += f_ata_end - f_serial_start;
+				m_f_premul_time += f_mul_end - f_ata_end;
+				m_f_chol_time += f_chol_end - f_mul_end;
+				m_f_norm_time += f_norm_end - f_chol_end;
+				m_f_serial_time += f_serial_time;
+				// timing breakup
 
 				if(f_residual_norm <= f_min_dx_norm)
 					break;
 				// in case the error is low enough, quit (saves us recalculating the hessians)
 
+				//god save the vertices
+				m_r_system.r_Vertex_Pool().For_Each_Parallel(CSaveState(v_saved_state));
+
 				if(b_cholesky_result) {
 					PushValuesInGraphSystem(m_v_dx);
 					m_b_system_dirty = true;
-
-					timer.Accum_DiffSample(m_f_vert_upd_time);
 				}
 				// update the system (in parallel)
 
 				if(!b_cholesky_result)
 					break;
 				// in case cholesky failed, quit
+
+				double f_error = f_Chi_Squared_Error_Denorm();
+				std::cout << "chi2: " << f_error << std::endl;
+				if(f_error <= last_error) {
+					alpha = alpha / 10; // g2o calculates scale
+					last_error = f_error;
+				} else {
+					fprintf(stderr, "warning: chi2 rising\n");
+					alpha = alpha * 10; // g2o has ni
+					if(fail > 0) {
+						-- fail;
+						n_max_iteration_num ++;
+						// restore saved vertives
+						m_r_system.r_Vertex_Pool().For_Each_Parallel(CLoadState(v_saved_state));
+					}
+				}
+				m_b_system_dirty = true;
 			}
 		}
 	}
@@ -916,6 +758,62 @@ protected:
 		m_r_system.r_Vertex_Pool().For_Each_Parallel(CCollect_RightHandSide_Vector(r_v_b)); // can do this in parallel
 		// collect b
 	}
+
+	/**
+	 *	@brief function object that saves state of all the vertices
+	 */
+	class CSaveState {
+	protected:
+		Eigen::VectorXd &m_r_state; /**< @brief reference to the state vector (out) */
+
+	public:
+		/**
+		 *	@brief default constructor
+		 *	@param[in] r_state is reference to the state vector
+		 */
+		inline CSaveState(Eigen::VectorXd &r_state)
+			:m_r_state(r_state)
+		{}
+
+		/**
+		 *	@brief function operator
+		 *	@tparam _TyVertex is vertex type
+		 *	@param[in,out] r_t_vertex is vertex to output its part the state vector
+		 */
+		template <class _TyVertex>
+		inline void operator ()(_TyVertex &r_t_vertex)
+		{
+			r_t_vertex.SaveState(m_r_state);
+		}
+	};
+
+	/**
+	 *	@brief function object that loads state of all the vertices
+	 */
+	class CLoadState {
+	protected:
+		const Eigen::VectorXd &m_r_state; /**< @brief reference to the state vector (in) */
+
+	public:
+		/**
+		 *	@brief default constructor
+		 *	@param[in] r_state is reference to the state vector
+		 */
+		inline CLoadState(const Eigen::VectorXd &r_state)
+			:m_r_state(r_state)
+		{}
+
+		/**
+		 *	@brief function operator
+		 *	@tparam _TyVertex is vertex type
+		 *	@param[in,out] r_t_vertex is vertex to output its part the state vector
+		 */
+		template <class _TyVertex>
+		inline void operator ()(_TyVertex &r_t_vertex)
+		{
+			r_t_vertex.LoadState(m_r_state);
+		}
+	};
 
 #if 0
 	/**
@@ -998,6 +896,14 @@ protected:
 		// add all the hessian blocks
 
 		//printf("building lambda from scratch finished\n"); // debug
+
+		/*double alpha = 0.01; // ela?
+		for(size_t i = 0, n = m_lambda.n_BlockColumn_Num(); i < n; ++ i) {
+			size_t last = m_lambda.n_BlockColumn_Block_Num(i) - 1;
+			CUberBlockMatrix::_TyMatrixXdRef block = m_lambda.t_BlockAt(last, i);
+			for(size_t j = 0, m = block.rows(); j < m; ++ j)
+				block(j, j) += alpha;
+		}*/
 	}
 
 	/**
@@ -1053,7 +959,8 @@ protected:
 	/**
 	 *	@brief refreshes the lambda matrix by recalculating edge hessians
 	 */
-	inline void Refresh_Lambda(size_t n_referesh_from_vertex = 0, size_t n_refresh_from_edge = 0)
+	inline void Refresh_Lambda(size_t n_referesh_from_vertex = 0,
+		size_t n_refresh_from_edge = 0, double alpha = 0.01)
 	{
 		if(n_refresh_from_edge) {
 			m_r_system.r_Edge_Pool().For_Each_Parallel(n_refresh_from_edge,
@@ -1074,6 +981,15 @@ protected:
 			m_lambda.t_FindBlock(0, 0).noalias() += r_t_uf.transpose() * r_t_uf;
 		}
 		// add unary factor (gets overwritten by the first vertex' block)
+
+		// ela?
+		for(size_t i = n_referesh_from_vertex, n = m_lambda.n_BlockColumn_Num(); i < n; ++ i) {
+			size_t last = m_lambda.n_BlockColumn_Block_Num(i) - 1;
+			CUberBlockMatrix::_TyMatrixXdRef block = m_lambda.t_BlockAt(last, i);
+			for(size_t j = 0, m = block.rows(); j < m; ++ j)
+				block(j, j) += alpha;
+		}
+
 #ifdef _DEBUG
 		/*{
 			CUberBlockMatrix A;
@@ -1290,8 +1206,8 @@ protected:
 		}
 	};
 
-	CNonlinearSolver_Lambda(const CNonlinearSolver_Lambda &UNUSED(r_solver)); /**< @brief the object is not copyable */
-	CNonlinearSolver_Lambda &operator =(const CNonlinearSolver_Lambda &UNUSED(r_solver)) { return *this; } /**< @brief the object is not copyable */
+	CNonlinearSolver_Lambda_LM(const CNonlinearSolver_Lambda_LM &UNUSED(r_solver)); /**< @brief the object is not copyable */
+	CNonlinearSolver_Lambda_LM &operator =(const CNonlinearSolver_Lambda_LM &UNUSED(r_solver)) { return *this; } /**< @brief the object is not copyable */
 };
 
-#endif // __NONLINEAR_BLOCKY_SOLVER_LAMBDA_INCLUDED
+#endif // __NONLINEAR_BLOCKY_SOLVER_LAMBDA_LM_INCLUDED

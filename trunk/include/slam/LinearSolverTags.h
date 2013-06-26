@@ -3,7 +3,7 @@
 								|                                  |
 								|   ***  Linear solver tags  ***   |
 								|                                  |
-								|   Copyright © -tHE SWINe- 2012   |
+								|  Copyright (c) -tHE SWINe- 2012  |
 								|                                  |
 								|        LinearSolverTags.h        |
 								|                                  |

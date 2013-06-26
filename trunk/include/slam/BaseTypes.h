@@ -3,7 +3,7 @@
 								|                                   |
 								|      ***  Base SE types  ***      |
 								|                                   |
-								|   Copyright  © -tHE SWINe- 2012   |
+								|  Copyright  (c) -tHE SWINe- 2012  |
 								|                                   |
 								|            BaseTypes.h            |
 								|                                   |
@@ -24,7 +24,7 @@
 #include "slam/FlatSystem.h"
 #include "slam/ParseLoop.h"
 
-// todo - add ifdefs for L slam
+// looking for #define __BASE_TYPES_USE_ID_ADDRESSING? it is in slam/FlatSystem.h ...
 
 /*#if !defined(_WIN32) && !defined(_WIN64)
 #define __SE2_TYPES_USE_ALIGNED_VECTORS
@@ -34,9 +34,8 @@
 #endif // !_WIN32 && !_WIN64*/ // does not work // todo - investigate (low priority, only a small fraction of time is spent there)
 #define __SE2_TYPES_ALIGN_OPERATOR_NEW
 #define __SE3_TYPES_ALIGN_OPERATOR_NEW
+#define __BA_TYPES_ALIGN_OPERATOR_NEW
 // decide whether to align types // todo - document it and add manual overrides
-
-// SE(2) types below:
 
 class CSEBaseVertex; // forward declaration
 
@@ -45,8 +44,11 @@ class CSEBaseVertex; // forward declaration
  */
 class CSEBaseEdge { // need to have this before vertices because they use it's interface. messy. separate .h and .cpp
 protected:
-	size_t m_n_order; /**< @brief edge order (row in a matrix where the edge block is inseted) */
+#ifdef __BASE_TYPES_USE_ID_ADDRESSING
+	size_t m_n_id; /**< @brief edge id (block row in a matrix where the edge block is inseted) */
+#endif // __BASE_TYPES_USE_ID_ADDRESSING
 	size_t m_p_vertex_id[2]; /**< @brief ids of referenced vertices */
+	size_t m_n_order; /**< @brief edge order (row in a matrix where the edge block is inseted) */
 
 public:
 	__SE2_TYPES_ALIGN_OPERATOR_NEW
@@ -90,6 +92,29 @@ public:
 		m_n_order = n_first_element_index;
 	}
 
+#ifdef __BASE_TYPES_USE_ID_ADDRESSING
+
+	/**
+	 *	@brief gets edge id
+	 *	@return Returns edge id (block row in a matrix where the edge block is inseted).
+	 */
+	inline size_t n_Id() const
+	{
+		return m_n_id;
+	}
+
+	/**
+	 *	@brief sets edge order
+	 *	@param[in] n_id is edge order
+	 *		(block row in a matrix where the edge block is inseted).
+	 */
+	inline void Set_Id(size_t n_id)
+	{
+		m_n_id = n_id;
+	}
+
+#endif // __BASE_TYPES_USE_ID_ADDRESSING
+
 	/**
 	 *	@brief calculates chi-square error
 	 *	@return Returns (unweighted) chi-square error.
@@ -101,7 +126,7 @@ public:
 		return f_Chi_Squared_Error_Derived();
 	}
 
-#ifdef __SE_TYPES_SUPPORT_NONLINEAR_SOLVER_A // --- A-SLAM specific functions ---
+#ifdef __SE_TYPES_SUPPORT_A_SOLVERS // --- A-SLAM specific functions ---
 
 	/**
 	 *	@brief allocates hessian block matrices
@@ -143,9 +168,9 @@ public:
 		Get_Error_Derived(r_v_dest);
 	}
 
-#endif // __SE_TYPES_SUPPORT_NONLINEAR_SOLVER_A // --- ~A-SLAM specific functions ---
+#endif // __SE_TYPES_SUPPORT_A_SOLVERS // --- ~A-SLAM specific functions ---
 
-#ifdef __SE_TYPES_SUPPORT_NONLINEAR_SOLVER_LAMBDA // --- ~lambda-SLAM specific functions ---
+#ifdef __SE_TYPES_SUPPORT_LAMBDA_SOLVERS // --- ~lambda-SLAM specific functions ---
 
 	/**
 	 *	@brief allocates hessian block matrices
@@ -166,6 +191,8 @@ public:
 		Calculate_Hessians_Derived();
 	}
 
+	virtual double f_Max_VertexHessianDiagValue() const = 0; // todo surround with levenberg support ifdef
+
 	/**
 	 *	@brief gets edge contributions for lambda and eta blocks
 	 *	@param[in] p_which is vertex, associated with queried contributions
@@ -179,9 +206,9 @@ public:
 		return t_Get_LambdaEta_Contribution_Derived(p_which);
 	}
 
-#endif // __SE_TYPES_SUPPORT_NONLINEAR_SOLVER_LAMBDA // --- ~lambda-SLAM specific functions ---
+#endif // __SE_TYPES_SUPPORT_LAMBDA_SOLVERS // --- ~lambda-SLAM specific functions ---
 
-#ifdef __SE_TYPES_SUPPORT_NONLINEAR_SOLVER_L // --- L-SLAM specific functions ---
+#ifdef __SE_TYPES_SUPPORT_L_SOLVERS // --- L-SLAM specific functions ---
 
 	/**
 	 *	@brief allocates L factor block matrices
@@ -210,7 +237,7 @@ public:
 		Calculate_Omega_Derived(r_omega, n_min_vertex_order);
 	}
 
-#endif // __SE_TYPES_SUPPORT_NONLINEAR_SOLVER_L // --- ~L-SLAM specific functions ---
+#endif // __SE_TYPES_SUPPORT_L_SOLVERS // --- ~L-SLAM specific functions ---
 
 protected:
 	/**
@@ -223,7 +250,7 @@ protected:
 	 */
 	virtual double f_Chi_Squared_Error_Derived() const = 0;
 
-#ifdef __SE_TYPES_SUPPORT_NONLINEAR_SOLVER_A // --- A-SLAM specific functions ---
+#ifdef __SE_TYPES_SUPPORT_A_SOLVERS // --- A-SLAM specific functions ---
 
 	/**
 	 *	@copydoc Alloc_JacobianBlocks()
@@ -245,9 +272,9 @@ protected:
 	 */
 	virtual void Get_Error_Derived(Eigen::VectorXd &r_v_dest) const = 0;
 
-#endif // __SE_TYPES_SUPPORT_NONLINEAR_SOLVER_A // --- ~A-SLAM specific functions ---
+#endif // __SE_TYPES_SUPPORT_A_SOLVERS // --- ~A-SLAM specific functions ---
 
-#ifdef __SE_TYPES_SUPPORT_NONLINEAR_SOLVER_LAMBDA // --- ~lambda-SLAM specific functions ---
+#ifdef __SE_TYPES_SUPPORT_LAMBDA_SOLVERS // --- ~lambda-SLAM specific functions ---
 
 	/**
 	 *	@copydoc Alloc_HessianBlocks()
@@ -265,9 +292,9 @@ protected:
 	virtual std::pair<const double*, const double*>
 		t_Get_LambdaEta_Contribution_Derived(const CSEBaseVertex *p_which) const = 0;
 
-#endif // __SE_TYPES_SUPPORT_NONLINEAR_SOLVER_LAMBDA // --- ~lambda-SLAM specific functions ---
+#endif // __SE_TYPES_SUPPORT_LAMBDA_SOLVERS // --- ~lambda-SLAM specific functions ---
 
-#ifdef __SE_TYPES_SUPPORT_NONLINEAR_SOLVER_L // --- L-SLAM specific functions ---
+#ifdef __SE_TYPES_SUPPORT_L_SOLVERS // --- L-SLAM specific functions ---
 
 	/**
 	 *	@copydoc Alloc_LBlocks()
@@ -279,7 +306,7 @@ protected:
 	 */
 	virtual void Calculate_Omega_Derived(CUberBlockMatrix &r_omega, size_t n_min_vertex_order) const = 0;
 
-#endif // __SE_TYPES_SUPPORT_NONLINEAR_SOLVER_L // --- ~L-SLAM specific functions ---
+#endif // __SE_TYPES_SUPPORT_L_SOLVERS // --- ~L-SLAM specific functions ---
 
 	// virtual functions call inline implementations in derived types (note that this is just
 	// a performance optimization; virtual functions can be used without any limitations)
@@ -290,13 +317,16 @@ protected:
  */
 class CSEBaseVertex {
 protected:
+#ifdef __BASE_TYPES_USE_ID_ADDRESSING
+	size_t m_n_id; /**< @brief vertex id (block column in a matrix where the vertex block is inseted) */
+#endif // __BASE_TYPES_USE_ID_ADDRESSING
 	size_t m_n_order; /**< @brief vertex order (column in a matrix where the vertex block is inseted) */
 
-#ifdef __SE_TYPES_SUPPORT_NONLINEAR_SOLVER_LAMBDA // --- ~lambda-SLAM specific members ---
+#ifdef __SE_TYPES_SUPPORT_LAMBDA_SOLVERS // --- ~lambda-SLAM specific members ---
 
 	std::vector<const CSEBaseEdge*> m_edge_list; /**< @brief a list of edges, referencing this vertex (only used by Lambda solver) */
 
-#endif // __SE_TYPES_SUPPORT_NONLINEAR_SOLVER_LAMBDA // --- ~lambda-SLAM specific members ---
+#endif // __SE_TYPES_SUPPORT_LAMBDA_SOLVERS // --- ~lambda-SLAM specific members ---
 
 public:
 	__SE2_TYPES_ALIGN_OPERATOR_NEW
@@ -339,6 +369,29 @@ public:
 		m_n_order = n_first_element_index;
 	}
 
+#ifdef __BASE_TYPES_USE_ID_ADDRESSING
+
+	/**
+	 *	@brief gets vertex id
+	 *	@return Returns vertex order (block column in a matrix where the vertex block is inseted).
+	 */
+	inline size_t n_Id() const
+	{
+		return m_n_id;
+	}
+
+	/**
+	 *	@brief sets vertex id
+	 *	@param[in] n_id is vertex id
+	 *		(block column in a matrix where the vertex block is inseted).
+	 */
+	inline void Set_Id(size_t n_id)
+	{
+		m_n_id = n_id;
+	}
+
+#endif // __BASE_TYPES_USE_ID_ADDRESSING
+
 	/**
 	 *	@brief swaps solution vector with vertex state and minds the manifold space
 	 *	@param[in,out] r_v_x is solution vector
@@ -348,6 +401,24 @@ public:
 	inline void SwapState(Eigen::VectorXd &r_v_x)
 	{
 		SwapState_Derived(r_v_x);
+	}
+
+	/**
+	 *	@brief saves the vertex state in a vector
+	 *	@param[out] r_v_x is the state vector to copy the state to
+	 */
+	inline void SaveState(Eigen::VectorXd &r_v_x) const
+	{
+		SaveState_Derived(r_v_x);
+	}
+
+	/**
+	 *	@brief restores the vertex state from a vector
+	 *	@param[out] r_v_x is the state vector to copy the state from
+	 */
+	inline void LoadState(const Eigen::VectorXd &r_v_x)
+	{
+		LoadState_Derived(r_v_x);
 	}
 
 	/**
@@ -368,7 +439,7 @@ public:
 		Operator_Minus_Derived(r_v_delta);
 	}
 
-#ifdef __SE_TYPES_SUPPORT_NONLINEAR_SOLVER_LAMBDA // --- ~lambda-SLAM specific functions ---
+#ifdef __SE_TYPES_SUPPORT_LAMBDA_SOLVERS // --- ~lambda-SLAM specific functions ---
 
 	/**
 	 *	@brief adds an edge that references this vertex
@@ -379,7 +450,7 @@ public:
 	 *	@note This function throws std::bad_alloc.
 	 *	@note This function is required for CNonlinearSolver_Lambda.
 	 */
-	inline void Add_ReferencingEdge(const CSEBaseEdge *p_edge) // throws(std::bad_alloc)
+	inline void Add_ReferencingEdge(const CSEBaseEdge *p_edge) // throw(std::bad_alloc)
 	{
 		_ASSERTE(!b_IsReferencingEdge(p_edge));
 		m_edge_list.push_back(p_edge);
@@ -426,9 +497,9 @@ public:
 		Get_RightHandSide_Vector_Derived(r_v_eta);
 	}
 
-#endif // __SE_TYPES_SUPPORT_NONLINEAR_SOLVER_LAMBDA // --- ~lambda-SLAM specific functions ---
+#endif // __SE_TYPES_SUPPORT_LAMBDA_SOLVERS // --- ~lambda-SLAM specific functions ---
 
-#ifdef __SE_TYPES_SUPPORT_NONLINEAR_SOLVER_L // --- L-SLAM specific functions ---
+#ifdef __SE_TYPES_SUPPORT_L_SOLVERS // --- L-SLAM specific functions ---
 
 	/**
 	 *	@brief allocates L factor block matrices
@@ -440,7 +511,7 @@ public:
 		Alloc_LBlocks_Derived(r_L);
 	}
 
-#endif // __SE_TYPES_SUPPORT_NONLINEAR_SOLVER_L // --- ~L-SLAM specific functions ---
+#endif // __SE_TYPES_SUPPORT_L_SOLVERS // --- ~L-SLAM specific functions ---
 
 protected:
 	/**
@@ -452,6 +523,16 @@ protected:
 	 *	@copydoc SwapState()
 	 */
 	virtual void SwapState_Derived(Eigen::VectorXd &r_v_x) = 0;
+
+	/**
+	 *	@copydoc SaveState()
+	 */
+	virtual void SaveState_Derived(Eigen::VectorXd &r_v_x) const = 0;
+
+	/**
+	 *	@copydoc LoadState()
+	 */
+	virtual void LoadState_Derived(const Eigen::VectorXd &r_v_x) = 0;
 
 	/**
 	 *	@copydoc Operator_Plus()
@@ -468,7 +549,7 @@ protected:
 	 */
 	virtual size_t n_Dimension_Derived() const = 0;
 
-#ifdef __SE_TYPES_SUPPORT_NONLINEAR_SOLVER_LAMBDA // --- ~lambda-SLAM specific functions ---
+#ifdef __SE_TYPES_SUPPORT_LAMBDA_SOLVERS // --- ~lambda-SLAM specific functions ---
 
 	/**
 	 *	@copydoc Alloc_HessianBlocks()
@@ -485,16 +566,16 @@ protected:
 	 */
 	virtual void Get_RightHandSide_Vector_Derived(Eigen::VectorXd &r_v_eta) = 0;
 
-#endif // __SE_TYPES_SUPPORT_NONLINEAR_SOLVER_LAMBDA // --- ~lambda-SLAM specific functions ---
+#endif // __SE_TYPES_SUPPORT_LAMBDA_SOLVERS // --- ~lambda-SLAM specific functions ---
 
-#ifdef __SE_TYPES_SUPPORT_NONLINEAR_SOLVER_L // --- L-SLAM specific functions ---
+#ifdef __SE_TYPES_SUPPORT_L_SOLVERS // --- L-SLAM specific functions ---
 
 	/**
 	 *	@copydoc Alloc_LBlocks()
 	 */
 	virtual void Alloc_LBlocks_Derived(CUberBlockMatrix &r_L) const = 0;
 
-#endif // __SE_TYPES_SUPPORT_NONLINEAR_SOLVER_L // --- ~L-SLAM specific functions ---
+#endif // __SE_TYPES_SUPPORT_L_SOLVERS // --- ~L-SLAM specific functions ---
 
 	// virtual functions call inline implementations in derived types (note that this is just
 	// a performance optimization; virtual functions can be used without any limitations)
@@ -531,12 +612,12 @@ public:
 protected:
 	_TyVectorAlign m_v_state; /**< @brief state vector */
 
-#ifdef __SE_TYPES_SUPPORT_NONLINEAR_SOLVER_LAMBDA // --- ~lambda-SLAM specific members ---
+#ifdef __SE_TYPES_SUPPORT_LAMBDA_SOLVERS // --- ~lambda-SLAM specific members ---
 
 	double *m_p_HtSiH; /**< @brief pointer to diagonal block in the hessian matrix */
 	_TyVectorAlign m_v_right_hand_side; /**< @brief right-hand side vector */
 
-#endif // __SE_TYPES_SUPPORT_NONLINEAR_SOLVER_LAMBDA // --- ~lambda-SLAM specific members ---
+#endif // __SE_TYPES_SUPPORT_LAMBDA_SOLVERS // --- ~lambda-SLAM specific members ---
 
 public:
 	__SE2_TYPES_ALIGN_OPERATOR_NEW
@@ -581,11 +662,15 @@ public:
 		return n_dimension;
 	}
 
-#ifdef __SE_TYPES_SUPPORT_NONLINEAR_SOLVER_LAMBDA // --- ~lambda-SLAM specific functions ---
+#ifdef __SE_TYPES_SUPPORT_LAMBDA_SOLVERS // --- ~lambda-SLAM specific functions ---
 
 	inline void Alloc_HessianBlocks(CUberBlockMatrix &r_lambda)
 	{
+#ifdef __BASE_TYPES_USE_ID_ADDRESSING
+		m_p_HtSiH = r_lambda.p_GetBlock_Log(m_n_id, m_n_id, n_dimension, n_dimension, true, false);
+#else // __BASE_TYPES_USE_ID_ADDRESSING
 		m_p_HtSiH = r_lambda.p_FindBlock(m_n_order, m_n_order, n_dimension, n_dimension, true, false);
+#endif // __BASE_TYPES_USE_ID_ADDRESSING
 		// find a block for hessian on the diagonal (edges can't do it, would have conflicts)
 	}
 
@@ -611,17 +696,45 @@ public:
 		r_v_eta.segment<n_dimension>(m_n_order) = m_v_right_hand_side;
 	}
 
-#endif // __SE_TYPES_SUPPORT_NONLINEAR_SOLVER_LAMBDA // --- ~lambda-SLAM specific functions ---
+#endif // __SE_TYPES_SUPPORT_LAMBDA_SOLVERS // --- ~lambda-SLAM specific functions ---
 
-#ifdef __SE_TYPES_SUPPORT_NONLINEAR_SOLVER_L // --- L-SLAM specific functions ---
+#ifdef __SE_TYPES_SUPPORT_L_SOLVERS // --- L-SLAM specific functions ---
 
 	inline void Alloc_LBlocks(CUberBlockMatrix &r_L) const
 	{
+#ifdef __BASE_TYPES_USE_ID_ADDRESSING
+		r_L.p_GetBlock_Log(m_n_id, m_n_id, n_dimension, n_dimension, true, true); // don't care about the pointer, it is handled differently
+#else // __BASE_TYPES_USE_ID_ADDRESSING
 		r_L.p_FindBlock(m_n_order, m_n_order, n_dimension, n_dimension, true, true); // don't care about the pointer, it is handled differently
+#endif // __BASE_TYPES_USE_ID_ADDRESSING
 		// find a block for hessian on the diagonal (edges can't do it, would have conflicts) // also clear it to zero! L is updated additively
 	}
 
-#endif // __SE_TYPES_SUPPORT_NONLINEAR_SOLVER_L // --- ~L-SLAM specific functions ---
+#endif // __SE_TYPES_SUPPORT_L_SOLVERS // --- ~L-SLAM specific functions ---
+
+	/**
+	 *	@copydoc CSEBaseVertex::SwapState()
+	 */
+	inline void SwapState(Eigen::VectorXd &r_v_x)
+	{
+		m_v_state.swap(r_v_x.segment<n_dimension>(m_n_order)); // swap the numbers
+	}
+
+	/**
+	 *	@copydoc CSEBaseVertex::SaveState()
+	 */
+	inline void SaveState(Eigen::VectorXd &r_v_x) const
+	{
+		r_v_x.segment<n_dimension>(m_n_order) = m_v_state; // save the state vector
+	}
+
+	/**
+	 *	@copydoc CSEBaseVertex::LoadState()
+	 */
+	inline void LoadState(const Eigen::VectorXd &r_v_x)
+	{
+		m_v_state = r_v_x.segment<n_dimension>(m_n_order); // restore the state vector
+	}
 
 protected:
 	virtual Eigen::VectorXd v_State_Derived() const
@@ -634,6 +747,16 @@ protected:
 		((CDerivedVertex*)this)->SwapState(r_v_x);
 	}
 
+	virtual void SaveState_Derived(Eigen::VectorXd &r_v_x) const
+	{
+		((CDerivedVertex*)this)->SaveState(r_v_x);
+	}
+
+	virtual void LoadState_Derived(const Eigen::VectorXd &r_v_x)
+	{
+		((CDerivedVertex*)this)->LoadState(r_v_x);
+	}
+
 	virtual void Operator_Plus_Derived(const Eigen::VectorXd &r_v_delta)
 	{
 		((CDerivedVertex*)this)->Operator_Plus(r_v_delta);
@@ -641,7 +764,7 @@ protected:
 
 	virtual void Operator_Minus_Derived(const Eigen::VectorXd &r_v_delta)
 	{
-		((CDerivedVertex*)this)->Operator_Plus(r_v_delta);
+		((CDerivedVertex*)this)->Operator_Minus(r_v_delta);
 	}
 
 	virtual size_t n_Dimension_Derived() const
@@ -649,7 +772,7 @@ protected:
 		return CSEBaseVertexImpl<CDerivedVertex, _n_dimension>::n_Dimension();
 	}
 
-#ifdef __SE_TYPES_SUPPORT_NONLINEAR_SOLVER_LAMBDA // --- ~lambda-SLAM specific functions ---
+#ifdef __SE_TYPES_SUPPORT_LAMBDA_SOLVERS // --- ~lambda-SLAM specific functions ---
 
 	virtual void Alloc_HessianBlocks_Derived(CUberBlockMatrix &r_lambda)
 	{
@@ -666,16 +789,16 @@ protected:
 		CSEBaseVertexImpl<CDerivedVertex, _n_dimension>::Get_RightHandSide_Vector(r_v_eta);
 	}
 
-#endif // __SE_TYPES_SUPPORT_NONLINEAR_SOLVER_LAMBDA // --- ~lambda-SLAM specific functions ---
+#endif // __SE_TYPES_SUPPORT_LAMBDA_SOLVERS // --- ~lambda-SLAM specific functions ---
 
-#ifdef __SE_TYPES_SUPPORT_NONLINEAR_SOLVER_L // --- L-SLAM specific functions ---
+#ifdef __SE_TYPES_SUPPORT_L_SOLVERS // --- L-SLAM specific functions ---
 
 	virtual void Alloc_LBlocks_Derived(CUberBlockMatrix &r_L) const
 	{
 		CSEBaseVertexImpl<CDerivedVertex, _n_dimension>::Alloc_LBlocks(r_L);
 	}
 
-#endif // __SE_TYPES_SUPPORT_NONLINEAR_SOLVER_L // --- ~L-SLAM specific functions ---
+#endif // __SE_TYPES_SUPPORT_L_SOLVERS // --- ~L-SLAM specific functions ---
 };
 
 /**
@@ -756,16 +879,16 @@ protected:
 	_TyVectorAlign m_v_measurement; /**< @brief the measurement */
 	_TyMatrixAlign m_t_sigma_inv; /**< @brief information matrix */
 
-#ifdef __SE_TYPES_SUPPORT_NONLINEAR_SOLVER_A // --- A-SLAM specific members ---
+#ifdef __SE_TYPES_SUPPORT_A_SOLVERS // --- A-SLAM specific members ---
 
 	_TyMatrixAlign m_t_square_root_sigma_inv_upper; /**< @brief the R matrix (upper diagonal) = transpose(chol(t_sigma_inv)) */
 	_TyVectorAlign m_v_error; /**< @brief error vector (needs to be filled explicitly by calling p_error_function) */
 	//_TyVectorAlign m_v_expectation; /**< @brief expectation vector (needs to be filled explicitly by calling p_error_function) */ // no need to store this
 	double *m_p_RH[2]; /**< @brief blocks of memory where the R * H matrices are stored */
 
-#endif // __SE_TYPES_SUPPORT_NONLINEAR_SOLVER_A // --- A-SLAM specific members ---
+#endif // __SE_TYPES_SUPPORT_A_SOLVERS // --- A-SLAM specific members ---
 
-#ifdef __SE_TYPES_SUPPORT_NONLINEAR_SOLVER_LAMBDA // --- ~lambda-SLAM specific members ---
+#ifdef __SE_TYPES_SUPPORT_LAMBDA_SOLVERS // --- ~lambda-SLAM specific members ---
 
 	double *m_p_HtSiH; /**< @brief block of memory where Ht * inv(Sigma) * H matrix is stored (the one above diagonal) */
 	typename _TyVertex0::_TyMatrixAlign m_t_HtSiH_vertex0; /**< @brief block of memory where Ht * inv(Sigma) * H matrix is stored (the vertex contribution) */
@@ -773,7 +896,7 @@ protected:
 	typename _TyVertex0::_TyVectorAlign m_t_right_hand_vertex0; /**< @brief block of memory where right-hand side vector is stored (the vertex contribution) */
 	typename _TyVertex1::_TyVectorAlign m_t_right_hand_vertex1; /**< @brief block of memory where right-hand side vector is stored (the vertex contribution) */
 
-#endif // __SE_TYPES_SUPPORT_NONLINEAR_SOLVER_LAMBDA // --- ~lambda-SLAM specific members ---
+#endif // __SE_TYPES_SUPPORT_LAMBDA_SOLVERS // --- ~lambda-SLAM specific members ---
 
 public:
 	__SE2_TYPES_ALIGN_OPERATOR_NEW
@@ -799,9 +922,9 @@ public:
 	inline CSEBaseEdgeImpl(size_t n_vertex0_id, size_t n_vertex1_id,
 		const _TyVector &r_v_measurement, const _TyMatrix &r_t_sigma_inv)
 		:m_v_measurement(r_v_measurement), m_t_sigma_inv(r_t_sigma_inv),
-#ifdef __SE_TYPES_SUPPORT_NONLINEAR_SOLVER_A
+#ifdef __SE_TYPES_SUPPORT_A_SOLVERS
 		m_t_square_root_sigma_inv_upper(r_t_sigma_inv.llt().matrixU()) // calculate R
-#endif // __SE_TYPES_SUPPORT_NONLINEAR_SOLVER_A
+#endif // __SE_TYPES_SUPPORT_A_SOLVERS
 	{
 		m_p_vertex_id[0] = n_vertex0_id;
 		m_p_vertex_id[1] = n_vertex1_id;
@@ -820,9 +943,9 @@ public:
 	{
 		m_v_measurement = r_v_measurement;
 		m_t_sigma_inv = r_t_sigma_inv;
-#ifdef __SE_TYPES_SUPPORT_NONLINEAR_SOLVER_A
+#ifdef __SE_TYPES_SUPPORT_A_SOLVERS
 		m_t_square_root_sigma_inv_upper = r_t_sigma_inv.llt().matrixU(); // calculate R
-#endif // __SE_TYPES_SUPPORT_NONLINEAR_SOLVER_A
+#endif // __SE_TYPES_SUPPORT_A_SOLVERS
 	}
 
 	/**
@@ -842,14 +965,21 @@ public:
 		return m_t_sigma_inv;
 	}
 
-#ifdef __SE_TYPES_SUPPORT_NONLINEAR_SOLVER_A // --- A-SLAM specific functions ---
+#ifdef __SE_TYPES_SUPPORT_A_SOLVERS // --- A-SLAM specific functions ---
 
 	inline void Alloc_JacobianBlocks(CUberBlockMatrix &r_A)
 	{
+#ifdef __BASE_TYPES_USE_ID_ADDRESSING
+		m_p_RH[0] = r_A.p_GetBlock_Log(m_n_id + 1, m_p_vertex_id[0],
+			n_measurement_dimension, n_vertex0_dimension, true, false);
+		m_p_RH[1] = r_A.p_GetBlock_Log(m_n_id + 1, m_p_vertex_id[1],
+			n_measurement_dimension, n_vertex1_dimension, true, false);
+#else // __BASE_TYPES_USE_ID_ADDRESSING
 		m_p_RH[0] = r_A.p_FindBlock(m_n_order, m_p_vertex0->n_Order(),
 			n_measurement_dimension, n_vertex0_dimension, true, false);
 		m_p_RH[1] = r_A.p_FindBlock(m_n_order, m_p_vertex1->n_Order(),
 			n_measurement_dimension, n_vertex1_dimension, true, false);
+#endif // __BASE_TYPES_USE_ID_ADDRESSING
 		// just place blocks at (edge order, vertex order)
 	}
 
@@ -884,9 +1014,9 @@ public:
 		r_v_dest.segment<n_measurement_dimension>(m_n_order) = m_v_error;
 	}
 
-#endif // __SE_TYPES_SUPPORT_NONLINEAR_SOLVER_A // --- ~A-SLAM specific functions ---
+#endif // __SE_TYPES_SUPPORT_A_SOLVERS // --- ~A-SLAM specific functions ---
 
-#ifdef __SE_TYPES_SUPPORT_NONLINEAR_SOLVER_LAMBDA // --- ~lambda-SLAM specific functions ---
+#ifdef __SE_TYPES_SUPPORT_LAMBDA_SOLVERS // --- lambda-SLAM specific functions ---
 
 	inline void Alloc_HessianBlocks(CUberBlockMatrix &r_lambda)
 	{
@@ -896,6 +1026,22 @@ public:
 
 		size_t n_dimension0 = n_vertex0_dimension;
 		size_t n_dimension1 = n_vertex1_dimension;
+#ifdef __BASE_TYPES_USE_ID_ADDRESSING
+		size_t n_id_0 = m_p_vertex_id[0];
+		size_t n_id_1 = m_p_vertex_id[1];
+		if(n_id_0 > n_id_1) {
+			std::swap(n_id_0, n_id_1);
+			std::swap(n_dimension0, n_dimension1);
+		}
+		// make sure the order is sorted (if swapping, will have to transpose the result,
+		// but we will deal with that laters)
+
+		_ASSERTE(n_id_0 != n_id_1); // will otherwise overwrite blocks with vertex blocks (malformed system)
+		_ASSERTE(n_id_0 < n_id_1);
+		// they dont care about the man that ends up under the stage, they only care about the one above (column > row)
+
+		m_p_HtSiH = r_lambda.p_GetBlock_Log(n_id_0, n_id_1, n_dimension0, n_dimension1, true, false);
+#else // __BASE_TYPES_USE_ID_ADDRESSING
 		size_t n_order_0 = m_p_vertex0->n_Order();
 		size_t n_order_1 = m_p_vertex1->n_Order();
 		if(n_order_0 > n_order_1) {
@@ -910,6 +1056,7 @@ public:
 		// they dont care about the man that ends up under the stage, they only care about the one above (column > row)
 
 		m_p_HtSiH = r_lambda.p_FindBlock(n_order_0, n_order_1, n_dimension0, n_dimension1, true, false);
+#endif // __BASE_TYPES_USE_ID_ADDRESSING
 		// find a block for hessian above the diagonal, and with the right shape
 	}
 
@@ -929,6 +1076,20 @@ public:
 		bool b_transpose_hessian;
 		size_t n_dimension0 = n_vertex0_dimension;
 		size_t n_dimension1 = n_vertex1_dimension;
+#if 1
+		size_t n_id_0 = m_p_vertex_id[0];
+		size_t n_id_1 = m_p_vertex_id[1]; // this is closer in cache
+		if((b_transpose_hessian = (n_id_0 > n_id_1))) {
+			std::swap(n_id_0, n_id_1);
+			std::swap(n_dimension0, n_dimension1);
+		}
+		// make sure the order is sorted (if swapping, will have to transpose the result,
+		// but we will deal with that laters)
+
+		_ASSERTE(n_id_0 != n_id_1); // will otherwise overwrite blocks with vertex blocks (malformed system)
+		_ASSERTE(n_id_0 < n_id_1);
+		// they dont care about the man that ends up under the stage, they only care about the one above (column > row)
+#else // 1
 		size_t n_order_0 = m_p_vertex0->n_Order();
 		size_t n_order_1 = m_p_vertex1->n_Order();
 		if((b_transpose_hessian = (n_order_0 > n_order_1))) {
@@ -940,6 +1101,7 @@ public:
 
 		_ASSERTE(n_order_0 != n_order_1); // will otherwise overwrite blocks with vertex blocks (malformed system)
 		_ASSERTE(n_order_0 < n_order_1);
+#endif // 1
 		// they dont care about the man that ends up under the stage, they only care about the one above (column > row)
 
 		Eigen::Matrix<double, n_vertex0_dimension, n_measurement_dimension> t_H0_sigma_inv =
@@ -969,6 +1131,16 @@ public:
 		// calculate right hand side vector contributions
 	}
 
+	virtual double f_Max_VertexHessianDiagValue() const // todo surround with levenberg support ifdef
+	{
+		double f_max = 0;
+		for(size_t i = 0; i < n_vertex0_dimension; ++ i)
+			f_max = std::max(f_max, m_t_HtSiH_vertex0(i, i));
+		for(size_t i = 0; i < n_vertex1_dimension; ++ i)
+			f_max = std::max(f_max, m_t_HtSiH_vertex1(i, i));
+		return f_max;
+	}
+
 	inline std::pair<const double*, const double*> t_Get_LambdaEta_Contribution(const CSEBaseVertex *p_which) const
 	{
 		_ASSERTE(p_which == m_p_vertex0 || p_which == m_p_vertex1);
@@ -978,9 +1150,9 @@ public:
 		// return pointer to the matrix data with hessian contribution
 	}
 
-#endif // __SE_TYPES_SUPPORT_NONLINEAR_SOLVER_LAMBDA // --- ~lambda-SLAM specific functions ---
+#endif // __SE_TYPES_SUPPORT_LAMBDA_SOLVERS // --- ~lambda-SLAM specific functions ---
 
-#ifdef __SE_TYPES_SUPPORT_NONLINEAR_SOLVER_L // --- L-SLAM specific functions ---
+#ifdef __SE_TYPES_SUPPORT_L_SOLVERS // --- L-SLAM specific functions ---
 
 	inline void Alloc_LBlocks(CUberBlockMatrix &UNUSED(r_L)) const
 	{
@@ -1026,6 +1198,35 @@ public:
 		bool b_transpose_hessian;
 		size_t n_dimension0 = n_vertex0_dimension;
 		size_t n_dimension1 = n_vertex1_dimension;
+
+#if 0 // this does not work, omega tends to be very sparse, might need to create some empty columns / rows and p_GetBlock_Log() does not support that
+		size_t n_id_0 = m_p_vertex_id[0];
+		size_t n_id_1 = m_p_vertex_id[1];
+		if((b_transpose_hessian = (n_id_0 > n_id_1))) {
+			std::swap(n_id_0, n_id_1);
+			std::swap(n_dimension0, n_dimension1);
+		}
+		// make sure the order is sorted (if swapping, will have to transpose the result,
+		// but we will deal with that laters)
+
+		_ASSERTE(n_id_0 != n_id_1); // will otherwise overwrite blocks with vertex blocks (malformed system)
+		_ASSERTE(n_id_0 < n_id_1);
+		// they dont care about the man that ends up under the stage, they only care about the one above (column > row)
+
+		if(n_id_0 < n_min_vertex_id) // note this might be superficial // todo - make this an assert
+			return;
+		// this edge doesn't have any hessians inside omega
+
+		double *p_v0 = r_omega.p_GetBlock_Log(n_id_0 - n_min_vertex_id,
+			n_id_0 - n_min_vertex_id, n_dimension0, n_dimension0, true, true);
+		double *p_v1 = r_omega.p_GetBlock_Log(n_id_1 - n_min_vertex_id,
+			n_id_1 - n_min_vertex_id, n_dimension1, n_dimension1, true, true);
+
+		double *p_edge = r_omega.p_GetBlock_Log(n_id_0 - n_min_vertex_id,
+			n_id_1 - n_min_vertex_id, n_dimension0, n_dimension1, true, false); // doesn't need to be initialized, there's only one
+		// must come last, n_id_1 might not exist in r_omega before the vertices are added
+		// this does not work anyway, omega tends to be very sparse, might need to create some empty columns / rows and p_GetBlock_Log() does not support that
+#else // 0
 		size_t n_order_0 = m_p_vertex0->n_Order();
 		size_t n_order_1 = m_p_vertex1->n_Order();
 		if((b_transpose_hessian = (n_order_0 > n_order_1))) {
@@ -1049,6 +1250,7 @@ public:
 			n_order_0 - n_min_vertex_order, n_dimension0, n_dimension0, true, true);
 		double *p_v1 = r_omega.p_FindBlock(n_order_1 - n_min_vertex_order,
 			n_order_1 - n_min_vertex_order, n_dimension1, n_dimension1, true, true);
+#endif // 0
 		// alloc and initialize / find existing blocks for all the hessians, above the diagonal only
 
 		bool b_recalculate = false;
@@ -1114,7 +1316,7 @@ public:
 
 	// todo - will need error to incrementally update right hand side vector
 
-#endif // __SE_TYPES_SUPPORT_NONLINEAR_SOLVER_L // --- ~L-SLAM specific functions ---
+#endif // __SE_TYPES_SUPPORT_L_SOLVERS // --- ~L-SLAM specific functions ---
 
 protected:
 	virtual size_t n_Dimension_Derived() const
@@ -1127,7 +1329,7 @@ protected:
 		return ((const CDerivedEdge*)this)->f_Chi_Squared_Error();
 	}
 
-#ifdef __SE_TYPES_SUPPORT_NONLINEAR_SOLVER_A // --- A-SLAM specific functions ---
+#ifdef __SE_TYPES_SUPPORT_A_SOLVERS // --- A-SLAM specific functions ---
 
 	virtual void Alloc_JacobianBlocks_Derived(CUberBlockMatrix &r_A)
 	{
@@ -1153,9 +1355,9 @@ protected:
 			_n_measurement_dimension>::Get_Error(r_v_dest);
 	}
 
-#endif // __SE_TYPES_SUPPORT_NONLINEAR_SOLVER_A // --- ~A-SLAM specific functions ---
+#endif // __SE_TYPES_SUPPORT_A_SOLVERS // --- ~A-SLAM specific functions ---
 
-#ifdef __SE_TYPES_SUPPORT_NONLINEAR_SOLVER_LAMBDA // --- ~lambda-SLAM specific functions ---
+#ifdef __SE_TYPES_SUPPORT_LAMBDA_SOLVERS // --- ~lambda-SLAM specific functions ---
 
 	virtual void Alloc_HessianBlocks_Derived(CUberBlockMatrix &r_lambda)
 	{
@@ -1176,9 +1378,9 @@ protected:
 			_n_measurement_dimension>::t_Get_LambdaEta_Contribution(p_which);
 	}
 
-#endif // __SE_TYPES_SUPPORT_NONLINEAR_SOLVER_LAMBDA // --- ~lambda-SLAM specific functions ---
+#endif // __SE_TYPES_SUPPORT_LAMBDA_SOLVERS // --- ~lambda-SLAM specific functions ---
 
-#ifdef __SE_TYPES_SUPPORT_NONLINEAR_SOLVER_L // --- L-SLAM specific functions ---
+#ifdef __SE_TYPES_SUPPORT_L_SOLVERS // --- L-SLAM specific functions ---
 
 	virtual void Alloc_LBlocks_Derived(CUberBlockMatrix &r_L) const
 	{
@@ -1192,7 +1394,7 @@ protected:
 			_n_measurement_dimension>::Calculate_Omega(r_omega, n_min_vertex_order);
 	}
 
-#endif // __SE_TYPES_SUPPORT_NONLINEAR_SOLVER_L // --- ~L-SLAM specific functions ---
+#endif // __SE_TYPES_SUPPORT_L_SOLVERS // --- ~L-SLAM specific functions ---
 };
 
 #endif // __BASE_SE_PRIMITIVE_TYPES_INCLUDED

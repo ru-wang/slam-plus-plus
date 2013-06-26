@@ -3,7 +3,7 @@
 								|                                   |
 								|  ***  CHOLMOD linear solver  ***  |
 								|                                   |
-								|   Copyright  © -tHE SWINe- 2012   |
+								|  Copyright  (c) -tHE SWINe- 2012  |
 								|                                   |
 								|      LinearSolver_CholMod.h       |
 								|                                   |
@@ -40,7 +40,17 @@
  *	@def __CHOLMOD_BLOCKY_LINEAR_SOLVER
  *	@brief if defined, CLinearSolver_CholMod will be a blocky linear solver
  */
-//#define __CHOLMOD_BLOCKY_LINEAR_SOLVER
+#define __CHOLMOD_BLOCKY_LINEAR_SOLVER
+
+/**
+ *	@def __CHOLMOD_PREFER_ELEMENTWISE_LINEAR_SOLVER
+ *	@brief if defined, CLinearSolver_CholMod will be tagged
+ *		as an elementwise solver, even despite having block interface
+ *	@note This has only effect if __CHOLMOD_BLOCKY_LINEAR_SOLVER is defined.
+ *	@todo This was written primarily to support CNonlinearSolver_FastL,
+ *		but it crashes at 10K, have to debug it.
+ */
+#define __CHOLMOD_PREFER_ELEMENTWISE_LINEAR_SOLVER
 
 #include "slam/LinearSolverTags.h"
 #include "csparse/cs.hpp"
@@ -70,7 +80,11 @@
 class CLinearSolver_CholMod {
 public:
 #ifdef __CHOLMOD_BLOCKY_LINEAR_SOLVER
+#ifdef __CHOLMOD_PREFER_ELEMENTWISE_LINEAR_SOLVER
+	typedef CBasicLinearSolverTag _Tag; /**< @brief solver type tag */
+#else // __CHOLMOD_PREFER_ELEMENTWISE_LINEAR_SOLVER
 	typedef CBlockwiseLinearSolverTag _Tag; /**< @brief solver type tag */
+#endif // __CHOLMOD_PREFER_ELEMENTWISE_LINEAR_SOLVER
 #else // __CHOLMOD_BLOCKY_LINEAR_SOLVER
 	typedef CBasicLinearSolverTag _Tag; /**< @brief solver type tag */
 #endif // __CHOLMOD_BLOCKY_LINEAR_SOLVER
@@ -85,7 +99,7 @@ protected:
 	 */
 	enum {
 		ordering_Method = CHOLMOD_AMD, /**< @brief symbolic ordering method (one of CHOLMOD_METIS, CHOLMOD_NESDIS, CHOLMOD_AMD or CHOLMOD_COLAMD) */
-		analysis_Type = CHOLMOD_SUPERNODAL /**< @brief symbolic analysis type (one of CHOLMOD_AUTO, CHOLMOD_SIMPLICIAL or CHOLMOD_SUPERNODAL) */
+		analysis_Type = CHOLMOD_AUTO /**< @brief symbolic analysis type (one of CHOLMOD_AUTO, CHOLMOD_SIMPLICIAL or CHOLMOD_SUPERNODAL) */
 	};
 
 #ifdef __CHOLMOD_x64_BUT_SHORT
@@ -153,7 +167,7 @@ public:
 	 *
 	 *	@note This function throws std::bad_alloc.
 	 */
-	bool Solve_PosDef(const CUberBlockMatrix &r_lambda, Eigen::VectorXd &r_eta); // throws(std::bad_alloc)
+	bool Solve_PosDef(const CUberBlockMatrix &r_lambda, Eigen::VectorXd &r_eta); // throw(std::bad_alloc)
 
 #ifdef __CHOLMOD_BLOCKY_LINEAR_SOLVER
 
@@ -173,7 +187,7 @@ public:
 	 */
 	bool Factorize_PosDef_Blocky(CUberBlockMatrix &r_factor, const CUberBlockMatrix &r_lambda,
 		std::vector<size_t> &r_workspace, size_t n_dest_row_id = 0,
-		size_t n_dest_column_id = 0, bool b_upper_factor = true); // throws(std::bad_alloc)
+		size_t n_dest_column_id = 0, bool b_upper_factor = true); // throw(std::bad_alloc)
 
 	/**
 	 *	@brief deletes symbolic decomposition, if calculated (forces a symbolic
@@ -205,7 +219,7 @@ public:
 	 *		calculated automatically after the first call to this function,
 	 *		or after Clear_SymbolicDecomposition() was called (preferred).
 	 */
-	bool Solve_PosDef_Blocky(const CUberBlockMatrix &r_lambda, Eigen::VectorXd &r_eta); // throws(std::bad_alloc)
+	bool Solve_PosDef_Blocky(const CUberBlockMatrix &r_lambda, Eigen::VectorXd &r_eta); // throw(std::bad_alloc)
 
 	/**
 	 *	@brief calculates symbolic decomposition of a block
@@ -213,7 +227,7 @@ public:
 	 *	@param[in] r_lambda is positive-definite matrix
 	 *	@return Returns true on success, false on failure.
 	 */
-	bool SymbolicDecomposition_Blocky(const CUberBlockMatrix &r_lambda); // throws(std::bad_alloc)
+	bool SymbolicDecomposition_Blocky(const CUberBlockMatrix &r_lambda); // throw(std::bad_alloc)
 
 #endif // __CHOLMOD_BLOCKY_LINEAR_SOLVER
 

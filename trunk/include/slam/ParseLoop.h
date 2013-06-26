@@ -3,7 +3,7 @@
 								|                                  |
 								|   ***  Parse loop adaptor  ***   |
 								|                                  |
-								|   Copyright © -tHE SWINe- 2012   |
+								|  Copyright (c) -tHE SWINe- 2012  |
 								|                                  |
 								|            ParseLoop.h           |
 								|                                  |
@@ -72,7 +72,7 @@ public:
 	 *		std::runtime_error as a means of error reporting.
 	 */
 	template <class CParsedEdge>
-	void AppendSystem(const CParsedEdge &r_edge) // throws(std::bad_alloc, std::runtime_error)
+	void AppendSystem(const CParsedEdge &r_edge) // throw(std::bad_alloc, std::runtime_error)
 	{
 		CProcessEdge<CParsedEdge, typename CEdgeTraits<CParsedEdge>::_TyEdge>::Do(m_r_system,
 			m_r_solver, r_edge, m_edge_map);
@@ -99,7 +99,7 @@ protected:
 		 *	@note This function throws std::bad_alloc.
 		 */
 		static inline void Do(CSystem &r_system, CNonlinearSolver &r_solver,
-			const CParsedEdge &r_edge, std::map<std::pair<size_t, size_t>, size_t> &r_edge_map) // throws(std::bad_alloc)
+			const CParsedEdge &r_edge, std::map<std::pair<size_t, size_t>, size_t> &r_edge_map) // throw(std::bad_alloc)
 		{
 			std::pair<size_t, size_t> edge_verts(r_edge.m_n_node_0, r_edge.m_n_node_1);
 			// this needs to be changed for multi-edge datasets
@@ -173,7 +173,7 @@ protected:
 		 *	@note This function throws std::runtime_error as a means of error reporting.
 		 */
 		static inline void Do(CSystem &UNUSED(r_system), CNonlinearSolver &UNUSED(r_solver),
-			const CParsedEdge &UNUSED(r_edge), std::map<std::pair<size_t, size_t>, size_t> &UNUSED(r_edge_map)) // throws(std::runtime_error)
+			const CParsedEdge &UNUSED(r_edge), std::map<std::pair<size_t, size_t>, size_t> &UNUSED(r_edge_map)) // throw(std::runtime_error)
 		{
 			typedef CEdgeTraits<CParsedEdge> TEdgeType; // g++ doesn't like 'typename' here
 			throw std::runtime_error(TEdgeType::p_s_Reason());

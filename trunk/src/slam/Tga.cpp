@@ -3,7 +3,7 @@
 								|                                 |
 								|        ***   Targa   ***        |
 								|                                 |
-								|  Copyright  © -tHE SWINe- 2006  |
+								| Copyright  (c) -tHE SWINe- 2006 |
 								|                                 |
 								|             Tga.cpp             |
 								|                                 |
@@ -69,6 +69,11 @@
 /*
  *								=== CTgaCodec ===
  */
+
+/**
+ *	@brief helper classes for TGA codec
+ */
+namespace __tga__ {
 
 /**
  *	@brief function for reading run-length compressed scanlines
@@ -147,11 +152,6 @@ static bool _ReadScanline(TColorStruct t_color_converter,
 	return true;
 }
 
-/**
- *	@brief helper classes for TGA codec
- */
-namespace __tga__ {
-
 #pragma pack(1)
 
 /**
@@ -184,6 +184,238 @@ enum {
 	tga_RGB = 2, /**< @brief image is RGB(A) */
 	tga_Grayscale = 3 /**< @brief image is grayscale */
 };
+
+/**
+ *	@brief color conversion adapter for fast RLE compression
+ */
+class CRLEColorOp_Grey {
+public:
+	typedef uint8_t _TyData; /**< @brief type of data stored in a file */
+
+public:
+	/**
+	 *	@brief masks-out relevant color bits for RLE compression
+	 *	@param[in] n_rgba is input RGBA color
+	 *	@return Returns color with only relevant bits for RLE compression.
+	 */
+	static inline uint32_t n_Mask(uint32_t n_rgba)
+	{
+		return uint8_t(n_rgba >> 16);
+	}
+
+	/**
+	 *	@brief transforms RGBA color to the form to be written to the file
+	 *
+	 *	@param[out] r_n_pixel is data to be stored in a file
+	 *	@param[in] n_rgba is input RGBA color
+	 */
+	static inline void Transform(_TyData &r_n_pixel, uint32_t n_rgba)
+	{
+		r_n_pixel = n_Mask(n_rgba);
+	}
+};
+
+/*class CRLEColorOp_GreyAlpha {
+public:
+	typedef uint8_t _TyData[2];
+
+public:
+	static inline uint32_t n_Mask(uint32_t n_rgba)
+	{
+		return uint16_t(n_rgba >> 16); // alpha and red
+	}
+
+	static inline void Transform(_TyData &r_n_pixel, uint32_t n_rgba)
+	{
+		r_n_pixel[0] = uint8_t(n_rgba >> 16); // R
+		r_n_pixel[1] = uint8_t(n_rgba >> 24); // A
+	}
+};*/ // does not exist in .tga
+
+/**
+ *	@brief color conversion adapter for fast RLE compression
+ */
+class CRLEColorOp_RGB {
+public:
+	typedef uint8_t _TyData[3]; /**< @brief type of data stored in a file */
+
+public:
+	/**
+	 *	@brief masks-out relevant color bits for RLE compression
+	 *	@param[in] n_rgba is input RGBA color
+	 *	@return Returns color with only relevant bits for RLE compression.
+	 */
+	static inline uint32_t n_Mask(uint32_t n_rgba)
+	{
+		return n_rgba & 0xffffff;
+	}
+
+	/**
+	 *	@brief transforms RGBA color to the form to be written to the file
+	 *
+	 *	@param[out] r_n_pixel is data to be stored in a file
+	 *	@param[in] n_rgba is input RGBA color
+	 */
+	static inline void Transform(_TyData &r_n_pixel, uint32_t n_rgba)
+	{
+		r_n_pixel[0] = uint8_t(n_rgba);
+		r_n_pixel[1] = uint8_t(n_rgba >> 8);
+		r_n_pixel[2] = uint8_t(n_rgba >> 16);
+	}
+};
+
+/**
+ *	@brief color conversion adapter for fast RLE compression
+ */
+class CRLEColorOp_RGBA {
+public:
+	typedef uint8_t _TyData[4]; /**< @brief type of data stored in a file */
+
+public:
+	/**
+	 *	@brief masks-out relevant color bits for RLE compression
+	 *	@param[in] n_rgba is input RGBA color
+	 *	@return Returns color with only relevant bits for RLE compression.
+	 */
+	static inline uint32_t n_Mask(uint32_t n_rgba)
+	{
+		return n_rgba;
+	}
+
+	/**
+	 *	@brief transforms RGBA color to the form to be written to the file
+	 *
+	 *	@param[out] r_n_pixel is data to be stored in a file
+	 *	@param[in] n_rgba is input RGBA color
+	 */
+	static inline void Transform(_TyData &r_n_pixel, uint32_t n_rgba)
+	{
+		r_n_pixel[0] = uint8_t(n_rgba);
+		r_n_pixel[1] = uint8_t(n_rgba >> 8);
+		r_n_pixel[2] = uint8_t(n_rgba >> 16);
+		r_n_pixel[3] = uint8_t(n_rgba >> 24);
+	}
+};
+
+/**
+ *	@brief color conversion adapter for fast RLE compression
+ */
+class CRLEColorOp_BGR {
+public:
+	typedef uint8_t _TyData[3]; /**< @brief type of data stored in a file */
+
+public:
+	/**
+	 *	@brief masks-out relevant color bits for RLE compression
+	 *	@param[in] n_rgba is input RGBA color
+	 *	@return Returns color with only relevant bits for RLE compression.
+	 */
+	static inline uint32_t n_Mask(uint32_t n_rgba)
+	{
+		return n_rgba & 0xffffff;
+	}
+
+	/**
+	 *	@brief transforms RGBA color to the form to be written to the file
+	 *
+	 *	@param[out] r_n_pixel is data to be stored in a file
+	 *	@param[in] n_rgba is input RGBA color
+	 */
+	static inline void Transform(_TyData &r_n_pixel, uint32_t n_rgba)
+	{
+		r_n_pixel[0] = uint8_t(n_rgba >> 16);
+		r_n_pixel[1] = uint8_t(n_rgba >> 8);
+		r_n_pixel[2] = uint8_t(n_rgba);
+	}
+};
+
+/**
+ *	@brief color conversion adapter for fast RLE compression
+ */
+class CRLEColorOp_BGRA {
+public:
+	typedef uint8_t _TyData[4]; /**< @brief type of data stored in a file */
+
+public:
+	/**
+	 *	@brief masks-out relevant color bits for RLE compression
+	 *	@param[in] n_rgba is input RGBA color
+	 *	@return Returns color with only relevant bits for RLE compression.
+	 */
+	static inline uint32_t n_Mask(uint32_t n_rgba)
+	{
+		return n_rgba;
+	}
+
+	/**
+	 *	@brief transforms RGBA color to the form to be written to the file
+	 *
+	 *	@param[out] r_n_pixel is data to be stored in a file
+	 *	@param[in] n_rgba is input RGBA color
+	 */
+	static inline void Transform(_TyData &r_n_pixel, uint32_t n_rgba)
+	{
+		r_n_pixel[0] = uint8_t(n_rgba >> 16);
+		r_n_pixel[1] = uint8_t(n_rgba >> 8);
+		r_n_pixel[2] = uint8_t(n_rgba);
+		r_n_pixel[3] = uint8_t(n_rgba >> 24);
+	}
+};
+
+/**
+ *	@brief encodes RLE-compressed scanline
+ *
+ *	@tparam CColorOp is color conversion adapter type
+ *
+ *	@param[in] p_fw is output file
+ *	@param[in] n_remains is number of remaining pixels in the scanline to be encoded
+ *	@param[in] p_ptr is pointer to the current pixel
+ */
+template <class CColorOp>
+static const uint32_t *_p_Write_RLE_Scanline(FILE *p_fw,
+	size_t n_remains, const uint32_t *p_ptr)
+{
+	if(n_remains > 128)
+		n_remains = 128;
+	bool b_compress = n_remains > 2 &&
+		CColorOp::n_Mask(*p_ptr) == CColorOp::n_Mask(*(p_ptr + 1)) &&
+		CColorOp::n_Mask(*p_ptr) == CColorOp::n_Mask(*(p_ptr + 2));
+	size_t n_run_length = n_remains;
+	for(size_t i = 1; i < n_remains; ++ i) {
+		if(b_compress && CColorOp::n_Mask(*p_ptr) != CColorOp::n_Mask(*(p_ptr + i))) {
+			n_run_length = i;
+			break;
+		} else if(!b_compress && i + 1 < n_remains &&
+		   CColorOp::n_Mask(*(p_ptr + i - 1)) == CColorOp::n_Mask(*(p_ptr + i)) &&
+		   CColorOp::n_Mask(*(p_ptr + i - 1)) == CColorOp::n_Mask(*(p_ptr + i + 1))) {
+			n_run_length = i - 1;
+			break;
+		}
+	}
+	// determine run length and wheter to compress data
+
+	uint8_t n_code = uint8_t(n_run_length - 1) | ((b_compress)? 0x80 : 0x00);
+	if(fwrite(&n_code, sizeof(uint8_t), 1, p_fw) != 1)
+		return 0;
+
+	if(b_compress) {
+		typename CColorOp::_TyData n_pixel;
+		CColorOp::Transform(n_pixel, *p_ptr);
+		p_ptr += n_run_length - 1; // "- 1" because of the ++ in the enclosing for
+		if(fwrite(&n_pixel, sizeof(typename CColorOp::_TyData), 1, p_fw) != 1)
+			return 0;
+	} else {
+		for(const uint32_t *p_end3 = p_ptr + n_run_length; p_ptr != p_end3; ++ p_ptr) {
+			typename CColorOp::_TyData n_pixel;
+			CColorOp::Transform(n_pixel, *p_ptr);
+			if(fwrite(&n_pixel, sizeof(typename CColorOp::_TyData), 1, p_fw) != 1)
+				return 0;
+		}
+		-- p_ptr; // ++ in the enclosing for
+	}
+
+	return p_ptr;
+}
 
 }
 using namespace __tga__;
@@ -261,11 +493,6 @@ bool CTgaCodec::Get_ImageInfo(TTGAInfo &r_t_info, const char *p_s_filename)
 	return true;
 }
 
-/*
- *	static TBmp *CTgaCodec::p_Load_TGA(const char *p_s_filename)
- *		- loads image from p_s_filename
- *		- returns pointer to bitmap object or 0 if loading failed
- */
 TBmp *CTgaCodec::p_Load_TGA(const char *p_s_filename)
 {
 	FILE *p_fr;
@@ -412,26 +639,13 @@ TBmp *CTgaCodec::p_Load_TGA(const char *p_s_filename)
 	return p_bitmap;
 }
 
-/*
- *	static inline uint8_t CTgaCodec::n_Red(uint32_t n_rgba)
- *		- returns value of red channel
- */
 inline uint8_t CTgaCodec::n_Red(uint32_t n_rgba)
 {
 	return uint8_t(n_rgba >> 16);
 }
 
-/*
- *	static bool CTgaCodec::Save_TGA(const char *p_s_filename, const TBmp &r_t_bmp)
- *		- write RGB targa image to file p_s_file
- *		- if r_t_bmp.b_alpha is set, image is written as RGBA,
- *		  otherwise as RGB
- *		- if r_t_bmp.b_grayscale is set (while r_t_bmp.b_alpha is not),
- *		  image is written as RLE - compressed greyscale
- *		- note the n_former_bpp field is ignored, images are always saved as 8bpp
- *		- returns true on success, false on failure
- */
-bool CTgaCodec::Save_TGA(const char *p_s_filename, const TBmp &r_t_bmp, bool b_BGRA)
+bool CTgaCodec::Save_TGA(const char *p_s_filename,
+	const TBmp &r_t_bmp, bool b_BGRA, bool b_RGB_RLE /*= false*/)
 {
 	FILE *p_fw;
 #if defined(_MSC_VER) && !defined(__MWERKS__) && _MSC_VER >= 1400
@@ -449,6 +663,8 @@ bool CTgaCodec::Save_TGA(const char *p_s_filename, const TBmp &r_t_bmp, bool b_B
 	} else {
 		t_header.n_bpp = (r_t_bmp.b_alpha)? 32 : 24;
 		t_header.n_image_type = tga_RGB; // rgb
+		if(b_RGB_RLE)
+			t_header.n_image_type |= tga_Compressed_Mask;
 	}
 	t_header.n_image_width = r_t_bmp.n_width;
 	t_header.n_image_height = r_t_bmp.n_height;
@@ -468,35 +684,86 @@ bool CTgaCodec::Save_TGA(const char *p_s_filename, const TBmp &r_t_bmp, bool b_B
 	if(t_header.n_image_type == tga_RGB) {
 		if(!b_BGRA) {
 			if(t_header.n_bpp == 24) {
+				for(const uint32_t *p_ptr = r_t_bmp.p_buffer, *p_end = r_t_bmp.p_buffer +
+				   (n_width * n_height); p_ptr != p_end; ++ p_ptr) {
+					uint32_t n_rgb = *p_ptr;
+					uint8_t p_data[3] = {uint8_t(n_rgb), uint8_t(n_rgb >> 8), uint8_t(n_rgb >> 16)};
+					if(fwrite(p_data, sizeof(uint8_t), 3, p_fw) != 3) {
+						fclose(p_fw);
+						return false;
+					}
+				}
+				// RGB
+			} else {
+				_ASSERTE(t_header.n_bpp == 32);
+				for(const uint32_t *p_ptr = r_t_bmp.p_buffer, *p_end = r_t_bmp.p_buffer +
+				   (n_width * n_height); p_ptr != p_end; ++ p_ptr) {
+					uint32_t n_rgba = *p_ptr;
+					uint8_t p_data[4] = {uint8_t(n_rgba), uint8_t(n_rgba >> 8),
+						uint8_t(n_rgba >> 16), uint8_t(n_rgba >> 24)};
+					if(fwrite(p_data, sizeof(uint8_t), 4, p_fw) != 4) {
+						fclose(p_fw);
+						return false;
+					}
+				}
+				// RGBA
+			}
+		} else {
+			if(t_header.n_bpp == 24) {
+				for(const uint32_t *p_ptr = r_t_bmp.p_buffer, *p_end = r_t_bmp.p_buffer +
+				   (n_width * n_height); p_ptr != p_end; ++ p_ptr) {
+					uint32_t n_rgb = *p_ptr;
+					uint8_t p_data[3] = {uint8_t(n_rgb >> 16), uint8_t(n_rgb >> 8), uint8_t(n_rgb)};
+					if(fwrite(p_data, sizeof(uint8_t), 3, p_fw) != 3) {
+						fclose(p_fw);
+						return false;
+					}
+				}
+				// BGR
+			} else {
+				_ASSERTE(t_header.n_bpp == 32);
+				for(const uint32_t *p_ptr = r_t_bmp.p_buffer, *p_end = r_t_bmp.p_buffer +
+				   (n_width * n_height); p_ptr != p_end; ++ p_ptr) {
+					uint32_t n_rgba = *p_ptr;
+					uint8_t p_data[4] = {uint8_t(n_rgba >> 16), uint8_t(n_rgba >> 8),
+						uint8_t(n_rgba), uint8_t(n_rgba >> 24)};
+					if(fwrite(p_data, sizeof(uint8_t), 4, p_fw) != 4) {
+						fclose(p_fw);
+						return false;
+					}
+				}
+				// BGRA
+			}
+		}
+	} else if(t_header.n_image_type == (tga_RGB | tga_Compressed_Mask)) {
+		if(!b_BGRA) {
+			if(t_header.n_bpp == 24) {
 				for(const uint32_t *p_scanline = r_t_bmp.p_buffer, *p_end = r_t_bmp.p_buffer +
 				   (n_width * n_height); p_scanline != p_end; p_scanline += n_width) {
 					for(const uint32_t *p_ptr = p_scanline, *p_end2 = p_scanline + n_width;
 					   p_ptr != p_end2; ++ p_ptr) {
-						uint32_t n_rgb = *p_ptr;
-						uint8_t p_data[3] = {uint8_t(n_rgb), uint8_t(n_rgb >> 8), uint8_t(n_rgb >> 16)};
-						if(fwrite(p_data, sizeof(uint8_t), 3, p_fw) != 3) {
-							fclose(p_fw);
+						size_t n_remains = p_end2 - p_ptr;
+						if(!(p_ptr = _p_Write_RLE_Scanline<CRLEColorOp_RGB>(p_fw, n_remains, p_ptr))) {
+							fclose(p_fw); // !!
 							return false;
 						}
 					}
 				}
-				// RGB
+				// compressed RGB
 			} else {
 				_ASSERTE(t_header.n_bpp == 32);
 				for(const uint32_t *p_scanline = r_t_bmp.p_buffer, *p_end = r_t_bmp.p_buffer +
 				   (n_width * n_height); p_scanline != p_end; p_scanline += n_width) {
 					for(const uint32_t *p_ptr = p_scanline, *p_end2 = p_scanline + n_width;
 					   p_ptr != p_end2; ++ p_ptr) {
-						uint32_t n_rgba = *p_ptr;
-						uint8_t p_data[4] = {uint8_t(n_rgba), uint8_t(n_rgba >> 8),
-							uint8_t(n_rgba >> 16), uint8_t(n_rgba >> 24)};
-						if(fwrite(p_data, sizeof(uint8_t), 4, p_fw) != 4) {
-							fclose(p_fw);
+						size_t n_remains = p_end2 - p_ptr;
+						if(!(p_ptr = _p_Write_RLE_Scanline<CRLEColorOp_RGBA>(p_fw, n_remains, p_ptr))) {
+							fclose(p_fw); // !!
 							return false;
 						}
 					}
 				}
-				// RGBA
+				// compressed RGBA
 			}
 		} else {
 			if(t_header.n_bpp == 24) {
@@ -504,31 +771,28 @@ bool CTgaCodec::Save_TGA(const char *p_s_filename, const TBmp &r_t_bmp, bool b_B
 				   (n_width * n_height); p_scanline != p_end; p_scanline += n_width) {
 					for(const uint32_t *p_ptr = p_scanline, *p_end2 = p_scanline + n_width;
 					   p_ptr != p_end2; ++ p_ptr) {
-						uint32_t n_rgb = *p_ptr;
-						uint8_t p_data[3] = {uint8_t(n_rgb >> 16), uint8_t(n_rgb >> 8), uint8_t(n_rgb)};
-						if(fwrite(p_data, sizeof(uint8_t), 3, p_fw) != 3) {
-							fclose(p_fw);
+						size_t n_remains = p_end2 - p_ptr;
+						if(!(p_ptr = _p_Write_RLE_Scanline<CRLEColorOp_BGR>(p_fw, n_remains, p_ptr))) {
+							fclose(p_fw); // !!
 							return false;
 						}
 					}
 				}
-				// RGB
+				// compressed BGR
 			} else {
 				_ASSERTE(t_header.n_bpp == 32);
 				for(const uint32_t *p_scanline = r_t_bmp.p_buffer, *p_end = r_t_bmp.p_buffer +
 				   (n_width * n_height); p_scanline != p_end; p_scanline += n_width) {
 					for(const uint32_t *p_ptr = p_scanline, *p_end2 = p_scanline + n_width;
 					   p_ptr != p_end2; ++ p_ptr) {
-						uint32_t n_rgba = *p_ptr;
-						uint8_t p_data[4] = {uint8_t(n_rgba >> 16), uint8_t(n_rgba >> 8),
-							uint8_t(n_rgba), uint8_t(n_rgba >> 24)};
-						if(fwrite(p_data, sizeof(uint8_t), 4, p_fw) != 4) {
-							fclose(p_fw);
+						size_t n_remains = p_end2 - p_ptr;
+						if(!(p_ptr = _p_Write_RLE_Scanline<CRLEColorOp_BGRA>(p_fw, n_remains, p_ptr))) {
+							fclose(p_fw); // !!
 							return false;
 						}
 					}
 				}
-				// RGBA
+				// compressed BGRA
 			}
 		}
 	} else {
@@ -538,7 +802,13 @@ bool CTgaCodec::Save_TGA(const char *p_s_filename, const TBmp &r_t_bmp, bool b_B
 			for(const uint32_t *p_ptr = p_scanline, *p_end2 = p_scanline + n_width;
 			   p_ptr != p_end2; ++ p_ptr) {
 				size_t n_remains = p_end2 - p_ptr;
-				if(n_remains > 128)
+				if(!(p_ptr = _p_Write_RLE_Scanline<CRLEColorOp_Grey>(p_fw, n_remains, p_ptr))) {
+					fclose(p_fw); // !!
+					return false;
+				}
+				// everything in a simple cozy function
+
+				/*if(n_remains > 128)
 					n_remains = 128;
 				bool b_compress = n_remains > 2 && n_Red(*p_ptr) == n_Red(*(p_ptr + 1)) &&
 					n_Red(*p_ptr) == n_Red(*(p_ptr + 2));
@@ -578,7 +848,7 @@ bool CTgaCodec::Save_TGA(const char *p_s_filename, const TBmp &r_t_bmp, bool b_B
 						}
 					}
 					-- p_ptr; // ++ in the for command
-				}
+				}*/
 			}
 		}
 		// RLE grey

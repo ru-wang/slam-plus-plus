@@ -3,7 +3,7 @@
 								|                                  |
 								| ***  Pool-based flat system  *** |
 								|                                  |
-								|   Copyright © -tHE SWINe- 2012   |
+								|  Copyright (c) -tHE SWINe- 2012  |
 								|                                  |
 								|           FlatSystem.h           |
 								|                                  |
@@ -40,14 +40,30 @@
  *	t_odo - handle the unary factor bussiness nicely
  *	t_odo - abstract the linear solvers, test cholmod performance
  *
+ *
  *	@date 2012-09-12
  *
  *	Fixed linux build issues, namely missing template argument in CMultiPool specialization
  *	for a single type, added namespace for types contained in CFlatSystem, and some other minor bugs.
  *
+ *
+ *	@date 2013-05-23
+ *
+ *	Added minimal parallel threshold in For_Each_Parallel(), maybe that was not originally intended
+ *	(the caller was supposed to decide whether they want parallel), but it ended up used in a way
+ *	that requires this.
+ *
  */
 
 #include "slam/TypeList.h"
+
+/**
+ *	@def __BASE_TYPES_USE_ID_ADDRESSING
+ *	@brief if defined, the faster matrix addressing using vertex and edge id's is used (blockwise)
+ *		otherwise addressing based on vertex and edge orders (elementwise) is used
+ *	@note This must be defined here as the CFlatSystem depends on it.
+ */
+#define __BASE_TYPES_USE_ID_ADDRESSING
 
 /*#if !defined(_WIN32) && !defined(_WIN64)
 #define __USE_ALIGNED_MULTIPOOL
@@ -69,7 +85,8 @@ public:
 	template <class CEdge>
 	inline void operator ()(Eigen::MatrixXd &r_t_unary_factor, Eigen::VectorXd &r_v_unary_error, const CEdge &r_edge)
 	{
-		size_t n_edge_dimension = r_edge.n_Dimension();
+		//size_t n_edge_dimension = r_edge.n_Dimension();
+		size_t n_edge_dimension = CEdge::n_vertex0_dimension;//r_edge.p_Vertex(0)->n_Dimension();
 #if 1
 		r_t_unary_factor.resize(n_edge_dimension, n_edge_dimension); // unary factor is an identity matrix
 		r_t_unary_factor.setIdentity();
@@ -259,7 +276,7 @@ public:
 	 *	@note This function throws std::bad_alloc.
 	 */
 	template <class CGenericPalyoadType>
-	CGenericPalyoadType &r_Add_Element(CGenericPalyoadType t_payload) // throws(std::bad_alloc)
+	CGenericPalyoadType &r_Add_Element(CGenericPalyoadType t_payload) // throw(std::bad_alloc)
 	{
 		CGenericPalyoadType *p_storage;
 		m_pool_list.AddElement(p_storage, t_payload);
@@ -331,12 +348,12 @@ public:
 	 *		and explicit reduction).
 	 */
 	template <class COp>
-	void For_Each_Parallel(COp op)
+	void For_Each_Parallel(COp op, const int n_parallel_thresh = 50)
 	{
 #ifdef _OPENMP
 		_ASSERTE(m_uniform_list.size() <= INT_MAX);
 		const int n = int(m_uniform_list.size());
-#pragma omp parallel for default(shared)
+		#pragma omp parallel for default(shared) if(n >= n_parallel_thresh)
 		for(int i = 0; i < n; ++ i)
 			op(*m_uniform_list[i]);
 #else // _OPENMP
@@ -381,14 +398,14 @@ public:
 	 *		and explicit reduction).
 	 */
 	template <class COp>
-	void For_Each_Parallel(size_t n_first, size_t n_last, COp op)
+	void For_Each_Parallel(size_t n_first, size_t n_last, COp op, const int n_parallel_thresh = 50)
 	{
 		_ASSERTE(n_first <= n_last);
 		_ASSERTE(n_last <= m_uniform_list.size());
 #ifdef _OPENMP
 		_ASSERTE(n_last <= INT_MAX);
 		const int n = int(n_last);
-#pragma omp parallel for default(shared)
+		#pragma omp parallel for default(shared) if(n - int(n_first) >= n_parallel_thresh)
 		for(int i = int(n_first); i < n; ++ i)
 			op(*m_uniform_list[i]);
 #else // _OPENMP
@@ -453,7 +470,7 @@ public:
 	 *		(the address is guaranteed not to change).
 	 *	@note This function throws std::bad_alloc.
 	 */
-	_TyDerivedType &r_Add_Element(_TyDerivedType t_payload) // throws(std::bad_alloc)
+	_TyDerivedType &r_Add_Element(_TyDerivedType t_payload) // throw(std::bad_alloc)
 	{
 		m_pool.push_back(t_payload);
 		return *(m_pool.end() - 1);
@@ -504,12 +521,12 @@ public:
 	 *	@copydoc CMultiPool::For_Each_Parallel(COp)
 	 */
 	template <class COp>
-	void For_Each_Parallel(COp op)
+	void For_Each_Parallel(COp op, const int n_parallel_thresh = 50)
 	{
 #ifdef _OPENMP
 		_ASSERTE(m_pool.size() <= INT_MAX);
 		const int n = int(m_pool.size());
-#pragma omp parallel for default(shared)
+		#pragma omp parallel for default(shared) if(n >= n_parallel_thresh)
 		for(int i = 0; i < n; ++ i)
 			op(m_pool[i]); // todo - write pool::parallel_for_each that would simplify it's pointer arithmetic
 #else // _OPENMP
@@ -532,14 +549,14 @@ public:
 	 *	@copydoc CMultiPool::For_Each_Parallel(size_t,size_t,COp)
 	 */
 	template <class COp>
-	void For_Each_Parallel(size_t n_first, size_t n_last, COp op)
+	void For_Each_Parallel(size_t n_first, size_t n_last, COp op, const int n_parallel_thresh = 50)
 	{
 		_ASSERTE(n_first <= n_last);
 		_ASSERTE(n_last <= m_pool.size());
 #ifdef _OPENMP
 		_ASSERTE(n_last <= INT_MAX);
 		const int n = int(n_last);
-#pragma omp parallel for default(shared)
+		#pragma omp parallel for default(shared) if(n - int(n_first) >= n_parallel_thresh)
 		for(int i = int(n_first); i < n; ++ i)
 			op(m_pool[i]); // todo - write pool::parallel_for_each that would simplify it's pointer arithmetic
 #else // _OPENMP
@@ -597,10 +614,36 @@ protected:
 		typedef typename CEdgeType::_TyMatrix1 _TyResult; /**< @brief Eigen dense matrix block type */
 	};
 
+	/**
+	 *	@brief extracts the first unary factor matrix block type from a binary edge
+	 *	@tparam CEdgeType is an edge type name
+	 */
+	template <class CEdgeType>
+	class CEdgeTypeToFirstUnaryFactorType { // needed if the measurement dimension is different from either vertex dimensions
+	public:
+		typedef Eigen::Matrix<double, CEdgeType::n_vertex0_dimension,
+			CEdgeType::n_vertex0_dimension> _TyResult; /**< @brief Eigen dense matrix block type */
+	};
+
+	/**
+	 *	@brief extracts the second unary factor matrix block type from a binary edge
+	 *	@tparam CEdgeType is an edge type name
+	 */
+	template <class CEdgeType>
+	class CEdgeTypeToSecondUnaryFactorType { // needed if the measurement dimension is different from either vertex dimensions
+	public:
+		typedef Eigen::Matrix<double, CEdgeType::n_vertex1_dimension,
+			CEdgeType::n_vertex1_dimension> _TyResult; /**< @brief Eigen dense matrix block type */
+	};
+
 	typedef typename CTransformTypelist<CEdgeTypelist,
 		CEdgeTypeToFirstAJacobianType>::_TyResult TFirstAJacobianList; /**< @brief list of jacobian matrix block types per all the first vertices in all edges (some of the blocks in A) */
 	typedef typename CTransformTypelist<CEdgeTypelist,
 		CEdgeTypeToSecondAJacobianType>::_TyResult TSecondAJacobianList; /**< @brief list of jacobian matrix block types per all the second vertices in all edges (some of the blocks in A) */
+	typedef typename CTransformTypelist<CEdgeTypelist,
+		CEdgeTypeToFirstUnaryFactorType>::_TyResult TFirstAUnaryFactorList; /**< @brief list of unary factor matrix block types per all the first vertices in all edges (some of the blocks in A) */
+	typedef typename CTransformTypelist<CEdgeTypelist,
+		CEdgeTypeToSecondUnaryFactorType>::_TyResult TSecondAUnaryFactorList; /**< @brief list of unary factor matrix block types per all the second vertices in all edges (some of the blocks in A) */
 
 public:
 	typedef size_t _TyId; /**< @brief data type used as the index in the flat structures */
@@ -617,8 +660,10 @@ public:
 	typedef CBaseEdge _TyBaseEdge; /**< @brief the data type for storing measurements */
 	typedef CEdgeTypelist _TyEdgeTypelist; /**< @brief list of edge types */
 
-	typedef typename CUniqueTypelist<typename CConcatTypelist<TFirstAJacobianList,
-		TSecondAJacobianList>::_TyResult>::_TyResult _TyJacobianMatrixBlockList; /**< @brief list of jacobian matrix block types (blocks in A) */
+	typedef typename CUniqueTypelist<typename CConcatTypelist<typename
+		CConcatTypelist<TFirstAJacobianList, TSecondAJacobianList>::_TyResult, typename
+		CConcatTypelist<TFirstAUnaryFactorList, TSecondAUnaryFactorList>::_TyResult>::_TyResult>::_TyResult
+		_TyJacobianMatrixBlockList; /**< @brief list of jacobian and UF matrix block types (blocks in A) */
 
 	typedef __multipool::CMultiPool<_TyBaseVertex, _TyVertexTypelist, pool_PageSize> _TyVertexMultiPool; /**< @brief vertex multipool type */
 	typedef __multipool::CMultiPool<_TyBaseEdge, _TyEdgeTypelist, pool_PageSize> _TyEdgeMultiPool; /**< @brief edge multipool type */
@@ -684,7 +729,7 @@ public:
 	 */
 	inline size_t n_Edge_Num() const
 	{
-		return m_edge_pool.size();
+		return m_edge_pool.n_Size();
 	}
 
 	/**
@@ -693,7 +738,7 @@ public:
 	 */
 	inline size_t n_Vertex_Num() const
 	{
-		return m_vertex_pool.size();
+		return m_vertex_pool.n_Size();
 	}
 
 	/**
@@ -769,10 +814,13 @@ public:
 	 *		(see if it's supported by both msvc and g++).
 	 */
 	template <class CVertexType, class CInitializer>
-	CVertexType &r_Get_Vertex(_TyId n_id, CInitializer init) // throws(std::bad_alloc)
+	CVertexType &r_Get_Vertex(_TyId n_id, CInitializer init) // throw(std::bad_alloc)
 	{
 		if(n_id == m_vertex_pool.n_Size()) {
 			CVertexType &r_t_new_vert = m_vertex_pool.r_Add_Element((CVertexType)(init));
+#ifdef __BASE_TYPES_USE_ID_ADDRESSING
+			r_t_new_vert.Set_Id(n_id);
+#endif // __BASE_TYPES_USE_ID_ADDRESSING
 			r_t_new_vert.Set_Order(m_n_vertex_element_num);
 			m_n_vertex_element_num += r_t_new_vert.n_Dimension();
 			return r_t_new_vert;
@@ -795,7 +843,7 @@ public:
 	 *	@note This sets edge order, do not overwrite it!
 	 */
 	template <class _TyEdge>
-	_TyEdge &r_Add_Edge(_TyEdge t_edge) // throws(std::bad_alloc)
+	_TyEdge &r_Add_Edge(_TyEdge t_edge) // throw(std::bad_alloc)
 	{
 		bool b_was_empty;
 		if((b_was_empty = m_edge_pool.b_Empty())) {
@@ -805,6 +853,9 @@ public:
 		// in case it is the first edge, gets the unary factor and the error associated with it
 
 		_TyEdge &r_t_new_edge = m_edge_pool.r_Add_Element(t_edge);
+#ifdef __BASE_TYPES_USE_ID_ADDRESSING
+		r_t_new_edge.Set_Id(m_edge_pool.n_Size() - 1);
+#endif // __BASE_TYPES_USE_ID_ADDRESSING
 		r_t_new_edge.Set_Order(m_n_edge_element_num);
 
 		m_n_edge_element_num += r_t_new_edge.n_Dimension();

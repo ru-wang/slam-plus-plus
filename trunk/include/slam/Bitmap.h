@@ -3,7 +3,7 @@
 								|                                |
 								|       ***   Bitmap   ***       |
 								|                                |
-								|  Copyright © -tHE SWINe- 2011  |
+								| Copyright (c) -tHE SWINe- 2011 |
 								|                                |
 								|            Bitmap.h            |
 								|                                |
@@ -123,7 +123,7 @@ struct TBmp {
 	static inline TBmp *p_CreateBitmap(int _n_width, int _n_height,
 		bool _b_grayscale = false, bool _b_alpha = false, int _n_former_bpp = 8)
 	{
-		return p_CreateBitmap(_n_width, _n_height, _b_grayscale, _b_alpha, _n_former_bpp);
+		return p_Alloc(_n_width, _n_height, _b_grayscale, _b_alpha, _n_former_bpp);
 	}
 
 	/**
@@ -350,7 +350,7 @@ struct TBmp {
 			}
 		}
 		if(!b_not_narrow)
-			f_dxdy = 1; // stable value for this part
+			f_dxdy = 1e37f; // stable value for this part (or could branch below)
 		if(r_f_y0 < 0 || r_f_y1 < 0) {
 			if(r_f_y0 < 0 && r_f_y1 < 0)
 				return false; // offscreen

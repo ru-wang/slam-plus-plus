@@ -3,7 +3,7 @@
 								|                                   |
 								|      ***  .graph Parser  ***      |
 								|                                   |
-								|   Copyright  © -tHE SWINe- 2012   |
+								|  Copyright  (c) -tHE SWINe- 2012  |
 								|                                   |
 								|            Parser.cpp             |
 								|                                   |

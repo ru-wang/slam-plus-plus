@@ -2,7 +2,7 @@
  *	@file include/slam/SE3_Types.h
  *	@author Soso
  *	@date 2013
- *	@brief projection type for BA
+ *	@brief projection type for SE3
  */
 
 #pragma once

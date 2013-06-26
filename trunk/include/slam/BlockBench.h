@@ -3,7 +3,7 @@
 								|                                |
 								| *** Block matrix benchmark *** |
 								|                                |
-								|  Copyright © -tHE SWINe- 2012  |
+								| Copyright (c) -tHE SWINe- 2012 |
 								|                                |
 								|          BlockBench.h          |
 								|                                |
@@ -283,6 +283,488 @@ protected:
 	CNameSet m_props_label_set; /**< @brief set of properties labels */
 	std::vector<TTestRun> m_test_list; /**< @brief list of tests with samples for analysis */
 	bool m_b_test_active; /**< @brief test activity flag (if set, the last entry in m_test_list is the active test) */
+
+	
+	/**
+	 *	@brief matrix decomposition benchmarks
+	 *	@tparam COrderingType is ordering function for triplet entries
+	 *	@tparam n_block_size is matrix block size for the given benchmark
+	 */
+	template <const int n_block_size, class COrderingType>
+	class CBenchmarkCholesky {
+	public:
+		/**
+		 *	@brief configuration enums
+		 */
+		enum {
+			block_Size = n_block_size /**< @brief preset block size (const at compile-time) */
+		};
+
+		/**
+		 *	@brief block matrix type (specifically avoids AutoAlign under x86)
+		 */
+#if defined(_M_X64) || defined(_M_AMD64) || defined(_M_IA64) || defined(__x86_64) || defined(__amd64) || defined(__ia64)
+		typedef Eigen::Matrix<double, block_Size, block_Size> TBlockMatrix;
+#else // _M_X64 || _M_AMD64 || _M_IA64 || __x86_64 || __amd64 || __ia64
+		typedef Eigen::Matrix<double, block_Size, block_Size, Eigen::DontAlign> TBlockMatrix; // AutoAlign sometimes aligns matrices (if block_Size is power of two?) and then bat shit happens under x86
+#endif // _M_X64 || _M_AMD64 || _M_IA64 || __x86_64 || __amd64 || __ia64
+
+	protected:
+		CBlockMatrixBenchmark *m_p_parent; /**< @brief pointer to the instance of outer class (contains the timers) */
+		size_t m_n_matrix_id; /**< @brief matrix id (just a zero-based counter; unused in this test so far) */
+
+		typedef std::map<std::pair<size_t, size_t>, TBlockMatrix, COrderingType> TBlockMap; /**< @brief ordered container for matrix blocks */
+
+	public:
+		/**
+		 *	@brief default constructor
+		 *	@param[in] p_parent is a pointer to the instance of outer class (contains the timers)
+		 */
+		CBenchmarkCholesky(CBlockMatrixBenchmark *p_parent)
+			:m_p_parent(p_parent), m_n_matrix_id(0)
+		{}
+
+		/**
+		 *	@brief performs testing on one matrix
+		 *
+		 *	@param[in] r_raw_trip_matrix is the matrix to be tested
+		 *	@param[in] r_s_filename is name of file where the matrix is stored (for verbose)
+		 *
+		 *	@return Returns true on success, false on failure.
+		 */
+		bool operator ()(const TRawMatrix &r_raw_trip_matrix, const std::string &r_s_filename)
+		{
+			bool b_have_layout = false;
+			size_t n_layout_w, n_layout_h, n_layout_nnz;
+			size_t n_layout_bw, n_layout_bh, n_layout_bnnz;
+			std::vector<size_t> cols_cumsums;
+			std::vector<size_t> rows_cumsums;
+			do {
+				char p_s_layout_file[256];
+				strcpy(p_s_layout_file, r_s_filename.c_str());
+				if(strrchr(p_s_layout_file, '.'))
+					*(char*)strrchr(p_s_layout_file, '.') = 0;
+				strcat(p_s_layout_file, "_block-layout.txt");
+				// see if we have block layout
+
+				FILE *p_fr;
+				if(!(p_fr = fopen(p_s_layout_file, "r")))
+					break;
+				if(fscanf(p_fr, PRIsize " x " PRIsize " (" PRIsize ")\n", &n_layout_h,
+				   &n_layout_w, &n_layout_nnz) != 3) {
+					fclose(p_fr);
+					break;
+				}
+				if(n_layout_h != r_raw_trip_matrix.n_row_num ||
+				   n_layout_w != r_raw_trip_matrix.n_col_num ||
+				   n_layout_nnz != r_raw_trip_matrix.data.size()) {
+					fprintf(stderr, "error: unable to use stored layout: size/nnz mismatch\n");
+					fclose(p_fr);
+					break;
+				}
+				if(fscanf(p_fr, PRIsize " x " PRIsize " (" PRIsize ")\n", &n_layout_bh,
+				   &n_layout_bw, &n_layout_bnnz) != 3) {
+					fclose(p_fr);
+					break;
+				}
+				rows_cumsums.resize(n_layout_bh+1); // first is zero
+				cols_cumsums.resize(n_layout_bw+1); // first is zero
+				bool b_fail = false;
+				for(size_t i = 0, n = rows_cumsums.size(); i < n; ++ i) {
+					size_t n_cumsum;
+					if(fscanf(p_fr, PRIsize, &n_cumsum) != 1) {
+						b_fail = true;
+						break;
+					}
+					rows_cumsums[i] = n_cumsum;
+					if(i && rows_cumsums[i] - rows_cumsums[i - 1] != block_Size &&
+					   rows_cumsums[i] - rows_cumsums[i - 1] != block_Size + 1) {
+						fprintf(stderr, "error: unable to use stored layout: block size %d (must be %d or %d)\n",
+							rows_cumsums[i] - rows_cumsums[i - 1], block_Size, block_Size + 1);
+						b_fail = true;
+						break;
+					}
+				}
+				if(b_fail) {
+					fclose(p_fr);
+					break;
+				}
+				for(size_t i = 0, n = cols_cumsums.size(); i < n; ++ i) {
+					size_t n_cumsum;
+					if(fscanf(p_fr, PRIsize, &n_cumsum) != 1) {
+						b_fail = true;
+						break;
+					}
+					cols_cumsums[i] = n_cumsum;
+					if(i && cols_cumsums[i] - cols_cumsums[i - 1] != block_Size &&
+					   cols_cumsums[i] - cols_cumsums[i - 1] != block_Size + 1) {
+						fprintf(stderr, "error: unable to use stored layout: block size %d (must be %d or %d)\n",
+							cols_cumsums[i] - cols_cumsums[i - 1], block_Size, block_Size + 1);
+						b_fail = true;
+						break;
+					}
+				}
+				if(b_fail) {
+					fclose(p_fr);
+					break;
+				}
+				fclose(p_fr);
+
+				if(rows_cumsums.front() != 0 || rows_cumsums.back() != n_layout_h ||
+				   cols_cumsums.front() != 0 || cols_cumsums.back() != n_layout_w) {
+					fprintf(stderr, "error: unable to use stored layout: corrupt cumsums\n");
+					break;
+				}
+
+				fprintf(stderr, "debug: using special layout for \'%s\'\n", r_s_filename.c_str());
+				b_have_layout = true;
+			} while(0);
+
+			size_t n_pass_num = m_p_parent->n_Pass_Num();
+
+			if(r_raw_trip_matrix.n_col_num != r_raw_trip_matrix.n_row_num) {
+				fprintf(stderr, "warning: skipping \'%s\': not Cholesky candidate"
+					" (" PRIsize " x " PRIsize ")\n", r_s_filename.c_str(),
+					r_raw_trip_matrix.n_row_num, r_raw_trip_matrix.n_col_num);
+				return true; // unlikely a candidate for cholesky
+			}
+#ifdef __BLOCK_BENCH_BLOCK_TYPE_A
+			if(!b_have_layout && r_raw_trip_matrix.n_col_num % block_Size) {
+				fprintf(stderr, "warning: skipping \'%s\': not multiple of block size"
+					" (" PRIsize " x " PRIsize ")\n", r_s_filename.c_str(),
+					r_raw_trip_matrix.n_col_num, r_raw_trip_matrix.n_col_num);
+				return true;
+			}
+#endif // __BLOCK_BENCH_BLOCK_TYPE_A
+
+			m_p_parent->BeginTest(r_s_filename);
+			// begin a test
+
+			m_p_parent->SetTestProperty("matrix-rows", double(r_raw_trip_matrix.n_row_num));
+			m_p_parent->SetTestProperty("matrix-cols", double(r_raw_trip_matrix.n_col_num));
+			m_p_parent->SetTestProperty("matrix-sparsity", double(r_raw_trip_matrix.data.size()) /
+				(r_raw_trip_matrix.n_row_num * r_raw_trip_matrix.n_col_num));
+			// set test properties
+
+			std::string s_base_filename = r_s_filename;
+			if(s_base_filename.rfind('.') != std::string::npos)
+				s_base_filename.erase(s_base_filename.rfind('.'));
+			// create base filename
+
+#ifdef __BLOCK_BENCH_DUMP_MATRICES_IN_MATLAB_FORMAT
+			printf("matrix \'%s\' is %d x %d\n", r_s_filename.c_str(),
+				r_raw_trip_matrix.n_row_num, r_raw_trip_matrix.n_col_num);
+			// multiplication debugging
+
+			{
+				cs *p_trip = cs_spalloc(r_raw_trip_matrix.n_row_num, r_raw_trip_matrix.n_col_num, 1, 1, 1);
+				for(size_t i = 0, n = r_raw_trip_matrix.data.size(); i < n; ++ i) {
+					const TTrip &r_tr = r_raw_trip_matrix.data[i];
+					cs_entry(p_trip, r_tr.n_row, r_tr.n_col, r_tr.f_value);
+				}
+				cs *p_A = cs_compress(p_trip);
+				cs_spfree(p_trip);
+				// create sparse matrix
+
+				FILE *p_fw;
+				std::string s_filename = s_base_filename + "_raw.m";
+#if defined(_MSC_VER) && !defined(__MWERKS__) && _MSC_VER >= 1400
+				if(!fopen_s(&p_fw, s_filename.c_str(), "w")) {
+#else //_MSC_VER && !__MWERKS__ && _MSC_VER >= 1400
+				if(p_fw = fopen(s_filename.c_str(), "w")) {
+#endif //_MSC_VER && !__MWERKS__ && _MSC_VER >= 1400
+					if(!CDebug::Print_SparseMatrix_in_MatlabFormat(p_fw, p_A, "m = ") ||
+					   ferror(p_fw)) {
+						fprintf(stderr, "error: failed to save \'%s\'\n", s_filename.c_str());
+						DeleteFile(s_filename.c_str());
+					}
+					fclose(p_fw);
+				} else {
+					fprintf(stderr, "error: failed to open \'%s\' for writing\n", s_filename.c_str());
+					DeleteFile(s_filename.c_str());
+				}
+				// save it
+
+				cs_spfree(p_A);
+			}
+#endif // __BLOCK_BENCH_DUMP_MATRICES_IN_MATLAB_FORMAT
+
+			for(size_t n_pass = 0; n_pass < n_pass_num; ++ n_pass) {
+				m_p_parent->StartTimer("ublock-trip");
+
+				TBlockMap block_list; // blocks and their coordinates
+				for(size_t i = 0, n = r_raw_trip_matrix.data.size(); i < n; ++ i) {
+					const TTrip &r_tr = r_raw_trip_matrix.data[i];
+#ifdef __BLOCK_BENCH_BLOCK_TYPE_A
+					size_t x = r_tr.n_col / block_Size, y = r_tr.n_row / block_Size;
+					size_t bx = r_tr.n_col % block_Size, by = r_tr.n_row % block_Size;
+					typename TBlockMap::iterator p_block_it;
+					if((p_block_it = block_list.find(std::make_pair(x, y))) != block_list.end())
+						(*p_block_it).second(by, bx) = r_tr.f_value; // no += to avoid doubling upper diag
+					else {
+						TBlockMatrix b;
+						b.setZero();
+						b(by, bx) = r_tr.f_value;
+						block_list[std::make_pair(x, y)] = b;
+					}
+#else // __BLOCK_BENCH_BLOCK_TYPE_A
+					size_t x = r_tr.n_col, y = r_tr.n_row; // convert nonzero elements to blocks
+					TBlockMatrix b;
+					b.setConstant(r_tr.f_value); // or as NIST BLAS, use constant value that doesn't produce denormals and != 1 (isn't identity in multiplication)
+					if(block_Size > 1) {
+#if 1
+						b.diagonal() *= 2; // raise the diagonal to be pos def
+						// like this
+#else // 1
+						for(size_t j = 0; j < block_Size; ++ j)
+							b(j, j) += 1; // does not work
+						// raise the diagonal to be pos def
+						// or like that
+#endif // 1
+					}
+					block_list[std::make_pair(x, y)] = b; // just put it there
+#endif // __BLOCK_BENCH_BLOCK_TYPE_A
+
+					if(x > y)
+						continue; // has upper diagonal - ok
+					// uflcsm contains only lower triangular parts of cholesky candidate matrices,
+					// have to mirror the lower diagonal parts (has no influence on full matrices)
+
+					std::swap(x, y);
+#ifdef __BLOCK_BENCH_BLOCK_TYPE_A
+					std::swap(bx, by);
+					if((p_block_it = block_list.find(std::make_pair(x, y))) != block_list.end())
+						(*p_block_it).second(by, bx) = r_tr.f_value; // no += to avoid doubling upper diag
+					else {
+						TBlockMatrix b;
+						b.setZero();
+						b(by, bx) = r_tr.f_value;
+						block_list[std::make_pair(x, y)] = b;
+					}
+#else // __BLOCK_BENCH_BLOCK_TYPE_A
+					block_list[std::make_pair(x, y)] = b; // just put it there
+#endif // __BLOCK_BENCH_BLOCK_TYPE_A
+				}
+				// creates "triplet form" (sort by columns - by rows is much slower)
+
+				m_p_parent->StopTimer("ublock-trip");
+
+				{
+					m_p_parent->StartTimer("ublock-compress");
+
+					CUberBlockMatrix bm((r_raw_trip_matrix.n_row_num + block_Size - 1) / block_Size,
+						(r_raw_trip_matrix.n_col_num + block_Size - 1) / block_Size);
+					std::for_each(block_list.begin(), block_list.end(), CAppendBlock<TBlockMatrix, block_Size>(bm));
+
+					m_p_parent->StopTimer("ublock-compress");
+
+					if(b_have_layout) {
+						CUberBlockMatrix bm_lay(rows_cumsums.begin() + 1, rows_cumsums.end(),
+							cols_cumsums.begin() + 1, cols_cumsums.end());
+						if(bm_lay.n_Row_Num() > bm.n_Row_Num() || bm_lay.n_Column_Num() > bm.n_Column_Num()) {
+							fprintf(stderr, "error: the provided layout does not fit\n");
+							return false;
+						}
+						if(!bm_lay.b_SymmetricLayout()) {
+							fprintf(stderr, "error: the provided layout is not symmetric\n");
+							return false;
+						}
+						// create matrix with layout
+
+						cs *p_elem = bm.p_Convert_to_Sparse();
+
+						if(size_t(p_elem->n) > bm_lay.n_Column_Num())
+							p_elem->n = bm_lay.n_Column_Num();
+						if(size_t(p_elem->m) > bm_lay.n_Row_Num()) {
+							size_t m = p_elem->m = bm_lay.n_Row_Num();
+							for(size_t i = 0; i < size_t(p_elem->n); ++ i) {
+								for(size_t b = p_elem->p[i], e = p_elem->p[i + 1]; b < e; ++ b) {
+									if(size_t(p_elem->i[b]) >= m) {
+										p_elem->i[b] = p_elem->i[b - 1];
+										p_elem->x[b] = 0;
+										// just dup the last value, From_Sparse() doesn't have the additive semantic
+									}
+								}
+							}
+							cs_droptol(p_elem, 0); // remove the nulls
+						}
+						// "trim" the matrix if too big
+
+						std::vector<size_t> work;
+						bm_lay.From_Sparse(0, 0, p_elem, false, work);
+						cs_spfree(p_elem);
+						// convert to sparse and then eat it back to the matrix with the specific layout (wowzer)
+
+						bm.Swap(bm_lay);
+						// use this in the tests from now on
+					}
+					// applies the preloaded layout
+
+#ifdef __BLOCK_BENCH_CHOLESKY_USE_AMD
+					{
+						cs *p_struct = bm.p_BlockStructure_to_Sparse();
+						_ASSERTE(sizeof(size_t) == sizeof(csi));
+						size_t *p_order = (size_t*)cs_amd(1, p_struct);
+						size_t *p_order_inv = (size_t*)cs_pinv((const csi*)p_order, p_struct->n);
+						CUberBlockMatrix perm;
+						bm.PermuteTo(perm, p_order_inv, bm.n_BlockColumn_Num(), true, true, false);
+						perm.Swap(bm);
+						cs_spfree(p_struct);
+						cs_free(p_order);
+						cs_free(p_order_inv);
+					}
+					// reorder the matrix using AMD
+#endif // __BLOCK_BENCH_CHOLESKY_USE_AMD
+
+					m_p_parent->StartTimer("ublock-etree");
+
+					std::vector<size_t> etree, work;
+					bm.Build_EliminationTree(etree, work);
+
+					m_p_parent->StopTimer("ublock-etree");
+
+					m_p_parent->StartTimer("ublock-ereach");
+
+					const size_t n = bm.n_BlockColumn_Num();
+					std::vector<size_t> bitfield;
+					bitfield.resize(n, 0);
+					for(size_t i = 0; i < n; ++ i)
+						bm.n_Build_EReach(i, etree, work, bitfield);
+
+					m_p_parent->StopTimer("ublock-ereach");
+
+					{
+						m_p_parent->StartTimer("ublock-chol");
+
+						CUberBlockMatrix R;
+						bool b_success = R.CholeskyOf(bm, etree, work, bitfield);
+
+						if(b_success)
+							m_p_parent->StopTimer("ublock-chol");
+						else {
+							m_p_parent->CancelTimer("ublock-chol");
+							fprintf(stderr, "warning: R.CholeskyOf(%s) failed\n", r_s_filename.c_str());
+						}
+					}
+
+					typedef typename MakeTypelist_Safe((Eigen::Matrix<double, block_Size, block_Size>)) one_type_list;
+					typedef typename MakeTypelist_Safe((Eigen::Matrix<double, block_Size, block_Size>,
+						Eigen::Matrix<double, block_Size + 1, block_Size + 1>,
+						Eigen::Matrix<double, block_Size, block_Size + 1>,
+						Eigen::Matrix<double, block_Size + 1, block_Size>)) two_type_list; // that's correct, instances
+					// block size lists with one and two (four actually, two per dimension) different block sizes
+
+					m_p_parent->StartTimer("ublock-chol-FBS");
+
+					CUberBlockMatrix R;
+					bool b_success;
+					if(b_have_layout) // landmark datasets need layouts, use two_type_list
+						b_success = R.CholeskyOf_FBS<two_type_list>(bm, etree, work, bitfield);
+					else
+						b_success = R.CholeskyOf_FBS<one_type_list>(bm, etree, work, bitfield);
+
+					if(b_success)
+						m_p_parent->StopTimer("ublock-chol-FBS");
+					else {
+						m_p_parent->CancelTimer("ublock-chol-FBS");
+						fprintf(stderr, "warning: R.CholeskyOf_FBS(%s) failed\n", r_s_filename.c_str());
+					}
+
+					if(!n_pass && b_success) {
+						CUberBlockMatrix bm_back;
+						R.PreMultiplyWithSelfTransposeTo(bm_back);
+						bm.AddTo(bm_back, -1);
+						double f_a_diff_ubm = bm_back.f_Norm();
+						// calculate difference for UBM
+
+						m_p_parent->SetTestProperty("RTR - A", f_a_diff_ubm);
+					}
+					// calculate factorization errors in the first pass
+
+					m_p_parent->StartTimer("ublock-to-cs");
+
+					cs *p_m = bm.p_Convert_to_Sparse();
+
+					m_p_parent->StopTimer("ublock-to-cs");
+
+					m_p_parent->StartTimer("cs-etree");
+
+					csi *p_etree = cs_etree(p_m, 0);
+
+					m_p_parent->StopTimer("cs-etree");
+
+					m_p_parent->StartTimer("cs-ereach");
+
+					std::vector<csi> w, s;
+					w.resize(p_m->n * 2, 0);
+					s.resize(p_m->n * 2, 0);
+					for(size_t i = 0, n = p_m->n; i < n; ++ i)
+						cs_ereach(p_m, i, p_etree, &s[0], &w[0]);
+
+					m_p_parent->StopTimer("cs-ereach");
+
+					m_p_parent->StartTimer("cs-symbolic");
+
+					css *p_s = cs_schol(0, p_m);
+
+					m_p_parent->StopTimer("cs-symbolic");
+
+					m_p_parent->StartTimer("cs-chol");
+
+					csn *p_f = cs_chol(p_m, p_s);
+
+					if(p_f)
+						m_p_parent->StopTimer("cs-chol");
+					else {
+						m_p_parent->CancelTimer("cs-chol");
+						fprintf(stderr, "warning: cs_chol(%s) failed\n", r_s_filename.c_str());
+					}
+
+					// big todo - benchmark cholesky with ordering (cs_amd to be fair),
+					// measure time for matrix permutation and times for cs_cholsolve and our
+					// (involves cs_amd, TranposeUpperDiagTo(), CholeskyOf(), cs_ipvec(),
+					// UpperTriangularTranspose_Solve(), UpperTriangular_Solve() and cs_pvec())
+
+					if(p_f && !n_pass) {
+						cs *p_cs_r = cs_transpose(p_f->L, 1);
+						if(b_success) {
+							cs *p_r = R.p_Convert_to_Sparse();
+							cs *p_fac_diff = cs_add(p_cs_r, p_r, 1, -1);
+							double f_fac_diff = cs_norm(p_fac_diff);
+							m_p_parent->SetTestProperty("L_ref - RT", f_fac_diff);
+
+							cs_spfree(p_r);
+							cs_spfree(p_fac_diff);
+						}
+
+						cs *p_a_back = cs_multiply(p_f->L, p_cs_r);
+						cs *p_a_diff = cs_add(p_m, p_a_back, 1, -1);
+						double f_a_diff_cs = cs_norm(p_a_diff);
+						m_p_parent->SetTestProperty("LLT_ref - A", f_a_diff_cs);
+
+						cs_spfree(p_cs_r);
+						cs_spfree(p_a_back);
+						cs_spfree(p_a_diff);
+
+					}
+					// calculate factorization errors in the first pass
+
+					cs_spfree(p_m);
+					free(p_etree);
+					cs_sfree(p_s);
+					if(p_f)
+						cs_nfree(p_f);
+					// free everything
+				}
+			}
+
+			++ m_n_matrix_id;
+
+			m_p_parent->EndTest(r_s_filename);
+
+			return true;
+		}
+	};
 
 	/**
 	 *	@brief matrix allocation time (and other) benchmarks
@@ -1783,7 +2265,7 @@ public:
 
 		try {
 			printf("testing with order_ColumnMajor (default), block_Size = %d\n", n_block_size);
-			return false;//Iterate_Matrices(p_s_benchmark, CBenchmarkCholesky<n_block_size, CComparePairByFirst>(this));
+			return Iterate_Matrices(p_s_benchmark, CBenchmarkCholesky<n_block_size, CComparePairByFirst>(this));
 		} catch(std::exception &r_exc) {
 			fprintf(stderr, "error: uncaught exception: \'%s\' during"
 				" the benchmarks. results invalid.\n", r_exc.what());
@@ -1851,14 +2333,14 @@ public:
 	 *	@param[in] p_s_label is label of the timer
 	 *	@note This function throws std::bad_alloc.
 	 */
-	void StartTimer(const char *p_s_label); // throws(std::bad_alloc)
+	void StartTimer(const char *p_s_label); // throw(std::bad_alloc)
 
 	/**
 	 *	@brief begins a test
 	 *	@param[in] r_s_label is name of the test
 	 *	@note This function throws std::bad_alloc.
 	 */
-	void BeginTest(const std::string &r_s_label); // throws(std::bad_alloc)
+	void BeginTest(const std::string &r_s_label); // throw(std::bad_alloc)
 
 	/**
 	 *	@brief sets test property
@@ -1866,7 +2348,7 @@ public:
 	 *	@param[in] f_value is value of the test property
 	 *	@note This function throws std::bad_alloc.
 	 */
-	void SetTestProperty(const char *p_s_label, double f_value); // throws(std::bad_alloc)
+	void SetTestProperty(const char *p_s_label, double f_value); // throw(std::bad_alloc)
 
 	/**
 	 *	@brief ends a test
@@ -1920,7 +2402,7 @@ public:
 	 *	@note This function throws std::bad_alloc.
 	 */
 	template <class CFunctor>
-	bool Iterate_Matrices(const char *p_s_benchmark, CFunctor matrix_sink) // throws(std::bad_alloc)
+	bool Iterate_Matrices(const char *p_s_benchmark, CFunctor matrix_sink) // throw(std::bad_alloc)
 	{
 		std::string s_bench = p_s_benchmark;
 		if(!s_bench.empty() && s_bench[s_bench.length()] != '/' && s_bench[s_bench.length()] != '\\')

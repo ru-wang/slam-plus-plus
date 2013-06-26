@@ -3,7 +3,7 @@
 								|                                |
 								| *** Portable integer types *** |
 								|                                |
-								|  Copyright © -tHE SWINe- 2008  |
+								| Copyright (c) -tHE SWINe- 2008 |
 								|                                |
 								|            Integer.h           |
 								|                                |

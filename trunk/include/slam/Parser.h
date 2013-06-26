@@ -3,7 +3,7 @@
 								|                                   |
 								|      ***  .graph Parser  ***      |
 								|                                   |
-								|   Copyright  © -tHE SWINe- 2012   |
+								|  Copyright  (c) -tHE SWINe- 2012  |
 								|                                   |
 								|             Parser.h              |
 								|                                   |
@@ -279,45 +279,6 @@ public:
 	};
 
 	/**
-	 *	@brief Point projection measurement base class
-	 */
-	struct TProjection3D : public CParseEntity {
-		int m_n_node_0; /**< @brief (zero-based) index of the first (origin) node */
-	 	int m_n_node_1; /**< @brief (zero-based) index of the second (endpoint) node */
-	 	Eigen::Vector2d m_v_delta; /**< @brief dealte measurement (also called "z") */
-	 	Eigen::Matrix2d m_t_inv_sigma; /**< @brief inverse sigma matrix, elements are square roots (also called "Sz") */
-
-	 	/**
-		 *	@brief default constructor
-		 *
-		 *	@param[in] n_node_0 is (zero-based) index of the 3D point
-		 *	@param[in] n_node_1 is (zero-based) index of the view the point is seen in
-		 *	@param[in] f_delta_x is delta x position
-		 *	@param[in] f_delta_y is delta y position
-		 *	@param[in] p_upper_matrix_2x2 is row-major upper triangular and diagonal 2x2 matrix
-		 *		containing transformation between the nodes, elements are square roots
-		 *
-		 *	The matrix is stored row by row from top to bottom,
-		 *	with left to right column order. Example:
-		 *	@code
-		 *	|0 1|
-		 *	|  2|
-		 *	@endcode
-		 */
-	 	inline TProjection3D(int n_node_0, int n_node_1,
-		 	double f_delta_x, double f_delta_y, const double *p_upper_matrix_2x2) // you can change the parameters as you wish
- 	    	:m_n_node_0(n_node_0), m_n_node_1(n_node_1), // fill the indices of edge vertices (these should be zero-based)
- 	        m_v_delta(f_delta_x, f_delta_y) // fill the measurement vector
- 	    {
- 	        m_t_inv_sigma <<
- 	            p_upper_matrix_2x2[0], p_upper_matrix_2x2[1],
- 	            p_upper_matrix_2x2[1], p_upper_matrix_2x2[2]; // fill the inverse sigma matrix
- 	    }
-
-	 	EIGEN_MAKE_ALIGNED_OPERATOR_NEW // this is imposed by the use of eigen, copy it
-	};
-
-	/**
 	 *	@brief node measurement class ("VERTEX3" in the datafile)
 	 */
 	struct TVertex3D : public CParseEntity {
@@ -342,6 +303,108 @@ public:
 		{
 			m_v_position << f_x, f_y, f_z, ax, ay, az;
 			// no constructor for 6-valued vector
+		}
+
+		EIGEN_MAKE_ALIGNED_OPERATOR_NEW
+	};
+
+	/**
+	 *	@brief node measurement class ("VERTEX_XYZ" in the datafile)
+	 */
+	struct TVertexXYZ : public CParseEntity {
+		int m_n_id; /**< @brief vertex id */
+		Eigen::Matrix<double, 3, 1> m_v_position; /**< @brief vertex position (the state vector) */
+
+		/**
+		 *	@brief default constructor
+		 *
+		 *	@param[in] n_node_id is (zero-based) index of the node
+		 *	@param[in] f_x is x position
+		 *	@param[in] f_y is y position
+		 *	@param[in] f_z is z position
+		 *
+		 *	@note The vertices are only used as ground truth. Those are mostly not processed.
+		 */
+		inline TVertexXYZ(int n_node_id, double f_x, double f_y, double f_z)
+			:m_n_id(n_node_id)
+		{
+			m_v_position << f_x, f_y, f_z;
+			// no constructor for 3-valued vector
+		}
+
+		EIGEN_MAKE_ALIGNED_OPERATOR_NEW
+	};
+
+	/**
+	 *	@brief node measurement class ("VERTEX_CAM" in the datafile)
+	 */
+	struct TVertexCam3D : public CParseEntity {
+		int m_n_id; /**< @brief vertex id */
+		Eigen::Matrix<double, 10, 1> m_v_position; /**< @brief vertex position (the state vector) */
+
+		/**
+		 *	@brief default constructor
+		 *
+		 *	@param[in] n_node_id is (zero-based) index of the node
+		 *	@param[in] p_x is x position
+		 *	@param[in] p_y is y position
+		 *	@param[in] p_z is z position
+		 *	@param[in] ax is x axis angle
+		 *	@param[in] ay is y axis angle
+		 *	@param[in] az is z axis angle
+		 *	@param[in] fx is x focal length
+		 *	@param[in] fy is y focal length
+		 *	@param[in] cx is x principal point
+		 *	@param[in] cy is y principal point
+		 *
+		 *	@note The vertices are only used as ground truth. Those are mostly not processed.
+		 */
+		inline TVertexCam3D(int n_node_id, double p_x, double p_y, double p_z, double ax, double ay, double az, double fx, double fy, double cx, double cy)
+			:m_n_id(n_node_id)
+		{
+			m_v_position << p_x, p_y, p_z, ax, ay, az, fx, fy, cx, cy;
+		}
+
+		EIGEN_MAKE_ALIGNED_OPERATOR_NEW
+	};
+
+	/**
+	 *	@brief P2C measurement base class
+	 */
+	struct TEdgeP2C3D : public CParseEntity {
+		int m_n_node_0; /**< @brief (zero-based) index of the 3D point */
+		int m_n_node_1; /**< @brief (zero-based) index of the camera vertex */
+		Eigen::Matrix<double, 2, 1> m_v_delta; /**< @brief dealte measurement (also called "z") */
+		Eigen::Matrix<double, 2, 2> m_t_inv_sigma; /**< @brief inverse sigma matrix, elements are square roots (also called "Sz") */
+
+		/**
+		 *	@brief default constructor
+		 *
+		 *	@param[in] n_node_0 is (zero-based) index of the 3D point
+		 *	@param[in] n_node_1 is (zero-based) index of the camera vertex
+		 *	@param[in] f_delta_x is delta x position
+		 *	@param[in] f_delta_y is delta y position
+		 *	@param[in] p_upper_matrix_2x2 is row-major upper triangular and diagonal 2x2 matrix,
+		 *		elements are square roots
+		 *
+		 *	The matrix is stored row by row from top to bottom,
+		 *	with left to right column order. Example:
+		 *	@code
+		 *	|0 1|
+		 *	|  2|
+		 *	@endcode
+		 */
+		inline TEdgeP2C3D(int n_node_0, int n_node_1,
+			double f_delta_x, double f_delta_y, const double *p_upper_matrix_2x2)
+			:m_n_node_0(n_node_0), m_n_node_1(n_node_1)
+		{
+			m_v_delta << f_delta_x, f_delta_y;
+			// no constructor for 2-valued vector
+
+			m_t_inv_sigma <<
+							p_upper_matrix_2x2[0], p_upper_matrix_2x2[1],
+							p_upper_matrix_2x2[1], p_upper_matrix_2x2[2];
+			// fill the matrix
 		}
 
 		EIGEN_MAKE_ALIGNED_OPERATOR_NEW
@@ -381,17 +444,30 @@ public:
 		virtual void AppendSystem(const TEdge3D &r_t_edge) = 0;
 
 		/**
-		 *	@brief appends the system with a 3D projection measurement
-		 *	@param[in] r_t_edge is the measurement to be appended
+		 *	@brief appends the system with vertex position
+		 *	@param[in] r_t_vertex is the vertex to be appended
+		 *	@note The vertices can be ignored in most of the solvers.
 		 */
-		virtual void AppendSystem(const TProjection3D &r_t_edge) = 0;
+		virtual void AppendSystem(const TVertex3D &r_t_vertex) = 0;
 
 		/**
 		 *	@brief appends the system with vertex position
 		 *	@param[in] r_t_vertex is the vertex to be appended
 		 *	@note The vertices can be ignored in most of the solvers.
 		 */
-		virtual void AppendSystem(const TVertex3D &r_t_vertex) = 0;
+		virtual void AppendSystem(const TVertexXYZ &r_t_vertex) = 0;
+
+		/**
+		 *	@brief appends the system with camera vertex position and parameters
+		 *	@param[in] r_t_vertex is the vertex to be appended
+		 */
+		virtual void AppendSystem(const TVertexCam3D &r_t_vertex) = 0;
+
+		/**
+		 *	@brief appends the system with an camera measurement
+		 *	@param[in] r_t_edge is the measurement to be appended
+		 */
+		virtual void AppendSystem(const TEdgeP2C3D &r_t_edge) = 0;
 	};
 
 protected:
@@ -419,7 +495,7 @@ protected:
 		 *	@note This function throws std::bad_alloc.
 		 */
 		template <class CParsePrimitive>
-		inline void operator ()() // throws(std::bad_alloc)
+		inline void operator ()() // throw(std::bad_alloc)
 		{
 			CParsePrimitive::EnumerateTokens(m_r_token_map, m_n_index);
 			++ m_n_index; // the original version had this one at compile time; a bit more elegant
@@ -616,6 +692,8 @@ public:
 				CPrimitiveFire dispatcher(n_line_no, s_line, s_token, r_callback);
 				if(!CTypelistItemSelect<_TyParsePrimitiveTypelist,
 				   CPrimitiveFire>::Select(n_token_type, dispatcher)) {
+					fprintf(stderr, "warning: parser failed in parse primitive "
+						PRIsize " on line " PRIsize "\n", n_token_type, n_line_no);
 					fclose(p_fr);
 					return false;
 				}
@@ -623,6 +701,7 @@ public:
 			}
 		} catch(std::bad_alloc&) {
 			fclose(p_fr);
+			fprintf(stderr, "warning: caught std::bad_alloc in the parse loop\n");
 			return false;
 		}
 

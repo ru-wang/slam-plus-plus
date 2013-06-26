@@ -3,7 +3,7 @@
 								|                                 |
 								|        ***   Targa   ***        |
 								|                                 |
-								|  Copyright  © -tHE SWINe- 2002  |
+								| Copyright  (c) -tHE SWINe- 2002 |
 								|                                 |
 								|              Tga.h              |
 								|                                 |
@@ -235,12 +235,14 @@ public:
 	 *		is set (while r_t_bmp.b_alpha is not), the image is written
 	 *		as RLE - compressed grayscale).
 	 *	@param[in] b_BGRA is set if the image is BGRA (images loaded by p_Load_TGA() are BGRA)
+	 *	@param[in] b_RGB_RLE is RLE compression flag for RGB images (grayscale are always RLE)
 	 *
 	 *	@return Returns true on success, false on failure.
 	 *
 	 *	@note The t_bmp.n_former_bpp field is ignored, images are always saved as 8bpp.
 	 */
-	static bool Save_TGA(const char *p_s_filename, const TBmp &r_t_bmp, bool b_BGRA);
+	static bool Save_TGA(const char *p_s_filename, const TBmp &r_t_bmp,
+		bool b_BGRA, bool b_RGB_RLE = false);
 
 protected:
 	/**

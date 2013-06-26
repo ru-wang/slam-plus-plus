@@ -3,7 +3,7 @@
 								|                                   |
 								|  ***  CHOLMOD linear solver  ***  |
 								|                                   |
-								|   Copyright  © -tHE SWINe- 2012   |
+								|  Copyright  (c) -tHE SWINe- 2012  |
 								|                                   |
 								|     LinearSolver_CholMod.cpp      |
 								|                                   |
@@ -184,7 +184,7 @@ CLinearSolver_CholMod &CLinearSolver_CholMod::operator =(const CLinearSolver_Cho
 }
 
 bool CLinearSolver_CholMod::Solve_PosDef(const CUberBlockMatrix &r_lambda,
-	Eigen::VectorXd &r_eta) // throws(std::bad_alloc)
+	Eigen::VectorXd &r_eta) // throw(std::bad_alloc)
 {
 	//double f_to_sparse_start = m_timer.f_Time();
 
@@ -283,7 +283,7 @@ bool CLinearSolver_CholMod::Solve_PosDef(const CUberBlockMatrix &r_lambda,
 
 bool CLinearSolver_CholMod::Factorize_PosDef_Blocky(CUberBlockMatrix &r_factor,
 	const CUberBlockMatrix &r_lambda, std::vector<size_t> &r_workspace, size_t n_dest_row_id /*= 0*/,
-	size_t n_dest_column_id /*= 0*/, bool b_upper_factor /*= true*/) // throws(std::bad_alloc)
+	size_t n_dest_column_id /*= 0*/, bool b_upper_factor /*= true*/) // throw(std::bad_alloc)
 {
 	/*return CLinearSolver_CSparse().Factorize_PosDef_Blocky(r_factor, r_lambda, r_workspace,
 		n_dest_row_id, n_dest_column_id, b_upper_factor);*/
@@ -466,7 +466,7 @@ bool CLinearSolver_CholMod::Factorize_PosDef_Blocky(CUberBlockMatrix &r_factor,
 }
 
 bool CLinearSolver_CholMod::Solve_PosDef_Blocky(const CUberBlockMatrix &r_lambda,
-	Eigen::VectorXd &r_eta) // throws(std::bad_alloc)
+	Eigen::VectorXd &r_eta) // throw(std::bad_alloc)
 {
 	//double f_to_sparse_start = m_timer.f_Time(), f_to_sparse_end;
 
@@ -595,7 +595,7 @@ bool CLinearSolver_CholMod::Solve_PosDef_Blocky(const CUberBlockMatrix &r_lambda
 	return true;
 }
 
-bool CLinearSolver_CholMod::SymbolicDecomposition_Blocky(const CUberBlockMatrix &r_lambda) // throws(std::bad_alloc)
+bool CLinearSolver_CholMod::SymbolicDecomposition_Blocky(const CUberBlockMatrix &r_lambda) // throw(std::bad_alloc)
 {
 	//double f_to_sparse_start = m_timer.f_Time();
 

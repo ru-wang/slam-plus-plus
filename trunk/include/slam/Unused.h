@@ -3,7 +3,7 @@
 								|                                   |
 								| ***  Unused macro definition  *** |
 								|                                   |
-								|   Copyright  © -tHE SWINe- 2010   |
+								|  Copyright  (c) -tHE SWINe- 2010  |
 								|                                   |
 								|             Unused.h              |
 								|                                   |
