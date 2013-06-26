@@ -3,7 +3,7 @@
 								|                                   |
 								| ***  Debugging functionality  *** |
 								|                                   |
-								|   Copyright  © -tHE SWINe- 2012   |
+								|  Copyright  (c) -tHE SWINe- 2012  |
 								|                                   |
 								|              Debug.h              |
 								|                                   |

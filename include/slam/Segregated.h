@@ -3,7 +3,7 @@
 								|                                |
 								| ***   Segregated storage   *** |
 								|                                |
-								|  Copyright © -tHE SWINe- 2012  |
+								| Copyright (c) -tHE SWINe- 2012 |
 								|                                |
 								|          Segregated.h          |
 								|                                |
@@ -219,7 +219,7 @@ protected:
 		 *	@return Returns pointer to the new page.
 		 *	@note This function throws std::bad_alloc.
 		 */
-		inline _Ty *operator ()() // throws(std::bad_alloc)
+		inline _Ty *operator ()() // throw(std::bad_alloc)
 		{
 			void *p_result;
 #if defined(_MSC_VER)
@@ -269,7 +269,7 @@ protected:
 		 *	@return Returns pointer to the new page.
 		 *	@note This function throws std::bad_alloc.
 		 */
-		inline _Ty *operator ()() // throws(std::bad_alloc)
+		inline _Ty *operator ()() // throw(std::bad_alloc)
 		{
 			return new _Ty[m_t_page_size];
 		}
@@ -808,7 +808,7 @@ public:
 	 *	@param[in] r_t_pool is the other pool to be copied
 	 *	@note This function throws std::bad_alloc.
 	 */
-	inline fap_base(const fap_base &r_t_pool) // throws(std::bad_alloc)
+	inline fap_base(const fap_base &r_t_pool) // throw(std::bad_alloc)
 	{
 		m_t_page_size.Set(r_t_pool.m_t_page_size);
 		insert_back(r_t_pool.begin(), r_t_pool.end());
@@ -821,7 +821,7 @@ public:
 	 *	@return Returns reference to this.
 	 *	@note This function throws std::bad_alloc.
 	 */
-	inline fap_base &operator =(const fap_base &r_t_pool) // throws(std::bad_alloc)
+	inline fap_base &operator =(const fap_base &r_t_pool) // throw(std::bad_alloc)
 	{
 		clear();
 		// clear first
@@ -899,7 +899,7 @@ public:
 	}
 
 	/*template <const int n_ctpse>
-	void swap(fap_base<_Ty, n_ctpse> &r_t_other) // throws(std::runtime_error)
+	void swap(fap_base<_Ty, n_ctpse> &r_t_other) // throw(std::runtime_error)
 	{
 		{
 			typedef __fap_static_check::page_size_check<sizeof(page_size_check_failed<!n_ctpse ||
@@ -1110,7 +1110,7 @@ public:
 	 *	@todo What if the input iterators point to this pool (copy of sub-range)?
 	 */
 	template <class CInputIterator>
-	inline void insert(const_iterator UNUSED(p_where_it), CInputIterator p_begin_it, CInputIterator p_end_it) // throws(std::bad_alloc)
+	inline void insert(const_iterator UNUSED(p_where_it), CInputIterator p_begin_it, CInputIterator p_end_it) // throw(std::bad_alloc)
 	{
 		_ASSERTE(p_where_it == end());
 		insert_back(p_begin_it, p_end_it);
@@ -1129,7 +1129,7 @@ public:
 	 *	@note Where possible, insert_back_n() should be used instead.
 	 *	@note This function throws std::bad_alloc.
 	 */
-	inline void insert_n(const_iterator UNUSED(p_where_it), size_t n_count, _Ty t_value) // throws(std::bad_alloc)
+	inline void insert_n(const_iterator UNUSED(p_where_it), size_t n_count, _Ty t_value) // throw(std::bad_alloc)
 	{
 		_ASSERTE(p_where_it == end());
 		insert_back_n(n_count, t_value);
@@ -1147,7 +1147,7 @@ public:
 	 *	@todo What if the input iterators point to this pool (copy of sub-range)?
 	 */
 	template <class CInputIterator>
-	void insert_back(CInputIterator p_begin_it, CInputIterator p_end_it) // throws(std::bad_alloc)
+	void insert_back(CInputIterator p_begin_it, CInputIterator p_end_it) // throw(std::bad_alloc)
 	{
 		_ASSERTE(p_end_it >= p_begin_it); // begin before end
 		size_t n_count = p_end_it - p_begin_it;
@@ -1167,7 +1167,7 @@ public:
 	 *
 	 *	@note This function throws std::bad_alloc.
 	 */
-	void insert_back_n(size_t n_count, _Ty t_value) // throws(std::bad_alloc)
+	void insert_back_n(size_t n_count, _Ty t_value) // throw(std::bad_alloc)
 	{
 		size_t n_old_size;
 		grow_to((n_old_size = size()) + n_count);
@@ -1181,7 +1181,7 @@ public:
 	 *	@param[in] t_value is the value of the element to be inserted
 	 *	@note This function throws std::bad_alloc.
 	 */
-	inline void push_back(_Ty t_value) // throws(std::bad_alloc)
+	inline void push_back(_Ty t_value) // throw(std::bad_alloc)
 	{
 		if(!empty() && m_n_last_page_used != m_t_page_size) {
 			m_page_list.back()[m_n_last_page_used] = t_value;
@@ -1200,7 +1200,7 @@ public:
 	 *
 	 *	@note This function throws std::bad_alloc.
 	 */
-	void resize(size_t n_new_size, _Ty t_initializer) // throws(std::bad_alloc)
+	void resize(size_t n_new_size, _Ty t_initializer) // throw(std::bad_alloc)
 	{
 		size_t n_old_size;
 		if((n_old_size = size()) < n_new_size) {
@@ -1217,7 +1217,7 @@ public:
 	 *	@param[in] n_new_size is the new size, in elements
 	 *	@note This function throws std::bad_alloc.
 	 */
-	void resize(size_t n_new_size) // throws(std::bad_alloc)
+	void resize(size_t n_new_size) // throw(std::bad_alloc)
 	{
 		size_t n_old_size;
 		if((n_old_size = size()) < n_new_size)
@@ -1294,7 +1294,7 @@ protected:
 	 *	@param[in] n_new_size is the new size to resize to
 	 *	@note This function throws std::bad_alloc.
 	 */
-	inline void grow_to(size_t n_new_size) // throws(std::bad_alloc)
+	inline void grow_to(size_t n_new_size) // throw(std::bad_alloc)
 	{
 		_ASSERTE(n_new_size >= size());
 

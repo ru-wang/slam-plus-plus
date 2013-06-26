@@ -3,7 +3,7 @@
 								|                                  |
 								|  ***   Typelist templates   ***  |
 								|                                  |
-								|   Copyright © -tHE SWINe- 2012   |
+								|  Copyright (c) -tHE SWINe- 2012  |
 								|                                  |
 								|            TypeList.h            |
 								|                                  |
@@ -1337,10 +1337,11 @@ protected:
 		 */
 		static inline CFunctor Select(const size_t n_index, CFunctor f)
 		{
-			if(n_index < n_pivot)
+			if(n_index < n_pivot) {
 				return CDecissionTree</*_CList, _CFunctor,*/ n_begin, n_half>::Select(n_index, f);
-			else
+			} else {
 				return CDecissionTree</*_CList, _CFunctor,*/ n_pivot, n_rest>::Select(n_index, f);
+			}
 		}
 	};
 

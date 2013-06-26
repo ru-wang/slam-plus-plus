@@ -4,8 +4,6 @@ SET(SLAM_P_P_BINARY_NAME "slam_plus_plus")
 
 FILE(GLOB_RECURSE SLAM_P_P_HEADERS ${SLAM_P_P_SOURCE_DIR}/include/slam/*.h)
 
-ADD_DEFINITIONS(-DEIGEN_MPL2_ONLY)
-
 IF(SLAM_P_P_SHORT_CXSPARSE)
 	ADD_DEFINITIONS(-D__CXSPARSE_SHORT)
 ENDIF(SLAM_P_P_SHORT_CXSPARSE)
@@ -32,14 +30,21 @@ SET(SLAM_P_P_SOURCES
 #  ${PROJECT_SOURCE_DIR}/external/Ceres/internal/ceres/linear_operator.cc
 #  ${PROJECT_SOURCE_DIR}/external/Ceres/internal/ceres/miniglog/glog/logging.cc
   BlockBench.cpp
+  BlockBenchImpl0.cpp
+  BlockBenchImpl1.cpp
   BlockMatrix.cpp
   BlockUnit.cpp
+  Covado.cpp
   LinearSolver_CholMod.cpp
   LinearSolver_CSparse.cpp
   LinearSolver_CXSparse.cpp
   OrderingMagic.cpp
   Main.cpp
   Parser.cpp
+  Solve2DImpl.cpp
+  Solve2DPoseOnlyImpl.cpp
+  Solve3DImpl.cpp
+  SolveBAImpl.cpp
   Tga.cpp
   Timer.cpp)
 

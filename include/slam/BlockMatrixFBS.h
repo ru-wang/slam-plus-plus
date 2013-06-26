@@ -3,7 +3,7 @@
 								|                                 |
 								|  ***   Über Block Matrix   ***  |
 								|                                 |
-								|  Copyright  © -tHE SWINe- 2012  |
+								| Copyright  (c) -tHE SWINe- 2012 |
 								|                                 |
 								|        BlockMatrixFBS.h         |
 								|                                 |
@@ -76,7 +76,7 @@ public:
 			const std::vector<TRow> &r_row_list_B,
 			const std::vector<TColumn> &r_col_list_A, const std::vector<TRow> &r_row_list_A,
 			std::vector<std::vector<TColumn::TBlockEntry> > &transpose_cols_list,
-			const std::vector<size_t> &reindex_rows_B_to_cols_A, _TyDenseAllocator &alloc) // throws(std::bad_alloc)
+			const std::vector<size_t> &reindex_rows_B_to_cols_A, _TyDenseAllocator &alloc) // throw(std::bad_alloc)
 		{
 			if(r_t_column_B.n_width == CCurrentColumnWidthB::n_size) {
 				return CMatrixMultiply_OuterLoop<_TyGppContextA, _TyGppContextB,
@@ -132,7 +132,7 @@ public:
 			const std::vector<TRow> &r_row_list_B,
 			const std::vector<TColumn> &r_col_list_A, const std::vector<TRow> &r_row_list_A,
 			std::vector<std::vector<TColumn::TBlockEntry> > &transpose_cols_list,
-			const std::vector<size_t> &reindex_rows_B_to_cols_A, _TyDenseAllocator &alloc) // throws(std::bad_alloc)
+			const std::vector<size_t> &reindex_rows_B_to_cols_A, _TyDenseAllocator &alloc) // throw(std::bad_alloc)
 		{
 			_ASSERTE(r_t_column_B.block_list.empty() || r_t_column_B.n_width == CLastColumnWidthB::n_size);
 
@@ -215,7 +215,7 @@ public:
 			const TColumn &r_t_column_A, const std::vector<TRow> &r_row_list_A,
 			std::vector<std::vector<TColumn::TBlockEntry> > &transpose_cols_list,
 			size_t n_row_height_B, size_t n_column_id_B, const double *p_block_B,
-			_TyDenseAllocator &alloc) // throws(std::bad_alloc)
+			_TyDenseAllocator &alloc) // throw(std::bad_alloc)
 		{
 			if(n_row_height_B == CCurrentRowHeightB::n_size) {
 				return CMatrixMultiply_MiddleLoop<_TyGppContextA, _TyGppContextB,
@@ -272,7 +272,7 @@ public:
 			const TColumn &r_t_column_A, const std::vector<TRow> &r_row_list_A,
 			std::vector<std::vector<TColumn::TBlockEntry> > &transpose_cols_list,
 			size_t UNUSED(n_row_height_B), size_t n_column_id_B, const double *p_block_B,
-			_TyDenseAllocator &alloc) // throws(std::bad_alloc)
+			_TyDenseAllocator &alloc) // throw(std::bad_alloc)
 		{
 			_ASSERTE(r_t_column_A.block_list.empty() || n_row_height_B == CLastRowHeightB::n_size);
 			// not sure if the r_t_column_A.block_list.empty() is required here
@@ -346,7 +346,7 @@ public:
 #endif // _MSC_VER && !__MWERKS__
 		static __forceinline bool Loop(std::vector<TColumn::TBlockEntry> &r_transpose_column,
 			const double *p_block_A, size_t n_row_height_A, size_t n_column_width_A,
-			size_t n_column_id_B, const double *p_block_B, _TyDenseAllocator &alloc) // throws(std::bad_alloc)
+			size_t n_column_id_B, const double *p_block_B, _TyDenseAllocator &alloc) // throw(std::bad_alloc)
 		{
 			if(n_row_height_A == CCurrentRowHeightA::n_size) {
 				return CMatrixMultiply_InnerLoop<_TyGppContextA, _TyGppContextB,
@@ -407,7 +407,7 @@ public:
 #endif // _MSC_VER && !__MWERKS__
 		static __forceinline bool Loop(std::vector<TColumn::TBlockEntry> &r_transpose_column,
 			const double *p_block_A, size_t UNUSED(n_row_height_A), size_t n_column_width_A,
-			size_t n_column_id_B, const double *p_block_B, _TyDenseAllocator &alloc) // throws(std::bad_alloc)
+			size_t n_column_id_B, const double *p_block_B, _TyDenseAllocator &alloc) // throw(std::bad_alloc)
 		{
 			_ASSERTE(n_row_height_A == CRowHeightA::n_size);
 
@@ -491,7 +491,7 @@ public:
 		size_t n_column_id_B, const std::vector<TRow> &r_row_list_B,
 		const std::vector<TColumn> &r_col_list_A, const std::vector<TRow> &r_row_list_A,
 		std::vector<std::vector<TColumn::TBlockEntry> > &transpose_cols_list,
-		const std::vector<size_t> &reindex_rows_B_to_cols_A, _TyDenseAllocator &alloc) // throws(std::bad_alloc)
+		const std::vector<size_t> &reindex_rows_B_to_cols_A, _TyDenseAllocator &alloc) // throw(std::bad_alloc)
 	{
 		return CMatrixMultiply_OuterLoop<_TyBlockMatrixTypelistA,
 			_TyBlockMatrixTypelistB, CColumnWidthsListB>::Loop(r_t_column_B,
@@ -1063,23 +1063,22 @@ public:
 		 *
 		 *	@param[in] r_t_block is current matrix block
 		 *	@param[in] r_t_row is row for the current matrix block
-		 *	@param[in] r_t_col is column for the current matrix block
 		 *	@param[out] r_dest is destination vector map (only the part
 		 *		that aligns with the current matrix block)
 		 *	@param[in] p_src_vector is pointer to the (whole) source vector
 		 */
 		static inline void Loop(const TColumn::TBlockEntry &r_t_block, const TRow &r_t_row,
-			const TColumn &r_t_col, _TyDestVectorShape &r_dest, const double *p_src_vector)
+			_TyDestVectorShape &r_dest, const double *p_src_vector)
 		{
 			if(r_t_row.n_height == CCurrentRowHeight::n_size) {
 				CPostMAD_InnerLoop<_TyGppContext, CTypelist<CCurrentRowHeight,
 					CTypelistEnd>, CColumnWidth>::Loop(r_t_block,
-					r_t_row, r_t_col, r_dest, p_src_vector);
+					r_t_row, r_dest, p_src_vector);
 				// execute inner loop (use the specialization for end-of-the-list that actually
 				// contains the implementaiton - avoids having the same code in two places)
 			} else {
 				CPostMAD_InnerLoop<_TyGppContext, typename _CRowHeightsList::_TyTail, CColumnWidth>::Loop(
-					r_t_block, r_t_row, r_t_col, r_dest, p_src_vector);
+					r_t_block, r_t_row, r_dest, p_src_vector);
 				// not CCurrentRowHeight::n_size, gotta be one of the rest of the list
 			}
 		}
@@ -1126,13 +1125,12 @@ public:
 		 *
 		 *	@param[in] r_t_block is current matrix block
 		 *	@param[in] r_t_row is row for the current matrix block
-		 *	@param[in] r_t_col is column for the current matrix block
 		 *	@param[out] r_dest is destination vector map (only the part
 		 *		that aligns with the current matrix block)
 		 *	@param[in] p_src_vector is pointer to the (whole) source vector
 		 */
 		static inline void Loop(const TColumn::TBlockEntry &r_t_block, const TRow &r_t_row,
-			const TColumn &UNUSED(r_t_col), _TyDestVectorShape &r_dest, const double *p_src_vector) // todo remove r_t_col from arg list
+			_TyDestVectorShape &r_dest, const double *p_src_vector)
 		{
 			_ASSERTE(r_t_row.n_height == CLastRowHeight::n_size); // this is the last option, make sure it is this one (omits the branch)
 			const size_t n_row = r_t_row.n_cumulative_height_sum; // src vector offset
@@ -1270,7 +1268,7 @@ public:
 
 				CPostMAD_InnerLoop<_TyGppContext, _CSelectedRowHeightsList,
 					CLastColumnWidth>::Loop(r_t_block,
-					r_t_row, r_t_col, dest, p_src_vector);
+					r_t_row, /*r_t_col,*/ dest, p_src_vector);
 				// wrap the inner loop in a block size decission tree
 			}
 		}
@@ -1684,7 +1682,7 @@ public:
 		static __forceinline void Loop(const TColumn::TBlockEntry &r_t_first_block,
 			const TColumn::TBlockEntry &r_t_second_block,
 			const std::vector<TColumn> &r_transpose_row_list,
-			std::vector<TColumn> &r_col_list_dest, _TyDenseAllocator &r_allocator) // throws(std::bad_alloc)
+			std::vector<TColumn> &r_col_list_dest, _TyDenseAllocator &r_allocator) // throw(std::bad_alloc)
 		{
 			if(r_transpose_row_list[r_t_second_block.first].n_width ==
 			   CCurrentTransposeSecondRowHeight::n_size) {
@@ -1724,7 +1722,7 @@ public:
 			const TColumn::TBlockEntry &r_t_second_block,
 			const std::vector<TColumn> &r_transpose_row_list,
 			std::vector<TColumn> &r_col_list_dest, omp_lock_t &r_t_mutex,
-			_TyDenseAllocator &r_allocator) // throws(std::bad_alloc)
+			_TyDenseAllocator &r_allocator) // throw(std::bad_alloc)
 		{
 			if(r_transpose_row_list[r_t_second_block.first].n_width ==
 			   CCurrentTransposeSecondRowHeight::n_size) {
@@ -1818,7 +1816,7 @@ public:
 		static __forceinline void Loop(const TColumn::TBlockEntry &r_t_first_block,
 			const TColumn::TBlockEntry &r_t_second_block,
 			const std::vector<TColumn> &UNUSED(r_transpose_row_list),
-			std::vector<TColumn> &r_col_list_dest, _TyDenseAllocator &r_allocator) // throws(std::bad_alloc)
+			std::vector<TColumn> &r_col_list_dest, _TyDenseAllocator &r_allocator) // throw(std::bad_alloc)
 		{
 			const TColumn::TBlockEntry &r_t_block_A0 = r_t_first_block;
 			size_t n_row_id_A0 = r_t_block_A0.first; // get row of the block
@@ -1926,7 +1924,7 @@ public:
 			const TColumn::TBlockEntry &r_t_second_block,
 			const std::vector<TColumn> &r_transpose_row_list,
 			std::vector<TColumn> &r_col_list_dest, omp_lock_t &r_t_mutex,
-			_TyDenseAllocator &r_allocator) // throws(std::bad_alloc)
+			_TyDenseAllocator &r_allocator) // throw(std::bad_alloc)
 		{
 			const TColumn::TBlockEntry &r_t_block_A0 = r_t_first_block;
 			size_t n_row_id_A0 = r_t_block_A0.first; // get row of the block
@@ -2077,7 +2075,7 @@ public:
 			_TyBlockConstIter p_second_block_it,
 			_TyBlockConstIter p_block_end_it,
 			const std::vector<TColumn> &r_transpose_row_list,
-			std::vector<TColumn> &r_col_list_dest, _TyDenseAllocator &r_allocator) // throws(std::bad_alloc)
+			std::vector<TColumn> &r_col_list_dest, _TyDenseAllocator &r_allocator) // throw(std::bad_alloc)
 		{
 			if(r_transpose_row_list[r_t_first_block.first].n_width ==
 			   CCurrentTransposeFirstRowHeight::n_size) {
@@ -2120,7 +2118,7 @@ public:
 			_TyBlockConstIter p_block_end_it,
 			const std::vector<TColumn> &r_transpose_row_list,
 			std::vector<TColumn> &r_col_list_dest, omp_lock_t &r_t_mutex,
-			_TyDenseAllocator &r_allocator) // throws(std::bad_alloc)
+			_TyDenseAllocator &r_allocator) // throw(std::bad_alloc)
 		{
 			if(r_transpose_row_list[r_t_first_block.first].n_width ==
 			   CCurrentTransposeFirstRowHeight::n_size) {
@@ -2207,7 +2205,7 @@ public:
 			_TyBlockConstIter p_second_block_it,
 			_TyBlockConstIter p_block_end_it,
 			const std::vector<TColumn> &r_transpose_row_list,
-			std::vector<TColumn> &r_col_list_dest, _TyDenseAllocator &r_allocator) // throws(std::bad_alloc)
+			std::vector<TColumn> &r_col_list_dest, _TyDenseAllocator &r_allocator) // throw(std::bad_alloc)
 		{
 			_ASSERTE(r_transpose_row_list[r_t_first_block.first].n_width ==
 				CTransposeFirstRowHeight::n_size);
@@ -2250,7 +2248,7 @@ public:
 			_TyBlockConstIter p_block_end_it,
 			const std::vector<TColumn> &r_transpose_row_list,
 			std::vector<TColumn> &r_col_list_dest, omp_lock_t &r_t_mutex,
-			_TyDenseAllocator &r_allocator) // throws(std::bad_alloc)
+			_TyDenseAllocator &r_allocator) // throw(std::bad_alloc)
 		{
 			_ASSERTE(r_transpose_row_list[r_t_first_block.first].n_width ==
 				CTransposeFirstRowHeight::n_size);
@@ -2329,7 +2327,7 @@ public:
 #endif // _MSC_VER && !__MWERKS__
 		static __forceinline void Loop(const TColumn &r_t_column,
 			const std::vector<TColumn> &r_transpose_row_list,
-			std::vector<TColumn> &r_col_list_dest, _TyDenseAllocator &r_allocator) // throws(std::bad_alloc)
+			std::vector<TColumn> &r_col_list_dest, _TyDenseAllocator &r_allocator) // throw(std::bad_alloc)
 		{
 			if(r_t_column.n_width == CCurrentColumnWidth::n_size) {
 				CPreATA_UpperTri_OuterLoop<_TyGppContext, CTypelist<CCurrentColumnWidth,
@@ -2362,7 +2360,7 @@ public:
 		static __forceinline void Loop(const TColumn &r_t_column,
 			const std::vector<TColumn> &r_transpose_row_list,
 			std::vector<TColumn> &r_col_list_dest, omp_lock_t &r_t_mutex,
-			_TyDenseAllocator &r_allocator) // throws(std::bad_alloc)
+			_TyDenseAllocator &r_allocator) // throw(std::bad_alloc)
 		{
 			if(r_t_column.n_width == CCurrentColumnWidth::n_size) {
 				CPreATA_UpperTri_OuterLoop<_TyGppContext, CTypelist<CCurrentColumnWidth,
@@ -2430,7 +2428,7 @@ public:
 #endif // _MSC_VER && !__MWERKS__
 		static __forceinline void Loop(const TColumn &r_t_column,
 			const std::vector<TColumn> &r_transpose_row_list,
-			std::vector<TColumn> &r_col_list_dest, _TyDenseAllocator &r_allocator) // throws(std::bad_alloc)
+			std::vector<TColumn> &r_col_list_dest, _TyDenseAllocator &r_allocator) // throw(std::bad_alloc)
 		{
 			_ASSERTE(r_t_column.block_list.empty() || r_t_column.n_width == CTransposeColumnWidth::n_size);
 			// make sure the column has correct width
@@ -2467,7 +2465,7 @@ public:
 		static __forceinline void Loop(const TColumn &r_t_column,
 			const std::vector<TColumn> &r_transpose_row_list,
 			std::vector<TColumn> &r_col_list_dest, omp_lock_t &r_t_mutex,
-			_TyDenseAllocator &r_allocator) // throws(std::bad_alloc)
+			_TyDenseAllocator &r_allocator) // throw(std::bad_alloc)
 		{
 			_ASSERTE(r_t_column.block_list.empty() || r_t_column.n_width == CTransposeColumnWidth::n_size);
 			// make sure the column has correct width
@@ -2663,7 +2661,7 @@ public:
 #pragma inline_recursion(on)
 #endif // _MSC_VER && !__MWERKS__
 		static __forceinline double *p_Loop(const TColumn &r_t_column,
-			_TyDenseAllocator &r_allocator, const std::vector<TRow> &r_row_list) // throws(std::bad_alloc)
+			_TyDenseAllocator &r_allocator, const std::vector<TRow> &r_row_list) // throw(std::bad_alloc)
 		{
 			if(r_t_column.n_width == CCurrentColumnWidth::n_size) {
 				return CPreATA_Diagonal_OuterLoop<_TyGppContext, CTypelist<CCurrentColumnWidth,
@@ -2753,7 +2751,7 @@ public:
 #pragma inline_recursion(on)
 #endif // _MSC_VER && !__MWERKS__
 		static __forceinline double *p_Loop(const TColumn &r_t_column,
-			_TyDenseAllocator &r_allocator, const std::vector<TRow> &r_row_list) // throws(std::bad_alloc)
+			_TyDenseAllocator &r_allocator, const std::vector<TRow> &r_row_list) // throw(std::bad_alloc)
 		{
 			_ASSERTE(r_t_column.block_list.empty() || r_t_column.n_width == CColumnWidth::n_size);
 			// makes sure the column has the right size
@@ -2853,7 +2851,7 @@ public:
 	 */
 	static __forceinline void PreATA_UpperTriangle_OuterLoop(const TColumn &r_t_column,
 		const std::vector<TColumn> &r_transpose_row_list,
-		std::vector<TColumn> &r_col_list_dest, _TyDenseAllocator &r_allocator) // throws(std::bad_alloc)
+		std::vector<TColumn> &r_col_list_dest, _TyDenseAllocator &r_allocator) // throw(std::bad_alloc)
 	{
 		CPreATA_UpperTri_OuterLoop<CBlockMatrixTypelist, CRowHeightsList>::Loop(r_t_column,
 			r_transpose_row_list, r_col_list_dest, r_allocator);
@@ -2875,7 +2873,7 @@ public:
 	static __forceinline void PreATA_UpperTriangle_Parallel_OuterLoop(const TColumn &r_t_column,
 		const std::vector<TColumn> &r_transpose_row_list,
 		std::vector<TColumn> &r_col_list_dest, omp_lock_t &r_t_mutex,
-		_TyDenseAllocator &r_allocator) // throws(std::bad_alloc)
+		_TyDenseAllocator &r_allocator) // throw(std::bad_alloc)
 	{
 		CPreATA_UpperTri_OuterLoop<CBlockMatrixTypelist, CRowHeightsList>::Loop(r_t_column,
 			r_transpose_row_list, r_col_list_dest, r_t_mutex, r_allocator);
@@ -2897,7 +2895,7 @@ public:
 	 *	@note This function throws std::bad_alloc.
 	 */
 	static __forceinline double *p_PreATA_Diagonal_OuterLoop(const TColumn &r_t_column,
-		_TyDenseAllocator &r_allocator, const std::vector<TRow> &r_row_list) // throws(std::bad_alloc)
+		_TyDenseAllocator &r_allocator, const std::vector<TRow> &r_row_list) // throw(std::bad_alloc)
 	{
 		return CPreATA_Diagonal_OuterLoop<CBlockMatrixTypelist, CColumnWidthsList>::p_Loop(r_t_column,
 			r_allocator, r_row_list);
@@ -2949,6 +2947,1030 @@ public:
 	}
 
 #endif // __UBER_BLOCK_MATRIX_FIXED_BLOCK_SIZE_DEBUGGING
+};
+
+/**
+ *	@brief fixed block size Cholesky template class
+ *	@tparam CBlockMatrixTypelist is typelist, containing Eigen
+ *		matrices with known compile-time sizes
+ *	@todo write documentations for members, sort members, write debug functions
+ */
+template <class CBlockMatrixTypelist>
+class CFBS_Cholesky : public __fbs_ut::CFixedBlockSize_UnaryBase<CBlockMatrixTypelist> {
+public:
+	typedef typename __fbs_ut::CFixedBlockSize_UnaryBase<CBlockMatrixTypelist>::CColumnWidthsList CColumnWidthsList; /**< @brief list of unique block column widths */
+	typedef typename __fbs_ut::CFixedBlockSize_UnaryBase<CBlockMatrixTypelist>::CDimsList_Uniq CDimsList_Uniq; /**< @brief list of block sizes as CCTSize2D (duplicate records removed) */
+
+	/**
+	 *	@brief off-diagonal loop of the Cholesky decomposition kernel
+	 *
+	 *	@param[out] p_dest_block is the (uninitialized) output block at L(j, k)
+	 *	@param[in] n_col_j_width is width of the j-th column, in elements
+	 *	@param[in] n_col_k_width is width of the k-th column, in elements
+	 *		(equal to the number of rows of the dest block)
+	 *	@param[in] p_j_block_it is iterator to blocks in j-th column
+	 *	@param[in] p_j_block_end_it is iterator pointing one past the last block in j-th column
+	 *	@param[in] p_k_block_it is iterator to blocks in k-th column
+	 *	@param[in] p_k_block_end_it is iterator pointing one past the last block in k-th column
+	 *	@param[in] t_block_A is input block at A(j, k), same size as the dest block 
+	 *	@param[in] k is index of the previous column
+	 *	@param[in] r_block_cols_list is block column layout of the (symmetric) matrix
+	 */
+	static inline void OffDiagonal_Loop(double *p_dest_block, size_t n_col_j_width,
+		size_t n_col_k_width, _TyBlockConstIter p_j_block_it, _TyBlockConstIter p_j_block_end_it,
+		_TyBlockConstIter p_k_block_it, _TyBlockConstIter p_k_block_end_it,
+		TColumn::TBlockEntry t_block_A, size_t k, const std::vector<TColumn> &r_block_cols_list)
+	{
+		CCholesky_OffDiagonalLoop<CBlockMatrixTypelist, CColumnWidthsList>::Loop(p_dest_block,
+			n_col_j_width, n_col_k_width, p_j_block_it, p_j_block_end_it, p_k_block_it,
+			p_k_block_end_it, t_block_A, k, r_block_cols_list);
+	}
+
+	/**
+	 *	@brief off-diagonal loop of the Cholesky decomposition kernel
+	 *
+	 *	Performs calculation of the off-diagonal elements in one column of Cholesky factor.
+	 *
+	 *	@tparam _TyGppContext is template instance context for g++ (compatibility workarround)
+	 *	@tparam _CColumnWidthList is list of possible column widths
+	 */
+	template <class _TyGppContext, class _CColumnWidthList>
+	class CCholesky_OffDiagonalLoop {
+	public:
+		typedef typename _CColumnWidthList::_TyHead CCurrentColumnWidth; /**< @brief column width for this decision tree recursion */
+
+		/**
+		 *	@brief off-diagonal loop of the Cholesky decomposition kernel
+		 *
+		 *	Wraps the inside of the loop in a decision tree for j-th column width.
+		 *
+		 *	@param[out] p_dest_block is the (uninitialized) output block at L(j, k)
+		 *	@param[in] n_col_j_width is width of the j-th column, in elements
+		 *	@param[in] n_col_k_width is width of the k-th column, in elements
+		 *		(equal to the number of rows of the dest block)
+		 *	@param[in] p_j_block_it is iterator to blocks in j-th column
+		 *	@param[in] p_j_block_end_it is iterator pointing one past the last block in j-th column
+		 *	@param[in] p_k_block_it is iterator to blocks in k-th column
+		 *	@param[in] p_k_block_end_it is iterator pointing one past the last block in k-th column
+		 *	@param[in] t_block_A is input block at A(j, k), same size as the dest block 
+		 *	@param[in] k is index of the previous column
+		 *	@param[in] r_block_cols_list is block column layout of the (symmetric) matrix
+		 */
+#if defined(_MSC_VER) && !defined(__MWERKS__)
+#pragma inline_recursion(on)
+#endif // _MSC_VER && !__MWERKS__
+		static __forceinline void Loop(double *p_dest_block, size_t n_col_j_width,
+			size_t n_col_k_width, _TyBlockConstIter p_j_block_it,
+			_TyBlockConstIter p_j_block_end_it, _TyBlockConstIter p_k_block_it,
+			_TyBlockConstIter p_k_block_end_it, TColumn::TBlockEntry t_block_A, size_t k,
+			const std::vector<TColumn> &r_block_cols_list)
+		{
+			if(n_col_j_width == CCurrentColumnWidth::n_size) {
+				CCholesky_OffDiagonalLoop<_TyGppContext, CTypelist<CCurrentColumnWidth,
+					CTypelistEnd> >::Loop(p_dest_block, n_col_j_width, n_col_k_width,
+					p_j_block_it, p_j_block_end_it, p_k_block_it, p_k_block_end_it,
+					t_block_A, k, r_block_cols_list);
+			} else {
+				CCholesky_OffDiagonalLoop<_TyGppContext, typename
+					_CColumnWidthList::_TyTail>::Loop(p_dest_block, n_col_j_width,
+					n_col_k_width, p_j_block_it, p_j_block_end_it, p_k_block_it,
+					p_k_block_end_it, t_block_A, k, r_block_cols_list);
+			}
+		}
+	};
+
+	/**
+	 *	@brief off-diagonal loop of the Cholesky decomposition kernel
+	 *
+	 *	Performs calculation of the off-diagonal elements in one column of Cholesky factor.
+	 *
+	 *	@tparam _TyGppContext is template instance context for g++ (compatibility workarround)
+	 *	@tparam CColumnWidth_j is selected column width for this decision tree branch
+	 */
+	template <class _TyGppContext, class CColumnWidth_j>
+	class CCholesky_OffDiagonalLoop<_TyGppContext, CTypelist<CColumnWidth_j, CTypelistEnd> > {
+	public:
+		typedef typename CMakeMatrixRef<CColumnWidth_j::n_size, CColumnWidth_j::n_size>::_TyMatrix _TyDiagMatrix; /**< @brief a dense matrix with the same shape as the diagonal block */
+
+		/**
+		 *	@brief off-diagonal loop of the Cholesky decomposition kernel
+		 *
+		 *	Just calls the next level of the decision tree.
+		 *
+		 *	@param[out] p_dest_block is the (uninitialized) output block at L(j, k)
+		 *	@param[in] n_col_j_width is width of the j-th column, in elements
+		 *	@param[in] n_col_k_width is width of the k-th column, in elements
+		 *		(equal to the number of rows of the dest block)
+		 *	@param[in] p_j_block_it is iterator to blocks in j-th column
+		 *	@param[in] p_j_block_end_it is iterator pointing one past the last block in j-th column
+		 *	@param[in] p_k_block_it is iterator to blocks in k-th column
+		 *	@param[in] p_k_block_end_it is iterator pointing one past the last block in k-th column
+		 *	@param[in] t_block_A is input block at A(j, k), same size as the dest block 
+		 *	@param[in] k is index of the previous column
+		 *	@param[in] r_block_cols_list is block column layout of the (symmetric) matrix
+		 */
+#if defined(_MSC_VER) && !defined(__MWERKS__)
+#pragma inline_recursion(on)
+#endif // _MSC_VER && !__MWERKS__
+		static __forceinline void Loop(double *p_dest_block, size_t UNUSED(n_col_j_width),
+			size_t n_col_k_width, _TyBlockConstIter p_j_block_it,
+			_TyBlockConstIter p_j_block_end_it, _TyBlockConstIter p_k_block_it,
+			_TyBlockConstIter p_k_block_end_it, TColumn::TBlockEntry t_block_A, size_t k,
+			const std::vector<TColumn> &r_block_cols_list)
+		{
+			// this is now empty, but one of the loops could be inside here
+			// (did i not put it here because of some data dependences?)
+
+			_ASSERTE(n_col_j_width == CColumnWidth_j::n_size);
+			CCholesky_OffDiagonalLoop1<_TyGppContext, CColumnWidthsList,
+				CColumnWidth_j>::Loop(p_dest_block, n_col_k_width,
+				p_j_block_it, p_j_block_end_it, p_k_block_it, p_k_block_end_it,
+				t_block_A, k, r_block_cols_list);
+			// decide on the second column width
+		}
+
+		/**
+		 *	@brief off-diagonal loop of the Cholesky decomposition kernel
+		 *
+		 *	Just calls the next level of the decision tree.
+		 *
+		 *	@param[out] r_column_dot is the running dor product of the column blocks
+		 *	@param[out] p_dest_block is the (uninitialized) output block at L(j, k)
+		 *	@param[in] n_col_k_width is width of the k-th column, in elements
+		 *		(equal to the number of rows of the dest block)
+		 *	@param[in] p_j_block_it is iterator to blocks in j-th column
+		 *	@param[in] p_j_block_end_it is iterator pointing one past the last block in j-th column
+		 *	@param[in] p_k_block_it is iterator to blocks in k-th column
+		 *	@param[in] p_k_block_end_it is iterator pointing one past the last block in k-th column
+		 *	@param[in] t_block_A is input block at A(j, k), same size as the dest block 
+		 *	@param[in] k is index of the previous column
+		 *	@param[in] r_block_cols_list is block column layout of the (symmetric) matrix
+		 */
+#if defined(_MSC_VER) && !defined(__MWERKS__)
+#pragma inline_recursion(on)
+#endif // _MSC_VER && !__MWERKS__
+		static __forceinline void Loop(_TyDiagMatrix &r_column_dot, double *p_dest_block,
+			size_t n_col_k_width, _TyBlockConstIter p_j_block_it,
+			_TyBlockConstIter p_j_block_end_it, _TyBlockConstIter p_k_block_it,
+			_TyBlockConstIter p_k_block_end_it, TColumn::TBlockEntry t_block_A, size_t k,
+			const std::vector<TColumn> &r_block_cols_list)
+		{
+			// this is now empty, but one of the loops could be inside here
+			// (did i not put it here because of some data dependences?)
+
+			CCholesky_OffDiagonalLoop1<_TyGppContext, CColumnWidthsList,
+				CColumnWidth_j>::Loop(r_column_dot, p_dest_block, n_col_k_width,
+				p_j_block_it, p_j_block_end_it, p_k_block_it, p_k_block_end_it,
+				t_block_A, k, r_block_cols_list);
+			// decide on the second column width
+		}
+	};
+
+	/**
+	 *	@brief off-diagonal loop of the Cholesky decomposition kernel
+	 *
+	 *	Performs calculation of the off-diagonal elements in one column of Cholesky factor.
+	 *
+	 *	@tparam _TyGppContext is template instance context for g++ (compatibility workarround)
+	 *	@tparam _CColumnWidthList is list of possible column widths
+	 *	@tparam CColumnWidth_j is width of the j-th column
+	 */
+	template <class _TyGppContext, class _CColumnWidthList, class CColumnWidth_j>
+	class CCholesky_OffDiagonalLoop1 {
+	public:
+		typedef typename _CColumnWidthList::_TyHead CCurrentColumnWidth; /**< @brief column width for this decision tree recursion */
+		typedef typename CMakeMatrixRef<CColumnWidth_j::n_size, CColumnWidth_j::n_size>::_TyMatrix _TyDiagMatrix; /**< @brief a dense matrix with the same shape as the diagonal block */
+
+		/**
+		 *	@brief off-diagonal loop of the Cholesky decomposition kernel
+		 *
+		 *	Wraps the inside of the loop in a decision tree for k-th column width.
+		 *
+		 *	@param[out] p_dest_block is the (uninitialized) output block at L(j, k)
+		 *	@param[in] n_col_k_width is width of the k-th column, in elements
+		 *		(equal to the number of rows of the dest block)
+		 *	@param[in] p_j_block_it is iterator to blocks in j-th column
+		 *	@param[in] p_j_block_end_it is iterator pointing one past the last block in j-th column
+		 *	@param[in] p_k_block_it is iterator to blocks in k-th column
+		 *	@param[in] p_k_block_end_it is iterator pointing one past the last block in k-th column
+		 *	@param[in] t_block_A is input block at A(j, k), same size as the dest block 
+		 *	@param[in] k is index of the previous column
+		 *	@param[in] r_block_cols_list is block column layout of the (symmetric) matrix
+		 */
+#if defined(_MSC_VER) && !defined(__MWERKS__)
+#pragma inline_recursion(on)
+#endif // _MSC_VER && !__MWERKS__
+		static __forceinline void Loop(double *p_dest_block,
+			size_t n_col_k_width, _TyBlockConstIter UNUSED(p_j_block_it),
+			_TyBlockConstIter p_j_block_end_it, _TyBlockConstIter p_k_block_it,
+			_TyBlockConstIter p_k_block_end_it, TColumn::TBlockEntry t_block_A, size_t k,
+			const std::vector<TColumn> &r_block_cols_list)
+		{
+			if(n_col_k_width == CCurrentColumnWidth::n_size) {
+				CCholesky_OffDiagonalLoop1<_TyGppContext, CTypelist<CCurrentColumnWidth,
+					CTypelistEnd>, CColumnWidth_j>::Loop(p_dest_block,
+					n_col_k_width, p_j_block_it, p_j_block_end_it, p_k_block_it,
+					p_k_block_end_it, t_block_A, k, r_block_cols_list);
+			} else {
+				CCholesky_OffDiagonalLoop1<_TyGppContext, typename _CColumnWidthList::_TyTail,
+					CColumnWidth_j>::Loop(p_dest_block, n_col_k_width,
+					p_j_block_it, p_j_block_end_it, p_k_block_it, p_k_block_end_it,
+					t_block_A, k, r_block_cols_list);
+			}
+		}
+
+		/**
+		 *	@brief off-diagonal loop of the Cholesky decomposition kernel
+		 *
+		 *	Wraps the inside of the loop in a decision tree for k-th column width.
+		 *
+		 *	@param[out] r_column_dot is the running dor product of the column blocks
+		 *	@param[out] p_dest_block is the (uninitialized) output block at L(j, k)
+		 *	@param[in] n_col_k_width is width of the k-th column, in elements
+		 *		(equal to the number of rows of the dest block)
+		 *	@param[in] p_j_block_it is iterator to blocks in j-th column
+		 *	@param[in] p_j_block_end_it is iterator pointing one past the last block in j-th column
+		 *	@param[in] p_k_block_it is iterator to blocks in k-th column
+		 *	@param[in] p_k_block_end_it is iterator pointing one past the last block in k-th column
+		 *	@param[in] t_block_A is input block at A(j, k), same size as the dest block 
+		 *	@param[in] k is index of the previous column
+		 *	@param[in] r_block_cols_list is block column layout of the (symmetric) matrix
+		 */
+#if defined(_MSC_VER) && !defined(__MWERKS__)
+#pragma inline_recursion(on)
+#endif // _MSC_VER && !__MWERKS__
+		static __forceinline void Loop(_TyDiagMatrix &r_column_dot, double *p_dest_block,
+			size_t n_col_k_width, _TyBlockConstIter UNUSED(p_j_block_it),
+			_TyBlockConstIter p_j_block_end_it, _TyBlockConstIter p_k_block_it,
+			_TyBlockConstIter p_k_block_end_it, TColumn::TBlockEntry t_block_A, size_t k,
+			const std::vector<TColumn> &r_block_cols_list)
+		{
+			if(n_col_k_width == CCurrentColumnWidth::n_size) {
+				CCholesky_OffDiagonalLoop1<_TyGppContext, CTypelist<CCurrentColumnWidth,
+					CTypelistEnd>, CColumnWidth_j>::Loop(r_column_dot, p_dest_block,
+					n_col_k_width, p_j_block_it, p_j_block_end_it, p_k_block_it,
+					p_k_block_end_it, t_block_A, k, r_block_cols_list);
+			} else {
+				CCholesky_OffDiagonalLoop1<_TyGppContext, typename _CColumnWidthList::_TyTail,
+					CColumnWidth_j>::Loop(r_column_dot, p_dest_block, n_col_k_width,
+					p_j_block_it, p_j_block_end_it, p_k_block_it, p_k_block_end_it,
+					t_block_A, k, r_block_cols_list);
+			}
+		}
+	};
+
+	/**
+	 *	@brief off-diagonal loop of the Cholesky decomposition kernel
+	 *
+	 *	Performs calculation of the off-diagonal elements in one column of Cholesky factor.
+	 *
+	 *	@tparam _TyGppContext is template instance context for g++ (compatibility workarround)
+	 *	@tparam CColumnWidth_k is width of the k-th column
+	 *	@tparam CColumnWidth_j is width of the j-th column
+	 */
+	template <class _TyGppContext, class CColumnWidth_k, class CColumnWidth_j>
+	class CCholesky_OffDiagonalLoop1<_TyGppContext, CTypelist<CColumnWidth_k, CTypelistEnd>, CColumnWidth_j> {
+	public:
+		typedef typename CMakeMatrixRef<CColumnWidth_k::n_size, CColumnWidth_j::n_size>::_Ty _TyDestBlock; /**< @brief destination block shape */
+		typedef typename CMakeMatrixRef<CColumnWidth_k::n_size, CColumnWidth_k::n_size>::_Ty _TyDiagBlock_k; /**< @brief shape of the diagonal block at the k-th column */
+		typedef typename CMakeMatrixRef<CColumnWidth_j::n_size, CColumnWidth_j::n_size>::_TyMatrix _TyDiagMatrix; /**< @brief a dense matrix with the same shape as the diagonal block */
+
+		/**
+		 *	@brief occurence of an item in a list predicate
+		 *
+		 *	@tparam _TyItem is an item
+		 *	@tparam _TyList is a typelist, tested for the occurence of the given item
+		 */
+		template <class _TyItem, class _TyList>
+		class CContainsItem {
+		public:
+			/**
+			 *	@brief the result, stored as enum
+			 */
+			enum {
+				b_result = CFindTypelistItem<_TyList, _TyItem>::b_result /**< @brief the result; set if the list contains the item, otherwise cleared */
+				// unfortunately this has reversed order of arguments (list, needle) instead of (needle, list)
+			};
+		};
+
+		typedef typename CFilterTypelist2<CColumnWidthsList, CColumnWidth_k,
+			__fbs_ut::CHaveRowHeightForColumnWidth, CDimsList_Uniq>::_TyResult
+			_CSelectedRowHeightsList_on_k; /**< @brief list of row heights in column k */
+		typedef typename CFilterTypelist2<CColumnWidthsList, CColumnWidth_j,
+			__fbs_ut::CHaveRowHeightForColumnWidth, CDimsList_Uniq>::_TyResult
+			_CSelectedRowHeightsList_on_j; /**< @brief list of row heights in column j */
+		typedef typename CFilterTypelist<_CSelectedRowHeightsList_on_k, _CSelectedRowHeightsList_on_j,
+			CContainsItem>::_TyResult _CSelectedRowHeightsList; /**< @brief list of row heights that can occur in both columns at the same time (optimization for matrices with >1 block sizes) */
+
+		/**
+		 *	@brief off-diagonal loop of the Cholesky decomposition kernel
+		 *
+		 *	Performs the actual loop.
+		 *
+		 *	@param[out] p_dest_block is the (uninitialized) output block at L(j, k)
+		 *	@param[in] n_col_k_width is width of the k-th column, in elements
+		 *		(equal to the number of rows of the dest block)
+		 *	@param[in] p_j_block_it is iterator to blocks in j-th column
+		 *	@param[in] p_j_block_end_it is iterator pointing one past the last block in j-th column
+		 *	@param[in] p_k_block_it is iterator to blocks in k-th column
+		 *	@param[in] p_k_block_end_it is iterator pointing one past the last block in k-th column
+		 *	@param[in] t_block_A is input block at A(j, k), same size as the dest block 
+		 *	@param[in] k is index of the previous column
+		 *	@param[in] r_block_cols_list is block column layout of the (symmetric) matrix
+		 */
+#if defined(_MSC_VER) && !defined(__MWERKS__)
+#pragma inline_recursion(on)
+#endif // _MSC_VER && !__MWERKS__
+		static __forceinline void Loop(double *p_dest_block,
+			size_t UNUSED(n_col_k_width), _TyBlockConstIter p_j_block_it,
+			_TyBlockConstIter p_j_block_end_it, _TyBlockConstIter p_k_block_it,
+			_TyBlockConstIter p_k_block_end_it, TColumn::TBlockEntry t_block_A, size_t k,
+			const std::vector<TColumn> &r_block_cols_list)
+		{
+			_ASSERTE(n_col_k_width == CColumnWidth_k::n_size);
+			// make sure this is the correct block size
+
+			_ASSERTE(p_j_block_it == p_j_block_end_it ||
+				p_k_block_it != p_k_block_end_it);
+			// if the first is a non-empty range, the second should be neither
+
+			_ASSERTE(p_j_block_it == p_j_block_end_it ||
+				/*r_col_L_k.block_list.back()*/(*(p_k_block_end_it - 1)).first == k);
+			// the last block of k-th column is on diagonal (kth row) and it is always present
+			// this block will serve as the sentinell for this loop
+
+			_ASSERTE(p_j_block_it == p_j_block_end_it ||
+				(*(p_j_block_end_it - 1)).first < k); // note that the p_j_block_end_it points at the diagonal block
+			// the last block of j-th column (omitting the diagonal) is *at most* at kth row
+
+			_TyDestBlock L_block_kj(p_dest_block);
+			// the destination block
+
+			if(t_block_A.first == k)
+				L_block_kj = _TyDestBlock(t_block_A.second);
+			else
+				L_block_kj.setZero();
+			// copy data from the source matrix
+
+			{
+				for(; p_j_block_it != p_j_block_end_it; ++ p_j_block_it) { // for each block in column j
+					size_t n_row_i = (*p_j_block_it).first;
+					_ASSERTE(n_row_i < k); // make sure that the sentinell is indeed functional
+					_ASSERTE(p_k_block_it != p_k_block_end_it); // should not be pointing at the end in the first place (if we got inside this loop)
+					while((*p_k_block_it).first < n_row_i) {
+						++ p_k_block_it;
+						_ASSERTE(p_k_block_it != p_k_block_end_it); // should never reach the end (sentinell)
+					}
+					if((*p_k_block_it).first == n_row_i) {
+						const size_t n_row_i_height = r_block_cols_list[n_row_i].n_width;
+						// an optimistic case, we found blocks at the same row
+
+						CCholesky_OffDiagonalProduct<_TyGppContext, _CSelectedRowHeightsList/*CColumnWidthsList*/,
+							CColumnWidth_k, CColumnWidth_j>::Loop(L_block_kj,
+							(*p_k_block_it).second, (*p_j_block_it).second, n_row_i_height);
+						// takes blocks from two different columns - need to know which columns have nonzero blocks
+					} else {
+						// next block in column k is on the next row,
+						// we have to skip to the next block in jth row
+					}
+				}
+				// this loop can be probably written in many different ways
+				// todo - see if we could loop p_k_block_it instead and loose one parameter (p_j_block_end_it)
+			}
+			// cmod; causes fill-in in the current column
+
+			-- p_k_block_end_it;
+			_ASSERTE((*p_k_block_end_it).first == k); // makes sure that k-th column contains a diagonal block
+			_TyDiagBlock_k d((*p_k_block_end_it).second);
+			d.template triangularView<Eigen::Upper>().transpose().solveInPlace(L_block_kj); // modifies L_block_kj
+			// d.marked<Eigen::UpperTriangular>().transpose().solveTriangularInPlace(L_block_kj); // the above line is deprecated, this line should do the trick in the new version(L_block_kj) of Eigen
+			// late divide by the diagonal entries (probably unavoidable)
+		}
+
+		/**
+		 *	@brief off-diagonal loop of the Cholesky decomposition kernel
+		 *
+		 *	Performs the actual loop.
+		 *
+		 *	@param[out] r_column_dot is the running dor product of the column blocks
+		 *	@param[out] p_dest_block is the (uninitialized) output block at L(j, k)
+		 *	@param[in] n_col_k_width is width of the k-th column, in elements
+		 *		(equal to the number of rows of the dest block)
+		 *	@param[in] p_j_block_it is iterator to blocks in j-th column
+		 *	@param[in] p_j_block_end_it is iterator pointing one past the last block in j-th column
+		 *	@param[in] p_k_block_it is iterator to blocks in k-th column
+		 *	@param[in] p_k_block_end_it is iterator pointing one past the last block in k-th column
+		 *	@param[in] t_block_A is input block at A(j, k), same size as the dest block 
+		 *	@param[in] k is index of the previous column
+		 *	@param[in] r_block_cols_list is block column layout of the (symmetric) matrix
+		 */
+#if defined(_MSC_VER) && !defined(__MWERKS__)
+#pragma inline_recursion(on)
+#endif // _MSC_VER && !__MWERKS__
+		static __forceinline void Loop(_TyDiagMatrix &r_column_dot, double *p_dest_block,
+			size_t UNUSED(n_col_k_width), _TyBlockConstIter p_j_block_it,
+			_TyBlockConstIter p_j_block_end_it, _TyBlockConstIter p_k_block_it,
+			_TyBlockConstIter p_k_block_end_it, TColumn::TBlockEntry t_block_A, size_t k,
+			const std::vector<TColumn> &r_block_cols_list)
+		{
+			_ASSERTE(n_col_k_width == CColumnWidth_k::n_size);
+			// make sure this is the correct block size
+
+			_ASSERTE(p_j_block_it == p_j_block_end_it ||
+				p_k_block_it != p_k_block_end_it);
+			// if the first is a non-empty range, the second should be neither
+
+			_ASSERTE(p_j_block_it == p_j_block_end_it ||
+				/*r_col_L_k.block_list.back()*/(*(p_k_block_end_it - 1)).first == k);
+			// the last block of k-th column is on diagonal (kth row) and it is always present
+			// this block will serve as the sentinell for this loop
+
+			_ASSERTE(p_j_block_it == p_j_block_end_it ||
+				(*(p_j_block_end_it - 1)).first < k); // note that the p_j_block_end_it points at the diagonal block
+			// the last block of j-th column (omitting the diagonal) is *at most* at kth row
+
+			_TyDestBlock L_block_kj(p_dest_block);
+			// the destination block
+
+			if(t_block_A.first == k)
+				L_block_kj = _TyDestBlock(t_block_A.second);
+			else
+				L_block_kj.setZero();
+			// copy data from the source matrix
+
+			{
+				for(; p_j_block_it != p_j_block_end_it; ++ p_j_block_it) { // for each block in column j
+					size_t n_row_i = (*p_j_block_it).first;
+					_ASSERTE(n_row_i < k); // make sure that the sentinell is indeed functional
+					_ASSERTE(p_k_block_it != p_k_block_end_it); // should not be pointing at the end in the first place (if we got inside this loop)
+					while((*p_k_block_it).first < n_row_i) {
+						++ p_k_block_it;
+						_ASSERTE(p_k_block_it != p_k_block_end_it); // should never reach the end (sentinell)
+					}
+					if((*p_k_block_it).first == n_row_i) {
+						const size_t n_row_i_height = r_block_cols_list[n_row_i].n_width;
+						// an optimistic case, we found blocks at the same row
+
+						CCholesky_OffDiagonalProduct<_TyGppContext, _CSelectedRowHeightsList/*CColumnWidthsList*/,
+							CColumnWidth_k, CColumnWidth_j>::Loop(L_block_kj,
+							(*p_k_block_it).second, (*p_j_block_it).second, n_row_i_height);
+						// takes blocks from two different columns - need to know which columns have nonzero blocks
+					} else {
+						// next block in column k is on the next row,
+						// we have to skip to the next block in jth row
+					}
+				}
+				// this loop can be probably written in many different ways
+				// todo - see if we could loop p_k_block_it instead and loose one parameter (p_j_block_end_it)
+			}
+			// cmod; causes fill-in in the current column
+
+			-- p_k_block_end_it;
+			_ASSERTE((*p_k_block_end_it).first == k); // makes sure that k-th column contains a diagonal block
+			_TyDiagBlock_k d((*p_k_block_end_it).second);
+			d.template triangularView<Eigen::Upper>().transpose().solveInPlace(L_block_kj); // modifies L_block_kj
+			// d.marked<Eigen::UpperTriangular>().transpose().solveTriangularInPlace(L_block_kj); // the above line is deprecated, this line should do the trick in the new version(L_block_kj) of Eigen
+			// late divide by the diagonal entries (probably unavoidable)
+
+#ifdef __UBER_BLOCK_MATRIX_FBS_LAZY_PRODUCT
+			//r_column_dot += L_block_kj.transpose().lazyProduct(L_block_kj);
+			r_column_dot.template triangularView<Eigen::Upper>() += L_block_kj.transpose().lazyProduct(L_block_kj); // save FLOPs? unlikely with SSE; it *is* actually worth it!
+#else // __UBER_BLOCK_MATRIX_FBS_LAZY_PRODUCT
+			//r_column_dot.noalias() += L_block_kj.transpose() * L_block_kj;
+			r_column_dot.template triangularView<Eigen::Upper>().noalias() += L_block_kj.transpose() * L_block_kj; // save FLOPs? unlikely with SSE; it *is* actually worth it!
+#endif // __UBER_BLOCK_MATRIX_FBS_LAZY_PRODUCT
+		}
+	};
+
+	/**
+	 *	@brief off-diagonal product, one step of the Cholesky decomposition kernel
+	 *
+	 *	Performs calculation of a product of two off-diagonal blocks in the same
+	 *	row at two different columns of Cholesky factor.
+	 *
+	 *	@tparam _TyGppContext is template instance context for g++ (compatibility workarround)
+	 *	@tparam _CRowHeightList is a list of possible occupied row heights (given the column widths)
+	 *	@tparam CColumnWidth_k is width of the k-th column
+	 *	@tparam CColumnWidth_j is width of the j-th column
+	 */
+	template <class _TyGppContext, class _CRowHeightList, class CColumnWidth_k, class CColumnWidth_j>
+	class CCholesky_OffDiagonalProduct {
+	public:
+		typedef typename _CRowHeightList::_TyHead CCurrentRowHeight; /**< @brief row height for this decision tree recursion */
+		typedef typename CMakeMatrixRef<CColumnWidth_k::n_size, CColumnWidth_j::n_size>::_Ty _TyDestBlock; /**< @brief destination block shape */
+
+		/**
+		 *	@brief off-diagonal loop of the Cholesky decomposition kernel
+		 *
+		 *	Wraps the product in a decision tree for k-th column width.
+		 *
+		 *	@param[in,out] L_block_kj is the output block at L(j, k)
+		 *	@param[in] p_block_ik is the output block at L(i, k)
+		 *	@param[in] p_block_ij is the output block at L(i, j)
+		 *	@param[in] n_row_i_height is height of the i-th row, in elements
+		 */
+#if defined(_MSC_VER) && !defined(__MWERKS__)
+#pragma inline_recursion(on)
+#endif // _MSC_VER && !__MWERKS__
+		static __forceinline void Loop(_TyDestBlock L_block_kj, const double *p_block_ik,
+			const double *p_block_ij, size_t n_row_i_height)
+		{
+			if(n_row_i_height == CCurrentRowHeight::n_size) {
+				CCholesky_OffDiagonalProduct<_TyGppContext, CTypelist<CCurrentRowHeight,
+					CTypelistEnd>, CColumnWidth_k, CColumnWidth_j>::Loop(L_block_kj,
+					p_block_ik, p_block_ij, n_row_i_height);
+			} else {
+				CCholesky_OffDiagonalProduct<_TyGppContext, typename
+					_CRowHeightList::_TyTail, CColumnWidth_k, CColumnWidth_j>::Loop(
+					L_block_kj, p_block_ik, p_block_ij, n_row_i_height);
+			}
+		}
+	};
+
+	/**
+	 *	@brief off-diagonal product, one step of the Cholesky decomposition kernel
+	 *
+	 *	Performs calculation of a product of two off-diagonal blocks in the same
+	 *	row at two different columns of Cholesky factor.
+	 *
+	 *	@tparam _TyGppContext is template instance context for g++ (compatibility workarround)
+	 *	@tparam CRowHeight_i is height of the i-th row
+	 *	@tparam CColumnWidth_k is width of the k-th column
+	 *	@tparam CColumnWidth_j is width of the j-th column
+	 */
+	template <class _TyGppContext, class CRowHeight_i, class CColumnWidth_k, class CColumnWidth_j>
+	class CCholesky_OffDiagonalProduct<_TyGppContext, CTypelist<CRowHeight_i,
+		CTypelistEnd>, CColumnWidth_k, CColumnWidth_j> {
+	public:
+		typedef typename CMakeMatrixRef<CColumnWidth_k::n_size, CColumnWidth_j::n_size>::_Ty _TyDestBlock; /**< @brief destination block shape */
+		typedef typename CMakeMatrixRef<CRowHeight_i::n_size, CColumnWidth_j::n_size>::_Ty _TyBlock_ij; /**< @brief right-hand-side source block shape */
+		typedef typename CMakeMatrixRef<CRowHeight_i::n_size, CColumnWidth_k::n_size>::_Ty _TyBlock_ik; /**< @brief left-hand-side source block shape */
+
+		/**
+		 *	@brief off-diagonal loop of the Cholesky decomposition kernel
+		 *
+		 *	Performs the product.
+		 *
+		 *	@param[in,out] L_block_kj is the output block at L(j, k)
+		 *	@param[in] p_block_ik is the output block at L(i, k)
+		 *	@param[in] p_block_ij is the output block at L(i, j)
+		 *	@param[in] n_row_i_height is height of the i-th row, in elements
+		 */
+#if defined(_MSC_VER) && !defined(__MWERKS__)
+#pragma inline_recursion(on)
+#endif // _MSC_VER && !__MWERKS__
+		static __forceinline void Loop(_TyDestBlock L_block_kj, const double *p_block_ik,
+			const double *p_block_ij, size_t UNUSED(n_row_i_height))
+		{
+			_ASSERTE(n_row_i_height == CRowHeight_i::n_size);
+
+			_TyBlock_ik L_block_ik((double*)p_block_ik);
+			_TyBlock_ij L_block_ij((double*)p_block_ij);
+
+#ifdef __UBER_BLOCK_MATRIX_FBS_LAZY_PRODUCT
+			L_block_kj -= L_block_ik.transpose().lazyProduct(L_block_ij);
+#else // __UBER_BLOCK_MATRIX_FBS_LAZY_PRODUCT
+			L_block_kj.noalias() -= L_block_ik.transpose() * L_block_ij;
+#endif // __UBER_BLOCK_MATRIX_FBS_LAZY_PRODUCT
+		}
+	};
+
+	static inline bool b_Column_Loop(const size_t n_col_j_width, const size_t j, const size_t n,
+		std::vector<TColumn> &r_block_cols_list, const TColumn &r_col_A_j,
+		const CUberBlockMatrix &r_lambda, const std::vector<size_t> &r_elim_tree,
+		std::vector<size_t> &ereach_stack, std::vector<size_t> &bitfield, _TyDenseAllocator &alloc) // todo - doc, throws, ...
+	{
+		return CCholesky_ColumnLoop<CBlockMatrixTypelist,
+			CColumnWidthsList>::b_Loop(n_col_j_width, j, n, r_block_cols_list, r_col_A_j,
+			r_lambda, r_elim_tree, ereach_stack, bitfield, alloc);
+	}
+	
+	template <class _TyGppContext, class _CColumnWidthList>
+	class CCholesky_ColumnLoop {
+	public:
+		typedef typename _CColumnWidthList::_TyHead CCurrentColumnWidth;
+
+#if defined(_MSC_VER) && !defined(__MWERKS__)
+#pragma inline_recursion(on)
+#endif // _MSC_VER && !__MWERKS__
+		static bool b_Loop(const size_t n_col_j_width, const size_t j, const size_t n,
+			std::vector<TColumn> &r_block_cols_list, const TColumn &r_col_A_j,
+			const CUberBlockMatrix &r_lambda, const std::vector<size_t> &r_elim_tree,
+			std::vector<size_t> &ereach_stack, std::vector<size_t> &bitfield, _TyDenseAllocator &alloc)
+		{
+			if(n_col_j_width == CCurrentColumnWidth::n_size) {
+				return CCholesky_ColumnLoop<_TyGppContext, CTypelist<CCurrentColumnWidth,
+					CTypelistEnd> >::b_Loop(n_col_j_width, j, n, r_block_cols_list, r_col_A_j,
+					r_lambda, r_elim_tree, ereach_stack, bitfield, alloc);
+			} else {
+				return CCholesky_ColumnLoop<_TyGppContext, typename
+					_CColumnWidthList::_TyTail>::b_Loop(n_col_j_width, j, n, r_block_cols_list,
+					r_col_A_j, r_lambda, r_elim_tree, ereach_stack, bitfield, alloc);
+			}
+		}
+	};
+
+	template <class _TyGppContext, class CColumnWidth_j>
+	class CCholesky_ColumnLoop<_TyGppContext, CTypelist<CColumnWidth_j, CTypelistEnd> > {
+	public:
+		typedef typename CMakeMatrixRef<CColumnWidth_j::n_size, CColumnWidth_j::n_size>::_Ty _TyDiagBlock; /**< @brief reference to the diagonal block */
+		typedef typename CMakeMatrixRef<CColumnWidth_j::n_size, CColumnWidth_j::n_size>::_TyMatrix _TyDiagMatrix; /**< @brief a dense matrix with the same shape as the diagonal block */
+
+#if defined(_MSC_VER) && !defined(__MWERKS__)
+#pragma inline_recursion(on)
+#endif // _MSC_VER && !__MWERKS__
+		static bool b_Loop(const size_t UNUSED(n_col_j_width), const size_t j, const size_t n,
+			std::vector<TColumn> &r_block_cols_list, const TColumn &r_col_A_j,
+			const CUberBlockMatrix &r_lambda, const std::vector<size_t> &r_elim_tree,
+			std::vector<size_t> &ereach_stack, std::vector<size_t> &bitfield, _TyDenseAllocator &alloc)
+		{
+			_ASSERTE(n_col_j_width == CColumnWidth_j::n_size);
+
+			TColumn &r_col_L_j = r_block_cols_list[j];
+			r_col_L_j.n_width = CColumnWidth_j::n_size;
+			r_col_L_j.n_cumulative_width_sum = r_col_A_j.n_cumulative_width_sum;
+			// get & copy columns
+
+			_ASSERTE(!r_col_A_j.block_list.empty()); // otherwise rank deficient (make it a runtime check?)
+			_TyBlockConstIter p_A_block_it =
+				r_col_A_j.block_list.begin(), p_A_block_end_it = r_col_A_j.block_list.end();
+			// get iterator to blocks of the original matrix
+
+#if 0
+			size_t n_ereach_size = r_lambda.n_Build_EReach(j, r_elim_tree, ereach_stack, bitfield);//cs_ereach(p_block_struct, j, p_etree, &s[0], &w[0]);
+#else
+			size_t n_ereach_first = r_lambda.n_Build_EReach(j, r_elim_tree, ereach_stack, bitfield);//cs_ereach(p_block_struct, j, p_etree, &s[0], &w[0]);
+#endif
+			// use ereach to compute nonzero pattern
+
+			r_col_L_j.block_list.reserve(n - n_ereach_first/*n_ereach_size*/ + 1); // + 1 amounts for the diagonal
+			// reserve space for blocks to avoid reallocation later
+
+			_TyDiagMatrix column_dot;
+			column_dot.setZero();
+			// accumulate column dot product on the stack
+
+			for(size_t u = n_ereach_first, n_highest_k = 0; u < n; ++ u) { // seems to work rather nicely (strange because not every A_up[k, j] is not accessed then - it is likely null) // todo - verify this
+				const size_t k = ereach_stack[u]; // use ereach to predict which columns will have nonzero products
+				// k generally rises, but it doesn't have to (can be non-monotonic)
+
+				_ASSERTE(k != n_highest_k || u == n_ereach_first); // there should be no column repeated (except for zero, in the first iteration)
+				bool b_ereach_mono;
+				if((b_ereach_mono = (k >= n_highest_k)))
+					n_highest_k = k; // don't remember previous k unless it increased
+				// see if the ereach is (locally) increasing
+
+				const TColumn &r_col_L_k = r_block_cols_list[k];
+				const size_t n_col_k_width = r_col_L_k.n_width;
+				// get column k
+
+				_TyBlockConstIter p_jk_block_it;
+				double *p_k_block_data = alloc.p_Get_DenseStorage(n_col_k_width * CColumnWidth_j::n_size);
+				//_TyMatrixXdRef L_block_kj(p_k_block_data, n_col_k_width, CColumnWidth_j::n_size); // only accessed in FBS section
+				if(b_ereach_mono) { // most of the time
+					_ASSERTE(r_col_L_j.block_list.empty() || r_col_L_j.block_list.back().first < k); // this is generally not true - ereach doesn't have to be monotonic, might need to insert the block in a middle
+					// makes sure that the column doesn't contain the k-th block yet
+
+					r_col_L_j.block_list.push_back(TColumn::TBlockEntry(k, p_k_block_data));
+					p_jk_block_it = r_col_L_j.block_list.end() - 1; // it is here
+				} else {
+					//printf("ereach not mono\n"); // debug
+					_ASSERTE(!r_col_L_j.block_list.empty() && r_col_L_j.block_list.back().first > k); // r_col_L_j.block_list.back().first = n_highest_k and n_highest_k > k
+					// make sure we're not going to search for the correct position in vain
+
+					_TyBlockIter p_dest_block_it =
+#if defined(_MSC_VER) && !defined(__MWERKS__) && _MSC_VER >= 1400
+						std::lower_bound(r_col_L_j.block_list.begin(), r_col_L_j.block_list.end(), k, CUberBlockMatrix::CCompareBlockRow());
+#else // _MSC_VER && !__MWERKS__ && _MSC_VER >= 1400
+						std::lower_bound(r_col_L_j.block_list.begin(), r_col_L_j.block_list.end(), k, CUberBlockMatrix::CompareBlockRow);
+#endif // _MSC_VER && !__MWERKS__ && _MSC_VER >= 1400
+					// have to search for the insertion position to keep the column sorted
+
+					p_jk_block_it = r_col_L_j.block_list.insert(p_dest_block_it,
+						TColumn::TBlockEntry(k, p_k_block_data));
+					// insert and remember where it is
+				}
+				// add a new off-diagonal block to L
+
+				{
+					_ASSERTE(p_A_block_it != p_A_block_end_it);
+					size_t n_block_row_id;
+					if((n_block_row_id = (*p_A_block_it).first) < k) {
+						p_A_block_it =
+#if defined(_MSC_VER) && !defined(__MWERKS__) && _MSC_VER >= 1400
+							std::lower_bound(p_A_block_it, p_A_block_end_it, k, CUberBlockMatrix::CCompareBlockRow());
+#else // _MSC_VER && !__MWERKS__ && _MSC_VER >= 1400
+							std::lower_bound(p_A_block_it, p_A_block_end_it, k, CUberBlockMatrix::CompareBlockRow);
+#endif // _MSC_VER && !__MWERKS__ && _MSC_VER >= 1400
+					} else if(n_block_row_id > k) {
+						p_A_block_it =
+#if defined(_MSC_VER) && !defined(__MWERKS__) && _MSC_VER >= 1400
+							std::lower_bound(r_col_A_j.block_list.begin(), p_A_block_end_it, k, CUberBlockMatrix::CCompareBlockRow());
+#else // _MSC_VER && !__MWERKS__ && _MSC_VER >= 1400
+							std::lower_bound(r_col_A_j.block_list.begin(), p_A_block_end_it, k, CUberBlockMatrix::CompareBlockRow);
+#endif // _MSC_VER && !__MWERKS__ && _MSC_VER >= 1400
+						// a rare case where ereach is not monotonically increasing
+					}
+					_ASSERTE(p_A_block_it != p_A_block_end_it);
+				}
+				// look up the block in the source matrix
+
+				_ASSERTE(!r_col_L_j.block_list.empty() && (!b_ereach_mono || r_col_L_j.block_list.back().first == k)); // this is generally not true; it might not be the last
+				_ASSERTE((*p_jk_block_it).first == k); // this should be always true
+				// column j now contains the k-th block
+
+				_TyBlockConstIter
+					p_j_block_it = r_col_L_j.block_list.begin(),
+					p_j_block_end_it = p_jk_block_it/*r_col_L_j.block_list.end() - 1*/, // this is not end() - 1, might have to look for the block before k
+					p_k_block_it = r_col_L_k.block_list.begin(),
+					p_k_block_end_it = r_col_L_k.block_list.end();
+				// have to loop through both lists and merge the blocks to find the ones, referencing the same rows
+
+				/*CFBS_Cholesky<CBlockMatrixTypelist>::OffDiagonal_Loop(p_k_block_data,
+					CColumnWidth_j::n_size, n_col_k_width, p_j_block_it, p_j_block_end_it,
+					p_k_block_it, p_k_block_end_it, *p_A_block_it, k, r_block_cols_list);*/ // this is how it's called from BlockMatrix.h
+				CCholesky_OffDiagonalLoop<CBlockMatrixTypelist, CTypelist<CColumnWidth_j,
+					CTypelistEnd> >::Loop(column_dot, p_k_block_data, n_col_k_width,
+					p_j_block_it, p_j_block_end_it, p_k_block_it, p_k_block_end_it,
+					*p_A_block_it, k, r_block_cols_list); // save one decision tree level, calculate column_dot
+				// execute cmod and solve by diagonals using FBS
+
+				if((*p_A_block_it).first == k)
+					++ p_A_block_it;
+				// skip to the next one for the next iteration / for the diagonal
+			}
+			// complex data dependencies in here, not sure if i like it
+
+			bool b_result;
+			{
+				_ASSERTE(p_A_block_it != p_A_block_end_it && (*p_A_block_it).first <= j);
+				// it is pointing before or at the diagonal already
+				if((*p_A_block_it).first != j) {
+					p_A_block_it =
+#if defined(_MSC_VER) && !defined(__MWERKS__) && _MSC_VER >= 1400
+						std::lower_bound(p_A_block_it, p_A_block_end_it, j, CUberBlockMatrix::CCompareBlockRow());
+#else // _MSC_VER && !__MWERKS__ && _MSC_VER >= 1400
+						std::lower_bound(p_A_block_it, p_A_block_end_it, j, CUberBlockMatrix::CompareBlockRow);
+#endif // _MSC_VER && !__MWERKS__ && _MSC_VER >= 1400
+				}
+				_ASSERTE(p_A_block_it != p_A_block_end_it && (*p_A_block_it).first == j); // should always be nonzero
+				// find the diagonal block (note that if A is upper diagonal, it is the
+				// last block and we can optimize for that)
+
+				_ASSERTE(r_col_L_j.block_list.empty() || r_col_L_j.block_list.back().first < j);
+				// makes sure that the column doesn't contain the diagonal block yet
+
+				double *p_diag_data = alloc.p_Get_DenseStorage(CColumnWidth_j::n_size * CColumnWidth_j::n_size);
+				r_col_L_j.block_list.push_back(TColumn::TBlockEntry(j, p_diag_data));
+				// allocates a new block in this column
+
+				/*b_result = CFBS_Cholesky<CBlockMatrixTypelist>::b_Diagonal_Loop(p_diag_data,
+					CColumnWidth_j::n_size, r_col_L_j.block_list.begin(), r_col_L_j.block_list.end() - 1,
+					(*p_A_block_it).second, r_block_cols_list);*/ // this is how it's called from BlockMatrix.h
+				/*b_result = CCholesky_DiagonalLoop<CBlockMatrixTypelist, CTypelist<CColumnWidth_j,
+					CTypelistEnd> >::b_Loop(p_diag_data, CColumnWidth_j::n_size,
+					r_col_L_j.block_list.begin(), r_col_L_j.block_list.end() - 1,
+					(*p_A_block_it).second, r_block_cols_list);*/ // this calulates column_dot inside, requires another decision tree
+				{
+					_TyDiagBlock L_block_jj(p_diag_data);
+					L_block_jj = _TyDiagBlock((double*)(*p_A_block_it).second);
+					// get the dest block and initialize it with values from A
+
+					L_block_jj -= column_dot;
+					// calculated while calculating cmods
+
+					Eigen::LLT<_TyDiagMatrix, Eigen::Upper> chol(L_block_jj); // Eigen::LLT only accesses a half of the matrix (upper tri in this case), no need to clear the lower half
+					b_result = (chol.info() == Eigen::Success);
+					L_block_jj = chol.matrixU(); // t_odo - make sure it will not throw if chol.info() != Eigen::Success // does not, in 3.1.3
+					// calculates cholesky of a square block
+				}
+				// execute cdiv using FBS
+			}
+			// cdiv; reads an entire column and produces diagonal
+
+			_ASSERTE(r_col_L_j.block_list.size() == n - n_ereach_first/*n_ereach_size*/ + 1);
+			// make sure we preallocated it correclty
+
+			return b_result;
+		}
+	};
+
+	/**
+	 *	@brief diagonal loop of the Cholesky decomposition kernel
+	 *
+	 *	Performs calculation of the diagonal element in one column of Cholesky factor.
+	 *
+	 *	@param[out] p_dest_block is the (uninitialized) output block at L(j, j), which is square
+	 *	@param[in] n_col_j_width is width of the j-th column, in elements
+	 *	@param[in] p_j_block_it is iterator to blocks in j-th column
+	 *	@param[in] p_j_block_end_it is iterator pointing one past the last block in j-th column
+	 *	@param[in] p_block_A is input block at A(j, j), same size as the dest block
+	 *	@param[in] r_block_cols_list is block column layout of the (symmetric) matrix
+	 *
+	 *	@return Returns true on success, false on failure (the matrix is not positive definite).
+	 */
+	static inline bool b_Diagonal_Loop(double *p_dest_block, size_t n_col_j_width,
+		_TyBlockConstIter p_j_block_it, _TyBlockConstIter p_j_block_end_it,
+		const double *p_block_A, const std::vector<TColumn> &r_block_cols_list)
+	{
+		return CCholesky_DiagonalLoop<CBlockMatrixTypelist,
+			CColumnWidthsList>::b_Loop(p_dest_block, n_col_j_width,
+			p_j_block_it, p_j_block_end_it, p_block_A, r_block_cols_list);
+	}
+
+	/**
+	 *	@brief diagonal loop of the Cholesky decomposition kernel
+	 *
+	 *	Performs calculation of the diagonal element in one column of Cholesky factor.
+	 *
+	 *	@tparam _TyGppContext is template instance context for g++ (compatibility workarround)
+	 *	@tparam _CColumnWidthList is list of possible column widths
+	 */
+	template <class _TyGppContext, class _CColumnWidthList>
+	class CCholesky_DiagonalLoop {
+	public:
+		typedef typename _CColumnWidthList::_TyHead CCurrentColumnWidth; /**< @brief column width for this decision tree recursion */
+
+		/**
+		 *	@brief diagonal loop of the Cholesky decomposition kernel
+		 *
+		 *	Wraps the diagonal loop in column width decision tree.
+		 *
+		 *	@param[out] p_dest_block is the (uninitialized) output block at L(j, j), which is square
+		 *	@param[in] n_col_j_width is width of the j-th column, in elements
+		 *	@param[in] p_j_block_it is iterator to blocks in j-th column
+		 *	@param[in] p_j_block_end_it is iterator pointing one past the last block in j-th column
+		 *	@param[in] p_block_A is input block at A(j, j), same size as the dest block
+		 *	@param[in] r_block_cols_list is block column layout of the (symmetric) matrix
+		 *
+		 *	@return Returns true on success, false on failure (the matrix is not positive definite).
+		 */
+#if defined(_MSC_VER) && !defined(__MWERKS__)
+#pragma inline_recursion(on)
+#endif // _MSC_VER && !__MWERKS__
+		static __forceinline bool b_Loop(double *p_dest_block, size_t n_col_j_width,
+			_TyBlockConstIter p_j_block_it, _TyBlockConstIter p_j_block_end_it,
+			const double *p_block_A, const std::vector<TColumn> &r_block_cols_list)
+		{
+			if(n_col_j_width == CCurrentColumnWidth::n_size) {
+				return CCholesky_DiagonalLoop<_TyGppContext, CTypelist<CCurrentColumnWidth,
+					CTypelistEnd> >::b_Loop(p_dest_block, n_col_j_width, p_j_block_it,
+					p_j_block_end_it, p_block_A, r_block_cols_list);
+			} else {
+				return CCholesky_DiagonalLoop<_TyGppContext, typename
+					_CColumnWidthList::_TyTail>::b_Loop(p_dest_block, n_col_j_width,
+					p_j_block_it, p_j_block_end_it, p_block_A, r_block_cols_list);
+			}
+		}
+	};
+
+	/**
+	 *	@brief diagonal loop of the Cholesky decomposition kernel
+	 *
+	 *	Performs calculation of the diagonal element in one column of Cholesky factor.
+	 *
+	 *	@tparam _TyGppContext is template instance context for g++ (compatibility workarround)
+	 *	@tparam CColumnWidth_j is width of the j-th column
+	 */
+	template <class _TyGppContext, class CColumnWidth_j>
+	class CCholesky_DiagonalLoop<_TyGppContext, CTypelist<CColumnWidth_j, CTypelistEnd> > {
+	public:
+		typedef typename CFilterTypelist2<CColumnWidthsList, CColumnWidth_j,
+			__fbs_ut::CHaveRowHeightForColumnWidth, CDimsList_Uniq>::_TyResult _CSelectedRowHeightsList_on_j; /**< @brief list of row heights in column j */
+		typedef typename CMakeMatrixRef<CColumnWidth_j::n_size, CColumnWidth_j::n_size>::_Ty _TyDiagBlock; /**< @brief reference to the diagonal block */
+		typedef typename CMakeMatrixRef<CColumnWidth_j::n_size, CColumnWidth_j::n_size>::_TyMatrix _TyDiagMatrix; /**< @brief a dense matrix with the same shape as the diagonal block */
+
+		/**
+		 *	@brief diagonal loop of the Cholesky decomposition kernel
+		 *
+		 *	Performs calculation of the diagonal element in one column of Cholesky factor.
+		 *
+		 *	@param[out] p_dest_block is the (uninitialized) output block at L(j, j), which is square
+		 *	@param[in] n_col_j_width is width of the j-th column, in elements
+		 *	@param[in] p_j_block_it is iterator to blocks in j-th column
+		 *	@param[in] p_j_block_end_it is iterator pointing one past the last block in j-th column
+		 *	@param[in] p_block_A is input block at A(j, j), same size as the dest block
+		 *	@param[in] r_block_cols_list is block column layout of the (symmetric) matrix
+		 *
+		 *	@return Returns true on success, false on failure (the matrix is not positive definite).
+		 */
+#if defined(_MSC_VER) && !defined(__MWERKS__)
+#pragma inline_recursion(on)
+#endif // _MSC_VER && !__MWERKS__
+		static __forceinline bool b_Loop(double *p_dest_block, size_t UNUSED(n_col_j_width),
+			_TyBlockConstIter p_j_block_it, _TyBlockConstIter p_j_block_end_it,
+			const double *p_block_A, const std::vector<TColumn> &r_block_cols_list)
+		{
+			_ASSERTE(n_col_j_width == CColumnWidth_j::n_size);
+
+			_TyDiagBlock L_block_jj(p_dest_block);
+			L_block_jj = _TyDiagBlock((double*)p_block_A);
+			// get the dest block and initialize it with values from A
+
+			for(; p_j_block_it != p_j_block_end_it; ++ p_j_block_it) {
+				TColumn::TBlockEntry t_L_ij = *p_j_block_it;
+				size_t n_row_i_height = r_block_cols_list[t_L_ij.first].n_width;
+				CCholesky_DiagonalProduct<_TyGppContext, _CSelectedRowHeightsList_on_j/*CColumnWidthsList*/,
+					CColumnWidth_j>::Loop(L_block_jj, t_L_ij.second, n_row_i_height);
+			}
+			// use sparse loop instead
+			// calculates square of all the blocks in the current column (has shape
+			// column-width * column-width, and the diagonal block has the same shape)
+
+			Eigen::LLT<_TyDiagMatrix, Eigen::Upper> chol(L_block_jj); // Eigen::LLT only accesses a half of the matrix (upper tri in this case), no need to clear the lower half
+			if(chol.info() != Eigen::Success)
+				return false;
+			L_block_jj = chol.matrixU();
+			// calculates cholesky of a square block
+
+			return true;
+		}
+	};
+
+	/**
+	 *	@brief diagonal product from the Cholesky decomposition kernel
+	 *
+	 *	Performs calculation of the diagonal element in one column of Cholesky factor.
+	 *
+	 *	@tparam _TyGppContext is template instance context for g++ (compatibility workarround)
+	 *	@tparam _CRowHeightList is a list of possible row heights
+	 *	@tparam CColumnWidth_j is width of the j-th column
+	 */
+	template <class _TyGppContext, class _CRowHeightList, class CColumnWidth_j>
+	class CCholesky_DiagonalProduct {
+	public:
+		typedef typename _CRowHeightList::_TyHead CCurrentRowHeight; /**< @brief row height for this decision tree recursion */
+		typedef typename CMakeMatrixRef<CColumnWidth_j::n_size, CColumnWidth_j::n_size>::_Ty _TyDestBlock; /**< @brief destination block shape */
+
+		/**
+		 *	@brief diagonal product from the Cholesky decomposition kernel
+		 *
+		 *	Wraps the product in a row height decision tree.
+		 *
+		 *	@param[in,out] L_block_jj is the output block at L(j, j)
+		 *	@param[in] p_block_ij is the output block at L(i, j)
+		 *	@param[in] n_row_i_height is height of the i-th row, in elements
+		 */
+#if defined(_MSC_VER) && !defined(__MWERKS__)
+#pragma inline_recursion(on)
+#endif // _MSC_VER && !__MWERKS__
+		static __forceinline void Loop(_TyDestBlock L_block_jj,
+			const double *p_block_ij, size_t n_row_i_height)
+		{
+			if(n_row_i_height == CCurrentRowHeight::n_size) {
+				CCholesky_DiagonalProduct<_TyGppContext, CTypelist<CCurrentRowHeight,
+					CTypelistEnd>, CColumnWidth_j>::Loop(L_block_jj,
+					p_block_ij, n_row_i_height);
+			} else {
+				CCholesky_DiagonalProduct<_TyGppContext, typename
+					_CRowHeightList::_TyTail, CColumnWidth_j>::Loop(
+					L_block_jj, p_block_ij, n_row_i_height);
+			}
+		}
+	};
+
+	/**
+	 *	@brief diagonal product from the Cholesky decomposition kernel
+	 *
+	 *	Performs calculation of the diagonal element in one column of Cholesky factor.
+	 *
+	 *	@tparam _TyGppContext is template instance context for g++ (compatibility workarround)
+	 *	@tparam CRowHeight_i is height of the i-th row
+	 *	@tparam CColumnWidth_j is width of the j-th column
+	 */
+	template <class _TyGppContext, class CRowHeight_i, class CColumnWidth_j>
+	class CCholesky_DiagonalProduct<_TyGppContext, CTypelist<CRowHeight_i,
+		CTypelistEnd>, CColumnWidth_j> {
+	public:
+		typedef typename CMakeMatrixRef<CColumnWidth_j::n_size, CColumnWidth_j::n_size>::_Ty _TyDestBlock; /**< @brief destination block shape */
+		typedef typename CMakeMatrixRef<CRowHeight_i::n_size, CColumnWidth_j::n_size>::_Ty _TyBlock_ij; /**< @brief source block shape */
+
+		/**
+		 *	@brief diagonal product from the Cholesky decomposition kernel
+		 *
+		 *	Performs the product.
+		 *
+		 *	@param[in,out] L_block_jj is the output block at L(j, j)
+		 *	@param[in] p_block_ij is the output block at L(i, j)
+		 *	@param[in] n_row_i_height is height of the i-th row, in elements
+		 */
+#if defined(_MSC_VER) && !defined(__MWERKS__)
+#pragma inline_recursion(on)
+#endif // _MSC_VER && !__MWERKS__
+		static __forceinline void Loop(_TyDestBlock L_block_jj,
+			const double *p_block_ij, size_t UNUSED(n_row_i_height))
+		{
+			_ASSERTE(n_row_i_height == CRowHeight_i::n_size);
+
+			_TyBlock_ij L_block_ij((double*)p_block_ij);
+
+#ifdef __UBER_BLOCK_MATRIX_FBS_LAZY_PRODUCT
+			L_block_jj -= L_block_ij.transpose().lazyProduct(L_block_ij);
+#else // __UBER_BLOCK_MATRIX_FBS_LAZY_PRODUCT
+			L_block_jj.noalias() -= L_block_ij.transpose() * L_block_ij;
+#endif // __UBER_BLOCK_MATRIX_FBS_LAZY_PRODUCT
+		}
+	};
 };
 
 /**
@@ -3092,7 +4114,7 @@ public:
 			_TyRowVector_RowPart x_part((double*)p_x_row); // also column vector, also unaligned
 			_TyBlock block((double*)p_block_data); // block
 
-#if 0 // todo - clear this
+#if 0 // t_odo - clear this
 			for(size_t i = 0; i < CColumnWidth::n_size; ++ i) {
 				for(size_t j = 0; j < CRowHeight::n_size; ++ j)
 					r_diag_x(i) -= x_part(j) * block(j, i);
@@ -3127,7 +4149,7 @@ public:
 			_TyRowVector_RowPart x_part(p_x_row); // also column vector, also unaligned
 			_TyBlock block((double*)p_block_data); // block
 
-#if 0 // todo - clear this
+#if 0 // t_odo - clear this
 			for(size_t i = CColumnWidth::n_size; i > 0;) { // even reversing loop direction gives numerical discrepancies (big dynamic range in the matrix / vector)
 				-- i; // !!
 				for(size_t j = 0; j < CRowHeight::n_size; ++ j)

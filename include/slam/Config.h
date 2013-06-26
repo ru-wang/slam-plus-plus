@@ -3,7 +3,7 @@
 								|                                   |
 								|      ***  Configuration  ***      |
 								|                                   |
-								|   Copyright  © -tHE SWINe- 2012   |
+								|  Copyright  (c) -tHE SWINe- 2012  |
 								|                                   |
 								|             Config.h              |
 								|                                   |
@@ -11,8 +11,8 @@
 */
 
 #pragma once
-#ifndef __PRECOMPILED_HEADER_INCLUDED
-#define __PRECOMPILED_HEADER_INCLUDED
+#ifndef __SLAMPP_CONFIGURATION_INCLUDED
+#define __SLAMPP_CONFIGURATION_INCLUDED
 
 /**
  *	@file include/slam/Config.h
@@ -29,6 +29,7 @@
 // to compile with the experimental allocator
 
 #include "eigen/Eigen/Dense"
+#include "eigen/Eigen/Core"
 #include <stdio.h>
 #include <time.h>
 #if defined(_WIN32) || defined(_WIN64)
@@ -95,7 +96,7 @@
  *		if not defined, they are scheduled per N edges (presumably faster in batch each 1,
  *		practically slower in batch each 10)
  */
-//#define __SLAM_COUNT_ITERATIONS_AS_VERTICES
+#define __SLAM_COUNT_ITERATIONS_AS_VERTICES
 
 /**
  *	@def __LINEAR_SOLVER_OVERRIDE
@@ -116,41 +117,47 @@
 #elif __LINEAR_SOLVER_OVERRIDE == 2
 #define __USE_CHOLMOD
 #else // __LINEAR_SOLVER_OVERRIDE == 0
-
+#define __USE_NATIVE_CHOLESKY
 #endif // __LINEAR_SOLVER_OVERRIDE == 0
 #endif // __LINEAR_SOLVER_OVERRIDE
 // add override option to easily compile from linux
 
 /**
- *	@def __SE_TYPES_SUPPORT_NONLINEAR_SOLVER_A
+ *	@def __SE_TYPES_SUPPORT_A_SOLVERS
  *	@brief if defined, SE(2) types implement functions, required by CNonlinearSolver_A
  */
-#define __SE_TYPES_SUPPORT_NONLINEAR_SOLVER_A
+#define __SE_TYPES_SUPPORT_A_SOLVERS
 
 /**
- *	@def __SE_TYPES_SUPPORT_NONLINEAR_SOLVER_LAMBDA
+ *	@def __SE_TYPES_SUPPORT_LAMBDA_SOLVERS
  *	@brief if defined, SE(2) types implement functions, required
  *		by CNonlinearSolver_L and CNonlinearSolver_Lambda
  */
-#define __SE_TYPES_SUPPORT_NONLINEAR_SOLVER_LAMBDA
+#define __SE_TYPES_SUPPORT_LAMBDA_SOLVERS
 
 /**
- *	@def __SE_TYPES_SUPPORT_NONLINEAR_SOLVER_L
+ *	@def __SE_TYPES_SUPPORT_L_SOLVERS
  *	@brief if defined, SE(2) types implement functions, required by CNonlinearSolver_L
  */
-#define __SE_TYPES_SUPPORT_NONLINEAR_SOLVER_L
+#define __SE_TYPES_SUPPORT_L_SOLVERS
 
 #include "slam/Segregated.h"
 #include "slam/BlockMatrix.h"
-//#include "slam/Tetris.h" // to speed up builds
-#include "slam/BlockBench.h" // don't need this right now
-#include "slam/BlockUnit.h"
+//#include "slam/Tetris.h" // disable to speed up builds
+//#include "slam/BlockUnit.h" // don't need this right now
+//#include "slam/BlockBench.h" // don't need this right now
 #include "slam/FlatSystem.h"
 #include "slam/ParseLoop.h"
-#include "slam/SE2_Types.h"
-#include "slam/LinearSolver_CSparse.h"
-#include "slam/LinearSolver_CXSparse.h"
+#include "slam/LinearSolver_UberBlock.h" // always include
+#if defined(__USE_NATIVE_CHOLESKY)
+// ...
+#elif defined(__USE_CHOLMOD)
 #include "slam/LinearSolver_CholMod.h"
+#elif defined __USE_CXSPARSE
+#include "slam/LinearSolver_CXSparse.h"
+#else // __USE_NATIVE_CHOLESKY
+#include "slam/LinearSolver_CSparse.h"
+#endif // __USE_NATIVE_CHOLESKY
 // rarely change (pch optimization)
 
-#endif // __PRECOMPILED_HEADER_INCLUDED
+#endif // __SLAMPP_CONFIGURATION_INCLUDED

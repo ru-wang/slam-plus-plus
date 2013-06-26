@@ -1,3 +1,10 @@
+Changes from 1.01 to 1.1 (2013-06-24):
+
+* added native block Cholesky implementation
+* added the fast L solver, which is described in our Rss 2013 paper
+    * note that it will not work with other than native Cholesky
+
+
 Changes from 1.0 to 1.01 (2013-05-14):
 
 * updated Cholmod to 2.1.2 and selected the fast supernodal analysis as default

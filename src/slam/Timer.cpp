@@ -3,7 +3,7 @@
 								|                                  |
 								| ***   Multi-platform timer   *** |
 								|                                  |
-								|   Copyright © -tHE SWINe- 2006   |
+								|  Copyright (c) -tHE SWINe- 2006  |
 								|                                  |
 								|            Timer.cpp             |
 								|                                  |

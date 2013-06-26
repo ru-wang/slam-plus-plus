@@ -3,7 +3,7 @@
 								|                                 |
 								| *** Block matrix unit tests *** |
 								|                                 |
-								|  Copyright  © -tHE SWINe- 2012  |
+								| Copyright  (c) -tHE SWINe- 2012 |
 								|                                 |
 								|           BlockUnit.h           |
 								|                                 |
@@ -59,13 +59,19 @@ public:
 	static bool RunAll();
 
 	/**
+	 *	@brief unit test for block matrix decomposition functions (Cholesky)
+	 *	@todo Add rectangular block tests.
+	 */
+	static void MatrixDecomposition_UnitTest();
+
+	/**
 	 *	@brief unit test for block matrix multiplication functions (A * B, A^T * A)
 	 *	@note This also tests the _FBS A^T * A function.
 	 *	@todo Add rectangular block tests.
 	 *
 	 *	@note This function throws std::bad_alloc and std::runtime_error.
 	 */
-	static void MatrixMultiplication_UnitTest(); // throws(std::bad_alloc, std::runtime_error)
+	static void MatrixMultiplication_UnitTest(); // throw(std::bad_alloc, std::runtime_error)
 
 	/**
 	 *	@brief unit test for block matrix addition functions
@@ -81,7 +87,7 @@ public:
 	 *
 	 *	@note This function throws std::bad_alloc and std::runtime_error.
 	 */
-	static void MatrixAddition_UnitTest(); // throws(std::bad_alloc, std::runtime_error)
+	static void MatrixAddition_UnitTest(); // throw(std::bad_alloc, std::runtime_error)
 
 protected:
 	/**
@@ -99,7 +105,7 @@ protected:
 	 */
 	static void Test_Add(CUberBlockMatrix &r_A, CUberBlockMatrix &r_B,
 		double f_factor_A, double f_factor_B, const CUberBlockMatrix &UNUSED(r_C),
-		bool b_polarity, int n_method); // throws(std::bad_alloc, std::runtime_error)
+		bool b_polarity, int n_method); // throw(std::bad_alloc, std::runtime_error)
 
 	/**
 	 *	@brief tests addition of two matrices, expects failure
@@ -112,7 +118,7 @@ protected:
 	 *	@note This function throws std::bad_alloc and std::runtime_error.
 	 */
 	static void Test_AddFailure(CUberBlockMatrix &r_A, CUberBlockMatrix &r_B,
-		bool b_polarity, int n_method); // throws(std::bad_alloc, std::runtime_error)
+		bool b_polarity, int n_method); // throw(std::bad_alloc, std::runtime_error)
 
 	/**
 	 *	@brief generates two random matrices of the same size which can added, along with ground truth
@@ -141,7 +147,7 @@ protected:
 		double f_factor_A, double f_factor_B, CUberBlockMatrix &r_C,
 		const _TyDenseBlock &r_t_block_A, const _TyDenseBlock &r_t_block_B,
 		const _TyDenseBlock &r_t_block_C, bool b_free_block_size, size_t n_block_rows = 10,
-		size_t n_block_cols = 10, size_t n_max_blocks = 10) // throws(std::bad_alloc, std::runtime_error)
+		size_t n_block_cols = 10, size_t n_max_blocks = 10) // throw(std::bad_alloc, std::runtime_error)
 	{
 		std::vector<size_t> row_sizes, col_sizes;
 		if(b_free_block_size) {
@@ -356,7 +362,7 @@ protected:
 	static void Generate_UnAddable_Matrices(CUberBlockMatrix &r_A, CUberBlockMatrix &r_B,
 		const _TyDenseBlock &r_t_block_A, const _TyDenseBlock &r_t_block_B,
 		const _TyDenseBlock &r_t_block_C, bool b_free_block_size, size_t n_block_rows = 10,
-		size_t n_block_cols = 10, size_t n_max_blocks = 10) // throws(std::bad_alloc, std::runtime_error)
+		size_t n_block_cols = 10, size_t n_max_blocks = 10) // throw(std::bad_alloc, std::runtime_error)
 	{
 		_ASSERTE(n_block_cols > 1 || n_block_rows > 1);
 		// this function must have some space in order to generate different layouts
@@ -651,6 +657,12 @@ protected:
 	}
 
 	/**
+	 *	@brief performs a simple Cholesky test with a matrix from University of Florida Sparse Matrix Collection
+	 *	@param[in] p_s_filename is name of a file with matrix-market Cholesky candidate matrix
+	 */
+	static void Simple_UFLSMC_CholTest(const char *p_s_filename);
+
+	/**
 	 *	@brief parses a line while skipping comments
 	 *
 	 *	@param[in] p_fr is the input file
@@ -663,14 +675,14 @@ protected:
 	 *	@note This calls CParserBase inside.
 	 *	@note This function throws std::bad_alloc.
 	 */
-	static bool ReadLine(FILE *p_fr, std::string &r_s_line, int &r_n_cur_line); // throws(std::bad_alloc)
+	static bool ReadLine(FILE *p_fr, std::string &r_s_line, int &r_n_cur_line); // throw(std::bad_alloc)
 
 	/**
 	 *	@brief loads a sparse matrix in matrix-market format
 	 *	@param[in] p_s_filename is name of a file with matrix-market matrix
 	 *	@return Returns a pointer ot a sparse matrix on success, or 0 on failure.
 	 */
-	static cs *p_LoadMM(const char *p_s_filename); // throws(std::bad_alloc)
+	static cs *p_LoadMM(const char *p_s_filename); // throw(std::bad_alloc)
 };
 
 #endif // __UBER_BLOCK_MATRIX_UNIT_TESTS_INCLUDED

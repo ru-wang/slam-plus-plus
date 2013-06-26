@@ -25,7 +25,7 @@ IF(SLAM_P_P_LINEAR_SOLVER_TYPE EQUAL 2)
 ENDIF(SLAM_P_P_LINEAR_SOLVER_TYPE EQUAL 2)
 
 # offer solvers
-SET(SLAM_P_P_LINEAR_SOLVER_TYPE 2 CACHE STRING "Linear solver type (0 = CSparse, 1 = CXSparse, 2 = CHOLMOD).")
+SET(SLAM_P_P_LINEAR_SOLVER_TYPE 3 CACHE STRING "Linear solver type (0 = CSparse, 1 = CXSparse, 2 = CHOLMOD, 3 = native). Note that the new fast L only works with native.")
 
 # try using cholmod with int instead of long
 IF(SLAM_P_P_LINEAR_SOLVER_TYPE EQUAL 2)

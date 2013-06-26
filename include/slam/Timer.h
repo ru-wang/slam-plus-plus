@@ -3,7 +3,7 @@
 								|                                  |
 								| ***   Multi-platform timer   *** |
 								|                                  |
-								|   Copyright © -tHE SWINe- 2006   |
+								|  Copyright (c) -tHE SWINe- 2006  |
 								|                                  |
 								|             Timer.h              |
 								|                                  |
@@ -267,6 +267,150 @@ protected:
 	 *	@return Returns raw timer sample, semantic of the value depends on selected timer method.
 	 */
 	static inline int64_t n_SampleTimer();
+};
+
+/**
+ *	@brief timer sampler object
+ *
+ *	We are intersting in sampling a timer and measuring performance of pieces of code.
+ *	In our application, those are usually structures as some total time + breakdown of
+ *	the individual stages of the algorithm (possibly even in a tree structure).
+ *
+ *	The general requirements are:
+ *		- need to use a single timer sample for subsequent events
+ *		- need to be able to easily disable it, without causing a mess in the code
+ *		- don't want crazy macros that would mess the code up
+ *
+ *	Possible problems:
+ *		- time of some phase is not calculated correctly (e.g. the phase was split
+ *		  and incorrect timer samples are being subtracted)
+ *		- total time is not summed up correctly
+ *		- thanks to code branching, time is not calculated correctly
+ *		- thanks to premature exit (return, break), time is not calculated correctly
+ *
+ *	This can be used in analogous fashion to Matlab's tic() and toc(), without using
+ *	the sissy names.
+ *
+ *	This would be used as follows:
+ *	@code
+ *	CTimer timer; // a global timer object (don't want to construct many of those, want to share it)
+ *	double f_time_a, f_time_b; // time spent in different parts of the algorithm
+ *	double f_total_time; // total time (we want to represent it explicitly to avoid later mistakes)
+ *
+ *	CTimerSampler tic(timer); // timing starts here
+ *	AlgorithmPartA();
+ *	tic.Accum_DiffSample(f_time_a); // like a "toc" and a next "tic"
+ *	AlgorithmPartB();
+ *	tic.Accum_DiffSample(f_time_b); // like a "toc"
+ *	tic.Accum_CumTime(f_total_time); // does not imply a sample (the last sample is used)
+ *	@endcode
+ *
+ *	To measure in a tree structure, one would need a stackable timer sampler (problems with
+ *	threading and many additional issues with correct timing). Instead, one can use more timer
+ *	sampler objects in a stacked fashion (the measurements of inner phases will not fit perfectly
+ *	with the outer phase, thanks to double timer samples - no good way arround that). Could
+ *	add functions like Fork() and Join() to support explicit hierarchy of the timed stages.
+ *
+ *	It is also easy to make a void sampler class, which will not touch the referenced variables,
+ *	effectively optimizing all the timing code away (but the variables themselves must remain
+ *	in place, see CVoidTimerSampler).
+ *
+ *	This solves correct summation of the total time and algorithm stages.
+ *
+ *	Problems with the total time and branching / early exit could be solved by passing a reference
+ *	to the total time variable in the constructor, and the destructor would accumulate the cummulative
+ *	time automatically. This assumes that the scope of the sampler is correctly limited and that
+ *	the last sample is properly sampled (cumtime does not imply sampling). Probably causes more
+ *	problems than it solves.
+ *
+ *	Another approach (possibly more efficient) would be to declare the timed periods
+ *	as global objects. That could look like this:
+ *
+ *	@code
+ *	CTimer timer;
+ *	CTimerSampler<CMakeTypelist(part_a, part_b)> algorithm_time;
+ *
+ *	algorithm_time.start();
+ *	AlgorithmPartA();
+ *	algorithm_time.sample(part_a);
+ *	AlgorithmPartB();
+ *	algorithm_time.sample(part_b);
+ *	@endcode
+ *
+ *	This would allow for completely disabling the timing, including the data.
+ */
+class CTimerSampler {
+public:
+	typedef double _TySample;
+
+protected:
+	CTimer &m_r_timer; /**< @brief reference to the shared timer object */
+	double m_f_last_sample_time; /**< @brief last time a sample was taken */
+	// hot
+
+	double m_f_start_time; /**< @brief time of the constructor being called */
+	// cold
+
+public:
+	inline CTimerSampler(CTimer &r_timer)
+		:m_r_timer(r_timer), m_f_last_sample_time(r_timer.f_Time())
+	{
+		m_f_start_time = m_f_last_sample_time;
+	}
+
+	inline void Accum_DiffSample(_TySample &r_f_time_accum)
+	{
+		double f_time = m_r_timer.f_Time();
+		_ASSERTE(f_time >= m_f_last_sample_time); // we do not own the timer, make sure noone reset it since
+		r_f_time_accum += f_time - m_f_last_sample_time;
+		m_f_last_sample_time = f_time;
+	}
+
+	inline void Accum_CumTime(_TySample &r_f_time_accum) const // does not modify the timer
+	{
+		r_f_time_accum += m_f_last_sample_time - m_f_start_time;
+	}
+};
+
+/**
+ *	@brief dummy no-op timer sampler
+ */
+class CVoidTimerSampler {
+public:
+	struct _TySample {
+		inline _TySample()
+		{}
+
+		inline _TySample(double UNUSED(s))
+		{}
+
+		inline operator double() const
+		{
+			return .0;
+		}
+
+		inline void operator =(double UNUSED(s)) const
+		{}
+
+		inline void operator =(_TySample UNUSED(s)) const
+		{}
+
+		inline void operator +=(double UNUSED(s)) const
+		{}
+
+		inline void operator +=(_TySample UNUSED(s)) const
+		{}
+	};
+
+public:
+	inline CVoidTimerSampler(CTimer &UNUSED(r_timer))
+	{}
+
+	inline void Accum_DiffSample(_TySample &UNUSED(r_f_time_accum))
+	{}
+
+	inline void Accum_CumTime(_TySample &UNUSED(r_f_time_accum)) const
+	{}
 };
 
 #endif // __TIMER_INCLUDED

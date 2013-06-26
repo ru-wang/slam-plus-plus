@@ -3,7 +3,7 @@
 								|                                 |
 								|  ***   Über Block Matrix   ***  |
 								|                                 |
-								|  Copyright  © -tHE SWINe- 2012  |
+								| Copyright  (c) -tHE SWINe- 2012 |
 								|                                 |
 								|          BlockMatrix.h          |
 								|                                 |
@@ -480,6 +480,19 @@ public:
 		{
 			n_cumulative_width_sum = n_value;
 		}
+
+		/**
+		 *	@brief swaps column contents with another column, which is not initialized
+		 *	@param[in,out] r_t_dest is the other column for swapping
+		 *	@note This fuction dammages this column (it is intended as "fast copy"
+		 *		where the source operand is not needed afterwards).
+		 */
+		inline void UninitializedSwap(TColumn &r_t_dest)
+		{
+			r_t_dest.n_width = n_width;
+			r_t_dest.n_cumulative_width_sum = n_cumulative_width_sum;
+			r_t_dest.block_list.swap(block_list);
+		}
 	};
 
 	typedef std::vector<TRow>::iterator _TyRowIter; /**< @brief row vector iterator */
@@ -770,7 +783,7 @@ public:
 		 *
 		 *	@note This function throws std::bad_alloc.
 		 */
-		static void Init_BeforeBlock(CPoolType &r_pool, size_t n_block_element_num) // throws(std::bad_alloc)
+		static void Init_BeforeBlock(CPoolType &r_pool, size_t n_block_element_num) // throw(std::bad_alloc)
 		{
 			_ASSERTE(sizeof(uint64_t) >= sizeof(_Ty)); // we use union to initialize the storage
 
@@ -810,7 +823,7 @@ public:
 		 *
 		 *	@note This function throws std::bad_alloc.
 		 */
-		static void Init_AfterBlock(CPoolType &r_pool, size_t n_mem_align_element_num) // throws(std::bad_alloc)
+		static void Init_AfterBlock(CPoolType &r_pool, size_t n_mem_align_element_num) // throw(std::bad_alloc)
 		{
 			TMagicInitializer t_block_bounds;
 			t_block_bounds.n_magic_number = 0xbaadf00dU | (uint64_t(0xbaadf00dU) << 32);
@@ -939,7 +952,7 @@ public:
 		 *		pool and must not be deleted.
 		 *	@note This function throws std::bad_alloc.
 		 */
-		_Ty *p_Get_DenseStorage(size_t n_element_num) // throws(std::bad_alloc)
+		_Ty *p_Get_DenseStorage(size_t n_element_num) // throw(std::bad_alloc)
 		{
 			_ASSERTE(n_element_num <= m_r_pool.page_size());
 			// makes sure the requested number of elements is possible
@@ -1019,7 +1032,7 @@ public:
 		 *		The pointer is owned by the pool and must not be deleted.
 		 *	@note This function throws std::bad_alloc.
 		 */
-		_Ty *p_Get_DenseStorage(size_t n_element_num) // throws(std::bad_alloc)
+		_Ty *p_Get_DenseStorage(size_t n_element_num) // throw(std::bad_alloc)
 		{
 			_ASSERTE(n_element_num <= m_r_pool.page_size());
 			// makes sure the requested number of elements is possible
@@ -1314,7 +1327,7 @@ public:
 	 */
 	template <class CIterator>
 	inline CUberBlockMatrix(CIterator p_rows_cumsum_begin, CIterator p_rows_cumsum_end,
-		CIterator p_columns_cumsum_begin, CIterator p_columns_cumsum_end) // throws(std::bad_alloc)
+		CIterator p_columns_cumsum_begin, CIterator p_columns_cumsum_end) // throw(std::bad_alloc)
 		:m_n_row_num(0), m_n_col_num(0), m_n_ref_elem_num(0)
 	{
 		Reset_Perfcounters();
@@ -1354,7 +1367,7 @@ public:
 	 */
 	template <class CIterator>
 	inline CUberBlockMatrix(CIterator p_rows_cumsum_begin,
-		CIterator p_rows_cumsum_end, size_t n_column_block_num) // throws(std::bad_alloc)
+		CIterator p_rows_cumsum_end, size_t n_column_block_num) // throw(std::bad_alloc)
 		:m_n_row_num(0), m_n_col_num(0), m_n_ref_elem_num(0)
 	{
 		Reset_Perfcounters();
@@ -1385,7 +1398,7 @@ public:
 	 *	@note This function throws std::bad_alloc.
 	 */
 	inline CUberBlockMatrix(size_t n_target_row_block_num = 0,
-		size_t n_target_column_block_num = 0) // throws(std::bad_alloc)
+		size_t n_target_column_block_num = 0) // throw(std::bad_alloc)
 		:m_n_row_num(0), m_n_col_num(0), m_n_ref_elem_num(0)
 	{
 		Reset_Perfcounters();
@@ -1432,6 +1445,35 @@ public:
 	TBmp *p_Rasterize(TBmp *p_storage = 0, int n_scalar_size = 5) const;
 
 	/**
+	 *	@brief debugging functionality; transforms matrix structure to an image
+	 *
+	 *	This version rasterizes a triangularly represented matrix as a symmetric matrix,
+	 *	without forming the transpose. This matrix must be square and have a symmetric layout.
+	 *
+	 *	@param[in] p_storage is preallocated bitmap (can be 0; the pointer
+	 *		to the structure is guaranteed not to change, the framebuffer pointer may change)
+	 *	@param[in] n_scalar_size is size of one scalar, in pixels
+	 *
+	 *	@return Returns pointer to the generated bitmap on success, 0 on failure.
+	 */
+	TBmp *p_Rasterize_Symmetric(TBmp *p_storage = 0, int n_scalar_size = 5) const;
+
+	/**
+	 *	@brief debugging functionality; transforms matrix structure to an image
+	 *
+	 *	@param[in] r_prev_state is a copy of the previous state of the matrix for nonzero tracking
+	 *		(its layout must be a prefix of this matrix layout, must be smaller or same size)
+	 *	@param[in] b_handle_changed_as_new is new block handling flag
+	 *	@param[in] p_storage is preallocated bitmap (can be 0; the pointer
+	 *		to the structure is guaranteed not to change, the framebuffer pointer may change)
+	 *	@param[in] n_scalar_size is size of one scalar, in pixels
+	 *
+	 *	@return Returns pointer to the generated bitmap on success, 0 on failure.
+	 */
+	TBmp *p_Rasterize(const CUberBlockMatrix &r_prev_state, bool b_handle_changed_as_new,
+		TBmp *p_storage = 0, int n_scalar_size = 5) const;
+
+	/**
 	 *	@brief debugging functionality; transforms matrix structure to an image and saves as .tga
 	 *
 	 *	@param[in] p_s_filename is output file name (.tga)
@@ -1440,6 +1482,50 @@ public:
 	 *	@return Returns true on success, false on failure.
 	 */
 	bool Rasterize(const char *p_s_filename, int n_scalar_size = 5) const;
+
+	/**
+	 *	@brief debugging functionality; transforms matrix structure to an image and saves as .tga
+	 *
+	 *	This version rasterizes a triangularly represented matrix as a symmetric matrix,
+	 *	without forming the transpose. This matrix must be square and have a symmetric layout.
+	 *
+	 *	@param[in] p_s_filename is output file name (.tga)
+	 *	@param[in] n_scalar_size is size of one scalar, in pixels
+	 *
+	 *	@return Returns true on success, false on failure.
+	 */
+	bool Rasterize_Symmetric(const char *p_s_filename, int n_scalar_size = 5) const;
+
+	/**
+	 *	@brief debugging functionality; transforms matrix structure to an image and saves as .tga
+	 *
+	 *	This version rasterizes a triangularly represented matrix as a symmetric matrix,
+	 *	without forming the transpose. This matrix must be square and have a symmetric layout.
+	 *
+	 *	@param[in] r_prev_state is a copy of the previous state of the matrix for nonzero tracking
+	 *		(its layout must be a prefix of this matrix layout, must be smaller or same size)
+	 *	@param[in] b_handle_changed_as_new is new block handling flag
+	 *	@param[in] p_s_filename is output file name (.tga)
+	 *	@param[in] n_scalar_size is size of one scalar, in pixels
+	 *
+	 *	@return Returns true on success, false on failure.
+	 */
+	bool Rasterize_Symmetric(const CUberBlockMatrix &r_prev_state, bool b_handle_changed_as_new,
+		const char *p_s_filename, int n_scalar_size = 5) const;
+
+	/**
+	 *	@brief debugging functionality; transforms matrix structure to an image and saves as .tga
+	 *
+	 *	@param[in] r_prev_state is a copy of the previous state of the matrix for nonzero tracking
+	 *		(its layout must be a prefix of this matrix layout, must be smaller or same size)
+	 *	@param[in] b_handle_changed_as_new is new block handling flag
+	 *	@param[in] p_s_filename is output file name (.tga)
+	 *	@param[in] n_scalar_size is size of one scalar, in pixels
+	 *
+	 *	@return Returns true on success, false on failure.
+	 */
+	bool Rasterize(const CUberBlockMatrix &r_prev_state, bool b_handle_changed_as_new,
+		const char *p_s_filename, int n_scalar_size = 5) const;
 
 	/**
 	 *	@brief gets number of rows of a block
@@ -1766,7 +1852,7 @@ public:
 	 */
 	inline _TyMatrixXdRef t_FindBlock(size_t n_row, size_t n_column,
 		size_t n_block_row_num, size_t n_block_column_num, bool b_alloc_if_not_found = true,
-		bool b_mind_uninitialized = true) // throws(std::bad_alloc)
+		bool b_mind_uninitialized = true) // throw(std::bad_alloc)
 	{
 		double *p_data = p_FindBlock(n_row, n_column, n_block_row_num,
 			n_block_column_num, b_alloc_if_not_found, b_mind_uninitialized);
@@ -1790,12 +1876,106 @@ public:
 	inline _TyMatrixXdRef t_FindBlock(size_t n_row, size_t n_column) const
 	{
 		size_t n_block_row_num, n_block_column_num;
-		double *p_data = (double*)p_GetBlock(n_row, n_column, n_block_row_num, n_block_column_num);
+		double *p_data = (double*)p_FindBlock_ResolveSize(n_row, n_column, n_block_row_num, n_block_column_num);
 		if(p_data)
 			return _TyMatrixXdRef(p_data, n_block_row_num, n_block_column_num);
 		else
 			return _TyMatrixXdRef(0, 0, 0); // fixme - does this throw an exception or what?
 	}
+
+	/**
+	 *	@brief finds a matrix block, strictly inside the matrix
+	 *
+	 *	@param[in] n_row_index is index of a row (in blocks!)
+	 *	@param[in] n_column_index is index of a column (in blocks!)
+	 *	@param[in] n_block_row_num is number of block rows (in elements)
+	 *	@param[in] n_block_column_num is number of block columns (in elements)
+	 *	@param[in] b_alloc_if_not_found is block allocation flag (if set and
+	 *		the specified block doesn't exist, it is allocated; if not set,
+	 *		the function fails; note that the function can still fail if block
+	 *		position or dimensions violate block layout even though the flag is set)
+	 *	@param[in] b_mind_uninitialized is the initialization flag (if set,
+	 *		the functions clears the block data to zero if the block didn't exist)
+	 *
+	 *	@return Returns an Eigen::Map<> to the block in question on success,
+	 *		or an empty 0 x 0 matrix on failure.
+	 *
+	 *	@note This function throws std::bad_alloc.
+	 *	@note This can only allocate new block rows / columns at the edge of the matrix.
+	 */
+	_TyMatrixXdRef t_GetBlock_Log(size_t n_row_index, size_t n_column_index,
+		size_t n_block_row_num, size_t n_block_column_num, bool b_alloc_if_not_found = true,
+		bool b_mind_uninitialized = true); // throw(std::bad_alloc)
+
+	/**
+	 *	@brief gets a matrix block (read-only)
+	 *
+	 *	@param[in] n_row_index is index of a row (in blocks!)
+	 *	@param[in] n_column_index is index of a column (in blocks!)
+	 *
+	 *	@return Returns an Eigen::Map<> to the block in question on success,
+	 *		or an empty 0 x 0 matrix on failure.
+	 *
+	 *	@note This allows write access to matrix elements, would neet a ConstReferencingMatrixXd.
+	 */
+	inline _TyMatrixXdRef t_GetBlock_Log(size_t n_row_index, size_t n_column_index) const
+	{
+		_ASSERTE(n_row_index < m_block_rows_list.size());
+		_ASSERTE(n_column_index < m_block_cols_list.size());
+		size_t n_block_row_num = m_block_rows_list[n_row_index].n_height;
+		size_t n_block_column_num = m_block_cols_list[n_column_index].n_width;
+		double *p_data = (double*)p_GetBlockData(n_row_index, n_column_index);
+		if(p_data)
+			return _TyMatrixXdRef(p_data, n_block_row_num, n_block_column_num);
+		else
+			return _TyMatrixXdRef(0, 0, 0); // fixme - does this throw an exception or what?
+	}
+
+	/**
+	 *	@brief finds a matrix block (read-only)
+	 *
+	 *	@param[in] n_row_index is index of a row (in blocks!)
+	 *	@param[in] n_column_index is index of a column (in blocks!)
+	 *	@param[in] n_block_row_num is number of block rows (in elements)
+	 *	@param[in] n_block_column_num is number of block columns (in elements)
+	 *
+	 *	@return Returns pointer to raw data (storage order same as in Eigen) on success,
+	 *		or 0 on failure.
+	 */
+	inline const double *p_GetBlock_Log(size_t n_row_index, size_t n_column_index,
+		size_t n_block_row_num, size_t n_block_column_num) const
+	{
+		_ASSERTE(n_row_index < m_block_rows_list.size());
+		_ASSERTE(n_column_index < m_block_cols_list.size());
+		if(n_block_row_num != m_block_rows_list[n_row_index].n_height ||
+		   n_block_column_num != m_block_cols_list[n_column_index].n_width)
+			return 0; // size mismatch
+		return p_GetBlockData(n_row_index, n_column_index);
+	}
+
+	/**
+	 *	@brief finds a matrix block, strictly inside the matrix
+	 *
+	 *	@param[in] n_row_index is index of a row (in blocks!)
+	 *	@param[in] n_column_index is index of a column (in blocks!)
+	 *	@param[in] n_block_row_num is number of block rows (in elements)
+	 *	@param[in] n_block_column_num is number of block columns (in elements)
+	 *	@param[in] b_alloc_if_not_found is block allocation flag (if set and
+	 *		the specified block doesn't exist, it is allocated; if not set,
+	 *		the function fails; note that the function can still fail if block
+	 *		position or dimensions violate block layout even though the flag is set)
+	 *	@param[in] b_mind_uninitialized is the initialization flag (if set,
+	 *		the functions clears the block data to zero if the block didn't exist)
+	 *
+	 *	@return Returns pointer to raw data (storage order same as in Eigen) on success,
+	 *		or 0 on failure.
+	 *
+	 *	@note This function throws std::bad_alloc.
+	 *	@note This can only allocate new block rows / columns at the edge of the matrix.
+	 */
+	double *p_GetBlock_Log(size_t n_row_index, size_t n_column_index,
+		size_t n_block_row_num, size_t n_block_column_num, bool b_alloc_if_not_found = true,
+		bool b_mind_uninitialized = true); // throw(std::bad_alloc)
 
 	/**
 	 *	@brief finds a matrix block
@@ -1818,7 +1998,7 @@ public:
 	 */
 	double *p_FindBlock(size_t n_row, size_t n_column, size_t n_block_row_num,
 		size_t n_block_column_num, bool b_alloc_if_not_found = true,
-		bool b_mind_uninitialized = true); // throws(std::bad_alloc)
+		bool b_mind_uninitialized = true); // throw(std::bad_alloc)
 
 	/**
 	 *	@brief finds a matrix block (read-only)
@@ -1845,7 +2025,7 @@ public:
 	 *	@return Returns pointer to raw data (storage order same as in Eigen) on success,
 	 *		or 0 on failure.
 	 */
-	const double *p_GetBlock(size_t n_row, size_t n_column,
+	const double *p_FindBlock_ResolveSize(size_t n_row, size_t n_column,
 		size_t &r_n_block_row_num, size_t &r_n_block_column_num) const;
 
 	/**
@@ -1864,7 +2044,7 @@ public:
 	 *	@note This is slightly slower than calling Append_Block_Log().
 	 */
 	template <class CMatrixType>
-	bool Append_Block(const CMatrixType &r_t_block, size_t n_row, size_t n_column) // throws(std::bad_alloc)
+	bool Append_Block(const CMatrixType &r_t_block, size_t n_row, size_t n_column) // throw(std::bad_alloc)
 	{
 		CheckIntegrity();
 		// make sure the matrix is ok
@@ -1909,7 +2089,7 @@ public:
 	 */
 	template <int n_compile_time_row_num, int n_compile_time_col_num, int n_options>
 	bool Append_Block(const Eigen::Matrix<double, n_compile_time_row_num, n_compile_time_col_num,
-		n_options, n_compile_time_row_num, n_compile_time_col_num> &r_t_block, size_t n_row, size_t n_column) // throws(std::bad_alloc)
+		n_options, n_compile_time_row_num, n_compile_time_col_num> &r_t_block, size_t n_row, size_t n_column) // throw(std::bad_alloc)
 	{
 		CheckIntegrity();
 		// make sure the matrix is ok
@@ -1954,7 +2134,7 @@ public:
 	 *	@todo this is practically untested, test it
 	 */
 	template <class CMatrixType>
-	bool Append_Block_Log(const CMatrixType &r_t_block, size_t n_row_index, size_t n_column_index) // throws(std::bad_alloc)
+	bool Append_Block_Log(const CMatrixType &r_t_block, size_t n_row_index, size_t n_column_index) // throw(std::bad_alloc)
 	{
 		_ASSERTE(n_row_index <= m_block_rows_list.size());
 		_ASSERTE(n_column_index <= m_block_cols_list.size());
@@ -2015,7 +2195,7 @@ public:
 	 */
 	template <int n_compile_time_row_num, int n_compile_time_col_num, int n_options>
 	bool Append_Block_Log(const Eigen::Matrix<double, n_compile_time_row_num, n_compile_time_col_num,
-		n_options, n_compile_time_row_num, n_compile_time_col_num> &r_t_block, size_t n_row_index, size_t n_column_index) // throws(std::bad_alloc)
+		n_options, n_compile_time_row_num, n_compile_time_col_num> &r_t_block, size_t n_row_index, size_t n_column_index) // throw(std::bad_alloc)
 	{
 		_ASSERTE(n_row_index <= m_block_rows_list.size());
 		_ASSERTE(n_column_index <= m_block_cols_list.size());
@@ -2278,6 +2458,72 @@ public:
 	 */
 	cs *p_BlockStructure_to_Sparse(cs *p_alloc = 0) const;
 
+	/**
+	 *	@brief converts block structure to a binary sparse matrix, with mini-skirt
+	 *
+	 *	This is an optimization for incremental reordering. This can convert only
+	 *	a (lower-right) part of the matrix, and can replace a (upper-left) part
+	 *	of it by a diagonal matrix (a sparse apron - the "mini-skirt"). For example,
+	 *	on the matrix with the following nonzero block structure:
+	 *
+	 *	@code
+	 *	+                 +
+	 *	|_*|____*|________|
+	 *	|  |*   *|*       |
+	 *	|  |  * *|        |
+	 *	|__|____*|__*_*___|
+	 *	|  |     |*     * |
+	 *	|  |     |  *   * |
+	 *	|  |     |    * * |
+	 *	|  |     |      * |
+	 *	+  |     |        +
+	 *	   |     |
+	 *	   |     +-> n_diag_block_num
+	 *	   +-------> n_min_block
+	 *	@endcode
+	 *
+	 *	With n_min_block = 1 and n_diag_block_num = 4, it will produce a sparse
+	 *	elementwise binary matrix:
+	 *
+	 *	@code
+	 *	+               +
+	 *	| 1    |1       |
+	 *	|   1  |        |
+	 *	|_____1|__1_1___|
+	 *	|      |1     1 |
+	 *	|      |  1   1 |
+	 *	|      |    1 1 |
+	 *	|      |      1 |
+	 *	+               +
+	 *	@endcode
+	 *
+	 *	Hence, the first row and column are skipped (n_min_block = 1),
+	 *	and the next 3 rows and columns are replaced by a diagonal matrix
+	 *	(n_diag_block_num - n_min_block = 3).
+	 *
+	 *	@param[in] n_min_block is (zero-based) index of the first block
+	 *		row and column to be converted
+	 *	@param[in] n_diag_block_num is (zero-based) index of the one
+	 *		past last block row and column that will be replaced with unit diagonal
+	 *		(counted from the beginning of the matrix, not from n_min_block)
+	 *	@param[in] p_alloc is pointer to before-allocated sparse matrix
+	 *		(contents will be overwritten; can be null)
+	 *
+	 *	@return Returns pointer to sparse column-compressed matrix (equal to p_alloc
+	 *		if supplied) on success, 0 on failure (not enough memory).
+	 *
+	 *	@note If p_alloc is supplied, the pointer to the matrix structure is guaranteed
+	 *		to not change. However, the internal pointers in it may change.
+	 *	@note If p_alloc is supplied, it can be allocated to any number of nonzero elements.
+	 *		If needed, more space is added automatically.
+	 *	@note The resulting matrix is binary, and unless p_alloc contains array for values,
+	 *		no element values are generated.
+	 *
+	 *	@todo Document what happens to the original matrix if it fails (and elsewhere).
+	 */
+	cs *p_BlockStructure_to_Sparse_Apron(size_t n_min_block,
+		size_t n_diag_block_num, cs *p_alloc = 0) const;
+
 #if defined(_M_X64) || defined(_M_AMD64) || defined(_M_IA64) || defined(__x86_64) || defined(__amd64) || defined(__ia64)
 
 	/**
@@ -2413,14 +2659,14 @@ public:
 	 *	@note This function throws std::bad_alloc.
 	 */
 	bool From_Sparse(size_t n_base_row_id, size_t n_base_column_id,
-		const cs *p_sparse, bool b_transpose, std::vector<size_t> &r_workspace); // throws(std::bad_alloc)
+		const cs *p_sparse, bool b_transpose, std::vector<size_t> &r_workspace); // throw(std::bad_alloc)
 
 	/**
 	 *	@copydoc From_Sparse()
 	 *	@note This is parallelized using OpenMP. If not available, runs in serial.
 	 */
 	bool From_Sparse_Parallel(size_t n_base_row_id, size_t n_base_column_id,
-		const cs *p_sparse, bool b_transpose, std::vector<size_t> &r_workspace); // throws(std::bad_alloc)
+		const cs *p_sparse, bool b_transpose, std::vector<size_t> &r_workspace); // throw(std::bad_alloc)
 
 #if defined(_M_X64) || defined(_M_AMD64) || defined(_M_IA64) || defined(__x86_64) || defined(__amd64) || defined(__ia64)
 
@@ -2448,14 +2694,14 @@ public:
 	 *		which may define integers as 64-bit and expect them to be so. Use with caution.
 	 */
 	bool From_Sparse32(size_t n_base_row_id, size_t n_base_column_id,
-		const cs *p_sparse, bool b_transpose, std::vector<size_t> &r_workspace); // throws(std::bad_alloc)
+		const cs *p_sparse, bool b_transpose, std::vector<size_t> &r_workspace); // throw(std::bad_alloc)
 
 	/**
 	 *	@copydoc From_Sparse32()
 	 *	@note This is parallelized using OpenMP. If not available, runs in serial.
 	 */
 	bool From_Sparse32_Parallel(size_t n_base_row_id, size_t n_base_column_id,
-		const cs *p_sparse, bool b_transpose, std::vector<size_t> &r_workspace); // throws(std::bad_alloc)
+		const cs *p_sparse, bool b_transpose, std::vector<size_t> &r_workspace); // throw(std::bad_alloc)
 
 #endif // _M_X64 || _M_AMD64 || _M_IA64 || __x86_64 || __amd64 || __ia64
 
@@ -2487,7 +2733,7 @@ public:
 	 *
 	 *	@note This function throws std::bad_alloc.
 	 */
-	void CopyTo(CUberBlockMatrix &r_dest, bool b_share_data = false) const; // throws(std::bad_alloc)
+	void CopyTo(CUberBlockMatrix &r_dest, bool b_share_data = false) const; // throw(std::bad_alloc)
 
 	/**
 	 *	@brief copies the matrix to a part of another matrix
@@ -2504,7 +2750,7 @@ public:
 	 *	@note This function throws std::bad_alloc.
 	 */
 	void PasteTo(CUberBlockMatrix &r_dest,
-		size_t n_dest_row_index, size_t n_dest_column_index); // throws(std::bad_alloc)
+		size_t n_dest_row_index, size_t n_dest_column_index); // throw(std::bad_alloc)
 
 	/**
 	 *	@brief copies only the matrix layout, not the data
@@ -2515,7 +2761,7 @@ public:
 	 *
 	 *	@todo Make a version with slice? permutation?
 	 */
-	void CopyLayoutTo(CUberBlockMatrix &r_dest) const; // throws(std::bad_alloc)
+	void CopyLayoutTo(CUberBlockMatrix &r_dest) const; // throw(std::bad_alloc)
 
 	/**
 	 *	@brief slices the matrix
@@ -2539,7 +2785,7 @@ public:
 	 *	@todo This is largerly untested; test this.
 	 */
 	void SliceTo(CUberBlockMatrix &r_dest, size_t n_block_row_num,
-		size_t n_block_column_num, bool b_share_data = false); // throws(std::bad_alloc)
+		size_t n_block_column_num, bool b_share_data = false); // throw(std::bad_alloc)
 
 	/**
 	 *	@brief slices the matrix
@@ -2558,7 +2804,7 @@ public:
 	 *	@note This function throws std::bad_alloc.
 	 */
 	void SliceTo(CUberBlockMatrix &r_dest, size_t n_first_row_index, size_t n_last_row_index,
-		size_t n_first_column_index, size_t n_last_column_index, bool b_share_data = false) const; // throws(std::bad_alloc)
+		size_t n_first_column_index, size_t n_last_column_index, bool b_share_data = false) const; // throw(std::bad_alloc)
 
 	/**
 	 *	@brief applies blockwise symbolic permutation to a general matrix
@@ -2583,7 +2829,7 @@ public:
 	 */
 	void PermuteTo(CUberBlockMatrix &r_dest, const size_t *p_block_ordering,
 		size_t UNUSED(n_ordering_size), bool b_reorder_rows = true,
-		bool b_reorder_columns = true, bool b_share_data = false) const; // throws(std::bad_alloc)
+		bool b_reorder_columns = true, bool b_share_data = false) const; // throw(std::bad_alloc)
 
 	/**
 	 *	@brief applies blockwise symbolic permutation to an upper triangular matrix
@@ -2608,7 +2854,7 @@ public:
 	 *		and did not change).
 	 */
 	void Permute_UpperTriangluar_To(CUberBlockMatrix &r_dest, const size_t *p_block_ordering,
-		size_t UNUSED(n_ordering_size), bool b_share_data = false) const; // throws(std::bad_alloc)
+		size_t UNUSED(n_ordering_size), bool b_share_data = false) const; // throw(std::bad_alloc)
 
 	/**
 	 *	@brief applies blockwise symbolic permutation to an upper triangular matrix
@@ -2632,21 +2878,21 @@ public:
 	 *	@todo This is largerly untested - test it.
 	 */
 	void Permute_UpperTriangluar_To(CUberBlockMatrix &r_dest, const size_t *p_block_ordering,
-		size_t UNUSED(n_ordering_size), bool b_share_data, size_t n_min_block_row_column) const; // throws(std::bad_alloc)
+		size_t UNUSED(n_ordering_size), bool b_share_data, size_t n_min_block_row_column) const; // throw(std::bad_alloc)
 
 	/**
 	 *	@brief transposes the matrix
 	 *	@param[out] r_dest is destination matrix (will be overwritten)
 	 *	@note This function throws std::bad_alloc.
 	 */
-	void TransposeTo(CUberBlockMatrix &r_dest) const; // throws(std::bad_alloc)
+	void TransposeTo(CUberBlockMatrix &r_dest) const; // throw(std::bad_alloc)
 
 	/**
 	 *	@brief transposes the matrix (this will be overwritten)
 	 *	@param[in] r_src is source matrix to be transposed
 	 *	@note This function throws std::bad_alloc.
 	 */
-	inline void TransposeOf(const CUberBlockMatrix &r_src) // throws(std::bad_alloc)
+	inline void TransposeOf(const CUberBlockMatrix &r_src) // throw(std::bad_alloc)
 	{
 		r_src.TransposeTo(*this);
 	}
@@ -2674,7 +2920,7 @@ public:
 	 *		even if it's needed (speed optimization).
 	 */
 	bool From_Matrix(size_t n_base_row_id, size_t n_base_column_id,
-		const CUberBlockMatrix &r_matrix, bool b_allow_layout_extension = false); // throws(std::bad_alloc)
+		const CUberBlockMatrix &r_matrix, bool b_allow_layout_extension = false); // throw(std::bad_alloc)
 
 	/**
 	 *	@brief gets position of the lowest-row block in every column in an upper-triangular matrix
@@ -2686,9 +2932,23 @@ public:
 	 *	@param[out] r_frontline is written the same amount of (zero-based) block row indices
 	 *		as there are block columns in this matrix
 	 *
+	 *	@note In case the matrix contains empty columns, a nonzero diagonal block is assumed.
 	 *	@note This function throws std::bad_alloc.
 	 */
-	void Get_UpperTriangular_BlockFrontline(std::vector<size_t> &r_frontline) const; // throws(std::bad_alloc)
+	void Get_UpperTriangular_BlockFrontline(std::vector<size_t> &r_frontline) const; // throw(std::bad_alloc)
+
+	/**
+	 *	@brief gets position of the lowest-row block in a specified range of columns
+	 *
+	 *	@param[in] n_order_lo is zero-based index of the first block column
+	 *	@param[in] n_order_hi is zero-based index of one past the last block column
+	 *
+	 *	@return Returns minimum (zero-based) block row index,
+	 *		occuring in the selected range of columns.
+	 *
+	 *	@note In case the matrix contains empty columns, a nonzero diagonal block is assumed.
+	 */
+	size_t n_Get_UpperTriangular_BlockFrontline_Minimum(size_t n_order_lo, size_t n_order_hi) const;
 
 	/**
 	 *	@brief converts this matrix to Eigen dense matrix
@@ -2698,7 +2958,7 @@ public:
 	 *	@note This function throws std::bad_alloc.
 	 */
 	template <class _TyFixedSizeMatrixOrMap>
-	void Convert_to_Dense(_TyFixedSizeMatrixOrMap &r_dest) const // throws(std::bad_alloc)
+	void Convert_to_Dense(_TyFixedSizeMatrixOrMap &r_dest) const // throw(std::bad_alloc)
 	{
 		//r_dest.resize(m_n_row_num, m_n_col_num); // by the caller, also this is specialization for fixed-size matrices
 		_ASSERTE(r_dest.rows() == m_n_row_num && r_dest.cols() == m_n_col_num);
@@ -2736,7 +2996,7 @@ public:
 	 *	@param[out] r_dest is the destination matrix (allocated inside the function, will be overwritten)
 	 *	@note This function throws std::bad_alloc.
 	 */
-	void Convert_to_Dense(Eigen::MatrixXd &r_dest) const; // throws(std::bad_alloc)
+	void Convert_to_Dense(Eigen::MatrixXd &r_dest) const; // throw(std::bad_alloc)
 
 	/**
 	 *	@brief performs element-wise multiplication of this matrix by a scalar
@@ -2968,7 +3228,7 @@ public:
 	 *	@return Returns true on success, false on failure (incompatible layout).
 	 *	@note This function throws std::bad_alloc.
 	 */
-	inline bool AddTo(CUberBlockMatrix &r_dest) const // throws(std::bad_alloc)
+	inline bool AddTo(CUberBlockMatrix &r_dest) const // throw(std::bad_alloc)
 	{
 		return ElementwiseBinaryOp_ZeroInvariant(r_dest, f_Add);
 		// t_odo - optimize away / generalize as ElementwiseBinaryOp<COp>
@@ -2988,7 +3248,7 @@ public:
 	 *	@note This function throws std::bad_alloc.
 	 */
 	template <class _CBlockMatrixTypelist>
-	inline bool AddTo_FBS(CUberBlockMatrix &r_dest) const // throws(std::bad_alloc)
+	inline bool AddTo_FBS(CUberBlockMatrix &r_dest) const // throw(std::bad_alloc)
 	{
 #ifdef __UBER_BLOCK_MATRIX_SUPRESS_FBS
 		return ElementwiseBinaryOp_ZeroInvariant(r_dest, f_Add);
@@ -3016,7 +3276,7 @@ public:
 	 *	@note This leaves r_dest damaged in case the block layout is not compatible
 	 *		(the changes are detected inside the loop for performance purposes).
 	 */
-	inline bool AddTo(CUberBlockMatrix &r_dest, double f_factor) const // throws(std::bad_alloc)
+	inline bool AddTo(CUberBlockMatrix &r_dest, double f_factor) const // throw(std::bad_alloc)
 	{
 		return ElementwiseBinaryOp_RightSideZeroInvariant(r_dest, CAddWeighted(f_factor));
 	}
@@ -3043,7 +3303,7 @@ public:
 	 *		(the changes are detected inside the loop for performance purposes).
 	 */
 	template <class CBlockMatrixTypelist>
-	inline bool AddTo_FBS(CUberBlockMatrix &r_dest, double f_factor) const // throws(std::bad_alloc)
+	inline bool AddTo_FBS(CUberBlockMatrix &r_dest, double f_factor) const // throw(std::bad_alloc)
 	{
 #ifdef __UBER_BLOCK_MATRIX_SUPRESS_FBS
 		return ElementwiseBinaryOp_RightSideZeroInvariant(r_dest, CAddWeighted(f_factor));
@@ -3072,7 +3332,7 @@ public:
 	 *	@note This leaves r_dest damaged in case the block layout is not compatible
 	 *		(the changes are detected inside the loop for performance purposes).
 	 */
-	inline bool AddTo(CUberBlockMatrix &r_dest, double f_factor_dest, double f_factor_this) const // throws(std::bad_alloc)
+	inline bool AddTo(CUberBlockMatrix &r_dest, double f_factor_dest, double f_factor_this) const // throw(std::bad_alloc)
 	{
 		return ElementwiseBinaryOp(r_dest, CWeightedAddWeighted(f_factor_dest, f_factor_this));
 	}
@@ -3100,7 +3360,7 @@ public:
 	 *		(the changes are detected inside the loop for performance purposes).
 	 */
 	template <class CBlockMatrixTypelist>
-	inline bool AddTo_FBS(CUberBlockMatrix &r_dest, double f_factor_dest, double f_factor_this) const // throws(std::bad_alloc)
+	inline bool AddTo_FBS(CUberBlockMatrix &r_dest, double f_factor_dest, double f_factor_this) const // throw(std::bad_alloc)
 	{
 #ifdef __UBER_BLOCK_MATRIX_SUPRESS_FBS
 		return ElementwiseBinaryOp(r_dest, CWeightedAddWeighted(f_factor_dest, f_factor_this));
@@ -3131,7 +3391,7 @@ public:
 	 *	@note Functor op is always called as dest = op(dest, src) (parameter order is maintained).
 	 */
 	template <class CBinaryOp>
-	bool ElementwiseBinaryOp_ZeroInvariant(CUberBlockMatrix &r_dest, CBinaryOp op) const // throws(std::bad_alloc)
+	bool ElementwiseBinaryOp_ZeroInvariant(CUberBlockMatrix &r_dest, CBinaryOp op) const // throw(std::bad_alloc)
 	{
 		// t_odo - decide whether to optimize for addition of matrices with exactly the same block layout (no need to allocate anything, but will anyone use that?) // no
 		// t_odo - optimize for matrices with no empty blocks / columns (such as in SLAM), that probably need to be another class // can't see what the optimization was anymore
@@ -3281,7 +3541,7 @@ public:
 	 *	@note Functor op is always called as dest = op(dest, src) (parameter order is maintained).
 	 */
 	template <class CBlockMatrixTypelist, class CBinaryOp>
-	bool ElementwiseBinaryOp_ZeroInvariant_FBS(CUberBlockMatrix &r_dest, CBinaryOp op) const // throws(std::bad_alloc)
+	bool ElementwiseBinaryOp_ZeroInvariant_FBS(CUberBlockMatrix &r_dest, CBinaryOp op) const // throw(std::bad_alloc)
 	{
 #ifdef __UBER_BLOCK_MATRIX_SUPRESS_FBS
 		return ElementwiseBinaryOp_ZeroInvariant(r_dest, op);
@@ -3435,7 +3695,7 @@ public:
 	 *	@note Functor op is always called as dest = op(dest, src) (parameter order is maintained).
 	 */
 	template <class CBinaryOp>
-	bool ElementwiseBinaryOp_RightSideZeroInvariant(CUberBlockMatrix &r_dest, CBinaryOp op) const // throws(std::bad_alloc)
+	bool ElementwiseBinaryOp_RightSideZeroInvariant(CUberBlockMatrix &r_dest, CBinaryOp op) const // throw(std::bad_alloc)
 	{
 		if(r_dest.m_n_row_num != m_n_row_num || r_dest.m_n_col_num != m_n_col_num)
 			return false;
@@ -3586,7 +3846,7 @@ public:
 	 *	@note Functor op is always called as dest = op(dest, src) (parameter order is maintained).
 	 */
 	template <class CBlockMatrixTypelist, class CBinaryOp>
-	bool ElementwiseBinaryOp_RightSideZeroInvariant_FBS(CUberBlockMatrix &r_dest, CBinaryOp op) const // throws(std::bad_alloc)
+	bool ElementwiseBinaryOp_RightSideZeroInvariant_FBS(CUberBlockMatrix &r_dest, CBinaryOp op) const // throw(std::bad_alloc)
 	{
 #ifdef __UBER_BLOCK_MATRIX_SUPRESS_FBS
 		return ElementwiseBinaryOp_RightSideZeroInvariant(r_dest, op);
@@ -3731,7 +3991,7 @@ public:
 	 *	@note Functor op is always called as dest = op(dest, src) (parameter order is maintained).
 	 */
 	template <class CBinaryOp>
-	bool ElementwiseBinaryOp(CUberBlockMatrix &r_dest, CBinaryOp op) const // throws(std::bad_alloc)
+	bool ElementwiseBinaryOp(CUberBlockMatrix &r_dest, CBinaryOp op) const // throw(std::bad_alloc)
 	{
 		if(r_dest.m_n_row_num != m_n_row_num || r_dest.m_n_col_num != m_n_col_num)
 			return false;
@@ -3938,7 +4198,7 @@ public:
 	 *	@note Functor op is always called as dest = op(dest, src) (parameter order is maintained).
 	 */
 	template <class CBlockMatrixTypelist, class CBinaryOp>
-	bool ElementwiseBinaryOp_FBS(CUberBlockMatrix &r_dest, CBinaryOp op) const // throws(std::bad_alloc)
+	bool ElementwiseBinaryOp_FBS(CUberBlockMatrix &r_dest, CBinaryOp op) const // throw(std::bad_alloc)
 	{
 #ifdef __UBER_BLOCK_MATRIX_SUPRESS_FBS
 		return ElementwiseBinaryOp(r_dest, op);
@@ -4137,7 +4397,7 @@ public:
 	 *
 	 *	@note This function throws std::bad_alloc.
 	 */
-	inline bool ProductOf(const CUberBlockMatrix &r_A, const CUberBlockMatrix &r_B) // throws(std::bad_alloc)
+	inline bool ProductOf(const CUberBlockMatrix &r_A, const CUberBlockMatrix &r_B) // throw(std::bad_alloc)
 	{
 		return r_A.MultiplyToWith(*this, r_B);
 	}
@@ -4160,7 +4420,7 @@ public:
 	 *	@note This function throws std::bad_alloc.
 	 */
 	template <class CBlockMatrixTypelistA, class CBlockMatrixTypelistB>
-	inline bool ProductOf_FBS(const CUberBlockMatrix &r_A, const CUberBlockMatrix &r_B) // throws(std::bad_alloc)
+	inline bool ProductOf_FBS(const CUberBlockMatrix &r_A, const CUberBlockMatrix &r_B) // throw(std::bad_alloc)
 	{
 #ifdef __UBER_BLOCK_MATRIX_SUPRESS_FBS
 		return r_A.MultiplyToWith(*this, r_B);
@@ -4189,7 +4449,7 @@ public:
 	 *		reason to optimize this.
 	 */
 	void PreMultiplyWithSelfTransposeTo(CUberBlockMatrix &r_dest,
-		bool b_upper_diagonal_only = false) const; // throws(std::bad_alloc)
+		bool b_upper_diagonal_only = false) const; // throw(std::bad_alloc)
 
 #ifdef __UBER_BLOCK_MATRIX_FIXED_BLOCK_SIZE_OPS
 
@@ -4215,7 +4475,7 @@ public:
 	 */
 	template <class CBlockMatrixTypelist>
 	void PreMultiplyWithSelfTransposeTo_FBS(CUberBlockMatrix &r_dest,
-		bool b_upper_diagonal_only = false) // throws(std::bad_alloc)
+		bool b_upper_diagonal_only = false) // throw(std::bad_alloc)
 	{
 #ifdef __UBER_BLOCK_MATRIX_SUPRESS_FBS
 		PreMultiplyWithSelfTransposeTo(r_dest, b_upper_diagonal_only);
@@ -4386,7 +4646,7 @@ public:
 	 */
 	template <class CBlockMatrixTypelist>
 	void PreMultiplyWithSelfTransposeTo_FBS_Parallel(CUberBlockMatrix &r_dest,
-		bool b_upper_diagonal_only = false) // throws(std::bad_alloc)
+		bool b_upper_diagonal_only = false) // throw(std::bad_alloc)
 	{
 #ifdef __UBER_BLOCK_MATRIX_SUPRESS_FBS
 		PreMultiplyWithSelfTransposeTo/*_Parallel*/(r_dest, b_upper_diagonal_only); // non-fbs parallel version not written (todo?)
@@ -4687,7 +4947,7 @@ public:
 	 *
 	 *	@note This function throws std::bad_alloc.
 	 */
-	bool MultiplyToWith(CUberBlockMatrix &r_dest, const CUberBlockMatrix &r_other) const; // throws(std::bad_alloc)
+	bool MultiplyToWith(CUberBlockMatrix &r_dest, const CUberBlockMatrix &r_other) const; // throw(std::bad_alloc)
 
 #ifdef __UBER_BLOCK_MATRIX_FIXED_BLOCK_SIZE_OPS
 
@@ -4704,7 +4964,7 @@ public:
 	 *	@note This function throws std::bad_alloc.
 	 */
 	template <class CBlockMatrixTypelistThis, class CBlockMatrixTypelistOther>
-	bool MultiplyToWith_FBS(CUberBlockMatrix &r_dest, const CUberBlockMatrix &r_other) const // throws(std::bad_alloc)
+	bool MultiplyToWith_FBS(CUberBlockMatrix &r_dest, const CUberBlockMatrix &r_other) const // throw(std::bad_alloc)
 	{
 #ifdef __UBER_BLOCK_MATRIX_SUPRESS_FBS
 		return MultiplyToWith(r_dest, r_other);
@@ -5257,7 +5517,7 @@ public:
 	 *	@note This function throws std::bad_alloc.
 	 */
 	template <class CMatrixBlockSizeList, const int n_max_matrix_size>
-	bool Cholesky_Dense_FBS() // throws(std::bad_alloc)
+	bool Cholesky_Dense_FBS() // throw(std::bad_alloc)
 	{
 #ifdef __UBER_BLOCK_MATRIX_SUPRESS_FBS
 		return Cholesky_Dense<Eigen::Dynamic>(); // use dynamic-sized matrices (slow)
@@ -5293,7 +5553,7 @@ public:
 	 *	@note To calculate sparse cholesky, use e.g. CholeskyOf().
 	 */
 	template <const int MatrixRowsAtCompileTime>
-	bool Cholesky_Dense() // throws(std::bad_alloc)
+	bool Cholesky_Dense() // throw(std::bad_alloc)
 	{
 		//Check_Block_Alignment();
 
@@ -5434,7 +5694,7 @@ public:
 	 *	@note This function throws std::bad_alloc.
 	 */
 	void Build_EliminationTree(std::vector<size_t> &r_elim_tree,
-		std::vector<size_t> &r_workspace) const; // throws(std::bad_alloc)
+		std::vector<size_t> &r_workspace) const; // throw(std::bad_alloc)
 
 	/**
 	 *	@brief calculates column dependencies from elimination tree
@@ -5452,6 +5712,582 @@ public:
 	 */
 	size_t n_Build_EReach(size_t n_column_id, const std::vector<size_t> &r_elim_tree,
 		std::vector<size_t> &r_ereach_stack, std::vector<size_t> &r_workspace) const;
+
+	/**
+	 *	@brief calculates (upper) Cholesky factorization of a given sparse block matrix
+	 *
+	 *	@param[in] r_lambda is the input matrix (must be positive definite)
+	 *
+	 *	@return Returns true on success, false on failure (lambda is not positive definite).
+	 *
+	 *	@note This function throws std::bad_alloc.
+	 *	@note If factorizations of multiple matrices with the same layout are required,
+	 *		use the CholeskyOf(const CUberBlockMatrix&, const std::vector<size_t>&,
+	 *		std::vector<size_t>&, std::vector<size_t>&) variant of this function.
+	 */
+	bool CholeskyOf(const CUberBlockMatrix &r_lambda) // throw(std::bad_alloc)
+	{
+		//r_lambda.Check_Block_Alignment();
+
+		const size_t n = r_lambda.m_block_cols_list.size();
+		// get number of block columns
+
+		std::vector<size_t> etree, ereach_stack, bitfield;
+		bitfield.resize(n, 0);
+
+		r_lambda.Build_EliminationTree(etree, ereach_stack); // use ereach stack as workspace
+		_ASSERTE(ereach_stack.size() == n);
+		// build an elimination tree
+
+		return CholeskyOf(r_lambda, etree, ereach_stack, bitfield);
+	}
+
+	/**
+	 *	@brief calculates resumed (upper) Cholesky factorization of a given sparse block matrix
+	 *
+	 *	This enables partial recalculation of Cholesky factor, given that the original matrix
+	 *	has unchanged prefix of n_start_on_column rows and columns. This also enables updating
+	 *	Cholesky factor after the original matrix grew in size.
+	 *
+	 *	If the followitg two conditions are met:
+	 *		* this must be Cholesky factorization of some original lambda.
+	 *		* r_lambda must have n_start_on_column block rows and block columns identical to the original lambda.
+	 *
+	 *	Then upon successful completion of this function, this is Cholesky factorization of r_lambda,
+	 *	calculated in time proportional to r_lambda.n_BlockColumn_Num() - n_start_on_column
+	 *	(ie. smaller time than full Cholesky, given n_start_on_column is greater than zero).
+	 *
+	 *	@param[in] r_lambda is the input matrix (must be positive definite)
+	 *	@param[in] n_start_on_column is zero-based index of the first block column
+	 *		of the factor to be recalculated
+	 *
+	 *	@return Returns true on success, false on failure (lambda is not positive definite).
+	 *
+	 *	@note This function throws std::bad_alloc.
+	 *	@note If factorizations of multiple matrices with the same layout are required,
+	 *		use the CholeskyOf(const CUberBlockMatrix&, const std::vector<size_t>&,
+	 *		std::vector<size_t>&, std::vector<size_t>&, size_t) variant of this function.
+	 */
+	bool CholeskyOf(const CUberBlockMatrix &r_lambda, size_t n_start_on_column)
+	{
+		//r_lambda.Check_Block_Alignment();
+
+		const size_t n = r_lambda.m_block_cols_list.size();
+		// get number of block columns
+
+		std::vector<size_t> etree, ereach_stack, bitfield;
+		bitfield.resize(n, 0);
+
+		r_lambda.Build_EliminationTree(etree, ereach_stack); // use ereach stack as workspace
+		_ASSERTE(ereach_stack.size() == n);
+		// build an elimination tree
+
+		return CholeskyOf(r_lambda, etree, ereach_stack, bitfield, n_start_on_column);
+	}
+
+	/**
+	 *	@brief calculates (upper) Cholesky factorization of a given sparse block matrix
+	 *
+	 *	@param[in] r_lambda is the input matrix (must be positive definite)
+	 *	@param[in] r_elim_tree is an elimination tree of r_lambda
+	 *		(or of a matrix with the same block structure)
+	 *	@param[in,out] r_workspace is a vector allocated to number of block columns of r_lambda
+	 *	@param[in,out] r_zero_workspace is a vector allocated to number of block columns
+	 *		of r_lambda and cleared to all zeros
+	 *
+	 *	@return Returns true on success, false on failure (lambda is not positive definite).
+	 *
+	 *	@note This function throws std::bad_alloc.
+	 */
+	bool CholeskyOf(const CUberBlockMatrix &r_lambda, const std::vector<size_t> &r_elim_tree,
+		std::vector<size_t> &r_workspace, std::vector<size_t> &r_zero_workspace); // throw(std::bad_alloc)
+
+	/**
+	 *	@brief calculates resumed (upper) Cholesky factorization of a given sparse block matrix
+	 *
+	 *	This enables partial recalculation of Cholesky factor, given that the original matrix
+	 *	has unchanged prefix of n_start_on_column rows and columns. This also enables updating
+	 *	Cholesky factor after the original matrix grew in size.
+	 *
+	 *	If the followitg two conditions are met:
+	 *		* this must be Cholesky factorization of some original lambda.
+	 *		* r_lambda must have n_start_on_column block rows and block columns identical to the original lambda.
+	 *
+	 *	Then upon successful completion of this function, this is Cholesky factorization of r_lambda,
+	 *	calculated in time proportional to r_lambda.n_BlockColumn_Num() - n_start_on_column
+	 *	(ie. smaller time than full Cholesky, given n_start_on_column is greater than zero).
+	 *
+	 *	@param[in] r_lambda is the input matrix (must be positive definite)
+	 *	@param[in] r_elim_tree is an elimination tree of r_lambda
+	 *		(or of a matrix with the same block structure)
+	 *	@param[in,out] r_workspace is a vector allocated to number of block columns of r_lambda
+	 *	@param[in,out] r_zero_workspace is a vector allocated to number of block columns
+	 *		of r_lambda and cleared to all zeros
+	 *	@param[in] n_start_on_column is zero-based index of the first block column
+	 *		of the factor to be recalculated
+	 *
+	 *	@return Returns true on success, false on failure (lambda is not positive definite).
+	 *
+	 *	@note This function throws std::bad_alloc.
+	 */
+	bool CholeskyOf(const CUberBlockMatrix &r_lambda, const std::vector<size_t> &r_elim_tree,
+		std::vector<size_t> &r_workspace, std::vector<size_t> &r_zero_workspace, size_t n_start_on_column); // throw(std::bad_alloc)
+
+	/**
+	 *	@copydoc CholeskyOf(const CUberBlockMatrix&)
+	 *	@tparam CBlockMatrixTypelist is list of Eigen::Matrix block sizes
+	 */
+	template <class CBlockMatrixTypelist>
+	bool CholeskyOf_FBS(const CUberBlockMatrix &r_lambda)
+	{
+		//r_lambda.Check_Block_Alignment();
+#ifdef __UBER_BLOCK_MATRIX_SUPRESS_FBS
+		return CholeskyOf(r_lambda);
+#else // __UBER_BLOCK_MATRIX_SUPRESS_FBS
+		const size_t n = r_lambda.m_block_cols_list.size();
+		// get number of block columns
+
+		std::vector<size_t> etree, ereach_stack, bitfield;
+		bitfield.resize(n, 0);
+
+		r_lambda.Build_EliminationTree(etree, ereach_stack); // use ereach stack as workspace
+		_ASSERTE(ereach_stack.size() == n);
+		// build an elimination tree
+
+		return CholeskyOf_FBS<CBlockMatrixTypelist>(r_lambda, etree, ereach_stack, bitfield);
+#endif // __UBER_BLOCK_MATRIX_SUPRESS_FBS
+	}
+
+	/**
+	 *	@copydoc CholeskyOf(const CUberBlockMatrix&, size_t)
+	 *	@tparam CBlockMatrixTypelist is list of Eigen::Matrix block sizes
+	 */
+	template <class CBlockMatrixTypelist>
+	bool CholeskyOf_FBS(const CUberBlockMatrix &r_lambda, size_t n_start_on_column)
+	{
+		//r_lambda.Check_Block_Alignment();
+#ifdef __UBER_BLOCK_MATRIX_SUPRESS_FBS
+		return CholeskyOf(r_lambda, n_start_on_column);
+#else // __UBER_BLOCK_MATRIX_SUPRESS_FBS
+		const size_t n = r_lambda.m_block_cols_list.size();
+		// get number of block columns
+
+		std::vector<size_t> etree, ereach_stack, bitfield;
+		bitfield.resize(n, 0);
+
+		r_lambda.Build_EliminationTree(etree, ereach_stack); // use ereach stack as workspace
+		_ASSERTE(ereach_stack.size() == n);
+		// build an elimination tree
+
+		return CholeskyOf_FBS<CBlockMatrixTypelist>(r_lambda,
+			etree, ereach_stack, bitfield, n_start_on_column);
+#endif // __UBER_BLOCK_MATRIX_SUPRESS_FBS
+	}
+
+	/**
+	 *	@copydoc CholeskyOf(const CUberBlockMatrix&, const std::vector<size_t>&, std::vector<size_t>&, std::vector<size_t>&)
+	 *	@tparam CBlockMatrixTypelist is list of Eigen::Matrix block sizes
+	 */
+	template <class CBlockMatrixTypelist>
+	bool CholeskyOf_FBS(const CUberBlockMatrix &r_lambda, const std::vector<size_t> &r_elim_tree,
+		std::vector<size_t> &r_workspace, std::vector<size_t> &r_zero_workspace) // throw(std::bad_alloc)
+	{
+		//r_lambda.Check_Block_Alignment();
+#ifdef __UBER_BLOCK_MATRIX_SUPRESS_FBS
+		return CholeskyOf(r_lambda, r_elim_tree, r_workspace, r_zero_workspace);
+#else // __UBER_BLOCK_MATRIX_SUPRESS_FBS
+		Clear();
+
+		_ASSERTE(r_lambda.b_SymmetricLayout());
+		// makes sure that lambda is symmetric
+
+		_ASSERTE(r_lambda.m_n_row_num == r_lambda.m_n_col_num);
+		m_n_row_num = m_n_col_num = r_lambda.m_n_col_num;
+		m_block_rows_list = r_lambda.m_block_rows_list;
+		m_block_cols_list.resize(r_lambda.m_block_cols_list.size());
+		// copy the layout
+
+		const size_t n = m_block_cols_list.size();
+		// get number of block columns
+
+		std::vector<size_t> &ereach_stack = r_workspace, &bitfield = r_zero_workspace; // alias
+		_ASSERTE(ereach_stack.size() >= n);
+		_ASSERTE(bitfield.size() >= n);
+		// alloc all the whatnots ...
+
+		_TyDenseAllocator alloc(m_data_pool);
+
+		for(size_t j = 0; j < n; ++ j) { // for every column (no sparsity here, L should be full-rank)
+#if 1
+			const TColumn &r_col_A_j = r_lambda.m_block_cols_list[j];
+			if(!CFBS_Cholesky<CBlockMatrixTypelist>::b_Column_Loop(r_col_A_j.n_width, j, n,
+			   m_block_cols_list, r_col_A_j, r_lambda, r_elim_tree, ereach_stack, bitfield, alloc)) {
+				//printf("error: not pos def\n"); // not pos def
+				return false;
+			}
+#else // 1
+			TColumn &r_col_L_j = m_block_cols_list[j];
+			const TColumn &r_col_A_j = r_lambda.m_block_cols_list[j];
+			const size_t n_col_j_width = r_col_L_j.n_width = r_col_A_j.n_width;
+			r_col_L_j.n_cumulative_width_sum = r_col_A_j.n_cumulative_width_sum;
+			// get columns
+
+			_ASSERTE(!r_col_A_j.block_list.empty()); // otherwise rank deficient (make it a runtime check?)
+			_TyBlockConstIter p_A_block_it =
+				r_col_A_j.block_list.begin(), p_A_block_end_it = r_col_A_j.block_list.end();
+			// get iterator to blocks of the original matrix
+
+#if 0
+			size_t n_ereach_size = r_lambda.n_Build_EReach(j, r_elim_tree, ereach_stack, bitfield);//cs_ereach(p_block_struct, j, p_etree, &s[0], &w[0]);
+#else
+			size_t n_ereach_first = r_lambda.n_Build_EReach(j, r_elim_tree, ereach_stack, bitfield);//cs_ereach(p_block_struct, j, p_etree, &s[0], &w[0]);
+#endif
+			// use ereach to compute nonzero pattern
+
+			r_col_L_j.block_list.reserve(n - n_ereach_first/*n_ereach_size*/ + 1); // + 1 amounts for the diagonal
+			// reserve space for blocks to avoid reallocation later
+
+			for(size_t u = n_ereach_first, n_highest_k = 0; u < n; ++ u) { // seems to work rather nicely (strange because not every A_up[k, j] is not accessed then - it is likely null) // todo - verify this
+				const size_t k = ereach_stack[u]; // use ereach to predict which columns will have nonzero products
+				// k generally rises, but it doesn't have to (can be non-monotonic)
+
+				_ASSERTE(k != n_highest_k || u == n_ereach_first); // there should be no column repeated (except for zero, in the first iteration)
+				bool b_ereach_mono;
+				if((b_ereach_mono = (k >= n_highest_k)))
+					n_highest_k = k; // don't remember previous k unless it increased
+				// see if the ereach is (locally) increasing
+
+				const TColumn &r_col_L_k = m_block_cols_list[k];
+				const size_t n_col_k_width = r_col_L_k.n_width;
+				// get column k
+
+				_TyBlockConstIter p_jk_block_it;
+				double *p_k_block_data = p_Get_DenseStorage(n_col_k_width * n_col_j_width);
+				//_TyMatrixXdRef L_block_kj(p_k_block_data, n_col_k_width, n_col_j_width); // only accessed in FBS section
+				if(b_ereach_mono) { // most of the time
+					_ASSERTE(r_col_L_j.block_list.empty() || r_col_L_j.block_list.back().first < k); // this is generally not true - ereach doesn't have to be monotonic, might need to insert the block in a middle
+					// makes sure that the column doesn't contain the k-th block yet
+
+					r_col_L_j.block_list.push_back(TColumn::TBlockEntry(k, p_k_block_data));
+					p_jk_block_it = r_col_L_j.block_list.end() - 1; // it is here
+				} else {
+					//printf("ereach not mono\n"); // debug
+					_ASSERTE(!r_col_L_j.block_list.empty() && r_col_L_j.block_list.back().first > k); // r_col_L_j.block_list.back().first = n_highest_k and n_highest_k > k
+					// make sure we're not going to search for the correct position in vain
+
+					_TyBlockIter p_dest_block_it =
+#if defined(_MSC_VER) && !defined(__MWERKS__) && _MSC_VER >= 1400
+						std::lower_bound(r_col_L_j.block_list.begin(), r_col_L_j.block_list.end(), k, CCompareBlockRow());
+#else // _MSC_VER && !__MWERKS__ && _MSC_VER >= 1400
+						std::lower_bound(r_col_L_j.block_list.begin(), r_col_L_j.block_list.end(), k, CompareBlockRow);
+#endif // _MSC_VER && !__MWERKS__ && _MSC_VER >= 1400
+					// have to search for the insertion position to keep the column sorted
+
+					p_jk_block_it = r_col_L_j.block_list.insert(p_dest_block_it,
+						TColumn::TBlockEntry(k, p_k_block_data));
+					// insert and remember where it is
+				}
+				// add a new off-diagonal block to L
+
+				{
+					_ASSERTE(p_A_block_it != p_A_block_end_it);
+					size_t n_block_row_id;
+					if((n_block_row_id = (*p_A_block_it).first) < k) {
+						p_A_block_it =
+#if defined(_MSC_VER) && !defined(__MWERKS__) && _MSC_VER >= 1400
+							std::lower_bound(p_A_block_it, p_A_block_end_it, k, CCompareBlockRow());
+#else // _MSC_VER && !__MWERKS__ && _MSC_VER >= 1400
+							std::lower_bound(p_A_block_it, p_A_block_end_it, k, CompareBlockRow);
+#endif // _MSC_VER && !__MWERKS__ && _MSC_VER >= 1400
+					} else if(n_block_row_id > k) {
+						p_A_block_it =
+#if defined(_MSC_VER) && !defined(__MWERKS__) && _MSC_VER >= 1400
+							std::lower_bound(r_col_A_j.block_list.begin(), p_A_block_end_it, k, CCompareBlockRow());
+#else // _MSC_VER && !__MWERKS__ && _MSC_VER >= 1400
+							std::lower_bound(r_col_A_j.block_list.begin(), p_A_block_end_it, k, CompareBlockRow);
+#endif // _MSC_VER && !__MWERKS__ && _MSC_VER >= 1400
+						// a rare case where ereach is not monotonically increasing
+					}
+					_ASSERTE(p_A_block_it != p_A_block_end_it);
+				}
+				// look up the block in the source matrix
+
+				_ASSERTE(!r_col_L_j.block_list.empty() && (!b_ereach_mono || r_col_L_j.block_list.back().first == k)); // this is generally not true; it might not be the last
+				_ASSERTE((*p_jk_block_it).first == k); // this should be always true
+				// column j now contains the k-th block
+
+				_TyBlockConstIter
+					p_j_block_it = r_col_L_j.block_list.begin(),
+					p_j_block_end_it = p_jk_block_it/*r_col_L_j.block_list.end() - 1*/, // this is not end() - 1, might have to look for the block before k
+					p_k_block_it = r_col_L_k.block_list.begin(),
+					p_k_block_end_it = r_col_L_k.block_list.end();
+				// have to loop through both lists and merge the blocks to find the ones, referencing the same rows
+
+				CFBS_Cholesky<CBlockMatrixTypelist>::OffDiagonal_Loop(p_k_block_data,
+					n_col_j_width, n_col_k_width, p_j_block_it, p_j_block_end_it,
+					p_k_block_it, p_k_block_end_it, *p_A_block_it, k, m_block_cols_list);
+				// execute cmod and solve by diagonals using FBS
+
+				if((*p_A_block_it).first == k)
+					++ p_A_block_it;
+				// skip to the next one for the next iteration / for the diagonal
+			}
+			// complex data dependencies in here, not sure if i like it
+
+			{
+				_ASSERTE(p_A_block_it != p_A_block_end_it && (*p_A_block_it).first <= j);
+				// it is pointing before or at the diagonal already
+				if((*p_A_block_it).first != j) {
+					p_A_block_it =
+#if defined(_MSC_VER) && !defined(__MWERKS__) && _MSC_VER >= 1400
+						std::lower_bound(p_A_block_it, p_A_block_end_it, j, CCompareBlockRow());
+#else // _MSC_VER && !__MWERKS__ && _MSC_VER >= 1400
+						std::lower_bound(p_A_block_it, p_A_block_end_it, j, CompareBlockRow);
+#endif // _MSC_VER && !__MWERKS__ && _MSC_VER >= 1400
+				}
+				_ASSERTE(p_A_block_it != p_A_block_end_it && (*p_A_block_it).first == j); // should always be nonzero
+				// find the diagonal block (note that if A is upper diagonal, it is the
+				// last block and we can optimize for that)
+
+				_ASSERTE(r_col_L_j.block_list.empty() || r_col_L_j.block_list.back().first < j);
+				// makes sure that the column doesn't contain the diagonal block yet
+
+				double *p_diag_data = p_Get_DenseStorage(n_col_j_width * n_col_j_width);
+				r_col_L_j.block_list.push_back(TColumn::TBlockEntry(j, p_diag_data));
+				// allocates a new block in this column
+
+				if(!CFBS_Cholesky<CBlockMatrixTypelist>::b_Diagonal_Loop(p_diag_data,
+				   n_col_j_width, r_col_L_j.block_list.begin(), r_col_L_j.block_list.end() - 1,
+				   (*p_A_block_it).second, m_block_cols_list)) {
+					//printf("error: not pos def\n"); // not pos def
+					return false;
+				}
+				// execute cdiv using FBS
+			}
+			// cdiv; reads an entire column and produces diagonal
+
+			_ASSERTE(r_col_L_j.block_list.size() == n - n_ereach_first/*n_ereach_size*/ + 1);
+			// make sure we preallocated it correclty
+#endif // 1
+		}
+		// note that Pigglet could probably write it better
+
+		CheckIntegrity();
+		// makes sure the factor matrix (this) is ok
+
+		return true;
+#endif // __UBER_BLOCK_MATRIX_SUPRESS_FBS
+	}
+
+	/**
+	 *	@copydoc CholeskyOf(const CUberBlockMatrix&, const std::vector<size_t>&, std::vector<size_t>&, std::vector<size_t>&, size_t)
+	 *	@tparam CBlockMatrixTypelist is list of Eigen::Matrix block sizes
+	 */
+	template <class CBlockMatrixTypelist>
+	bool CholeskyOf_FBS(const CUberBlockMatrix &r_lambda, const std::vector<size_t> &r_elim_tree,
+		std::vector<size_t> &r_workspace, std::vector<size_t> &r_zero_workspace,
+		size_t n_start_on_column) // throw(std::bad_alloc)
+	{
+		//Check_Block_Alignment(); // resumed, check itself as well ...
+		//r_lambda.Check_Block_Alignment();
+#ifdef __UBER_BLOCK_MATRIX_SUPRESS_FBS
+		return CholeskyOf(r_lambda, r_elim_tree, r_workspace, r_zero_workspace, n_start_on_column);
+#else // __UBER_BLOCK_MATRIX_SUPRESS_FBS
+		//Clear();
+
+		_ASSERTE(r_lambda.b_SymmetricLayout());
+		// makes sure that lambda is symmetric
+
+		_ASSERTE(r_lambda.m_n_row_num == r_lambda.m_n_col_num);
+		m_n_row_num = m_n_col_num = r_lambda.m_n_col_num;
+		m_block_rows_list = r_lambda.m_block_rows_list;
+		m_block_cols_list.resize(r_lambda.m_block_cols_list.size()); // todo - make sure that prefix of the layout till n_start_on_column is the same
+		// copy the layout
+
+		const size_t n = m_block_cols_list.size();
+		// get number of block columns
+
+		std::vector<size_t> &ereach_stack = r_workspace, &bitfield = r_zero_workspace; // alias
+		_ASSERTE(ereach_stack.size() >= n);
+		_ASSERTE(bitfield.size() >= n);
+		// alloc all the whatnots ...
+
+		_ASSERTE(n_start_on_column <= n);
+
+#ifdef _DEBUG
+		for(size_t j = 0; j < n_start_on_column; ++ j) {
+			TColumn &r_col_L_j = m_block_cols_list[j];
+			const TColumn &r_col_A_j = r_lambda.m_block_cols_list[j];
+			_ASSERTE(r_col_L_j.n_width == r_col_A_j.n_width);
+			_ASSERTE(r_col_L_j.n_cumulative_width_sum == r_col_A_j.n_cumulative_width_sum);
+			// just copy column layouts
+		}
+#endif // _DEBUG
+		// makes sure that prefix of the layout till n_start_on_column is the same
+
+		_TyDenseAllocator alloc(m_data_pool);
+
+		for(size_t j = n_start_on_column; j < n; ++ j) { // for every column (no sparsity here, L should be full-rank)
+#if 1
+			const TColumn &r_col_A_j = r_lambda.m_block_cols_list[j];
+			if(!CFBS_Cholesky<CBlockMatrixTypelist>::b_Column_Loop(r_col_A_j.n_width, j, n,
+			   m_block_cols_list, r_col_A_j, r_lambda, r_elim_tree, ereach_stack, bitfield, alloc)) {
+				//printf("error: not pos def\n"); // not pos def
+				return false;
+			}
+#else // 1
+			TColumn &r_col_L_j = m_block_cols_list[j];
+			const TColumn &r_col_A_j = r_lambda.m_block_cols_list[j];
+			const size_t n_col_j_width = r_col_L_j.n_width = r_col_A_j.n_width;
+			r_col_L_j.n_cumulative_width_sum = r_col_A_j.n_cumulative_width_sum;
+			// get columns
+
+			_ASSERTE(!r_col_A_j.block_list.empty()); // otherwise rank deficient (make it a runtime check?)
+			_TyBlockConstIter p_A_block_it =
+				r_col_A_j.block_list.begin(), p_A_block_end_it = r_col_A_j.block_list.end();
+			// get iterator to blocks of the original matrix
+
+#if 0
+			size_t n_ereach_size = r_lambda.n_Build_EReach(j, r_elim_tree, ereach_stack, bitfield);//cs_ereach(p_block_struct, j, p_etree, &s[0], &w[0]);
+#else
+			size_t n_ereach_first = r_lambda.n_Build_EReach(j, r_elim_tree, ereach_stack, bitfield);//cs_ereach(p_block_struct, j, p_etree, &s[0], &w[0]);
+#endif
+			// use ereach to compute nonzero pattern
+
+			r_col_L_j.block_list.reserve(n - n_ereach_first/*n_ereach_size*/ + 1); // + 1 amounts for the diagonal
+			// reserve space for blocks to avoid reallocation later
+
+			for(size_t u = n_ereach_first, n_highest_k = 0; u < n; ++ u) { // seems to work rather nicely (strange because not every A_up[k, j] is not accessed then - it is likely null) // todo - verify this
+				const size_t k = ereach_stack[u]; // use ereach to predict which columns will have nonzero products
+				// k generally rises, but it doesn't have to (can be non-monotonic)
+
+				_ASSERTE(k != n_highest_k || u == n_ereach_first); // there should be no column repeated (except for zero, in the first iteration)
+				bool b_ereach_mono;
+				if((b_ereach_mono = (k >= n_highest_k)))
+					n_highest_k = k; // don't remember previous k unless it increased
+				// see if the ereach is (locally) increasing
+
+				const TColumn &r_col_L_k = m_block_cols_list[k];
+				const size_t n_col_k_width = r_col_L_k.n_width;
+				// get column k
+
+				_TyBlockConstIter p_jk_block_it;
+				double *p_k_block_data = p_Get_DenseStorage(n_col_k_width * n_col_j_width);
+				//_TyMatrixXdRef L_block_kj(p_k_block_data, n_col_k_width, n_col_j_width); // only accessed in FBS section
+				if(b_ereach_mono) { // most of the time
+					_ASSERTE(r_col_L_j.block_list.empty() || r_col_L_j.block_list.back().first < k); // this is generally not true - ereach doesn't have to be monotonic, might need to insert the block in a middle
+					// makes sure that the column doesn't contain the k-th block yet
+
+					r_col_L_j.block_list.push_back(TColumn::TBlockEntry(k, p_k_block_data));
+					p_jk_block_it = r_col_L_j.block_list.end() - 1; // it is here
+				} else {
+					//printf("ereach not mono\n"); // debug
+					_ASSERTE(!r_col_L_j.block_list.empty() && r_col_L_j.block_list.back().first > k); // r_col_L_j.block_list.back().first = n_highest_k and n_highest_k > k
+					// make sure we're not going to search for the correct position in vain
+
+					_TyBlockIter p_dest_block_it =
+#if defined(_MSC_VER) && !defined(__MWERKS__) && _MSC_VER >= 1400
+						std::lower_bound(r_col_L_j.block_list.begin(), r_col_L_j.block_list.end(), k, CCompareBlockRow());
+#else // _MSC_VER && !__MWERKS__ && _MSC_VER >= 1400
+						std::lower_bound(r_col_L_j.block_list.begin(), r_col_L_j.block_list.end(), k, CompareBlockRow);
+#endif // _MSC_VER && !__MWERKS__ && _MSC_VER >= 1400
+					// have to search for the insertion position to keep the column sorted
+
+					p_jk_block_it = r_col_L_j.block_list.insert(p_dest_block_it,
+						TColumn::TBlockEntry(k, p_k_block_data));
+					// insert and remember where it is
+				}
+				// add a new off-diagonal block to L
+
+				{
+					_ASSERTE(p_A_block_it != p_A_block_end_it);
+					size_t n_block_row_id;
+					if((n_block_row_id = (*p_A_block_it).first) < k) {
+						p_A_block_it =
+#if defined(_MSC_VER) && !defined(__MWERKS__) && _MSC_VER >= 1400
+							std::lower_bound(p_A_block_it, p_A_block_end_it, k, CCompareBlockRow());
+#else // _MSC_VER && !__MWERKS__ && _MSC_VER >= 1400
+							std::lower_bound(p_A_block_it, p_A_block_end_it, k, CompareBlockRow);
+#endif // _MSC_VER && !__MWERKS__ && _MSC_VER >= 1400
+					} else if(n_block_row_id > k) {
+						p_A_block_it =
+#if defined(_MSC_VER) && !defined(__MWERKS__) && _MSC_VER >= 1400
+							std::lower_bound(r_col_A_j.block_list.begin(), p_A_block_end_it, k, CCompareBlockRow());
+#else // _MSC_VER && !__MWERKS__ && _MSC_VER >= 1400
+							std::lower_bound(r_col_A_j.block_list.begin(), p_A_block_end_it, k, CompareBlockRow);
+#endif // _MSC_VER && !__MWERKS__ && _MSC_VER >= 1400
+						// a rare case where ereach is not monotonically increasing
+					}
+					_ASSERTE(p_A_block_it != p_A_block_end_it);
+				}
+				// look up the block in the source matrix
+
+				_ASSERTE(!r_col_L_j.block_list.empty() && (!b_ereach_mono || r_col_L_j.block_list.back().first == k)); // this is generally not true; it might not be the last
+				_ASSERTE((*p_jk_block_it).first == k); // this should be always true
+				// column j now contains the k-th block
+
+				_TyBlockConstIter
+					p_j_block_it = r_col_L_j.block_list.begin(),
+					p_j_block_end_it = p_jk_block_it/*r_col_L_j.block_list.end() - 1*/, // this is not end() - 1, might have to look for the block before k
+					p_k_block_it = r_col_L_k.block_list.begin(),
+					p_k_block_end_it = r_col_L_k.block_list.end();
+				// have to loop through both lists and merge the blocks to find the ones, referencing the same rows
+
+				CFBS_Cholesky<CBlockMatrixTypelist>::OffDiagonal_Loop(p_k_block_data,
+					n_col_j_width, n_col_k_width, p_j_block_it, p_j_block_end_it,
+					p_k_block_it, p_k_block_end_it, *p_A_block_it, k, m_block_cols_list);
+				// execute cmod and solve by diagonals using FBS
+
+				if((*p_A_block_it).first == k)
+					++ p_A_block_it;
+				// skip to the next one for the next iteration / for the diagonal
+			}
+			// complex data dependencies in here, not sure if i like it
+
+			{
+				_ASSERTE(p_A_block_it != p_A_block_end_it && (*p_A_block_it).first <= j);
+				// it is pointing before or at the diagonal already
+				if((*p_A_block_it).first != j) {
+					p_A_block_it =
+#if defined(_MSC_VER) && !defined(__MWERKS__) && _MSC_VER >= 1400
+						std::lower_bound(p_A_block_it, p_A_block_end_it, j, CCompareBlockRow());
+#else // _MSC_VER && !__MWERKS__ && _MSC_VER >= 1400
+						std::lower_bound(p_A_block_it, p_A_block_end_it, j, CompareBlockRow);
+#endif // _MSC_VER && !__MWERKS__ && _MSC_VER >= 1400
+				}
+				_ASSERTE(p_A_block_it != p_A_block_end_it && (*p_A_block_it).first == j); // should always be nonzero
+				// find the diagonal block (note that if A is upper diagonal, it is the
+				// last block and we can optimize for that)
+
+				_ASSERTE(r_col_L_j.block_list.empty() || r_col_L_j.block_list.back().first < j);
+				// makes sure that the column doesn't contain the diagonal block yet
+
+				double *p_diag_data = p_Get_DenseStorage(n_col_j_width * n_col_j_width);
+				r_col_L_j.block_list.push_back(TColumn::TBlockEntry(j, p_diag_data));
+				// allocates a new block in this column
+
+				if(!CFBS_Cholesky<CBlockMatrixTypelist>::b_Diagonal_Loop(p_diag_data,
+				   n_col_j_width, r_col_L_j.block_list.begin(), r_col_L_j.block_list.end() - 1,
+				   (*p_A_block_it).second, m_block_cols_list)) {
+					//printf("error: not pos def\n"); // not pos def
+					return false;
+				}
+				// execute cdiv using FBS
+			}
+			// cdiv; reads an entire column and produces diagonal
+
+			_ASSERTE(r_col_L_j.block_list.size() == n - n_ereach_first/*n_ereach_size*/ + 1);
+			// make sure we preallocated it correclty
+#endif // 1
+		}
+		// note that Pigglet could probably write it better
+
+		CheckIntegrity();
+		// makes sure the factor matrix (this) is ok
+
+		return true;
+#endif // __UBER_BLOCK_MATRIX_SUPRESS_FBS
+	}
 
 protected:
 	/**
@@ -5561,7 +6397,7 @@ protected:
 	 *	@note The memory alignment is given by pool_MemoryAlignment, and the returned
 	 *		pointers are, in fact, unaligned in case it equals to zero.
 	 */
-	inline double *p_Get_DenseStorage(size_t n_element_num) // throws(std::bad_alloc)
+	inline double *p_Get_DenseStorage(size_t n_element_num) // throw(std::bad_alloc)
 	{
 		_TyDenseAllocator alloc(m_data_pool);
 		return alloc.p_Get_DenseStorage(n_element_num);
@@ -5617,7 +6453,7 @@ protected:
 	template <class _TyDest, class _TyFirst, class _TySecond>
 	static void MergeLayout(std::vector<_TyDest> &r_merged_layout, const std::vector<_TyFirst> &r_layout_0,
 		const std::vector<_TySecond> &r_layout_1, std::vector<size_t> &r_reindexing_table_0,
-		std::vector<size_t> &r_reindexing_table_1) // throws(std::bad_alloc)
+		std::vector<size_t> &r_reindexing_table_1) // throw(std::bad_alloc)
 	{
 		r_reindexing_table_0.resize(r_layout_0.size());
 		r_reindexing_table_1.resize(r_layout_1.size());
@@ -5687,7 +6523,7 @@ protected:
 	template <class _TyFirst, class _TySecond>
 	static size_t n_MergeLayout(const std::vector<_TyFirst> &r_layout_0,
 		const std::vector<_TySecond> &r_layout_1, std::vector<size_t> &r_reindexing_table_0,
-		std::vector<size_t> &r_reindexing_table_1) // throws(std::bad_alloc)
+		std::vector<size_t> &r_reindexing_table_1) // throw(std::bad_alloc)
 	{
 		r_reindexing_table_0.resize(r_layout_0.size());
 		r_reindexing_table_1.resize(r_layout_1.size());
@@ -5742,7 +6578,7 @@ protected:
 	 *
 	 *	@note This function throws std::bad_alloc.
 	 */
-	size_t n_RowAlloc(size_t n_row, size_t n_block_row_num); // throws(std::bad_alloc)
+	size_t n_RowAlloc(size_t n_row, size_t n_block_row_num); // throw(std::bad_alloc)
 
 	/**
 	 *	@brief tries to find a column by first element offset
@@ -5755,7 +6591,7 @@ protected:
 	 *
 	 *	@note This function throws std::bad_alloc.
 	 */
-	size_t n_ColumnAlloc(size_t n_column, size_t n_block_column_num); // throws(std::bad_alloc)
+	size_t n_ColumnAlloc(size_t n_column, size_t n_block_column_num); // throw(std::bad_alloc)
 
 	/**
 	 *	@brief tries to find a row by first element offset, fails if it doesn't exist
@@ -5881,7 +6717,7 @@ protected:
 	 *	@note This function throws std::bad_alloc.
 	 */
 	double *p_AllocBlockData(size_t n_row_index, size_t n_column_index,
-		size_t n_block_row_num, size_t n_block_column_num, bool &r_b_was_a_new_block); // throws(std::bad_alloc)
+		size_t n_block_row_num, size_t n_block_column_num, bool &r_b_was_a_new_block); // throw(std::bad_alloc)
 
 	/**
 	 *	@brief tries to find a block by block position, fails if not found
@@ -5922,7 +6758,7 @@ protected:
 	static bool Build_AdditionLayouts(const std::vector<TRow> &r_row_list_first,
 		const std::vector<TColumn> &r_column_list_first, std::vector<TRow> &r_row_list_second,
 		std::vector<TColumn> &r_column_list_second, std::vector<size_t> &r_reindex_rows_first,
-		std::vector<size_t> &r_reindex_columns_first); // throws(std::bad_alloc)
+		std::vector<size_t> &r_reindex_columns_first); // throw(std::bad_alloc)
 
 	/**
 	 *	@brief resets all performance counters to zero
@@ -6020,6 +6856,8 @@ public:
 	 */
 	inline void Check_Block_Alignment() const
 	{
+		// need ifdef, otherwise getting "potential mod by 0" warning
+#ifdef __UBER_BLOCK_MATRIX_ALIGN_BLOCK_MEMORY
 		if(!pool_MemoryAlignment)
 			return; // unaligned addresses allowed
 		for(size_t i = 0, n = m_block_cols_list.size(); i < n; ++ i) {
@@ -6032,6 +6870,9 @@ public:
 				}
 			}
 		}
+#else // __UBER_BLOCK_MATRIX_ALIGN_BLOCK_MEMORY
+		_ASSERTE(!pool_MemoryAlignment);
+#endif // __UBER_BLOCK_MATRIX_ALIGN_BLOCK_MEMORY
 	}
 
 protected:
@@ -6064,7 +6905,7 @@ protected:
 	template <class _TIntType>
 	inline void From_Sparse_InnerLoop(const cs *p_sparse, TColumn &r_t_col,
 		const size_t n_base_row_base, const size_t n_base_col_base,
-		const std::vector<size_t> &r_workspace); // throws(std::bad_alloc)
+		const std::vector<size_t> &r_workspace); // throw(std::bad_alloc)
 
 #ifdef _OPENMP
 	/**
@@ -6098,7 +6939,7 @@ protected:
 	template <class _TIntType>
 	inline void From_Sparse_ParallelInnerLoop(const cs *p_sparse,
 		/*omp_lock_t &t_mutex,*/ TColumn &r_t_col, const size_t n_base_row_base,
-		const size_t n_base_col_base, const std::vector<size_t> &r_workspace); // throws(std::bad_alloc)
+		const size_t n_base_col_base, const std::vector<size_t> &r_workspace); // throw(std::bad_alloc)
 #endif // _OPENMP
 #endif // __UBER_BLOCK_MATRIX_HAVE_CSPARSE
 };

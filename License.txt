@@ -33,11 +33,19 @@ DEALINGS IN THE SOFTWARE.
 
 === References (please cite these when using this software) ===
 
-L. Polok, S. V. Ila, M. Solony, P. Zemcik, and P. Smrz,
-"Efficient implementation for block matrix operations for nonlinear least squares problems in robotic applications,"
-in Proceedings of the IEEE International Conference on Robotics and Automation, IEEE, 2013.
+L. Polok, M. Solony, V. Ila, P. Smrz and P. Zemcik,
+"Incremental Block Cholesky Factorization for Nonlinear Least Squares in Robotics,"
+in Proceedings of Robotics: Science and Systems 2013, MIT Press, 2013
 
-L. Polok, S. V. Ila, M. Solony, P. Zemcik, and P. Smrz,
+L. Polok, M. Solony, V. Ila, P. Smrz and P. Zemcik,
+"Incremental Cholesky Factorization for Least Squares Problems in Robotics,"
+in Proceedings of The 2013 IFAC Intelligent Autonomous Vehicles Symposium, IFAC, 2013
+
+L. Polok, V. Ila, M. Solony, P. Zemcik, and P. Smrz,
+"Efficient implementation for block matrix operations for nonlinear least squares problems in robotic applications,"
+in Proceedings of the IEEE International Conference on Robotics and Automation, IEEE, 2013
+
+L. Polok, V. Ila, M. Solony, P. Zemcik, and P. Smrz,
 "Cache Efficient Implementation for Block Matrix Operations,"
 in Proceedings of the 21st High Performance Computing Symposia (HPC'13), SCS, 2013
 

@@ -3,7 +3,7 @@
 								|                                |
 								| *** Block matrix benchmark *** |
 								|                                |
-								|  Copyright © -tHE SWINe- 2012  |
+								| Copyright (c) -tHE SWINe- 2012 |
 								|                                |
 								|         BlockBench.cpp         |
 								|                                |
@@ -341,7 +341,7 @@ void CBlockMatrixBenchmark::ShowResults() const
 	Show_Cumulative_Results();
 }
 
-void CBlockMatrixBenchmark::StartTimer(const char *p_s_label) // throws(std::bad_alloc)
+void CBlockMatrixBenchmark::StartTimer(const char *p_s_label) // throw(std::bad_alloc)
 {
 	CCumTimerMap::iterator p_map_it = m_timer_map.find(p_s_label);
 	if(p_map_it != m_timer_map.end()) {
@@ -359,7 +359,7 @@ void CBlockMatrixBenchmark::StartTimer(const char *p_s_label) // throws(std::bad
 	}
 }
 
-void CBlockMatrixBenchmark::BeginTest(const std::string &r_s_label) // throws(std::bad_alloc)
+void CBlockMatrixBenchmark::BeginTest(const std::string &r_s_label) // throw(std::bad_alloc)
 {
 	_ASSERTE(!m_b_test_active);
 	if(!m_test_list.empty() && m_test_list.back().s_matrix_name == r_s_label)
@@ -372,7 +372,7 @@ void CBlockMatrixBenchmark::BeginTest(const std::string &r_s_label) // throws(st
 	// add one more test to the end
 }
 
-void CBlockMatrixBenchmark::SetTestProperty(const char *p_s_label, double f_value) // throws(std::bad_alloc)
+void CBlockMatrixBenchmark::SetTestProperty(const char *p_s_label, double f_value) // throw(std::bad_alloc)
 {
 	if(m_b_test_active) {
 		_ASSERTE(!m_test_list.empty());

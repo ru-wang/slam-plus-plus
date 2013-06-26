@@ -3,7 +3,7 @@
 								|                                   |
 								| *** Matrix ordering utilities *** |
 								|                                   |
-								|   Copyright  © -tHE SWINe- 2013   |
+								|  Copyright  (c) -tHE SWINe- 2013  |
 								|                                   |
 								|          OrderingMagic.h          |
 								|                                   |
@@ -19,6 +19,11 @@
  *	@brief matrix ordering utilities
  *	@author -tHE SWINe-
  *	@date 2013-02-07
+ *
+ *	@date 2013-05-24
+ *
+ *	Removed the explicitly hybrid orderings, as actually the NNZ of AAT is easy
+ *	to calculate from just upper triangular of A (which is actually lambda).
  */
 
 /**
@@ -26,7 +31,45 @@
  *	@brief if enabled, two-level ordering constraint is applied to lambda
  *		in CLastElementOrderingConstraint
  */
-#define __MATRIX_ORDERING_TWO_LEVEL_CONSTRAINT
+//#define __MATRIX_ORDERING_TWO_LEVEL_CONSTRAINT
+
+/**
+ *	@def __MATRIX_ORDERING_USE_AMD1
+ *	@brief if defined, CMatrixOrdering::p_DestructiveOrdering() will use
+ *		amd_1() or camd_1() function, otherwise it will use amd_2() or camd_2().
+ *	@note Using amd_2() or camd_2() should be slightly faster.
+ */
+//#define __MATRIX_ORDERING_USE_AMD1
+
+/**
+ *	@def __MATRIX_ORDERING_USE_AMD_AAT
+ *	@brief if defined, CMatrixOrdering::p_DestructiveOrdering() will use
+ *		amd_aat() or camd_aat() function to calculate the sparsity pattern,
+ *		otherwise a custom code is used.
+ *	@note Using amd_aat() or camd_aat() is slower.
+ */
+//#define __MATRIX_ORDERING_USE_AMD_AAT
+
+/**
+ *	@def __MATRIX_ORDERING_CACHE_ALIGNMENT_BYTES
+ *	@brief Cache alignment, in bytes. Must be divisible by 8, must be power of two.
+ *	@note This is only in effect if __MATRIX_ORDERING_CACHE_ALIGN is defined.
+ */
+#define __MATRIX_ORDERING_CACHE_ALIGNMENT_BYTES 64
+
+#ifndef __MATRIX_ORDERING_USE_AMD1
+
+/**
+ *	@def __MATRIX_ORDERING_CACHE_ALIGN
+ *	@brief If enabled, CMatrixOrdering::p_DestructiveOrdering() will align
+ *		working arrays for AMD so that accessing the same element in different
+ *		arrays uses a different cache line.
+ *	@note This is only effective if __MATRIX_ORDERING_USE_AMD1 is not defined
+ *		(then, the alignment is up to amd_1() or camd_1()).
+ */
+#define __MATRIX_ORDERING_CACHE_ALIGN
+
+#endif // !__MATRIX_ORDERING_USE_AMD1
 
 #include <vector>
 #include <algorithm>
@@ -51,7 +94,7 @@ public:
 	 *		of the specified size (not to be deleted).
 	 *	@note This function throws std::bad_alloc.
 	 */
-	const size_t *p_Get(size_t n_size); // throws(std::bad_alloc)
+	const size_t *p_Get(size_t n_size); // throw(std::bad_alloc)
 };
 
 /**
@@ -72,7 +115,7 @@ public:
 	 *		of the specified size (not to be deleted).
 	 *	@note This function throws std::bad_alloc.
 	 */
-	const size_t *p_Get(size_t n_size); // throws(std::bad_alloc)
+	const size_t *p_Get(size_t n_size); // throw(std::bad_alloc)
 };
 
 /**
@@ -96,7 +139,7 @@ public:
 	 *		of the specified size (not to be deleted).
 	 *	@note This function throws std::bad_alloc.
 	 */
-	const size_t *p_Get(size_t n_size, size_t n_first_constraint_num); // throws(std::bad_alloc)
+	const size_t *p_Get(size_t n_size, size_t n_first_constraint_num); // throw(std::bad_alloc)
 };
 
 /**
@@ -126,6 +169,36 @@ public:
 	~CMatrixOrdering();
 
 	/**
+	 *	@brief gets the size of matrix ordering
+	 *	@return Returns the size of the current matrix ordering.
+	 */
+	inline size_t n_Ordering_Size() const
+	{
+		return m_ordering.size();
+	}
+
+	/**
+	 *	@brief gets the ordering
+	 *	@return Returns the current matrix ordering, or 0 in case there is no ordering.
+	 */
+	inline const size_t *p_Get_Ordering() const
+	{
+		return (!m_ordering.empty())? &m_ordering[0] : 0;
+	}
+
+	/**
+	 *	@brief gets the inverse ordering
+	 *	@return Returns the current matrix inverse ordering,
+	 *		or 0 in case there is no inverse ordering.
+	 *	@note Even though non-null value is returned, the inverse ordering
+	 *		can be out-of-date, as it is calculated upon request.
+	 */
+	inline const size_t *p_Get_InverseOrdering() const
+	{
+		return (!m_ordering_invert.empty())? &m_ordering_invert[0] : 0;
+	}
+
+	/**
 	 *	@brief calculates inverse ordering while maintaining and reusing storage
 	 *
 	 *	@param[in] p_ordering is an ordering to be inverted
@@ -141,7 +214,7 @@ public:
 	 *		call, on the same object). This doesn't apply to the results of the other functions.
 	 *	@note This function throws std::bad_alloc.
 	 */
-	const size_t *p_InvertOrdering(const size_t *p_ordering, size_t n_ordering_size); // throws(std::bad_alloc)
+	const size_t *p_InvertOrdering(const size_t *p_ordering, size_t n_ordering_size); // throw(std::bad_alloc)
 
 	/**
 	 *	@brief extremely intricate function for progressive reordering
@@ -160,7 +233,7 @@ public:
 	 *		functions invalidates previous results of all of those functions.
 	 */
 	const size_t *p_ExtendBlockOrdering_with_SubOrdering(size_t n_order_min,
-		const size_t *p_sub_block_ordering, size_t n_sub_block_size); // throws(std::bad_alloc)
+		const size_t *p_sub_block_ordering, size_t n_sub_block_size); // throw(std::bad_alloc)
 
 	/**
 	 *	@brief calculates blockwise ordering in a matrix, using the CAMD library
@@ -183,8 +256,55 @@ public:
 	 *	@note This function throws std::bad_alloc.
 	 */
 	const size_t *p_BlockOrdering(const CUberBlockMatrix &r_A, const size_t *p_constraints,
-		size_t UNUSED(n_constraints_size)); // throws(std::bad_alloc)
+		size_t UNUSED(n_constraints_size), bool b_need_inverse = false); // throw(std::bad_alloc)
 
+	/**
+	 *	@brief calculates blockwise ordering in a matrix, using the CAMD library
+	 *
+	 *	@param[in] r_A is the block matrix (must be symmetric)
+	 *	@param[in] n_matrix_cut is the number of block rows and columns to cut
+	 *		off of the r_A matrix (from left and up)
+	 *	@param[in] n_matrix_diag is the number of block rows and columns to make
+	 *		diagonal in the r_A matrix (from left and up, before cutting)
+	 *	@param[in] p_constraints is the ordering constraint vector (can be 0)
+	 *	@param[in] n_constraints_size is size og the ordering constraint vector
+	 *		(must match the number of r_A block columns, except it is ignored
+	 *		if p_constraints is 0)
+	 *
+	 *	@return Returns const pointer to the ordering vector (not to be deleted).
+	 *
+	 *	@note The buffer for block ordering is reused in the next function call,
+	 *		invalidating the previous result (create more instances of CMatrixOrdering
+	 *		if multiple block orderings need to exist at the same time).
+	 *	@note The same buffer is used by p_BlockOrdering(), p_HybridBlockOrdering,
+	 *		p_Ordering(), p_DestructiveOrdering() p_HybridDestructiveOrdering()
+	 *		and p_ExtendBlockOrdering_with_Identity(). A call to any of those
+	 *		functions invalidates previous results of all of those functions.
+	 *	@note This function throws std::bad_alloc.
+	 */
+	const size_t *p_BlockOrdering_MiniSkirt(const CUberBlockMatrix &r_A, size_t n_matrix_cut,
+		size_t n_matrix_diag, const size_t *p_constraints, size_t UNUSED(n_constraints_size),
+		bool b_need_inverse = false); // throw(std::bad_alloc)
+
+	/**
+	 *	@brief calculates blockwise ordering in a matrix, using the AMD library
+	 *
+	 *	@param[in] r_A is the block matrix (must be symmetric)
+	 *
+	 *	@return Returns const pointer to the ordering vector (not to be deleted).
+	 *
+	 *	@note The buffer for block ordering is reused in the next function call,
+	 *		invalidating the previous result (create more instances of CMatrixOrdering
+	 *		if multiple block orderings need to exist at the same time).
+	 *	@note The same buffer is used by p_BlockOrdering(), p_HybridBlockOrdering,
+	 *		p_Ordering(), p_DestructiveOrdering() p_HybridDestructiveOrdering()
+	 *		and p_ExtendBlockOrdering_with_Identity(). A call to any of those
+	 *		functions invalidates previous results of all of those functions.
+	 *	@note This function throws std::bad_alloc.
+	 */
+	const size_t *p_BlockOrdering(const CUberBlockMatrix &r_A, bool b_need_inverse = false); // throw(std::bad_alloc)
+
+#if 0
 	/**
 	 *	@brief calculates blockwise ordering in a matrix, using the CAMD library
 	 *
@@ -209,7 +329,8 @@ public:
 	 *	@note This function throws std::bad_alloc.
 	 */
 	const size_t *p_HybridBlockOrdering(const CUberBlockMatrix &r_A, size_t n_off_diagonal_num,
-		const size_t *p_constraints, size_t UNUSED(n_constraints_size)); // throws(std::bad_alloc)
+		const size_t *p_constraints, size_t UNUSED(n_constraints_size)); // throw(std::bad_alloc)
+#endif // 0
 
 	/**
 	 *	@brief calculates elementwise ordering by expanding blockwise ordering on a block matrix
@@ -228,7 +349,7 @@ public:
 	 *		if multiple elementwise orderings need to exist at the same time).
 	 *	@note This function throws std::bad_alloc.
 	 */
-	const size_t *p_ExpandBlockOrdering(const CUberBlockMatrix &r_A, bool b_inverse); // throws(std::bad_alloc)
+	const size_t *p_ExpandBlockOrdering(const CUberBlockMatrix &r_A, bool b_inverse); // throw(std::bad_alloc)
 
 	/**
 	 *	@brief calculates ordering for an elementwise sparse matrix using CAMD
@@ -253,7 +374,27 @@ public:
 	 *	@note This function throws std::bad_alloc.
 	 */
 	const size_t *p_Ordering(const cs *p_A, const size_t *p_constraints,
-		size_t UNUSED(n_constraints_size)); // throws(std::bad_alloc)
+		size_t UNUSED(n_constraints_size)); // throw(std::bad_alloc)
+
+	/**
+	 *	@brief calculates ordering for an elementwise sparse matrix using AMD
+	 *
+	 *	@param[in] p_A is the sparse matrix (must be symmetric)
+	 *
+	 *	@return Returns const pointer to the ordering vector (not to be deleted).
+	 *
+	 *	@note The buffer for block ordering is reused in the next function call,
+	 *		invalidating the previous result (create more instances of CMatrixOrdering
+	 *		if multiple block orderings need to exist at the same time).
+	 *	@note The same buffer is used by p_BlockOrdering(), p_HybridBlockOrdering,
+	 *		p_Ordering(), p_DestructiveOrdering() p_HybridDestructiveOrdering()
+	 *		and p_ExtendBlockOrdering_with_Identity(). A call to any of those
+	 *		functions invalidates previous results of all of those functions.
+	 *	@note In case the matrix is no longer needed, it is better to call
+	 *		p_DestructiveOrdering() as this function needs to make a copy of the matrix.
+	 *	@note This function throws std::bad_alloc.
+	 */
+	const size_t *p_Ordering(const cs *p_A); // throw(std::bad_alloc)
 
 	/**
 	 *	@brief calculates ordering for an elementwise sparse matrix using CAMD
@@ -279,8 +420,30 @@ public:
 	 *	@note This function throws std::bad_alloc.
 	 */
 	const size_t *p_DestructiveOrdering(cs *p_A, const size_t *p_constraints,
-		size_t UNUSED(n_constraints_size)); // throws(std::bad_alloc)
+		size_t UNUSED(n_constraints_size), bool b_need_inverse = false); // throw(std::bad_alloc)
 
+	/**
+	 *	@brief calculates ordering for an elementwise sparse matrix using AMD
+	 *
+	 *	@param[in] p_A is the sparse matrix (must be symmetric, the contents will
+	 *		be dammaged by this call)
+	 *
+	 *	@return Returns const pointer to the ordering vector (not to be deleted).
+	 *
+	 *	@note The buffer for block ordering is reused in the next function call,
+	 *		invalidating the previous result (create more instances of CMatrixOrdering
+	 *		if multiple block orderings need to exist at the same time).
+	 *	@note The same buffer is used by p_BlockOrdering(), p_HybridBlockOrdering,
+	 *		p_Ordering(), p_DestructiveOrdering() p_HybridDestructiveOrdering()
+	 *		and p_ExtendBlockOrdering_with_Identity(). A call to any of those
+	 *		functions invalidates previous results of all of those functions.
+	 *	@note In case the matrix is needed to remain untouched, it is needed to call
+	 *		p_Ordering() as this function dammages the contents of the matrix.
+	 *	@note This function throws std::bad_alloc.
+	 */
+	const size_t *p_DestructiveOrdering(cs *p_A, bool b_need_inverse = false); // throw(std::bad_alloc)
+
+#if 0
 	/**
 	 *	@brief calculates ordering for an elementwise sparse matrix using CAMD
 	 *
@@ -308,7 +471,8 @@ public:
 	 *	@note This function throws std::bad_alloc.
 	 */
 	const size_t *p_HybridDestructiveOrdering(cs *p_A, size_t n_off_diagonal_num,
-		const size_t *p_constraints, size_t UNUSED(n_constraints_size)); // throws(std::bad_alloc)
+		const size_t *p_constraints, size_t UNUSED(n_constraints_size)); // throw(std::bad_alloc)
+#endif // 0
 
 	/**
 	 *	@brief extends an existing block ordering with identity ordering
@@ -326,7 +490,7 @@ public:
 	 *		functions invalidates previous results of all of those functions.
 	 *	@note This function throws std::bad_alloc.
 	 */
-	const size_t *p_ExtendBlockOrdering_with_Identity(size_t n_new_size); // throws(std::bad_alloc)
+	const size_t *p_ExtendBlockOrdering_with_Identity(size_t n_new_size); // throw(std::bad_alloc)
 };
 
 /**
@@ -359,12 +523,13 @@ public:
 	 *		functions invalidates previous results of all of those functions.
 	 *	@note This function throws std::bad_alloc.
 	 */
-	inline const size_t *p_BlockOrdering(const CUberBlockMatrix &r_A) // throws(std::bad_alloc)
+	inline const size_t *p_BlockOrdering(const CUberBlockMatrix &r_A) // throw(std::bad_alloc)
 	{
 		size_t n_block_num = r_A.n_BlockColumn_Num();
 		return m_o.p_BlockOrdering(r_A, m_c.p_Get(n_block_num), n_block_num);
 	}
 
+#if 0
 	/**
 	 *	@brief calculates blockwise ordering in a matrix, using the CAMD library
 	 *
@@ -385,11 +550,12 @@ public:
 	 *		functions invalidates previous results of all of those functions.
 	 *	@note This function throws std::bad_alloc.
 	 */
-	inline const size_t *p_HybridBlockOrdering(const CUberBlockMatrix &r_A, size_t n_off_diagonal_num) // throws(std::bad_alloc)
+	inline const size_t *p_HybridBlockOrdering(const CUberBlockMatrix &r_A, size_t n_off_diagonal_num) // throw(std::bad_alloc)
 	{
 		size_t n_block_num = r_A.n_BlockColumn_Num();
 		return m_o.p_HybridBlockOrdering(r_A, n_off_diagonal_num, m_c.p_Get(n_block_num), n_block_num);
 	}
+#endif // 0
 
 	/**
 	 *	@brief extends an existing block ordering with identity ordering
@@ -408,7 +574,7 @@ public:
 	 *		functions invalidates previous results of all of those functions.
 	 *	@note This function throws std::bad_alloc.
 	 */
-	inline const size_t *p_ExtendBlockOrdering_with_Identity(size_t n_new_size) // throws(std::bad_alloc)
+	inline const size_t *p_ExtendBlockOrdering_with_Identity(size_t n_new_size) // throw(std::bad_alloc)
 	{
 		return m_o.p_ExtendBlockOrdering_with_Identity(n_new_size);
 	}
@@ -430,7 +596,7 @@ public:
 	 *		to exist at the same time).
 	 *	@note This function throws std::bad_alloc.
 	 */
-	inline const size_t *p_ExpandBlockOrdering(const CUberBlockMatrix &r_A) // throws(std::bad_alloc)
+	inline const size_t *p_ExpandBlockOrdering(const CUberBlockMatrix &r_A) // throw(std::bad_alloc)
 	{
 		return m_o.p_ExpandBlockOrdering(r_A, false);
 	}
@@ -452,7 +618,7 @@ public:
 	 *		call, on the same object). This doesn't apply to the results of the other functions.
 	 *	@note This function throws std::bad_alloc.
 	 */
-	inline const size_t *p_InvertOrdering(const size_t *p_ordering, size_t n_ordering_size) // throws(std::bad_alloc)
+	inline const size_t *p_InvertOrdering(const size_t *p_ordering, size_t n_ordering_size) // throw(std::bad_alloc)
 	{
 		return m_o.p_InvertOrdering(p_ordering, n_ordering_size);
 	}

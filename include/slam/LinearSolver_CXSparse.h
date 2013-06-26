@@ -3,7 +3,7 @@
 								|                                   |
 								|  ***  CSparse linear solver  ***  |
 								|                                   |
-								|   Copyright  © -tHE SWINe- 2012   |
+								|  Copyright  (c) -tHE SWINe- 2012  |
 								|                                   |
 								|      LinearSolver_CXSparse.h      |
 								|                                   |
@@ -120,7 +120,7 @@ public:
 	 *
 	 *	@note This function throws std::bad_alloc.
 	 */
-	bool Solve_PosDef(const CUberBlockMatrix &r_lambda, Eigen::VectorXd &r_eta); // throws(std::bad_alloc)
+	bool Solve_PosDef(const CUberBlockMatrix &r_lambda, Eigen::VectorXd &r_eta); // throw(std::bad_alloc)
 
 #ifdef __CXSPARSE_BLOCKY_LINEAR_SOLVER
 
@@ -140,7 +140,7 @@ public:
 	 */
 	bool Factorize_PosDef_Blocky(CUberBlockMatrix &r_factor, const CUberBlockMatrix &r_lambda,
 		std::vector<size_t> &r_workspace, size_t n_dest_row_id = 0,
-		size_t n_dest_column_id = 0, bool b_upper_factor = true); // throws(std::bad_alloc)
+		size_t n_dest_column_id = 0, bool b_upper_factor = true); // throw(std::bad_alloc)
 
 	/**
 	 *	@brief deletes symbolic decomposition, if calculated (forces a symbolic
@@ -160,7 +160,7 @@ public:
 	 *	@param[in] r_lambda is positive-definite matrix
 	 *	@return Returns true on success, false on failure.
 	 */
-	bool SymbolicDecomposition_Blocky(const CUberBlockMatrix &r_lambda); // throws(std::bad_alloc)
+	bool SymbolicDecomposition_Blocky(const CUberBlockMatrix &r_lambda); // throw(std::bad_alloc)
 
 	/**
 	 *	@brief solves linear system given by positive-definite matrix
@@ -176,7 +176,7 @@ public:
 	 *		calculated automatically after the first call to this function,
 	 *		or after Clear_SymbolicDecomposition() was called (preferred).
 	 */
-	bool Solve_PosDef_Blocky(const CUberBlockMatrix &r_lambda, Eigen::VectorXd &r_eta); // throws(std::bad_alloc)
+	bool Solve_PosDef_Blocky(const CUberBlockMatrix &r_lambda, Eigen::VectorXd &r_eta); // throw(std::bad_alloc)
 
 #endif // __CXSPARSE_BLOCKY_LINEAR_SOLVER
 

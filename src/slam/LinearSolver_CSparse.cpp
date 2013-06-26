@@ -3,7 +3,7 @@
 								|                                   |
 								|  ***  CSparse linear solver  ***  |
 								|                                   |
-								|   Copyright  © -tHE SWINe- 2012   |
+								|  Copyright  (c) -tHE SWINe- 2012  |
 								|                                   |
 								|     LinearSolver_CSparse.cpp      |
 								|                                   |
@@ -72,7 +72,7 @@ CLinearSolver_CSparse &CLinearSolver_CSparse::operator =(const CLinearSolver_CSp
 }
 
 bool CLinearSolver_CSparse::Solve_PosDef(const CUberBlockMatrix &r_lambda,
-	Eigen::VectorXd &r_eta) // throws(std::bad_alloc)
+	Eigen::VectorXd &r_eta) // throw(std::bad_alloc)
 {
 	_ASSERTE(r_lambda.b_SymmetricLayout()); // pos-def is supposed to be symmetric
 	_ASSERTE(r_eta.rows() == r_lambda.n_Row_Num()); // make sure the vector has correct dimension
@@ -108,7 +108,7 @@ bool CLinearSolver_CSparse::Solve_PosDef(const CUberBlockMatrix &r_lambda,
 
 bool CLinearSolver_CSparse::Factorize_PosDef_Blocky(CUberBlockMatrix &r_factor,
 	const CUberBlockMatrix &r_lambda, std::vector<size_t> &r_workspace,
-	size_t n_dest_row_id /*= 0*/, size_t n_dest_column_id /*= 0*/, bool b_upper_factor /*= true*/) // throws(std::bad_alloc)
+	size_t n_dest_row_id /*= 0*/, size_t n_dest_column_id /*= 0*/, bool b_upper_factor /*= true*/) // throw(std::bad_alloc)
 {
 	//double f_start_time = m_timer.f_Time();
 
@@ -166,7 +166,7 @@ bool CLinearSolver_CSparse::Factorize_PosDef_Blocky(CUberBlockMatrix &r_factor,
 	return b_result;
 }
 
-bool CLinearSolver_CSparse::SymbolicDecomposition_Blocky(const CUberBlockMatrix &r_lambda) // throws(std::bad_alloc)
+bool CLinearSolver_CSparse::SymbolicDecomposition_Blocky(const CUberBlockMatrix &r_lambda) // throw(std::bad_alloc)
 {
 	Clear_SymbolicDecomposition();
 	// forget symbolic decomposition, if it had one
@@ -238,7 +238,7 @@ bool CLinearSolver_CSparse::SymbolicDecomposition_Blocky(const CUberBlockMatrix 
 }
 
 bool CLinearSolver_CSparse::Solve_PosDef_Blocky(const CUberBlockMatrix &r_lambda,
-	Eigen::VectorXd &r_eta) // throws(std::bad_alloc)
+	Eigen::VectorXd &r_eta) // throw(std::bad_alloc)
 {
 	_ASSERTE(r_lambda.b_SymmetricLayout()); // pos-def is supposed to be symmetric
 	_ASSERTE(r_eta.rows() == r_lambda.n_Row_Num()); // make sure the vector has correct dimension
