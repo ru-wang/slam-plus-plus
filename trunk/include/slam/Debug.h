@@ -698,6 +698,55 @@ public:
 	}
 
 	/**
+	 *	@brief prints dense matrix in matlab format
+	 *
+	 *	@tparam MatrixType is specialization of Eigen::Matrix
+	 *
+	 *	@param[in] p_fw is the output stream
+	 *	@param[in] r_A is the matrix to be printed
+	 *	@param[in] p_s_prefix is prefix code before the matrix body (can be null)
+	 *	@param[in] p_s_suffix is suffix code after the matrix body (can be null)
+	 *
+	 *	@return Returns true on success, false on failure.
+	 */
+	template <class MatrixType>
+	static bool Print_DenseMatrix_in_MatlabFormat(FILE *p_fw,
+		const MatrixType &r_A, const char *p_s_prefix = 0, const char *p_s_suffix = ";\n")
+	{
+		if(p_s_prefix)
+			fprintf(p_fw, "%s", p_s_prefix);
+
+		{
+			fprintf(p_fw, "[");
+			for(size_t i = 0, m = r_A.rows(); i < m; ++ i) { // iterate rows in the outer loop
+				for(size_t j = 0, n = r_A.cols(); j < n; ++ j) { // iterate columns in the inner loop
+					double f_value = r_A(i, j);
+					fprintf(p_fw, " %f", f_value);
+				}
+				if(i + 1 != m)
+					fprintf(p_fw, "; ");
+			}
+			fprintf(p_fw, "]");
+		}
+
+		// "to define a matrix, you can treat it like a column of row vectors"
+		/*
+		 *	>> A = [ 1 2 3; 3 4 5; 6 7 8]
+		 *
+		 *	A =
+		 *
+		 *		 1     2     3
+		 *		 3     4     5
+		 *		 6     7     8
+		 */
+
+		if(p_s_suffix)
+			fprintf(p_fw, "%s", p_s_suffix);
+
+		return true;
+	}
+
+	/**
 	 *	@brief prints sparse matrix as a true sparse matrix,
 	 *		in matlab format (requires suitesparse)
 	 *

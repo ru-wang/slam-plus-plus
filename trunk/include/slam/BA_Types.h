@@ -14,6 +14,7 @@
 //#include "slam/2DSolverBase.h"
 //#include "slam/3DSolverBase.h"
 #include "slam/BASolverBase.h"
+#include <iostream> //SOSO
 
 /*class CVertexIntrinsics : public CSEBaseVertexImpl<CVertexIntrinsics, 4> { // this says to use base vertex implementation for class with name CVertexPose2D, while the vertex has 3 dimensions; this will generate member variable m_v_state ("member vector" state), which will be Eigen dense column vector with the given number of dimensions
 public:
@@ -31,16 +32,21 @@ public:
     }
 };*/
 
-class CVertexCam : public CSEBaseVertexImpl<CVertexCam, 10> { // this says to use base vertex implementation for class with name CVertexPose2D, while the vertex has 3 dimensions; this will generate member variable m_v_state ("member vector" state), which will be Eigen dense column vector with the given number of dimensions
+class CVertexCam : public CSEBaseVertexImpl<CVertexCam, 6> { // this says to use base vertex implementation for class with name CVertexPose2D, while the vertex has 3 dimensions; this will generate member variable m_v_state ("member vector" state), which will be Eigen dense column vector with the given number of dimensions
 public:
     __BA_TYPES_ALIGN_OPERATOR_NEW // imposed by the use of eigen, copy this
+
+    //vertex cam should hold own camera params
+    Eigen::Matrix<double, 5, 1> intrinsics;
 
     inline CVertexCam() // copy this
     {}
 
     inline CVertexCam(const Eigen::VectorXd &r_v_state) // copy this, change the dimension of the vector to appropriate
-        :CSEBaseVertexImpl<CVertexCam, 10>(r_v_state) // change the dimension here as well
-    {}
+        :CSEBaseVertexImpl<CVertexCam, 6>(r_v_state.head<6>()) // change the dimension here as well
+    {
+    	intrinsics = r_v_state.tail<5>();
+    }
 
 	/*inline void Alloc_HessianBlocks(CUberBlockMatrix &r_lambda)
 	{
@@ -51,7 +57,8 @@ public:
     inline void Operator_Plus(const Eigen::VectorXd &r_v_delta) // "smart" plus
     {
         //focal lengths and principal points are added normally
-    	m_v_state.segment<4>(6) += r_v_delta.segment<4>(m_n_order + 6);
+    	//SOSO: ignore adding of fx and cx
+    	//m_v_state.segment<4>(6) += r_v_delta.segment<4>(m_n_order + 6);
 
     	//pose is added as SE3
     	m_v_state.head<3>() += r_v_delta.segment<3>(m_n_order); // can select 3D segment starting at m_n_order; SSE accelerated
@@ -119,11 +126,13 @@ public:
 	 */
 	template <class CSystem>
 	CEdgeP2C3D(const CParserBase::TEdgeP2C3D &r_t_edge, CSystem &r_system) // this is edge constructor how it is called in the parse loop; you need to change type of the edge
-		:CSEBaseEdgeImpl<CEdgeP2C3D, CVertexCam, CVertexXYZ, 2>(r_t_edge.m_n_node_0,
-		r_t_edge.m_n_node_1, r_t_edge.m_v_delta, r_t_edge.m_t_inv_sigma) // this just calls the base edge implementation, you need to change types and maintain the parameters if required (these are: index of first and of second vertex, the measurement vector and the inverse sigma matrix)
+		:CSEBaseEdgeImpl<CEdgeP2C3D, CVertexCam, CVertexXYZ, 2>(r_t_edge.m_n_node_1,
+		r_t_edge.m_n_node_0, r_t_edge.m_v_delta, r_t_edge.m_t_inv_sigma) // this just calls the base edge implementation, you need to change types and maintain the parameters if required (these are: index of first and of second vertex, the measurement vector and the inverse sigma matrix)
 	{
 		m_p_vertex0 = &r_system.template r_Get_Vertex<CVertexCam>(r_t_edge.m_n_node_1, CInitializeNullVertex());
 		m_p_vertex1 = &r_system.template r_Get_Vertex<CVertexXYZ>(r_t_edge.m_n_node_0, CInitializeNullVertex1()); // rename your initializer if required
+
+		//std::swap(r_t_edge.m_n_node_1, r_t_edge.m_n_node_0);
 
 		//fprintf(stderr, "verts: %d %d \n", r_t_edge.m_n_node_0, r_t_edge.m_n_node_1);
 		//fprintf(stderr, ">>%f %f %f %f %f %f %f %f %f %f \n", m_p_vertex0->r_v_State()(0), m_p_vertex0->r_v_State()(1), m_p_vertex0->r_v_State()(2), m_p_vertex0->r_v_State()(3),
@@ -134,7 +143,7 @@ public:
 		// get vertices (initialize if required)
 		// the strange syntax with "template" is required by g++, otherwise gives "expected primary-expression before '>' token"
 
-		_ASSERTE(((CSEBaseVertex*)m_p_vertex0)->n_Dimension() == 10);
+		_ASSERTE(((CSEBaseVertex*)m_p_vertex0)->n_Dimension() == 6);
 		_ASSERTE(((CSEBaseVertex*)m_p_vertex1)->n_Dimension() == 3); // change the dimensionality here, if required (full type control currently not possible to make sure that the indices in the edge really point to vertices that are of the expected type. e.g. the edge might expect both vertices to be poses, but if the dataset is not "nice", one of the vertices can very well be a landmark)
 		// make sure the dimensionality is correct (might not be)
 	}
@@ -158,13 +167,17 @@ public:
 	 *	@param[out] r_v_expectation is expecation vector
 	 *	@param[out] r_v_error is error vector
 	 */
-	inline void Calculate_Jacobians_Expectation_Error(Eigen::Matrix<double, 2, 10> &r_t_jacobian0,
+	inline void Calculate_Jacobians_Expectation_Error(Eigen::Matrix<double, 2, 6> &r_t_jacobian0,
 		Eigen::Matrix<double, 2, 3> &r_t_jacobian1, Eigen::Matrix<double, 2, 1> &r_v_expectation,
 		Eigen::Matrix<double, 2, 1> &r_v_error) const // change dimensionality of eigen types, if required
 	{
-		CBaseBASolver::CBAJacobians::Project_P2C(m_p_vertex0->v_State() /* Cam */,
+		CBaseBASolver::CBAJacobians::Project_P2C(m_p_vertex0->v_State() /* Cam */, m_p_vertex0->intrinsics /* camera intrinsic params */,
 			m_p_vertex1->v_State() /* XYZ */, r_v_expectation, r_t_jacobian0, r_t_jacobian1); // write your jacobian calculation code here (vertex state vectors are inputs, the rest are the outputs that you need to fill)
 		// calculates the expectation and the jacobians
+
+		//std::cout << "me: " << m_v_measurement[0] << " " << m_v_measurement[1] << " ----  " << r_v_expectation[0] << " " << r_v_expectation[1] << std::endl;
+		//std::cout << "J0:" << r_t_jacobian0 << std::endl;
+		//std::cout << "J1:" << r_t_jacobian1 << std::endl;
 
 		r_v_error = m_v_measurement - r_v_expectation;
 		// calculates error (possibly re-calculates, if running A-SLAM)*/
@@ -176,13 +189,32 @@ public:
 	 */
 	inline double f_Chi_Squared_Error() const // this function should mostly work as is, you just need to change dimensions of the vectors and matrices
 	{
-		Eigen::Matrix<double, 2, 10> p_jacobi0;
+		Eigen::Matrix<double, 2, 6> p_jacobi0;
 		Eigen::Matrix<double, 2, 3> p_jacobi1;
 		Eigen::Matrix<double, 2, 1> v_expectation, v_error;
 		Calculate_Jacobians_Expectation_Error(p_jacobi0, p_jacobi1, v_expectation, v_error);
 		// calculates the expectation, error and the jacobians
+		//std::cerr << v_error[0] << " " << v_error[1] << " ----  " << (v_error.transpose() * m_t_sigma_inv).dot(v_error) << std::endl;
+		//std::cout << sqrt( v_error[0]*v_error[0] + v_error[1]*v_error[1] ) << std::endl;
 
 		return (v_error.transpose() * m_t_sigma_inv).dot(v_error); // ||h_i(O_i) - z_i||^2 lambda_i*/
+	}
+
+	/**
+	 *	@brief calculates reprojection error
+	 *	@return Returns (unweighted) chi-square error for this edge.
+	 */
+	inline double f_Reprojection_Error() const // this function should mostly work as is, you just need to change dimensions of the vectors and matrices
+	{
+		Eigen::Matrix<double, 2, 6> p_jacobi0;
+		Eigen::Matrix<double, 2, 3> p_jacobi1;
+		Eigen::Matrix<double, 2, 1> v_expectation, v_error;
+		Calculate_Jacobians_Expectation_Error(p_jacobi0, p_jacobi1, v_expectation, v_error);
+		// calculates the expectation, error and the jacobians
+		//std::cerr << v_error[0] << " " << v_error[1] << " ----  " << (v_error.transpose() * m_t_sigma_inv).dot(v_error) << std::endl;
+
+		return sqrt( (v_error[0] - v_expectation[0])*(v_error[0] - v_expectation[0]) +
+				(v_error[1] - v_expectation[1])*(v_error[1] - v_expectation[1]) );
 	}
 };
 
@@ -296,10 +328,10 @@ public:
 	}
 
 	class CMakeVertexCam3D {
-		const Eigen::Matrix<double, 10, 1> &m_r_init;
+		const Eigen::Matrix<double, 11, 1> &m_r_init;
 
 	public:
-		inline CMakeVertexCam3D(const Eigen::Matrix<double, 10, 1> &r_init)
+		inline CMakeVertexCam3D(const Eigen::Matrix<double, 11, 1> &r_init)
 			:m_r_init(r_init)
 		{}
 

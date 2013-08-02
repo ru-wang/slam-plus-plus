@@ -491,6 +491,42 @@ public:
 	 *	@note This function throws std::bad_alloc.
 	 */
 	const size_t *p_ExtendBlockOrdering_with_Identity(size_t n_new_size); // throw(std::bad_alloc)
+
+	/**
+	 *	@brief checks if a given permutation is a valid ordering
+	 *
+	 *	@return Returns true if the ordering is valid, otherwise returns false.
+	 *
+	 *	@note This function throws std::bad_alloc.
+	 */
+	static bool b_IsValidOrdering(const size_t *p_order, size_t n_size) // throw(std::bad_alloc)
+	{
+		for(size_t i = 0; i < n_size; ++ i) {
+			if(p_order[i] >= n_size)
+				return false;
+		}
+		// primitive check - see if there are other values than they should be
+
+		std::vector<bool> coverage(n_size, false);
+		// make a coverage mask
+
+		for(size_t i = 0; i < n_size; ++ i) {
+			if(coverage[p_order[i]])
+				return false;
+			// there is a repeated element
+
+			coverage[p_order[i]] = true;
+		}
+		// check for repeated elements
+
+#ifdef _DEBUG
+		for(size_t i = 0; i < n_size; ++ i)
+			_ASSERTE(coverage[p_order[i]]);
+		// all items are covered (already implied by the two checks above)
+#endif // _DEBUG
+
+		return true;
+	}
 };
 
 /**

@@ -340,6 +340,49 @@ public:
 };
 
 /**
+ *	@brief prints typelist containing CCTSize sizes to stdout (debugging utility)
+ *
+ *	Use as follows:
+ *	@code
+ *	typedef MakeTypelist_Safe((__fbs_ut::CCTSize<1>, __fbs_ut::CCTSize<2>)) sizes;
+ *	__fbs_ut::CDumpCTSizeTypelist<sizes>::Print();
+ *	@endcode
+ *
+ *	@tparam CCTSizeTypelist is typelist containing CCTSize sizes
+ */
+template <class CCTSizeTypelist>
+class CDumpCTSizeTypelist {
+public:
+	/**
+	 *	@brief prints the given typelist to stdout
+	 *	@note This assumes that scalar type is double, but in order to make
+	 *		the implementation simple, it is only assumed, the scalar type is ignored.
+	 */
+	static void Print()
+	{
+		typedef typename CCTSizeTypelist::_TyHead THead;
+		printf("CCTsize<%d> ", THead::n_size);
+		CDumpCTSizeTypelist<typename CCTSizeTypelist::_TyTail>::Print();
+	}
+};
+
+/**
+ *	@brief prints typelist containing CCTSize sizes to stdout
+ *		(debugging utility; specialization for the end of the list)
+ */
+template <>
+class CDumpCTSizeTypelist<CTypelistEnd> {
+public:
+	/**
+	 *	@brief prints the given typelist to stdout
+	 */
+	static void Print()
+	{
+		printf("\n");
+	}
+};
+
+/**
  *	@brief makes a decission tree from a sorted typelist
  *
  *	@tparam CList is a sorted list of scalars (type CCTSize)

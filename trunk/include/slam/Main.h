@@ -102,6 +102,7 @@
  *	--lambda|-,\      uses lambda-SLAM (default, preferred batch solver)
  *	--l-slam|-L       uses L-SLAM
  *	--fast-l-slam|-fL uses the new fast L-SLAM solver (preferred incremental solver)
+ *	--use-schur|-us   uses Schur complement to accelerate linear solving
  *	--infile|-i <filename>    specifies input file <filename>; it can cope with
  *					  many file types and conventions
  *	--parse-lines-limit|-pll <N>    sets limit of lines read from the input file
@@ -727,6 +728,7 @@ public:
 	 *	@param[in] f_final_optimization_threshold is error threshold for early stopping
 	 *		the final calculation of nonlinear solution to the system
 	 *	@param[in] b_verbose is verbosity flag
+	 *	@param[in] b_use_schur is Schur complement flag
 	 *	@param[in] b_show_detailed_timing is detailed timing flag
 	 *	@param[in] b_write_bitmaps is flag for writing (2D) bitmaps of initial and optimized system
 	 *
@@ -736,14 +738,10 @@ public:
 		size_t n_max_lines_to_process, size_t n_linear_solve_each_n_steps,
 		size_t n_nonlinear_solve_each_n_steps, size_t n_max_nonlinear_solve_iteration_num,
 		double f_nonlinear_solve_error_threshold, size_t n_max_final_optimization_iteration_num,
-		double f_final_optimization_threshold, bool b_verbose, bool b_show_detailed_timing,
-		bool b_write_bitmaps)
+		double f_final_optimization_threshold, bool b_verbose, bool b_use_schur,
+		bool b_show_detailed_timing, bool b_write_bitmaps)
 	{
 		CSystemType system;
-
-		CTimer t;
-		t.ResetTimer();
-		// start meassuring time
 
 		CLinearSolverType linear_solver;
 		// prepare a linear solver
@@ -753,13 +751,21 @@ public:
 			CSpecializedNonlinearSolverType;
 		CSpecializedNonlinearSolverType nonlinear_solver(system, n_linear_solve_each_n_steps,
 			n_nonlinear_solve_each_n_steps, n_max_nonlinear_solve_iteration_num,
-			f_nonlinear_solve_error_threshold, b_verbose, linear_solver);
+			f_nonlinear_solve_error_threshold, b_verbose, linear_solver, b_use_schur);
 		// prepare nonlinear solver
 
 		typedef CParseLoopType<CSystemType, CSpecializedNonlinearSolverType,
 			CEdgeTraitsType> CSpecializedParseLoop;
 		CSpecializedParseLoop parse_loop(system, nonlinear_solver);
 		// prepare parse loop
+
+		if(b_verbose && b_use_schur)
+			printf("using Schur complement\n");
+		// verbose
+
+		CTimer t;
+		t.ResetTimer();
+		// start meassuring time
 
 		//printf("n_max_lines_to_process = %d\n", int(n_max_lines_to_process)); // debug
 		//CParser p;
@@ -938,7 +944,8 @@ enum ENonlinearSolverType {
 	nlsolver_Lambda, /**< @brief nonlinear solver lambda */
 	nlsolver_LambdaLM, /**< @brief nonlinear solver lambda with Levenberg-Marquardt */
 	nlsolver_L, /**< @brief nonlinear solver L */
-	nlsolver_FastL /**< @brief nonlinear progressively reordering solver L */
+	nlsolver_FastL, /**< @brief nonlinear progressively reordering solver L */
+	nlsolver_SPCG /**< @brief nonlinear solver SPCG */
 };
 
 /**
@@ -952,6 +959,7 @@ struct TCommandLineArgs {
 	bool b_show_flags;
 	bool b_show_detailed_timing;
 	bool b_verbose; /**< @brief verbosity flag; true means verbose, false means silent */
+	bool b_use_schur;
 	bool b_run_matrix_benchmarks;
 	bool b_run_matrix_unit_tests;
 	bool b_use_old_system;
@@ -982,8 +990,10 @@ struct TCommandLineArgs {
 		b_show_commandline = true;
 		b_show_flags = true;
 		b_show_detailed_timing = true;
-		b_verbose = true; /**< @brief verbosity flag; true means verbose, false means silent */
+		b_verbose = true;
 		// verbosity
+
+		b_use_schur = false;
 
 		b_run_matrix_benchmarks = false;
 		b_run_matrix_unit_tests = false;
@@ -1026,12 +1036,16 @@ struct TCommandLineArgs {
 				b_verbose = true;
 			else if(!strcmp(p_arg_list[i], "--silent") || !strcmp(p_arg_list[i], "-s"))
 				b_verbose = false;
+			else if(!strcmp(p_arg_list[i], "--use-schur") || !strcmp(p_arg_list[i], "-us"))
+				b_use_schur = true;
 			else if(!strcmp(p_arg_list[i], "--no-show") || !strcmp(p_arg_list[i], "-ns"))
 				b_no_show = true;
 			else if(!strcmp(p_arg_list[i], "--no-commandline") || !strcmp(p_arg_list[i], "-nc"))
 				b_show_commandline = false;
 			else if(!strcmp(p_arg_list[i], "--lambda") || !strcmp(p_arg_list[i], "-,\\"))
 				n_solver_choice = nlsolver_Lambda;
+			else if(!strcmp(p_arg_list[i], "--precond") || !strcmp(p_arg_list[i], "-spcg"))
+				n_solver_choice = nlsolver_SPCG;
 			else if(!strcmp(p_arg_list[i], "--no-flags") || !strcmp(p_arg_list[i], "-nf"))
 				b_show_flags = false;
 			else if(!strcmp(p_arg_list[i], "--run-matrix-unit-tests") || !strcmp(p_arg_list[i], "-rmut"))
@@ -1152,8 +1166,8 @@ public:
 			t_args.p_s_input_file, t_args.n_max_lines_to_process, t_args.n_linear_solve_each_n_steps,
 			t_args.n_nonlinear_solve_each_n_steps, t_args.n_max_nonlinear_solve_iteration_num,
 			t_args.f_nonlinear_solve_error_threshold, t_args.n_max_final_optimization_iteration_num,
-			t_args.f_final_optimization_threshold, t_args.b_verbose, t_args.b_show_detailed_timing,
-			t_args.b_write_bitmaps);
+			t_args.f_final_optimization_threshold, t_args.b_verbose, t_args.b_use_schur,
+			t_args.b_show_detailed_timing, t_args.b_write_bitmaps);
 		// run with parameters
 	}
 };

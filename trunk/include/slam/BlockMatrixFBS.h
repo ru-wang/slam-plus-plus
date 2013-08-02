@@ -91,6 +91,45 @@ public:
 			}
 		}
 
+		/**
+		 *	@brief wraps the outer loop of matrix-matrix multiplication in block width decision tree
+		 *
+		 *	@param[in] r_t_column_B is the current block column of the right-hand matrix
+		 *	@param[in] n_column_id_B is id of the current block column of the right-hand matrix
+		 *	@param[in] r_row_list_B is list of the right-hand matrix block rows
+		 *	@param[in] r_col_list_A is list of the left-hand matrix block columns
+		 *	@param[in] r_row_list_A is list of the left-hand matrix block rows
+		 *	@param[out] transpose_cols_list is list of the transpose product matrix block columns
+		 *	@param[in] reindex_rows_B_to_cols_A is the mapping functions from right-hand
+		 *		matrix block rows to left-hand matrix block columns
+		 *	@param[in] alloc is the dense block allocator for the product matrix
+		 *
+		 *	@return Returns true on success, false on failure (incompatible block layout).
+		 *
+		 *	@note This function throws std::bad_alloc.
+		 */
+#if defined(_MSC_VER) && !defined(__MWERKS__)
+#pragma inline_recursion(on)
+#endif // _MSC_VER && !__MWERKS__
+		static __forceinline bool Loop_UpperTriag(const TColumn &r_t_column_B, size_t n_column_id_B,
+			const std::vector<TRow> &r_row_list_B,
+			const std::vector<TColumn> &r_col_list_A, const std::vector<TRow> &r_row_list_A,
+			std::vector<std::vector<TColumn::TBlockEntry> > &transpose_cols_list,
+			const std::vector<size_t> &reindex_rows_B_to_cols_A, _TyDenseAllocator &alloc) // throw(std::bad_alloc)
+		{
+			if(r_t_column_B.n_width == CCurrentColumnWidthB::n_size) {
+				return CMatrixMultiply_OuterLoop<_TyGppContextA, _TyGppContextB,
+					CTypelist<CCurrentColumnWidthB, CTypelistEnd> >::Loop_UpperTriag(r_t_column_B,
+					n_column_id_B, r_row_list_B, r_col_list_A, r_row_list_A,
+					transpose_cols_list, reindex_rows_B_to_cols_A, alloc);
+			} else {
+				return CMatrixMultiply_OuterLoop<_TyGppContextA, _TyGppContextB,
+					typename _CColumnWidthsListB::_TyTail>::Loop_UpperTriag(r_t_column_B,
+					n_column_id_B, r_row_list_B, r_col_list_A, r_row_list_A,
+					transpose_cols_list, reindex_rows_B_to_cols_A, alloc);
+			}
+		}
+
 		// todo - debug loop
 	};
 
@@ -176,6 +215,74 @@ public:
 			return true;
 		}
 
+		/**
+		 *	@brief performs the outer loop of matrix-matrix multiplication
+		 *
+		 *	@param[in] r_t_column_B is the current block column of the right-hand matrix
+		 *	@param[in] n_column_id_B is id of the current block column of the right-hand matrix
+		 *	@param[in] r_row_list_B is list of the right-hand matrix block rows
+		 *	@param[in] r_col_list_A is list of the left-hand matrix block columns
+		 *	@param[in] r_row_list_A is list of the left-hand matrix block rows
+		 *	@param[out] transpose_cols_list is list of the transpose product matrix block columns
+		 *	@param[in] reindex_rows_B_to_cols_A is the mapping functions from right-hand
+		 *		matrix block rows to left-hand matrix block columns
+		 *	@param[in] alloc is the dense block allocator for the product matrix
+		 *
+		 *	@return Returns true on success, false on failure (incompatible block layout).
+		 *
+		 *	@note This function throws std::bad_alloc.
+		 */
+#if defined(_MSC_VER) && !defined(__MWERKS__)
+#pragma inline_recursion(on)
+#endif // _MSC_VER && !__MWERKS__
+		static __forceinline bool Loop_UpperTriag(const TColumn &r_t_column_B, size_t n_column_id_B,
+			const std::vector<TRow> &r_row_list_B,
+			const std::vector<TColumn> &r_col_list_A, const std::vector<TRow> &r_row_list_A,
+			std::vector<std::vector<TColumn::TBlockEntry> > &transpose_cols_list,
+			const std::vector<size_t> &reindex_rows_B_to_cols_A, _TyDenseAllocator &alloc) // throw(std::bad_alloc)
+		{
+			_ASSERTE(r_t_column_B.block_list.empty() || r_t_column_B.n_width == CLastColumnWidthB::n_size);
+
+			for(_TyBlockConstIter p_block_B_it = r_t_column_B.block_list.begin(),
+			   p_block_B_end_it = r_t_column_B.block_list.end(); p_block_B_it != p_block_B_end_it; ++ p_block_B_it) {
+				const TColumn::TBlockEntry &r_t_block_B = *p_block_B_it;
+				size_t n_row_id_B = r_t_block_B.first; // get row of the block
+				// for each block in the current column in B
+
+				// the second decision tree for r_row_list_B[n_row_id_B].n_height (decides block B heights, given constant block B width)
+				// note that this is the common dimension
+
+				const double *p_block_B = r_t_block_B.second;
+				size_t n_row_height_B = r_row_list_B[n_row_id_B].n_height;
+				// create map to block B data
+
+				size_t n_column_id_A = reindex_rows_B_to_cols_A[n_row_id_B];
+				_ASSERTE(size_t(-1) > size_t(-2)); // just to make sure the next line is correct
+				if(n_column_id_A >= size_t(-2)) {
+					if(n_column_id_A == size_t(-1))
+						return false; // didn't map from B to common and we know it was not empty (we have a block here)
+					continue; // do not fail, it might also mean that there are no blocks in that column in A and hence the result of multiplication is zero
+				}
+				_ASSERTE(n_column_id_A < r_col_list_A.size());
+				const TColumn &r_t_column_A = r_col_list_A[n_column_id_A];
+				_ASSERTE(r_t_column_A.n_width == r_row_list_B[n_row_id_B].n_height);
+				// lookup which column in A corresponds with current block row in B
+
+				//if(r_t_column_A.block_list.empty()) // better enter decission tree; empty columns are rare in realworld applications
+				//	continue;
+				// otherwise block width mismatch occurs
+
+				if(!CMatrixMultiply_MiddleLoop<_TyGppContextA, _TyGppContextB,
+				   _CSelectedRowHeightsListB, CLastColumnWidthB>::Loop_UpperTriag(r_t_column_A,
+				    r_row_list_A, transpose_cols_list, n_row_height_B, n_column_id_B,
+					p_block_B, alloc))
+					return false;
+				// call the middle loop
+			}
+
+			return true;
+		}
+
 		// todo - debug loop
 	};
 
@@ -225,6 +332,43 @@ public:
 			} else {
 				return CMatrixMultiply_MiddleLoop<_TyGppContextA, _TyGppContextB,
 					typename _CRowHeightsListB::_TyTail, CColumnWidthB>::Loop(
+					r_t_column_A, r_row_list_A, transpose_cols_list, n_row_height_B,
+					n_column_id_B, p_block_B, alloc);
+			}
+		}
+
+		/**
+		 *	@brief wraps the outer loop of matrix-matrix multiplication in a block size decission tree
+		 *
+		 *	@param[in] r_t_column_A is the current block column of the right-hand matrix
+		 *	@param[in] r_row_list_A is list of the left-hand matrix block rows
+		 *	@param[out] transpose_cols_list is list of the transpose product matrix block columns
+		 *	@param[in] n_row_height_B is height of the current block in the right-hand matrix
+		 *	@param[in] n_column_id_B is id of the current block column in the right-hand matrix
+		 *	@param[in] p_block_B is pointer to dense data of the current block in the right-hand matrix
+		 *	@param[in] alloc is the dense block allocator for the product matrix
+		 *
+		 *	@return Returns true on success, false on failure (incompatible block layout).
+		 *
+		 *	@note This function throws std::bad_alloc.
+		 */
+#if defined(_MSC_VER) && !defined(__MWERKS__)
+#pragma inline_recursion(on)
+#endif // _MSC_VER && !__MWERKS__
+		static __forceinline bool Loop_UpperTriag(
+			const TColumn &r_t_column_A, const std::vector<TRow> &r_row_list_A,
+			std::vector<std::vector<TColumn::TBlockEntry> > &transpose_cols_list,
+			size_t n_row_height_B, size_t n_column_id_B, const double *p_block_B,
+			_TyDenseAllocator &alloc) // throw(std::bad_alloc)
+		{
+			if(n_row_height_B == CCurrentRowHeightB::n_size) {
+				return CMatrixMultiply_MiddleLoop<_TyGppContextA, _TyGppContextB,
+					CTypelist<CCurrentRowHeightB, CTypelistEnd>, CColumnWidthB>::Loop_UpperTriag(
+					r_t_column_A, r_row_list_A, transpose_cols_list, n_row_height_B,
+					n_column_id_B, p_block_B, alloc);
+			} else {
+				return CMatrixMultiply_MiddleLoop<_TyGppContextA, _TyGppContextB,
+					typename _CRowHeightsListB::_TyTail, CColumnWidthB>::Loop_UpperTriag(
 					r_t_column_A, r_row_list_A, transpose_cols_list, n_row_height_B,
 					n_column_id_B, p_block_B, alloc);
 			}
@@ -307,6 +451,66 @@ public:
 			return true;
 		}
 
+		/**
+		 *	@brief performs the outer loop of matrix-matrix multiplication
+		 *
+		 *	@param[in] r_t_column_A is the current block column of the right-hand matrix
+		 *	@param[in] r_row_list_A is list of the left-hand matrix block rows
+		 *	@param[out] transpose_cols_list is list of the transpose product matrix block columns
+		 *	@param[in] n_row_height_B is height of the current block in the right-hand matrix
+		 *	@param[in] n_column_id_B is id of the current block column in the right-hand matrix
+		 *	@param[in] p_block_B is pointer to dense data of the current block in the right-hand matrix
+		 *	@param[in] alloc is the dense block allocator for the product matrix
+		 *
+		 *	@return Returns true on success, false on failure (incompatible block layout).
+		 *
+		 *	@note This function throws std::bad_alloc.
+		 */
+#if defined(_MSC_VER) && !defined(__MWERKS__)
+#pragma inline_recursion(on)
+#endif // _MSC_VER && !__MWERKS__
+		static __forceinline bool Loop_UpperTriag(
+			const TColumn &r_t_column_A, const std::vector<TRow> &r_row_list_A,
+			std::vector<std::vector<TColumn::TBlockEntry> > &transpose_cols_list,
+			size_t UNUSED(n_row_height_B), size_t n_column_id_B, const double *p_block_B,
+			_TyDenseAllocator &alloc) // throw(std::bad_alloc)
+		{
+			_ASSERTE(r_t_column_A.block_list.empty() || n_row_height_B == CLastRowHeightB::n_size);
+			// not sure if the r_t_column_A.block_list.empty() is required here
+
+			size_t n_column_width_A = r_t_column_A.n_width;
+			for(_TyBlockConstIter p_block_A_it =
+			   r_t_column_A.block_list.begin(), p_block_A_end_it = r_t_column_A.block_list.end();
+			   p_block_A_it != p_block_A_end_it; ++ p_block_A_it) {
+				const TColumn::TBlockEntry &r_t_block_A = *p_block_A_it;
+				size_t n_row_id_A = r_t_block_A.first; // get row of the block
+				// for each block in the current column in A
+
+				if(n_row_id_A > n_column_id_B) // note that this could be replaced by std::upper_bound on blocks // todo
+					break; // these only get higher, might as well break instead of continue
+				// this block would've ended up at lower diagonal, don't want that
+
+				// the third decision tree for r_row_list_A[n_row_id_A].n_height (decides block A heights, given block A width == block B height)
+				// note that r_t_column_A.n_width must equal r_row_list_B[n_row_id_B].n_height (the second decision tree)
+
+				size_t n_row_height_A = r_row_list_A[n_row_id_A].n_height;
+				const double *p_block_A = r_t_block_A.second;
+				// create map to block A data
+
+				//_ASSERTE(n_row_id_A < r_row_list_dest.size());
+				//_ASSERTE(r_row_list_dest[n_row_id_A].n_height == n_row_height_A); // todo - uncomment this if the data is available
+				_ASSERTE(n_row_id_A < transpose_cols_list.size());
+				std::vector<TColumn::TBlockEntry> &r_transpose_column = transpose_cols_list[n_row_id_A];
+				if(!CMatrixMultiply_InnerLoop<_TyGppContextA, _TyGppContextB,
+				   _CSelectedRowHeightsListA, CLastRowHeightB, CColumnWidthB>::Loop(
+				   r_transpose_column, p_block_A, n_row_height_A, n_column_width_A,
+				   n_column_id_B, p_block_B, alloc))
+					return false;
+				// call the inner loop
+			}
+
+			return true;
+		}
 		// todo - debug loop
 	};
 
@@ -487,7 +691,7 @@ public:
 	 *
 	 *	@note This function throws std::bad_alloc.
 	 */
-	static inline bool MatrixMultiply_OuterLoop(const TColumn &r_t_column_B,
+	static __forceinline bool MatrixMultiply_OuterLoop(const TColumn &r_t_column_B,
 		size_t n_column_id_B, const std::vector<TRow> &r_row_list_B,
 		const std::vector<TColumn> &r_col_list_A, const std::vector<TRow> &r_row_list_A,
 		std::vector<std::vector<TColumn::TBlockEntry> > &transpose_cols_list,
@@ -495,6 +699,36 @@ public:
 	{
 		return CMatrixMultiply_OuterLoop<_TyBlockMatrixTypelistA,
 			_TyBlockMatrixTypelistB, CColumnWidthsListB>::Loop(r_t_column_B,
+			n_column_id_B, r_row_list_B, r_col_list_A, r_row_list_A,
+			transpose_cols_list, reindex_rows_B_to_cols_A, alloc);
+	}
+
+	/**
+	 *	@brief performs the outer loop of matrix-matrix multiplication
+	 *
+	 *	@param[in] r_t_column_B is the current block column of the right-hand matrix
+	 *	@param[in] n_column_id_B is id of the current block column of the right-hand matrix
+	 *	@param[in] r_row_list_B is list of the right-hand matrix block rows
+	 *	@param[in] r_col_list_A is list of the left-hand matrix block columns
+	 *	@param[in] r_row_list_A is list of the left-hand matrix block rows
+	 *	@param[out] transpose_cols_list is list of the transpose product matrix block columns
+	 *	@param[in] reindex_rows_B_to_cols_A is the mapping functions from right-hand
+	 *		matrix block rows to left-hand matrix block columns
+	 *	@param[in] alloc is the dense block allocator for the product matrix
+	 *
+	 *	@return Returns true on success, false on failure (incompatible block layout).
+	 *
+	 *	@note This function throws std::bad_alloc.
+	 *	@note This version produces only the upper-triangular part of the multiplication.
+	 */
+	static __forceinline bool MatrixMultiply_OuterLoop_UpperTriag(const TColumn &r_t_column_B,
+		size_t n_column_id_B, const std::vector<TRow> &r_row_list_B,
+		const std::vector<TColumn> &r_col_list_A, const std::vector<TRow> &r_row_list_A,
+		std::vector<std::vector<TColumn::TBlockEntry> > &transpose_cols_list,
+		const std::vector<size_t> &reindex_rows_B_to_cols_A, _TyDenseAllocator &alloc) // throw(std::bad_alloc)
+	{
+		return CMatrixMultiply_OuterLoop<_TyBlockMatrixTypelistA,
+			_TyBlockMatrixTypelistB, CColumnWidthsListB>::Loop_UpperTriag(r_t_column_B,
 			n_column_id_B, r_row_list_B, r_col_list_A, r_row_list_A,
 			transpose_cols_list, reindex_rows_B_to_cols_A, alloc);
 	}
@@ -517,7 +751,7 @@ public:
 	// create typelists to generate the decision tree for block sizes
 
 	// @todo - create blockwise operations (a variant to elementwise, using eigen map and aligned stuff)
-	// @todo - push forceinline and pragmas
+	// t_odo - push forceinline and pragmas
 
 	/**
 	 *	@brief (inner) loop of the elementwise unary kernel template
@@ -541,7 +775,10 @@ public:
 		 *	@param[out] r_op is reference to an unary operator
 		 *		object instance (or a function)
 		 */
-		static inline void Loop(double *p_block,
+#if defined(_MSC_VER) && !defined(__MWERKS__)
+#pragma inline_recursion(on)
+#endif // _MSC_VER && !__MWERKS__
+		static __forceinline void Loop(double *p_block,
 			size_t n_block_area, CUnaryOperator &r_op)
 		{
 			if(n_block_area == CCurrentBlockArea::n_size) {
@@ -596,7 +833,10 @@ public:
 		 *	@param[out] r_op is reference to an unary operator
 		 *		object instance (or a function)
 		 */
-		static inline void Loop(double *p_block,
+#if defined(_MSC_VER) && !defined(__MWERKS__)
+#pragma inline_recursion(on)
+#endif // _MSC_VER && !__MWERKS__
+		static __forceinline void Loop(double *p_block,
 			size_t UNUSED(n_block_area), CUnaryOperator &r_op)
 		{
 			_ASSERTE(n_block_area == CLastBlockArea::n_size);
@@ -633,9 +873,6 @@ public:
 	 *	@param[out] r_op is reference to an unary operator
 	 *		object instance (or a function)
 	 */
-#if defined(_MSC_VER) && !defined(__MWERKS__)
-#pragma inline_recursion(on)
-#endif // _MSC_VER && !__MWERKS__
 	template <class CUnaryOperator>
 	static __forceinline void ElementwiseUnary_Loop(double *p_block,
 		size_t n_block_area, CUnaryOperator &r_op)
@@ -704,7 +941,10 @@ public:
 		 *	@param[out] r_op is reference to an unary operator
 		 *		object instance (or a function)
 		 */
-		static inline void Loop(double *p_block_left, const double *p_block_right,
+#if defined(_MSC_VER) && !defined(__MWERKS__)
+#pragma inline_recursion(on)
+#endif // _MSC_VER && !__MWERKS__
+		static __forceinline void Loop(double *p_block_left, const double *p_block_right,
 			size_t n_block_area, CBinaryOperator &r_op)
 		{
 			if(n_block_area == CCurrentBlockArea::n_size) {
@@ -728,7 +968,10 @@ public:
 		 *	@param[out] r_op is reference to an unary operator
 		 *		object instance (or a function)
 		 */
-		static inline void Loop_NullRightSide(double *p_block_left,
+#if defined(_MSC_VER) && !defined(__MWERKS__)
+#pragma inline_recursion(on)
+#endif // _MSC_VER && !__MWERKS__
+		static __forceinline void Loop_NullRightSide(double *p_block_left,
 			size_t n_block_area, CBinaryOperator &r_op)
 		{
 			if(n_block_area == CCurrentBlockArea::n_size) {
@@ -753,7 +996,10 @@ public:
 		 *	@param[out] r_op is reference to an unary operator
 		 *		object instance (or a function)
 		 */
-		static inline void Loop_UninitLeftSide(double *p_block_left, const double *p_block_right,
+#if defined(_MSC_VER) && !defined(__MWERKS__)
+#pragma inline_recursion(on)
+#endif // _MSC_VER && !__MWERKS__
+		static __forceinline void Loop_UninitLeftSide(double *p_block_left, const double *p_block_right,
 			size_t n_block_area, CBinaryOperator &r_op)
 		{
 			if(n_block_area == CCurrentBlockArea::n_size) {
@@ -777,7 +1023,10 @@ public:
 		 *	@param[in] p_block_right is current matrix block (right side operand)
 		 *	@param[in] n_block_area is number of elements in the current matrix block
 		 */
-		static inline void Loop_UninitializedCopy(double *p_block_left,
+#if defined(_MSC_VER) && !defined(__MWERKS__)
+#pragma inline_recursion(on)
+#endif // _MSC_VER && !__MWERKS__
+		static __forceinline void Loop_UninitializedCopy(double *p_block_left,
 			const double *p_block_right, size_t n_block_area)
 		{
 			if(n_block_area == CCurrentBlockArea::n_size) {
@@ -836,7 +1085,10 @@ public:
 		 *	@param[out] r_op is reference to an unary operator
 		 *		object instance (or a function)
 		 */
-		static inline void Loop(double *p_block_left, const double *p_block_right,
+#if defined(_MSC_VER) && !defined(__MWERKS__)
+#pragma inline_recursion(on)
+#endif // _MSC_VER && !__MWERKS__
+		static __forceinline void Loop(double *p_block_left, const double *p_block_right,
 			size_t UNUSED(n_block_area), CBinaryOperator &r_op)
 		{
 			_ASSERTE(n_block_area == CLastBlockArea::n_size);
@@ -855,7 +1107,10 @@ public:
 		 *	@param[out] r_op is reference to an unary operator
 		 *		object instance (or a function)
 		 */
-		static inline void Loop_NullRightSide(double *p_block_left,
+#if defined(_MSC_VER) && !defined(__MWERKS__)
+#pragma inline_recursion(on)
+#endif // _MSC_VER && !__MWERKS__
+		static __forceinline void Loop_NullRightSide(double *p_block_left,
 			size_t UNUSED(n_block_area), CBinaryOperator &r_op)
 		{
 			_ASSERTE(n_block_area == CLastBlockArea::n_size);
@@ -874,7 +1129,10 @@ public:
 		 *	@param[out] r_op is reference to an unary operator
 		 *		object instance (or a function)
 		 */
-		static inline void Loop_UninitLeftSide(double *p_block_left, const double *p_block_right,
+#if defined(_MSC_VER) && !defined(__MWERKS__)
+#pragma inline_recursion(on)
+#endif // _MSC_VER && !__MWERKS__
+		static __forceinline void Loop_UninitLeftSide(double *p_block_left, const double *p_block_right,
 			size_t UNUSED(n_block_area), CBinaryOperator &r_op)
 		{
 			_ASSERTE(n_block_area == CLastBlockArea::n_size);
@@ -892,7 +1150,10 @@ public:
 		 *	@param[in] p_block_right is current matrix block (right side operand)
 		 *	@param[in] n_block_area is number of elements in the current matrix block
 		 */
-		static inline void Loop_UninitializedCopy(double *p_block_left,
+#if defined(_MSC_VER) && !defined(__MWERKS__)
+#pragma inline_recursion(on)
+#endif // _MSC_VER && !__MWERKS__
+		static __forceinline void Loop_UninitializedCopy(double *p_block_left,
 			const double *p_block_right, size_t UNUSED(n_block_area))
 		{
 			_ASSERTE(n_block_area == CLastBlockArea::n_size);
@@ -931,9 +1192,6 @@ public:
 	 *	@param[out] r_op is reference to an binary operator
 	 *		object instance (or a function)
 	 */
-#if defined(_MSC_VER) && !defined(__MWERKS__)
-#pragma inline_recursion(on)
-#endif // _MSC_VER && !__MWERKS__
 	template <class CBinaryOperator>
 	static __forceinline void ElementwiseBinary_Loop(double *p_block_left,
 		const double *p_block_right, size_t n_block_area, CBinaryOperator &r_op)
@@ -952,9 +1210,6 @@ public:
 	 *	@param[out] r_op is reference to an binary operator
 	 *		object instance (or a function)
 	 */
-#if defined(_MSC_VER) && !defined(__MWERKS__)
-#pragma inline_recursion(on)
-#endif // _MSC_VER && !__MWERKS__
 	template <class CBinaryOperator>
 	static __forceinline void ElementwiseBinary_Loop_NullRightSide(double *p_block_left,
 		size_t n_block_area, CBinaryOperator &r_op)
@@ -974,9 +1229,6 @@ public:
 	 *	@param[out] r_op is reference to an binary operator
 	 *		object instance (or a function)
 	 */
-#if defined(_MSC_VER) && !defined(__MWERKS__)
-#pragma inline_recursion(on)
-#endif // _MSC_VER && !__MWERKS__
 	template <class CBinaryOperator>
 	static __forceinline void ElementwiseBinary_Loop_UninitLeftSide(double *p_block_left,
 		const double *p_block_right, size_t n_block_area, CBinaryOperator &r_op)
@@ -996,9 +1248,6 @@ public:
 	 *	@param[out] r_op is reference to an binary operator
 	 *		object instance (or a function)
 	 */
-#if defined(_MSC_VER) && !defined(__MWERKS__)
-#pragma inline_recursion(on)
-#endif // _MSC_VER && !__MWERKS__
 	template <class CBinaryOperator>
 	static __forceinline void ElementwiseBinary_Loop_UninitializedCopy(double *p_block_left,
 		const double *p_block_right, size_t n_block_area, CBinaryOperator &UNUSED(r_op))
@@ -1067,7 +1316,10 @@ public:
 		 *		that aligns with the current matrix block)
 		 *	@param[in] p_src_vector is pointer to the (whole) source vector
 		 */
-		static inline void Loop(const TColumn::TBlockEntry &r_t_block, const TRow &r_t_row,
+#if defined(_MSC_VER) && !defined(__MWERKS__)
+#pragma inline_recursion(on)
+#endif // _MSC_VER && !__MWERKS__
+		static __forceinline void Loop(const TColumn::TBlockEntry &r_t_block, const TRow &r_t_row,
 			_TyDestVectorShape &r_dest, const double *p_src_vector)
 		{
 			if(r_t_row.n_height == CCurrentRowHeight::n_size) {
@@ -1129,7 +1381,10 @@ public:
 		 *		that aligns with the current matrix block)
 		 *	@param[in] p_src_vector is pointer to the (whole) source vector
 		 */
-		static inline void Loop(const TColumn::TBlockEntry &r_t_block, const TRow &r_t_row,
+#if defined(_MSC_VER) && !defined(__MWERKS__)
+#pragma inline_recursion(on)
+#endif // _MSC_VER && !__MWERKS__
+		static __forceinline void Loop(const TColumn::TBlockEntry &r_t_block, const TRow &r_t_row,
 			_TyDestVectorShape &r_dest, const double *p_src_vector)
 		{
 			_ASSERTE(r_t_row.n_height == CLastRowHeight::n_size); // this is the last option, make sure it is this one (omits the branch)
@@ -1188,7 +1443,10 @@ public:
 		 *	@param[in] p_src_vector is pointer to the (whole) source vector
 		 *	@param[in] r_row_list is matrix row layout
 		 */
-		static inline void Loop(const TColumn &r_t_col, double *p_dest_vector,
+#if defined(_MSC_VER) && !defined(__MWERKS__)
+#pragma inline_recursion(on)
+#endif // _MSC_VER && !__MWERKS__
+		static __forceinline void Loop(const TColumn &r_t_col, double *p_dest_vector,
 			const double *p_src_vector, const std::vector<TRow> &r_row_list)
 		{
 			if(r_t_col.n_width == CCurrentColumnWidth::n_size) {
@@ -1247,7 +1505,10 @@ public:
 		 *	@param[in] p_src_vector is pointer to the (whole) source vector
 		 *	@param[in] r_row_list is matrix row layout
 		 */
-		static inline void Loop(const TColumn &r_t_col, double *p_dest_vector,
+#if defined(_MSC_VER) && !defined(__MWERKS__)
+#pragma inline_recursion(on)
+#endif // _MSC_VER && !__MWERKS__
+		static __forceinline void Loop(const TColumn &r_t_col, double *p_dest_vector,
 			const double *p_src_vector, const std::vector<TRow> &r_row_list)
 		{
 			_ASSERTE(r_t_col.block_list.empty() || r_t_col.n_width == CLastColumnWidth::n_size); // this is the last option, make sure it is this one (omits the branch)
@@ -1302,9 +1563,6 @@ public:
 	 *	@param[in] p_src_vector is pointer to the (whole) source vector
 	 *	@param[in] r_row_list is matrix row layout
 	 */
-#if defined(_MSC_VER) && !defined(__MWERKS__)
-#pragma inline_recursion(on)
-#endif // _MSC_VER && !__MWERKS__
 	static __forceinline void PostMAD_OuterLoop(const TColumn &r_t_col,
 		double *p_dest_vector, const double *p_src_vector,
 		const std::vector<TRow> &r_row_list)
@@ -1368,7 +1626,10 @@ public:
 		 *	@param[in] r_src is source vector map (only the part
 		 *		that aligns with the current matrix block)
 		 */
-		static inline void Loop(const TColumn::TBlockEntry &r_t_block, const TRow &r_t_row,
+#if defined(_MSC_VER) && !defined(__MWERKS__)
+#pragma inline_recursion(on)
+#endif // _MSC_VER && !__MWERKS__
+		static __forceinline void Loop(const TColumn::TBlockEntry &r_t_block, const TRow &r_t_row,
 			const TColumn &r_t_col, double *p_dest_vector, const _TySrcVectorShape &r_src)
 		{
 			if(r_t_row.n_height == CCurrentRowHeight::n_size) {
@@ -1430,7 +1691,10 @@ public:
 		 *	@param[in] r_src is source vector map (only the part
 		 *		that aligns with the current matrix block)
 		 */
-		static inline void Loop(const TColumn::TBlockEntry &r_t_block, const TRow &r_t_row,
+#if defined(_MSC_VER) && !defined(__MWERKS__)
+#pragma inline_recursion(on)
+#endif // _MSC_VER && !__MWERKS__
+		static __forceinline void Loop(const TColumn::TBlockEntry &r_t_block, const TRow &r_t_row,
 			const TColumn &r_t_col, double *p_dest_vector, const _TySrcVectorShape &r_src)
 		{
 			_ASSERTE(r_t_row.n_height == CLastRowHeight::n_size); // this is the last option, make sure it is this one (omits the branch)
@@ -1489,7 +1753,10 @@ public:
 		 *	@param[in] p_src_vector is pointer to the (whole) source vector
 		 *	@param[in] r_row_list is matrix row layout
 		 */
-		static inline void Loop(const TColumn &r_t_col, double *p_dest_vector,
+#if defined(_MSC_VER) && !defined(__MWERKS__)
+#pragma inline_recursion(on)
+#endif // _MSC_VER && !__MWERKS__
+		static __forceinline void Loop(const TColumn &r_t_col, double *p_dest_vector,
 			const double *p_src_vector, const std::vector<TRow> &r_row_list)
 		{
 			if(r_t_col.n_width == CCurrentColumnWidth::n_size) {
@@ -1548,7 +1815,10 @@ public:
 		 *	@param[in] p_src_vector is pointer to the (whole) source vector
 		 *	@param[in] r_row_list is matrix row layout
 		 */
-		static inline void Loop(const TColumn &r_t_col, double *p_dest_vector,
+#if defined(_MSC_VER) && !defined(__MWERKS__)
+#pragma inline_recursion(on)
+#endif // _MSC_VER && !__MWERKS__
+		static __forceinline void Loop(const TColumn &r_t_col, double *p_dest_vector,
 			const double *p_src_vector, const std::vector<TRow> &r_row_list)
 		{
 			_ASSERTE(r_t_col.block_list.empty() || r_t_col.n_width == CLastColumnWidth::n_size); // this is the last option, make sure it is this one (omits the branch)
@@ -1602,9 +1872,6 @@ public:
 	 *	@param[in] p_src_vector is pointer to the (whole) source vector
 	 *	@param[in] r_row_list is matrix row layout
 	 */
-#if defined(_MSC_VER) && !defined(__MWERKS__)
-#pragma inline_recursion(on)
-#endif // _MSC_VER && !__MWERKS__
 	static __forceinline void PreMAD_OuterLoop(const TColumn &r_t_col,
 		double *p_dest_vector, const double *p_src_vector,
 		const std::vector<TRow> &r_row_list)
@@ -2976,7 +3243,7 @@ public:
 	 *	@param[in] k is index of the previous column
 	 *	@param[in] r_block_cols_list is block column layout of the (symmetric) matrix
 	 */
-	static inline void OffDiagonal_Loop(double *p_dest_block, size_t n_col_j_width,
+	static __forceinline void OffDiagonal_Loop(double *p_dest_block, size_t n_col_j_width,
 		size_t n_col_k_width, _TyBlockConstIter p_j_block_it, _TyBlockConstIter p_j_block_end_it,
 		_TyBlockConstIter p_k_block_it, _TyBlockConstIter p_k_block_end_it,
 		TColumn::TBlockEntry t_block_A, size_t k, const std::vector<TColumn> &r_block_cols_list)
@@ -3535,7 +3802,7 @@ public:
 		}
 	};
 
-	static inline bool b_Column_Loop(const size_t n_col_j_width, const size_t j, const size_t n,
+	static __forceinline bool b_Column_Loop(const size_t n_col_j_width, const size_t j, const size_t n,
 		std::vector<TColumn> &r_block_cols_list, const TColumn &r_col_A_j,
 		const CUberBlockMatrix &r_lambda, const std::vector<size_t> &r_elim_tree,
 		std::vector<size_t> &ereach_stack, std::vector<size_t> &bitfield, _TyDenseAllocator &alloc) // todo - doc, throws, ...
@@ -3553,7 +3820,7 @@ public:
 #if defined(_MSC_VER) && !defined(__MWERKS__)
 #pragma inline_recursion(on)
 #endif // _MSC_VER && !__MWERKS__
-		static bool b_Loop(const size_t n_col_j_width, const size_t j, const size_t n,
+		static __forceinline bool b_Loop(const size_t n_col_j_width, const size_t j, const size_t n,
 			std::vector<TColumn> &r_block_cols_list, const TColumn &r_col_A_j,
 			const CUberBlockMatrix &r_lambda, const std::vector<size_t> &r_elim_tree,
 			std::vector<size_t> &ereach_stack, std::vector<size_t> &bitfield, _TyDenseAllocator &alloc)
@@ -3579,7 +3846,7 @@ public:
 #if defined(_MSC_VER) && !defined(__MWERKS__)
 #pragma inline_recursion(on)
 #endif // _MSC_VER && !__MWERKS__
-		static bool b_Loop(const size_t UNUSED(n_col_j_width), const size_t j, const size_t n,
+		static __forceinline bool b_Loop(const size_t UNUSED(n_col_j_width), const size_t j, const size_t n,
 			std::vector<TColumn> &r_block_cols_list, const TColumn &r_col_A_j,
 			const CUberBlockMatrix &r_lambda, const std::vector<size_t> &r_elim_tree,
 			std::vector<size_t> &ereach_stack, std::vector<size_t> &bitfield, _TyDenseAllocator &alloc)
@@ -3769,7 +4036,7 @@ public:
 	 *
 	 *	@return Returns true on success, false on failure (the matrix is not positive definite).
 	 */
-	static inline bool b_Diagonal_Loop(double *p_dest_block, size_t n_col_j_width,
+	static __forceinline bool b_Diagonal_Loop(double *p_dest_block, size_t n_col_j_width,
 		_TyBlockConstIter p_j_block_it, _TyBlockConstIter p_j_block_end_it,
 		const double *p_block_A, const std::vector<TColumn> &r_block_cols_list)
 	{
@@ -4493,6 +4760,286 @@ public:
 };
 
 /**
+ *	@brief fixed block size operations template class
+ *	@tparam CBlockMatrixTypelist is typelist, containing Eigen
+ *		matrices with known compile-time sizes
+ */
+template <class CBlockMatrixTypelist>
+class CFBS_BlockwiseUnaryOp : public __fbs_ut::CFixedBlockSize_UnaryBase<CBlockMatrixTypelist> {
+public:
+	typedef typename __fbs_ut::CFixedBlockSize_UnaryBase<CBlockMatrixTypelist>::CRowHeightsList CRowHeightsList; /**< @brief list of unique block row heights */
+	typedef typename __fbs_ut::CFixedBlockSize_UnaryBase<CBlockMatrixTypelist>::CColumnWidthsList CColumnWidthsList; /**< @brief list of unique block column widths */
+	typedef typename __fbs_ut::CFixedBlockSize_UnaryBase<CBlockMatrixTypelist>::CDimsList_Uniq CDimsList_Uniq; /**< @brief list of block sizes as CCTSize2D (duplicate records removed) */
+
+	// todo - make loops with >1 blocks (like if i want to process all blocks of the matrix in a loop)
+	// todo - make loops with a single operand (src = dest), now it is unary operation, but where src != dest
+
+	/**
+	 *	@brief (inner) loop of the blockwise unary kernel template
+	 *
+	 *	Processes a single block by unary operation.
+	 *
+	 *	@tparam _TyGppContext is template instance context for g++ (compatibility workarround)
+	 *	@tparam _CColumnWidthList is list of posible widths of the blocks
+	 *	@tparam CUnaryOperator is unary functor, or a pointer to function type
+	 */
+	template <class _TyGppContext, class _CColumnWidthList, class CUnaryOperator>
+	class CBlockwiseUnary_Loop {
+	public:
+		typedef typename _CColumnWidthList::_TyHead CCurrentColumnWidth; /**< @brief column width for this decision tree recursion */
+
+		/**
+		 *	@brief wraps loop body in block size decision tree
+		 *
+		 *	@param[out] p_block_dest is current matrix block
+		 *	@param[in] p_block_src is current matrix block
+		 *	@param[in] n_block_row_num is number of elements in the current matrix block
+		 *	@param[in] n_block_column_num is number of elements in the current matrix block
+		 */
+#if defined(_MSC_VER) && !defined(__MWERKS__)
+#pragma inline_recursion(on)
+#endif // _MSC_VER && !__MWERKS__
+		static __forceinline void Static_Op(double *p_block_dest, const double *p_block_src,
+			size_t n_block_row_num, size_t n_block_column_num)
+		{
+			if(n_block_column_num == CCurrentColumnWidth::n_size) {
+				CBlockwiseUnary_Loop<_TyGppContext, CTypelist<CCurrentColumnWidth,
+					CTypelistEnd>, CUnaryOperator>::Static_Op(p_block_dest, p_block_src,
+					n_block_row_num, n_block_column_num);
+				// execute inner loop (use the specialization for end-of-the-list that actually
+				// contains the implementaiton - avoids having the same code in two places)
+			} else {
+				CBlockwiseUnary_Loop<_TyGppContext, typename _CColumnWidthList::_TyTail,
+					CUnaryOperator>::Static_Op(p_block_dest, p_block_src, n_block_row_num,
+					n_block_column_num);
+				// not CCurrentRowHeight::n_size, gotta be one of the rest of the list
+			}
+		}
+
+		/**
+		 *	@brief wraps loop body in block size decision tree
+		 *
+		 *	@param[out] p_block_dest is current matrix block
+		 *	@param[in] p_block_src is current matrix block
+		 *	@param[in] n_block_row_column_num is number of rows and columns in the current matrix block
+		 */
+#if defined(_MSC_VER) && !defined(__MWERKS__)
+#pragma inline_recursion(on)
+#endif // _MSC_VER && !__MWERKS__
+		static __forceinline void Static_Op_Square(double *p_block_dest, const double *p_block_src,
+			size_t n_block_row_column_num)
+		{
+			if(n_block_row_column_num == CCurrentColumnWidth::n_size) {
+				CBlockwiseUnary_Loop<_TyGppContext, CTypelist<CCurrentColumnWidth,
+					CTypelistEnd>, CUnaryOperator>::Static_Op_Square(p_block_dest,
+					p_block_src, n_block_row_column_num);
+				// execute inner loop (use the specialization for end-of-the-list that actually
+				// contains the implementaiton - avoids having the same code in two places)
+			} else {
+				CBlockwiseUnary_Loop<_TyGppContext, typename _CColumnWidthList::_TyTail,
+					CUnaryOperator>::Static_Op_Square(p_block_dest, p_block_src,
+					n_block_row_column_num);
+				// not CCurrentRowHeight::n_size, gotta be one of the rest of the list
+			}
+		}
+
+#ifdef __UBER_BLOCK_MATRIX_FIXED_BLOCK_SIZE_DEBUGGING
+
+#endif // __UBER_BLOCK_MATRIX_FIXED_BLOCK_SIZE_DEBUGGING
+	};
+
+	/**
+	 *	@brief (inner) loop of the blockwise unary kernel template
+	 *
+	 *	Processes a single block by unary operation.
+	 *
+	 *	@tparam _TyGppContext is template instance context for g++ (compatibility workarround)
+	 *	@tparam CColumnWidth is the selected width of the block
+	 *	@tparam CUnaryOperator is unary functor, or a pointer to function type
+	 */
+	template <class _TyGppContext, class CColumnWidth, class CUnaryOperator>
+	class CBlockwiseUnary_Loop<_TyGppContext, CTypelist<CColumnWidth, CTypelistEnd>, CUnaryOperator> {
+	public:
+		typedef typename CMakeMatrixRef<CColumnWidth::n_size, CColumnWidth::n_size>::_Ty _TySquareBlock; /**< @brief  matrix diagonal block Eigen::Map type */
+		typedef typename CFilterTypelist2<CRowHeightsList, CColumnWidth,
+			__fbs_ut::CHaveRowHeightForColumnWidth, CDimsList_Uniq>::_TyResult _CSelectedRowHeightsList; /**< @brief row heights list, filtered by the selected column width */
+
+		/**
+		 *	@brief wraps operation body in block size decision tree
+		 *
+		 *	@param[out] p_block_dest is current matrix block
+		 *	@param[in] p_block_src is current matrix block
+		 *	@param[in] n_block_row_num is number of elements in the current matrix block
+		 *	@param[in] n_block_column_num is number of elements in the current matrix block
+		 */
+#if defined(_MSC_VER) && !defined(__MWERKS__)
+#pragma inline_recursion(on)
+#endif // _MSC_VER && !__MWERKS__
+		static __forceinline void Static_Op(double *p_block_dest, const double *p_block_src,
+			size_t n_block_row_num, size_t UNUSED(n_block_column_num))
+		{
+			_ASSERTE(n_block_column_num == CColumnWidth::n_size);
+			CBlockwiseUnary_Loop2<_TyGppContext, _CSelectedRowHeightsList,
+				CColumnWidth, CUnaryOperator>::Static_Op(p_block_dest, p_block_src,
+				n_block_row_num, n_block_column_num);
+			// execute inner loop (use the specialization for end-of-the-list that actually
+			// contains the implementaiton - avoids having the same code in two places)
+		}
+
+		/**
+		 *	@brief performs unary operation on a single block
+		 *
+		 *	@param[out] p_block_dest is current matrix block
+		 *	@param[in] p_block_src is current matrix block
+		 *	@param[in] n_block_row_column_num is number of rows and columns in the current matrix block
+		 */
+#if defined(_MSC_VER) && !defined(__MWERKS__)
+#pragma inline_recursion(on)
+#endif // _MSC_VER && !__MWERKS__
+		static __forceinline void Static_Op_Square(double *p_block_dest, const double *p_block_src,
+			size_t UNUSED(n_block_row_column_num))
+		{
+			_ASSERTE(n_block_row_column_num == CColumnWidth::n_size);
+
+			_TySquareBlock dest(p_block_dest);
+			_TySquareBlock src((double*)p_block_src);
+			CUnaryOperator::template Do<_TySquareBlock>(dest, src);
+			// do the operation on the two blocks (dest, src)
+		}
+
+#ifdef __UBER_BLOCK_MATRIX_FIXED_BLOCK_SIZE_DEBUGGING
+
+#endif // __UBER_BLOCK_MATRIX_FIXED_BLOCK_SIZE_DEBUGGING
+	};
+
+	/**
+	 *	@brief (inner-most) loop of the blockwise unary kernel template
+	 *
+	 *	Processes a single block by unary operation.
+	 *
+	 *	@tparam _TyGppContext is template instance context for g++ (compatibility workarround)
+	 *	@tparam _CRowHeightList is list of posible heights of the blocks
+	 *	@tparam CColumnWidth is the selected width of the block
+	 *	@tparam CUnaryOperator is unary functor, or a pointer to function type
+	 */
+	template <class _TyGppContext, class _CRowHeightList, class CColumnWidth, class CUnaryOperator>
+	class CBlockwiseUnary_Loop2 {
+	public:
+		typedef typename _CRowHeightList::_TyHead CCurrentRowHeight; /**< @brief column width for this decision tree recursion */
+
+		/**
+		 *	@brief wraps operation body in block size decision tree
+		 *
+		 *	@param[out] p_block_dest is current matrix block
+		 *	@param[in] p_block_src is current matrix block
+		 *	@param[in] n_block_row_num is number of elements in the current matrix block
+		 *	@param[in] n_block_column_num is number of elements in the current matrix block
+		 */
+#if defined(_MSC_VER) && !defined(__MWERKS__)
+#pragma inline_recursion(on)
+#endif // _MSC_VER && !__MWERKS__
+		static __forceinline void Static_Op(double *p_block_dest, const double *p_block_src,
+			size_t n_block_row_num, size_t UNUSED(n_block_column_num))
+		{
+			if(n_block_row_num == CCurrentRowHeight::n_size) {
+				CBlockwiseUnary_Loop2<_TyGppContext, CTypelist<CCurrentRowHeight,
+					CTypelistEnd>, CColumnWidth, CUnaryOperator>::Static_Op(p_block_dest,
+					p_block_src, n_block_row_num, n_block_column_num);
+				// execute inner loop (use the specialization for end-of-the-list that actually
+				// contains the implementaiton - avoids having the same code in two places)
+			} else {
+				CBlockwiseUnary_Loop2<_TyGppContext, typename _CRowHeightList::_TyTail,
+					CColumnWidth, CUnaryOperator>::Static_Op(p_block_dest, p_block_src,
+					n_block_row_num, n_block_column_num);
+				// not CCurrentRowHeight::n_size, gotta be one of the rest of the list
+			}
+		}
+	};
+
+	/**
+	 *	@brief (inner-most) loop of the blockwise unary kernel template
+	 *
+	 *	Processes a single block by unary operation.
+	 *
+	 *	@tparam _TyGppContext is template instance context for g++ (compatibility workarround)
+	 *	@tparam CRowHeight is the selected height of the block
+	 *	@tparam CColumnWidth is the selected width of the block
+	 *	@tparam CUnaryOperator is unary functor, or a pointer to function type
+	 */
+	template <class _TyGppContext, class CRowHeight, class CColumnWidth, class CUnaryOperator>
+	class CBlockwiseUnary_Loop2<_TyGppContext,
+		CTypelist<CRowHeight, CTypelistEnd>, CColumnWidth, CUnaryOperator> {
+	public:
+		typedef typename CMakeMatrixRef<CRowHeight::n_size, CColumnWidth::n_size>::_Ty _TyBlock; /**< @brief  matrix block Eigen::Map type */
+
+		/**
+		 *	@brief performs unary operation on a single block
+		 *
+		 *	@param[out] p_block_dest is current matrix block
+		 *	@param[in] p_block_src is current matrix block
+		 *	@param[in] n_block_row_num is number of elements in the current matrix block
+		 *	@param[in] n_block_column_num is number of elements in the current matrix block
+		 */
+#if defined(_MSC_VER) && !defined(__MWERKS__)
+#pragma inline_recursion(on)
+#endif // _MSC_VER && !__MWERKS__
+		static __forceinline void Static_Op(double *p_block_dest, const double *p_block_src,
+			size_t UNUSED(n_block_row_num), size_t UNUSED(n_block_column_num))
+		{
+			_ASSERTE(n_block_row_num == CRowHeight::n_size);
+
+			_TyBlock dest(p_block_dest);
+			_TyBlock src((double*)p_block_src);
+			CUnaryOperator::template Do<_TyBlock>(dest, src);
+			// do the operation on the two blocks (dest, src)
+		}
+	};
+
+	/**
+	 *	@brief loops over block elements and applies unary operator to their values
+	 *
+	 *	@tparam CUnnaryOperator is unary operator object type, must implement
+	 *		static function Do, parametrizable by Eigen::Map specialization
+	 *
+	 *	@param[in] p_block is pointer ot the current matrix block data
+	 *	@param[in] n_block_area is number of elements in the current matrix block
+	 */
+	template <class CUnaryOperator>
+	static __forceinline void BlockwiseUnary_Static_Op(double *p_block_dest,
+		const double *p_block_src, size_t n_block_row_num,
+		size_t n_block_column_num)
+	{
+		CBlockwiseUnary_Loop<CBlockMatrixTypelist, CColumnWidthsList,
+			CUnaryOperator>::Static_Op(p_block_dest, p_block_src,
+			n_block_row_num, n_block_column_num);
+	}
+
+	/**
+	 *	@brief loops over (square) block elements and applies unary operator to their values
+	 *
+	 *	@tparam CUnnaryOperator is unary operator object type, must implement
+	 *		static function Do, parametrizable by Eigen::Map specialization
+	 *
+	 *	@param[in] p_block is pointer ot the current matrix block data
+	 *	@param[in] n_block_row_column_num is number of elements in the current matrix block
+	 */
+	template <class CUnaryOperator>
+	static __forceinline void BlockwiseUnary_Static_Op_Square(double *p_block_dest,
+		const double *p_block_src, size_t n_block_row_column_num)
+	{
+		CBlockwiseUnary_Loop<CBlockMatrixTypelist, CColumnWidthsList,
+			CUnaryOperator>::Static_Op_Square(p_block_dest, p_block_src,
+			n_block_row_column_num);
+	}
+
+#ifdef __UBER_BLOCK_MATRIX_FIXED_BLOCK_SIZE_DEBUGGING
+
+	// todo - write that as well
+
+#endif // __UBER_BLOCK_MATRIX_FIXED_BLOCK_SIZE_DEBUGGING
+};
+
+/**
  *	@brief a simple std::pair lookalike, only the types are references
  *
  *	@tparam _TyFirst is the first type (can be a reference type)
@@ -4522,6 +5069,8 @@ public:
 		:first(r_other.first), second(r_other.second)
 	{}
 };
+
+// todo - use decision trees all the way through this file, record the compile times
 
 /**
  *	@brief simple static functor

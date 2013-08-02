@@ -131,6 +131,7 @@ public:
 	typedef typename CSystem::_TyEdgeMultiPool _TyEdgeMultiPool; /**< @brief edge multipool type */
 
 	typedef typename CLinearSolver::_Tag _TySolverTag; /**< @brief linear solver tag */
+	typedef CLinearSolverWrapper<_TyLinearSolver, _TySolverTag> _TyLinearSolverWrapper; /**< @brief wrapper for linear solvers (shields solver capability to solve blockwise) */
 
 	typedef typename CUniqueTypelist<CAMatrixBlockSizes>::_TyResult _TyAMatrixBlockSizes; /**< @brief possible block matrices, that can be found in A */
 	typedef typename __fbs_ut::CBlockSizesAfterPreMultiplyWithSelfTranspose<
@@ -250,84 +251,6 @@ protected:
 
 	CTimer m_shared_timer; /**< @brief timer object */
 
-	/**
-	 *	@brief wrapper for linear solvers (shields solver capability to solve blockwise)
-	 *	@tparam CSolverTag is linear solver tag
-	 */
-	template <class _CSystem, class _CLinearSolver, class CSolverTag>
-	class CLinearSolverWrapper {
-	public:
-		/**
-		 *	@brief estabilishes final block matrix structure before solving iteratively
-		 *
-		 *	@param[in] r_solver is linear solver
-		 *	@param[in] r_lambda is the block matrix
-		 *
-		 *	@return Always returns true.
-		 */
-		static inline bool FinalBlockStructure(CLinearSolver &r_solver,
-			const CUberBlockMatrix &r_lambda)
-		{
-			return true;
-		}
-
-		/**
-		 *	@brief calculates ordering, solves a system
-		 *
-		 *	@param[in] r_solver is linear solver
-		 *	@param[in] r_lambda is the block matrix
-		 *	@param[in] r_v_eta is the right side vector
-		 *
-		 *	@return Returns true on success, false on failure.
-		 */
-		static inline bool Solve(CLinearSolver &r_solver,
-			const CUberBlockMatrix &r_lambda, Eigen::VectorXd &r_v_eta)
-		{
-			return r_solver.Solve_PosDef(r_lambda, r_v_eta);
-		}
-	};
-
-	/**
-	 *	@brief wrapper for linear solvers (specialization for CBlockwiseLinearSolverTag sovers)
-	 */
-	template <class _CSystem, class _CLinearSolver>
-	class CLinearSolverWrapper<_CSystem, _CLinearSolver, CBlockwiseLinearSolverTag> {
-	public:
-		/**
-		 *	@brief estabilishes final block matrix structure before solving iteratively
-		 *
-		 *	@param[in] r_solver is linear solver
-		 *	@param[in] r_lambda is the block matrix
-		 *
-		 *	@return Always returns true.
-		 */
-		static inline bool FinalBlockStructure(CLinearSolver &r_solver,
-			const CUberBlockMatrix &UNUSED(r_lambda))
-		{
-			r_solver.Clear_SymbolicDecomposition();
-			// will trigger automatic recalculation and saves one needless converting lambda to cs*
-
-			return true;
-		}
-
-		/**
-		 *	@brief solves a system, reusing the previously calculated block ordering
-		 *
-		 *	@param[in] r_solver is linear solver
-		 *	@param[in] r_lambda is the block matrix
-		 *	@param[in] r_v_eta is the right side vector
-		 *
-		 *	@return Returns true on success, false on failure.
-		 */
-		static inline bool Solve(CLinearSolver &r_solver,
-			const CUberBlockMatrix &r_lambda, Eigen::VectorXd &r_v_eta)
-		{
-			return r_solver.Solve_PosDef_Blocky(r_lambda, r_v_eta);
-		}
-	};
-
-	typedef CLinearSolverWrapper<CSystem, CLinearSolver, _TySolverTag> _TyLinearSolverWrapper; /**< @brief wrapper for linear solvers (shields solver capability to solve blockwise) */
-
 #ifdef __NONLINEAR_SOLVER_FAST_L_DUMP_TIMESTEPS
 	size_t m_n_loop_size_cumsum; /**< @brief cumulative sum of loops processed so far */
 #endif // __NONLINEAR_SOLVER_FAST_L_DUMP_TIMESTEPS
@@ -347,16 +270,15 @@ public:
 	 *	@param[in] f_nonlinear_solve_error_threshold is error threshold
 	 *		for the nonlinear solver
 	 *	@param[in] b_verbose is verbosity flag
-	 *	@param[in] linear_solver is linear solver instance for solving for lambda
-	 *	@param[in] linear_solver2 is linear solver instance for updating L
+	 *	@param[in] linear_solver is linear solver instance
+	 *	@param[in] b_use_schur is Schur complement trick flag (not supported)
 	 */
 	CNonlinearSolver_FastL(CSystem &r_system, size_t n_linear_solve_threshold,
 		size_t n_nonlinear_solve_threshold, size_t n_nonlinear_solve_max_iteration_num,
 		double f_nonlinear_solve_error_threshold, bool b_verbose,
-		CLinearSolver linear_solver = CLinearSolver(),
-		CLinearSolver linear_solver2 = CLinearSolver())
+		CLinearSolver linear_solver = CLinearSolver(), bool UNUSED(b_use_schur) = false)
 		:m_r_system(r_system), m_linear_solver(linear_solver),
-		m_linear_solver2(linear_solver2), m_b_had_loop_closure(false),
+		m_linear_solver2(linear_solver), m_b_had_loop_closure(false),
 		m_b_first_iteration_use_L(true), m_b_L_up_to_date(true), m_n_last_full_L_update_size(0),
 		//m_n_big_loop_threshold((n_dummy_param > 0)? n_dummy_param : SIZE_MAX),
 		m_p_lambda_block_ordering(0), m_n_lambda_block_ordering_size(0),
@@ -666,7 +588,7 @@ public:
 				// unconstrained blocky ordering on lambda
 
 				CUberBlockMatrix lord;
-				m_lambda.Permute_UpperTriangluar_To(lord, p_order,
+				m_lambda.Permute_UpperTriangular_To(lord, p_order,
 					m_lambda.n_BlockColumn_Num(), true);
 				// order the matrix
 
@@ -680,7 +602,7 @@ public:
 
 				CUberBlockMatrix _blockL, blockL;
 				m_lambda.CopyLayoutTo(_blockL);
-				_blockL.Permute_UpperTriangluar_To(blockL, p_order, m_lambda.n_BlockColumn_Num());
+				_blockL.Permute_UpperTriangular_To(blockL, p_order, m_lambda.n_BlockColumn_Num());
 				std::vector<size_t> workspace;
 				blockL.From_Sparse(0, 0, L, false, workspace);
 				n_nnz_blocky = blockL.n_NonZero_Num();
@@ -705,7 +627,7 @@ public:
 				// unconstrained blocky ordering on lambda
 
 				CUberBlockMatrix lord;
-				m_lambda.Permute_UpperTriangluar_To(lord, p_order,
+				m_lambda.Permute_UpperTriangular_To(lord, p_order,
 					m_lambda.n_BlockColumn_Num(), true);
 				// order the matrix
 
@@ -719,7 +641,7 @@ public:
 
 				CUberBlockMatrix _blockL, blockL;
 				m_lambda.CopyLayoutTo(_blockL);
-				_blockL.Permute_UpperTriangluar_To(blockL, p_order, m_lambda.n_BlockColumn_Num());
+				_blockL.Permute_UpperTriangular_To(blockL, p_order, m_lambda.n_BlockColumn_Num());
 				std::vector<size_t> workspace;
 				blockL.From_Sparse(0, 0, L, false, workspace);
 				n_nnz_blocky_constr = blockL.n_NonZero_Num();
@@ -2176,7 +2098,10 @@ protected:
 		m_n_lambda_block_ordering_size = m_lambda.n_BlockColumn_Num();
 		// refresh/update the ordering (update means append with identity)
 
-		m_lambda.Permute_UpperTriangluar_To(m_lambda_perm, m_p_lambda_block_ordering,
+		_ASSERTE(CMatrixOrdering::b_IsValidOrdering(m_p_lambda_block_ordering, m_lambda.n_BlockColumn_Num()));
+		// make sure that the ordering is good
+
+		m_lambda.Permute_UpperTriangular_To(m_lambda_perm, m_p_lambda_block_ordering,
 			m_lambda.n_BlockColumn_Num(), true);
 		// make a reordered version of lambda (*always* changes if lambda changes)
 
@@ -2359,7 +2284,7 @@ protected:
 				// debug - dump the matrices
 #endif // 0
 
-				if(n_context_min > n_order_max / 8 /*std::min(size_t(100), n_order_max / 16)*/) { // todo - need to dump n_context_min, probably citytrees have one at 0 or something, that can not be ordered away (make it go away by forcing it somewhere else?l)
+				if(n_context_min > n_order_max / 8 /*std::min(size_t(100), n_order_max / 16)*/) { // t_odo - need to dump n_context_min, probably citytrees have one at 0 or something, that can not be ordered away (make it go away by forcing it somewhere else?l)
 					// this is prefix-constrained ordering on part of lambda perm (not full, not update)
 					// this works rather well
 
@@ -2511,7 +2436,7 @@ protected:
 #ifdef __NONLINEAR_SOLVER_FAST_L_VERIFY_PERM_FOLDING
 			CUberBlockMatrix lambda00_p, lambda11_p;
 			m_lambda_perm.SliceTo(lambda00_p, 0, n_order_min, 0, n_order_min, false); // make a deep copy
-			lambda11.Permute_UpperTriangluar_To(lambda11_p, m_p_lambda11_block_ordering,
+			lambda11.Permute_UpperTriangular_To(lambda11_p, m_p_lambda11_block_ordering,
 				m_n_lambda_block11_ordering_size, false); // make a deep copy
 			// copy lambda 00 and lambda 11 (don't care about lambda 01, it is hard to permute correctly at this point)
 #endif // __NONLINEAR_SOLVER_FAST_L_VERIFY_PERM_FOLDING
@@ -2532,6 +2457,10 @@ protected:
 				// update the ordering (update means append with lambda11 sub-block ordering)
 				// this is quick, no bottleneck in here
 
+				_ASSERTE(CMatrixOrdering::b_IsValidOrdering(m_p_lambda_block_ordering,
+					m_lambda.n_BlockColumn_Num()));
+				// make sure that the ordering is good
+
 				timer.Accum_DiffSample(m_f_ordering_fold_time);
 
 				/*printf("order = {");
@@ -2539,13 +2468,27 @@ protected:
 					printf((i)? ", " PRIsize : PRIsize, p_order[i]);
 				printf("}, order-min = " PRIsize "\n", n_order_min);*/ // debug
 
-				m_lambda.Permute_UpperTriangluar_To(m_lambda_perm, m_p_lambda_block_ordering,
-					m_lambda.n_BlockColumn_Num(), true, n_order_min); // only writes a small square n_order_min - n_order_max // saves 1.45 seconds -> 0.47 seconds
-				// make a new reordered version of lambda (*always* changes if lambda changes)
-				// this is not very fast, a significant portion of m_lambda_perm could be reused
-				// note that the resumed cholesky will not reference anything but lambda11, no need to fill the prev columns
-				// need to be careful about use of lambda_perm elsewhere, though (but elsewhere mostly L is used,
-				// noone cares about lambda_perm, except maybe for its dimensions)
+#if 1
+				/*CUberBlockMatrix lambda_perm_1; // right part of lambda_perm
+				m_lambda.Permute_UpperTriangular_To(lambda_perm_1, m_p_lambda_block_ordering,
+					m_lambda.n_BlockColumn_Num(), false, n_order_min);
+				m_lambda_perm.SliceTo(m_lambda_perm, n_order_min, n_order_min, true); // delete right part of lambda_perm
+				lambda_perm_1.SliceTo(m_lambda_perm, 0, n_order_max, n_order_min, n_order_max, true);*/
+				// not sure if this is correct / faster than below
+				// probably preferable to write a variant of Permute_UpperTriangular_To that does not erase data in the left part
+
+				/*if(m_lambda.n_BlockColumn_Num() == 126)
+					m_lambda_perm.Rasterize("lambda_perm_before.tga");*/
+				m_lambda.Permute_UpperTriangular_To(m_lambda_perm, m_p_lambda_block_ordering,
+					m_lambda.n_BlockColumn_Num(), true, n_order_min, true);
+				// note that this does leave allocated blocks, but in the next round, lambda will reperm and free those
+
+				// t_odo - change ifdef and try with this one
+#else
+				m_lambda.Permute_UpperTriangular_To(m_lambda_perm, m_p_lambda_block_ordering,
+					m_lambda.n_BlockColumn_Num(), true);
+				// need to do full reperm always (or write a function that does not erase the left columns)
+#endif
 
 #ifdef __NONLINEAR_SOLVER_FAST_L_VERIFY_PERM_FOLDING
 				CUberBlockMatrix lambda00_r, lambda11_r;
@@ -2587,10 +2530,17 @@ protected:
 
 				if(!m_L.CholeskyOf_FBS<_TyLambdaMatrixBlockSizes>(m_lambda_perm, m_chol_etree,
 				   m_chol_ereach_stack, m_chol_bitfield, n_order_min)) { // todo - do incremental etree as well, might save considerable time
-					m_lambda.Rasterize("npd0_lambda.tga");
+					/*m_lambda.Rasterize("npd0_lambda.tga");
 					m_lambda_perm.Rasterize("npd1_lambda_perm.tga");
-					m_L.Rasterize("npd2_L.tga");
-					fprintf(stderr, "error: got not pos def in incL section\n"); // big todo - throw
+					m_L.Rasterize("npd2_L.tga");*/ // does not really happen anymore
+
+					/*CUberBlockMatrix lambda_temp;
+					m_lambda.Permute_UpperTriangular_To(lambda_temp, m_p_lambda_block_ordering,
+					m_lambda.n_BlockColumn_Num(), true);
+					lambda_temp.Rasterize("lambda_temp.tga");
+					m_lambda_perm.Rasterize("lambda_perm.tga");*/
+
+					throw std::runtime_error("error: got not pos def in incL section");
 				}
 				// calcualte updated L11 and L10 using resumed Cholesky
 
@@ -2621,7 +2571,7 @@ protected:
 						m_r_system.r_Edge_Pool().n_Size()), m_lambda.n_BlockColumn_Num());*/
 					m_lambda_ordering.p_BlockOrdering(m_lambda, true);
 					m_p_lambda_block_ordering = m_lambda_ordering.p_Get_InverseOrdering();
-					m_lambda.Permute_UpperTriangluar_To(m_lambda_perm, m_p_lambda_block_ordering,
+					m_lambda.Permute_UpperTriangular_To(m_lambda_perm, m_p_lambda_block_ordering,
 						m_lambda.n_BlockColumn_Num(), true);
 					m_L.CholeskyOf_FBS<_TyLambdaMatrixBlockSizes>(m_lambda_perm);
 					{
@@ -2649,12 +2599,11 @@ protected:
 			}
 			// choose between progressive reordering and "fast" update to L
 
-
 #ifdef __NONLINEAR_SOLVER_FASTL_DUMP_RSS2013_PRESENTATION_ANIMATION_DATA
 			char p_s_filename[256];
 
 			CUberBlockMatrix lambda_perm;
-			m_lambda.Permute_UpperTriangluar_To(lambda_perm, m_p_lambda_block_ordering,
+			m_lambda.Permute_UpperTriangular_To(lambda_perm, m_p_lambda_block_ordering,
 				m_lambda.n_BlockColumn_Num(), true);
 			// need to reperm, may only have a part of lambda_perm, effectively selecting everything above n_order_min as a new nnz
 
@@ -2879,6 +2828,63 @@ protected:
 #ifdef _DEBUG
 		//m_L.Rasterize("lslam7_LAfterOpt.tga");
 #endif // _DEBUG
+
+		char p_s_filename[256];
+		sprintf(p_s_filename, "fastLdump/%05d_0_stats.txt", m_lambda.n_BlockColumn_Num());
+		FILE *p_fw;
+		if((p_fw = fopen(p_s_filename, "w"))) {
+			size_t n_nnzb_lam = m_lambda.n_Block_Num();
+			CUberBlockMatrix lambda_temp;
+			m_lambda.Permute_UpperTriangular_To(lambda_temp, m_p_lambda_block_ordering,
+				m_lambda.n_BlockColumn_Num(), true);
+			if(n_nnzb_lam != m_lambda_perm.n_Block_Num()) {
+				CUberBlockMatrix lambda_temp2 = lambda_temp; // start with a correct matrix
+				m_lambda.Permute_UpperTriangular_To(lambda_temp2, m_p_lambda_block_ordering,
+					m_lambda.n_BlockColumn_Num(), true, n_order_min, true);
+
+				lambda_temp.Rasterize("lambda_temp.tga");
+				lambda_temp.SliceTo(lambda_temp, n_order_min, n_order_min, true);
+				lambda_temp.Rasterize("lambda_temp11.tga");
+				m_lambda_perm.Rasterize("lambda_perm.tga");
+				lambda_temp2.Rasterize("lambda_temp2.tga");
+			}
+			_ASSERTE(n_nnzb_lam == m_lambda_perm.n_Block_Num()); // will fail
+			lambda_temp.Swap(m_lambda_perm);
+			// reperm entire lambda
+
+			fprintf(p_fw, PRIsize " %% blocks in lambda\n", m_lambda.n_Block_Num()); // save density of lambda
+			size_t n_nnzb = m_L.n_Block_Num();
+			fprintf(p_fw, PRIsize " %% blocks in L\n", m_L.n_Block_Num()); // save density of L
+
+			TBmp *p_orig_l = m_L.p_Rasterize();
+
+			m_L.CholeskyOf_FBS<_TyLambdaMatrixBlockSizes>(m_lambda_perm);
+			// recalculate the whole L
+
+			if(n_nnzb != m_L.n_Block_Num()) {
+				CTgaCodec::Save_TGA("L_orig.tga", *p_orig_l, true, true);
+				m_L.Rasterize("L_new.tga");
+				fprintf(stderr, "warning: nnz discrepancy in step " PRIsize "\n", m_lambda.n_Block_Num());
+			}
+			// make sure that the incremental and full L have the same density
+
+			if(p_orig_l) // big ones will fail to rasterize
+				p_orig_l->Delete();
+
+			fprintf(p_fw, PRIsize " %% blocks in full L\n", m_L.n_Block_Num()); // save density of L
+
+			fprintf(p_fw, PRIsize " %% order_min\n", n_order_min); // save density of L
+			for(size_t i = 0, n = m_lambda.n_BlockColumn_Num(); i < n; ++ i)
+				fprintf(p_fw, (i)? ", " PRIsize : "order = {" PRIsize, m_p_lambda_block_ordering[i]);
+			fprintf(p_fw, "}\n");
+			fclose(p_fw);
+			sprintf(p_s_filename, "fastLdump/%05d_1_lambda.mtx", m_lambda.n_BlockColumn_Num());
+			char p_s_filename2[256];
+			sprintf(p_s_filename2, "fastLdump/%05d_1_lambda.bla", m_lambda.n_BlockColumn_Num());
+			m_lambda.Save_MatrixMarket(p_s_filename, p_s_filename2);
+			// save the matrices as well, for later study
+		}
+		// inverstigating the super-efficient layout; save stats and the lambda matrix
 
 		return true;
 	}

@@ -63,7 +63,7 @@
  *		otherwise addressing based on vertex and edge orders (elementwise) is used
  *	@note This must be defined here as the CFlatSystem depends on it.
  */
-#define __BASE_TYPES_USE_ID_ADDRESSING
+//#define __BASE_TYPES_USE_ID_ADDRESSING
 
 /*#if !defined(_WIN32) && !defined(_WIN64)
 #define __USE_ALIGNED_MULTIPOOL

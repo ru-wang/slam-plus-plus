@@ -44,12 +44,14 @@ public:
 	typedef typename CSystem::_TyEdgeMultiPool _TyEdgeMultiPool; /**< @brief edge multipool type */
 
 	typedef typename CLinearSolver::_Tag _TySolverTag; /**< @brief linear solver tag */
+	typedef CLinearSolverWrapper<_TyLinearSolver, _TySolverTag> _TyLinearSolverWrapper; /**< @brief wrapper for linear solvers (shields solver capability to solve blockwise) */
 
 	typedef typename CUniqueTypelist<CAMatrixBlockSizes>::_TyResult _TyAMatrixBlockSizes; /**< @brief possible block matrices, that can be found in A */
 
 protected:
 	CSystem &m_r_system; /**< @brief reference to the system */
 	CLinearSolver m_linear_solver; /**< @brief linear solver */
+	CLinearSolver_Schur<CLinearSolver, _TyAMatrixBlockSizes> m_schur_solver; /**< @brief linear solver with Schur trick */
 
 	CUberBlockMatrix m_A; /**< @brief the A matrix (built incrementally) */
 	Eigen::VectorXd m_v_error; /**< @brief error vector */
@@ -65,6 +67,7 @@ protected:
 	size_t m_n_nonlinear_solve_max_iteration_num; /**< @brief maximal number of iterations in incremental nonlinear solve */
 	double m_f_nonlinear_solve_error_threshold; /**< @brief error threshold in incremental nonlinear solve */ // t_odo - document these in elementwise A and L
 	bool m_b_verbose; /**< @brief verbosity flag */
+	bool m_b_use_schur; /**< @brief use schur complement flag */
 
 	size_t m_n_real_step; /**< @brief counter of incremental steps (no modulo) */
 
@@ -80,84 +83,6 @@ protected:
 	CTimer m_timer; /**< @brief timer object */
 
 	bool m_b_had_loop_closure; /**< @brief (probable) loop closure flag */
-
-	/**
-	 *	@brief wrapper for linear solvers (shields solver capability to solve blockwise)
-	 *	@tparam CSolverTag is linear solver tag
-	 */
-	template <class _CSystem, class _CLinearSolver, class CSolverTag>
-	class CLinearSolverWrapper {
-	public:
-		/**
-		 *	@brief estabilishes final block matrix structure before solving iteratively
-		 *
-		 *	@param[in] r_solver is linear solver
-		 *	@param[in] r_lambda is the block matrix
-		 *
-		 *	@return Always returns true.
-		 */
-		static inline bool FinalBlockStructure(CLinearSolver &r_solver,
-			const CUberBlockMatrix &r_lambda)
-		{
-			return true;
-		}
-
-		/**
-		 *	@brief calculates ordering, solves a system
-		 *
-		 *	@param[in] r_solver is linear solver
-		 *	@param[in] r_lambda is the block matrix
-		 *	@param[in] r_v_eta is the right side vector
-		 *
-		 *	@return Returns true on success, false on failure.
-		 */
-		static inline bool Solve(CLinearSolver &r_solver,
-			const CUberBlockMatrix &r_lambda, Eigen::VectorXd &r_v_eta)
-		{
-			return r_solver.Solve_PosDef(r_lambda, r_v_eta);
-		}
-	};
-
-	/**
-	 *	@brief wrapper for linear solvers (specialization for CBlockwiseLinearSolverTag sovers)
-	 */
-	template <class _CSystem, class _CLinearSolver>
-	class CLinearSolverWrapper<_CSystem, _CLinearSolver, CBlockwiseLinearSolverTag> {
-	public:
-		/**
-		 *	@brief estabilishes final block matrix structure before solving iteratively
-		 *
-		 *	@param[in] r_solver is linear solver
-		 *	@param[in] r_lambda is the block matrix
-		 *
-		 *	@return Always returns true.
-		 */
-		static inline bool FinalBlockStructure(CLinearSolver &r_solver,
-			const CUberBlockMatrix &UNUSED(r_lambda))
-		{
-			r_solver.Clear_SymbolicDecomposition();
-			// will trigger automatic recalculation and saves one needless converting lambda to cs*
-
-			return true;
-		}
-
-		/**
-		 *	@brief solves a system, reusing the previously calculated block ordering
-		 *
-		 *	@param[in] r_solver is linear solver
-		 *	@param[in] r_lambda is the block matrix
-		 *	@param[in] r_v_eta is the right side vector
-		 *
-		 *	@return Returns true on success, false on failure.
-		 */
-		static inline bool Solve(CLinearSolver &r_solver,
-			const CUberBlockMatrix &r_lambda, Eigen::VectorXd &r_v_eta)
-		{
-			return r_solver.Solve_PosDef_Blocky(r_lambda, r_v_eta);
-		}
-	};
-
-	typedef CLinearSolverWrapper<CSystem, CLinearSolver, _TySolverTag> _TyLinearSolverWrapper; /**< @brief wrapper for linear solvers (shields solver capability to solve blockwise) */
 
 public:
 	/**
@@ -175,12 +100,14 @@ public:
 	 *		for the nonlinear solver
 	 *	@param[in] b_verbose is verbosity flag
 	 *	@param[in] linear_solver is linear solver instance
+	 *	@param[in] b_use_schur is Schur complement trick flag
 	 */
 	CNonlinearSolver_A(CSystem &r_system, size_t n_linear_solve_threshold,
 		size_t n_nonlinear_solve_threshold, size_t n_nonlinear_solve_max_iteration_num,
 		double f_nonlinear_solve_error_threshold, bool b_verbose,
-		CLinearSolver linear_solver = CLinearSolver())
-		:m_r_system(r_system), m_linear_solver(linear_solver), m_n_edges_in_A(0),
+		CLinearSolver linear_solver = CLinearSolver(), bool b_use_schur = true)
+		:m_r_system(r_system), m_linear_solver(linear_solver),
+		m_schur_solver(linear_solver), m_n_edges_in_A(0),
 #ifdef __SLAM_COUNT_ITERATIONS_AS_VERTICES
 		m_n_last_optimized_vertex_num(0),
 #else // __SLAM_COUNT_ITERATIONS_AS_VERTICES
@@ -190,9 +117,9 @@ public:
 		m_n_nonlinear_solve_threshold(n_nonlinear_solve_threshold),
 		m_n_nonlinear_solve_max_iteration_num(n_nonlinear_solve_max_iteration_num),
 		m_f_nonlinear_solve_error_threshold(f_nonlinear_solve_error_threshold),
-		m_b_verbose(b_verbose), m_n_real_step(0), m_b_system_dirty(false),
-		m_n_iteration_num(0), m_f_serial_time(0), m_f_ata_time(0), m_f_premul_time(0),
-		m_f_chol_time(0), m_f_norm_time(0), m_b_had_loop_closure(false)
+		m_b_verbose(b_verbose), m_b_use_schur(b_use_schur), m_n_real_step(0),
+		m_b_system_dirty(false), m_n_iteration_num(0), m_f_serial_time(0), m_f_ata_time(0),
+		m_f_premul_time(0), m_f_chol_time(0), m_f_norm_time(0), m_b_had_loop_closure(false)
 	{
 		_ASSERTE(!m_n_nonlinear_solve_threshold || !m_n_linear_solve_threshold); // only one of those
 	}
@@ -417,6 +344,8 @@ public:
 		_ASSERTE(m_A.n_Row_Num() >= m_A.n_Column_Num()); // no, A is *not* square, but size of measurements >= vertices
 		// need to have A
 
+		//Dump_SystemMatrix("A_system.tga");
+
 		m_v_error.resize(n_measurements_size, 1);
 		m_v_dx.resize(n_variables_size, 1);
 
@@ -493,23 +422,32 @@ public:
 				bool b_cholesky_result;
 				{
 					Eigen::VectorXd &v_eta = m_v_dx; // dx is calculated inplace from eta
-					if(n_max_iteration_num > 1) {
-						do {
-							if(!n_iteration &&
-							   !_TyLinearSolverWrapper::FinalBlockStructure(m_linear_solver, lambda)) {
-								b_cholesky_result = false;
-								break;
-							}
-							// prepare symbolic decomposition, structure of lambda won't change in the next steps
+					if(!m_b_use_schur) {
+						if(n_max_iteration_num > 1) {
+							do {
+								if(!n_iteration &&
+								   !_TyLinearSolverWrapper::FinalBlockStructure(m_linear_solver, lambda)) {
+									b_cholesky_result = false;
+									break;
+								}
+								// prepare symbolic decomposition, structure of lambda won't change in the next steps
 
-							b_cholesky_result = _TyLinearSolverWrapper::Solve(m_linear_solver, lambda, v_eta);
-							// p_dx = eta = lambda / eta
-						} while(0);
-					} else
-						b_cholesky_result = m_linear_solver.Solve_PosDef(lambda, v_eta); // p_dx = eta = lambda / eta
+								b_cholesky_result = _TyLinearSolverWrapper::Solve(m_linear_solver, lambda, v_eta);
+								// p_dx = eta = lambda / eta
+							} while(0);
+						} else
+							b_cholesky_result = m_linear_solver.Solve_PosDef(lambda, v_eta); // p_dx = eta = lambda / eta
+					} else { // use Schur complement
+						if(!n_iteration)
+							m_schur_solver.SymbolicDecomposition_Blocky(lambda);
+						b_cholesky_result = m_schur_solver.Solve_PosDef_Blocky(lambda, v_eta);
+						// Schur
+					}
 
-					if(m_b_verbose)
-						printf("%s", (b_cholesky_result)? "Cholesky rulez!\n" : "optim success: 0\n");
+					if(m_b_verbose) {
+						printf("%s", (b_cholesky_result)? ((m_b_use_schur)? "Schur rulez!\n" :
+							"Cholesky rulez!\n") : "optim success: 0\n");
+					}
 				}
 				// calculate cholesky, reuse block ordering if the linear solver supports it
 

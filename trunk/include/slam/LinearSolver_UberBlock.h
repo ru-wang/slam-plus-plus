@@ -28,7 +28,7 @@
 
 /**
  *	@def __USE_CS_AMD
- *	@brief if defined, uses cs_amd() to calculate the ordering, otherwise uses CAMD from OrderingMagic.cpp
+ *	@brief if defined, uses cs_amd() to calculate the ordering, otherwise uses AMD from OrderingMagic.cpp
  */
 //#define __USE_CS_AMD
 
@@ -161,7 +161,7 @@ public:
 			const size_t n_elem_num = r_lambda.n_Column_Num();
 			const size_t n_block_num = r_lambda.n_BlockColumn_Num();
 			_ASSERTE(n_block_num == m_p_block_structure->n);
-			r_lambda.Permute_UpperTriangluar_To(m_perm, m_p_inv_order, n_block_num, true);
+			r_lambda.Permute_UpperTriangular_To(m_perm, m_p_inv_order, n_block_num, true);
 			_ASSERTE(n_block_num == m_perm.n_BlockColumn_Num());
 			// fast, shares data (except for a few of transposes here and there)
 
@@ -326,7 +326,7 @@ public:
 			const size_t n_elem_num = r_lambda.n_Column_Num();
 			const size_t n_block_num = r_lambda.n_BlockColumn_Num();
 			//_ASSERTE(n_block_num == m_p_block_structure->n); // m_p_block_structure unused if AMD employed for ordering
-			r_lambda.Permute_UpperTriangluar_To(m_perm, m_p_inv_order, n_block_num, true);
+			r_lambda.Permute_UpperTriangular_To(m_perm, m_p_inv_order, n_block_num, true);
 			_ASSERTE(n_block_num == m_perm.n_BlockColumn_Num());
 			// fast, shares data (except for a few of transposes here and there)
 
@@ -398,7 +398,7 @@ public:
 			printf("had supernode of size " PRIsize "\n", n_supernode_size);
 			printf("there is " PRIsize " nodes and " PRIsize "supernodes\n", n_block_num, n_supernode_num);
 			// count supernodes and print characteristics
-#endif // 1
+#endif // 0
 
 			b_result = m_R.template CholeskyOf_FBS<_TyBlockSizes>(m_perm,
 				m_etree, m_workspace, m_zeroes);
@@ -406,7 +406,7 @@ public:
 #if 0
 			m_R.Rasterize("2_L.tga");
 			// save the factor to see the difference
-#endif // 1	
+#endif // 0	
 
 			if(b_result) {
 				m_R.InversePermute_LeftHandSide_Vector(p_x, &r_eta(0),
