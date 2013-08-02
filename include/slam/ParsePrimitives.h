@@ -586,7 +586,7 @@ public:
 	{
 		int n_pose_id;
 		double p_vertex[12];
-		if(sscanf(r_s_line.c_str(), "%d %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf", //fixed by ELA
+		if(sscanf(r_s_line.c_str(), "%d %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf",
 		   &n_pose_id, p_vertex, p_vertex + 1, p_vertex + 2,
 		   p_vertex + 3, p_vertex + 4, p_vertex + 5, p_vertex + 6, p_vertex + 7, p_vertex + 8, p_vertex + 9, p_vertex + 10, p_vertex + 11) != 1 + 7 + 5) {
 		   	_ASSERTE(n_line_no < SIZE_MAX);
@@ -596,18 +596,23 @@ public:
 		// read the individual numbers
 
 		Eigen::Quaternion<double> quat(p_vertex[3], p_vertex[4], p_vertex[5], p_vertex[6]);
-		Eigen::Matrix3d Q = quat.toRotationMatrix();
+		quat = quat.inverse();
+		//Eigen::Matrix3d Q = quat.toRotationMatrix();
+		//Q = Q.inverse().eval();
+		//Q = Q.householderQr().householderQ();
 
 		Eigen::Vector3d t_vec(p_vertex[0], p_vertex[1], p_vertex[2]);
 		//rotate
-		Eigen::Vector3d c = -Q*t_vec;
-
+		Eigen::Vector3d c = quat * (-t_vec);
+		//Eigen::Vector3d axis = CBase3DSolver::C3DJacobians::Operator_arot(Q);
 		Eigen::Vector3d axis;
 		CBase3DSolver::C3DJacobians::Quat_to_AxisAngle(quat, axis);
 
 		CParserBase::TVertexCam3D vert(n_pose_id, c[0],
-			c[1], c[2], axis(0), axis(1), axis(2), p_vertex[7], p_vertex[8], .0, .0);
+			c[1], c[2], axis(0), axis(1), axis(2), p_vertex[7], p_vertex[8], p_vertex[9], p_vertex[10], p_vertex[11]);
 		// process the measurement
+
+		//camera intrinsic parameters
 
 		r_parse_loop.AppendSystem(vert);
 		// t_odo - append the measurement to the system, or something

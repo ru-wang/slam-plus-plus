@@ -158,6 +158,7 @@
 #else // __USE_NATIVE_CHOLESKY
 #include "slam/LinearSolver_CSparse.h"
 #endif // __USE_NATIVE_CHOLESKY
+#include "slam/LinearSolver_Schur.h" // always include
 // rarely change (pch optimization)
 
 #endif // __SLAMPP_CONFIGURATION_INCLUDED

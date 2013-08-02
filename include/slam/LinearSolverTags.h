@@ -49,4 +49,85 @@ class CBasicLinearSolverTag {};
  */
 class CBlockwiseLinearSolverTag {};
 
+#include "slam/BlockMatrix.h"
+
+/**
+ *	@brief wrapper for linear solvers (shields solver capability to solve blockwise)
+ *
+ *	@tparam CLinearSolver is linear solver type
+ *	@tparam CSolverTag is linear solver tag
+ */
+template <class CLinearSolver, class CSolverTag>
+class CLinearSolverWrapper {
+public:
+	/**
+	 *	@brief estabilishes final block matrix structure before solving iteratively
+	 *
+	 *	@param[in] r_solver is linear solver
+	 *	@param[in] r_lambda is the block matrix
+	 *
+	 *	@return Always returns true.
+	 */
+	static inline bool FinalBlockStructure(CLinearSolver &r_solver,
+		const CUberBlockMatrix &r_lambda)
+	{
+		return true;
+	}
+
+	/**
+	 *	@brief calculates ordering, solves a system
+	 *
+	 *	@param[in] r_solver is linear solver
+	 *	@param[in] r_lambda is the block matrix
+	 *	@param[in] r_v_eta is the right side vector
+	 *
+	 *	@return Returns true on success, false on failure.
+	 */
+	static inline bool Solve(CLinearSolver &r_solver,
+		const CUberBlockMatrix &r_lambda, Eigen::VectorXd &r_v_eta)
+	{
+		return r_solver.Solve_PosDef(r_lambda, r_v_eta);
+	}
+};
+
+/**
+ *	@brief wrapper for linear solvers (specialization for CBlockwiseLinearSolverTag sovers)
+ *	@tparam CLinearSolver is linear solver type
+ */
+template <class CLinearSolver>
+class CLinearSolverWrapper<CLinearSolver, CBlockwiseLinearSolverTag> {
+public:
+	/**
+	 *	@brief estabilishes final block matrix structure before solving iteratively
+	 *
+	 *	@param[in] r_solver is linear solver
+	 *	@param[in] r_lambda is the block matrix
+	 *
+	 *	@return Always returns true.
+	 */
+	static inline bool FinalBlockStructure(CLinearSolver &r_solver,
+		const CUberBlockMatrix &UNUSED(r_lambda))
+	{
+		r_solver.Clear_SymbolicDecomposition();
+		// will trigger automatic recalculation and saves one needless converting lambda to cs*
+
+		return true;
+	}
+
+	/**
+	 *	@brief solves a system, reusing the previously calculated block ordering
+	 *
+	 *	@param[in] r_solver is linear solver
+	 *	@param[in] r_lambda is the block matrix
+	 *	@param[in] r_v_eta is the right side vector
+	 *
+	 *	@return Returns true on success, false on failure.
+	 */
+	static inline bool Solve(CLinearSolver &r_solver,
+		const CUberBlockMatrix &r_lambda, Eigen::VectorXd &r_v_eta)
+	{
+		return r_solver.Solve_PosDef_Blocky(r_lambda, r_v_eta);
+	}
+};
+
 #endif // __LINEAR_SOLVER_TAGS_INCLUDED

@@ -312,103 +312,128 @@ public:
 	 *	@brief node measurement class ("VERTEX_XYZ" in the datafile)
 	 */
 	struct TVertexXYZ : public CParseEntity {
-		int m_n_id; /**< @brief vertex id */
-		Eigen::Matrix<double, 3, 1> m_v_position; /**< @brief vertex position (the state vector) */
+			int m_n_id; /**< @brief vertex id */
+			Eigen::Matrix<double, 3, 1> m_v_position; /**< @brief vertex position (the state vector) */
+
+			/**
+			 *	@brief default constructor
+			 *
+			 *	@param[in] n_node_id is (zero-based) index of the node
+			 *	@param[in] f_x is x position
+			 *	@param[in] f_y is y position
+			 *	@param[in] f_z is z position
+			 *
+			 *	@note The vertices are only used as ground truth. Those are mostly not processed.
+			 */
+			inline TVertexXYZ(int n_node_id, double f_x, double f_y, double f_z)
+				:m_n_id(n_node_id)
+			{
+				m_v_position << f_x, f_y, f_z;
+				// no constructor for 3-valued vector
+			}
+
+			EIGEN_MAKE_ALIGNED_OPERATOR_NEW
+		};
 
 		/**
-		 *	@brief default constructor
-		 *
-		 *	@param[in] n_node_id is (zero-based) index of the node
-		 *	@param[in] f_x is x position
-		 *	@param[in] f_y is y position
-		 *	@param[in] f_z is z position
-		 *
-		 *	@note The vertices are only used as ground truth. Those are mostly not processed.
+		 *	@brief node measurement class ("VERTEX_CAM" in the datafile)
 		 */
-		inline TVertexXYZ(int n_node_id, double f_x, double f_y, double f_z)
-			:m_n_id(n_node_id)
-		{
-			m_v_position << f_x, f_y, f_z;
-			// no constructor for 3-valued vector
-		}
+		struct TVertexCam3D : public CParseEntity {
+			int m_n_id; /**< @brief vertex id */
+			Eigen::Matrix<double, 11, 1> m_v_position; /**< @brief vertex position (the state vector) */
 
-		EIGEN_MAKE_ALIGNED_OPERATOR_NEW
-	};
+			/**
+			 *	@brief default constructor
+			 *
+			 *	@param[in] n_node_id is (zero-based) index of the node
+			 *	@param[in] p_x is x position
+			 *	@param[in] p_y is y position
+			 *	@param[in] p_z is z position
+			 *	@param[in] ax is x axis angle
+			 *	@param[in] ay is y axis angle
+			 *	@param[in] az is z axis angle
+			 *
+			 *	@note The vertices are only used as ground truth. Those are mostly not processed.
+			 */
+			inline TVertexCam3D(int n_node_id, double p_x, double p_y, double p_z, double ax, double ay, double az, double fx, double fy,
+					double cx, double cy, double d)
+				:m_n_id(n_node_id)
+			{
+				m_v_position << p_x, p_y, p_z, ax, ay, az, fx, fy, cx, cy, d;
+			}
 
-	/**
-	 *	@brief node measurement class ("VERTEX_CAM" in the datafile)
-	 */
-	struct TVertexCam3D : public CParseEntity {
-		int m_n_id; /**< @brief vertex id */
-		Eigen::Matrix<double, 10, 1> m_v_position; /**< @brief vertex position (the state vector) */
+			EIGEN_MAKE_ALIGNED_OPERATOR_NEW
+		};
 
 		/**
-		 *	@brief default constructor
-		 *
-		 *	@param[in] n_node_id is (zero-based) index of the node
-		 *	@param[in] p_x is x position
-		 *	@param[in] p_y is y position
-		 *	@param[in] p_z is z position
-		 *	@param[in] ax is x axis angle
-		 *	@param[in] ay is y axis angle
-		 *	@param[in] az is z axis angle
-		 *	@param[in] fx is x focal length
-		 *	@param[in] fy is y focal length
-		 *	@param[in] cx is x principal point
-		 *	@param[in] cy is y principal point
-		 *
-		 *	@note The vertices are only used as ground truth. Those are mostly not processed.
+		 *	@brief node measurement class ("VERTEX_CAM" in the datafile)
 		 */
-		inline TVertexCam3D(int n_node_id, double p_x, double p_y, double p_z, double ax, double ay, double az, double fx, double fy, double cx, double cy)
-			:m_n_id(n_node_id)
-		{
-			m_v_position << p_x, p_y, p_z, ax, ay, az, fx, fy, cx, cy;
-		}
-
-		EIGEN_MAKE_ALIGNED_OPERATOR_NEW
-	};
-
-	/**
-	 *	@brief P2C measurement base class
-	 */
-	struct TEdgeP2C3D : public CParseEntity {
-		int m_n_node_0; /**< @brief (zero-based) index of the 3D point */
-		int m_n_node_1; /**< @brief (zero-based) index of the camera vertex */
-		Eigen::Matrix<double, 2, 1> m_v_delta; /**< @brief dealte measurement (also called "z") */
-		Eigen::Matrix<double, 2, 2> m_t_inv_sigma; /**< @brief inverse sigma matrix, elements are square roots (also called "Sz") */
+	//	struct TVertexIntrinsics : public CParseEntity {
+	//		int m_n_id; /**< @brief vertex id */
+	//		Eigen::Matrix<double, 5, 1> m_v_position; /**< @brief vertex position (the state vector) */
+	//
+	//		/**
+	//		 *	@brief default constructor
+	//		 *
+	//		 *	@param[in] n_node_id is (zero-based) index of the node
+	//		 *	@param[in] fx is focal length
+	//		 *	@param[in] fy is focal length
+	//		 *	@param[in] cx is principal point x
+	//		 *	@param[in] cy is principal point y
+	//		 *	@param[in] d is distortion coeficient
+	//		 *
+	//		 *	@note The vertices are only used as ground truth. Those are mostly not processed.
+	//		 */
+	//		inline TVertexIntrinsics(int n_node_id, double f_x, double f_y, double c_x, double c_y, double d)
+	//			:m_n_id(n_node_id)
+	//		{
+	//			m_v_position << f_x, f_y, c_x, c_y, d;
+	//		}
+	//
+	//		EIGEN_MAKE_ALIGNED_OPERATOR_NEW
+	//	};
 
 		/**
-		 *	@brief default constructor
-		 *
-		 *	@param[in] n_node_0 is (zero-based) index of the 3D point
-		 *	@param[in] n_node_1 is (zero-based) index of the camera vertex
-		 *	@param[in] f_delta_x is delta x position
-		 *	@param[in] f_delta_y is delta y position
-		 *	@param[in] p_upper_matrix_2x2 is row-major upper triangular and diagonal 2x2 matrix,
-		 *		elements are square roots
-		 *
-		 *	The matrix is stored row by row from top to bottom,
-		 *	with left to right column order. Example:
-		 *	@code
-		 *	|0 1|
-		 *	|  2|
-		 *	@endcode
+		 *	@brief P2C measurement base class
 		 */
-		inline TEdgeP2C3D(int n_node_0, int n_node_1,
-			double f_delta_x, double f_delta_y, const double *p_upper_matrix_2x2)
-			:m_n_node_0(n_node_0), m_n_node_1(n_node_1)
-		{
-			m_v_delta << f_delta_x, f_delta_y;
-			// no constructor for 2-valued vector
+		struct TEdgeP2C3D : public CParseEntity {
+			int m_n_node_0; /**< @brief (zero-based) index of the 3D point */
+			int m_n_node_1; /**< @brief (zero-based) index of the camera vertex */
+			Eigen::Matrix<double, 2, 1> m_v_delta; /**< @brief dealte measurement (also called "z") */
+			Eigen::Matrix<double, 2, 2> m_t_inv_sigma; /**< @brief inverse sigma matrix, elements are square roots (also called "Sz") */
 
-			m_t_inv_sigma <<
-							p_upper_matrix_2x2[0], p_upper_matrix_2x2[1],
-							p_upper_matrix_2x2[1], p_upper_matrix_2x2[2];
-			// fill the matrix
-		}
+			/**
+			 *	@brief default constructor
+			 *
+			 *	@param[in] n_node_0 is (zero-based) index of the 3D point
+			 *	@param[in] n_node_1 is (zero-based) index of the camera vertex
+			 *	@param[in] f_delta_x is delta x position
+			 *	@param[in] f_delta_y is delta y position
+			 *	@param[in] p_upper_matrix_2x2 is row-major upper triangular and diagonal 2x2 matrix,
+			 *		elements are square roots
+			 *
+			 *	The matrix is stored row by row from top to bottom,
+			 *	with left to right column order. Example:
+			 *	@code
+			 *	|0 1|
+			 *	|  2|
+			 *	@endcode
+			 */
+			inline TEdgeP2C3D(int n_node_0, int n_node_1,
+				double f_delta_x, double f_delta_y, const double *p_upper_matrix_2x2)
+				:m_n_node_0(n_node_0), m_n_node_1(n_node_1)
+			{
+				m_v_delta << f_delta_x, f_delta_y;
+				// no constructor for 2-valued vector
 
-		EIGEN_MAKE_ALIGNED_OPERATOR_NEW
-	};
+				m_t_inv_sigma <<
+								p_upper_matrix_2x2[0], p_upper_matrix_2x2[1],
+								p_upper_matrix_2x2[1], p_upper_matrix_2x2[2];
+				// fill the matrix
+			}
+
+			EIGEN_MAKE_ALIGNED_OPERATOR_NEW
+		};
 
 	/**
 	 *	@brief a simple callback class, to be used by the parser

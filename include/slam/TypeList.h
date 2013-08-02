@@ -31,6 +31,12 @@
  *	Added runtime operations on typelists, such as CTypelistForEach,
  *	CTypelistSelect and CTypelistBFind.
  *
+ *	@date 2013-07-19
+ *
+ *	Changed implementation of CSortTypelistRun, where the comparison order was swapped
+ *	to detect pairs that violate ordering. The earlier version lead to infinite template
+ *	recursion on sequences containing multiple elements of the same type.
+ *
  */
 
 /**
@@ -842,7 +848,9 @@ protected:
 	 *	@brief intermediates, stored as enum
 	 */
 	enum {
-		b_cmp = CComparisonOp<_TyFirst, _TySecond>::b_result /**< @brief result of the comparison operation on the two forst items of the list */
+		b_cmp = !CComparisonOp<_TySecond, _TyFirst>::b_result /**< @brief result of the comparison operation on the two first items of the list */
+		// note the comparison was inverted and the order was swapped in order to handle
+		// equal items in the sorted sequence (before these would be swapped indefinitely)
 	};
 
 	/**

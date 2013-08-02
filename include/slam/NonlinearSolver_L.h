@@ -129,6 +129,7 @@ public:
 	typedef typename CSystem::_TyEdgeMultiPool _TyEdgeMultiPool; /**< @brief edge multipool type */
 
 	typedef typename CLinearSolver::_Tag _TySolverTag; /**< @brief linear solver tag */
+	typedef CLinearSolverWrapper<_TyLinearSolver, _TySolverTag> _TyLinearSolverWrapper; /**< @brief wrapper for linear solvers (shields solver capability to solve blockwise) */
 
 	typedef typename CUniqueTypelist<CAMatrixBlockSizes>::_TyResult _TyAMatrixBlockSizes; /**< @brief possible block matrices, that can be found in A */
 	typedef typename __fbs_ut::CBlockSizesAfterPreMultiplyWithSelfTranspose<
@@ -244,84 +245,6 @@ protected:
 	CTimer m_timer; /**< @brief timer object */
 #endif // !__NONLINEAR_SOLVER_L_DETAILED_TIMING
 
-	/**
-	 *	@brief wrapper for linear solvers (shields solver capability to solve blockwise)
-	 *	@tparam CSolverTag is linear solver tag
-	 */
-	template <class _CSystem, class _CLinearSolver, class CSolverTag>
-	class CLinearSolverWrapper {
-	public:
-		/**
-		 *	@brief estabilishes final block matrix structure before solving iteratively
-		 *
-		 *	@param[in] r_solver is linear solver
-		 *	@param[in] r_lambda is the block matrix
-		 *
-		 *	@return Always returns true.
-		 */
-		static inline bool FinalBlockStructure(CLinearSolver &r_solver,
-			const CUberBlockMatrix &r_lambda)
-		{
-			return true;
-		}
-
-		/**
-		 *	@brief calculates ordering, solves a system
-		 *
-		 *	@param[in] r_solver is linear solver
-		 *	@param[in] r_lambda is the block matrix
-		 *	@param[in] r_v_eta is the right side vector
-		 *
-		 *	@return Returns true on success, false on failure.
-		 */
-		static inline bool Solve(CLinearSolver &r_solver,
-			const CUberBlockMatrix &r_lambda, Eigen::VectorXd &r_v_eta)
-		{
-			return r_solver.Solve_PosDef(r_lambda, r_v_eta);
-		}
-	};
-
-	/**
-	 *	@brief wrapper for linear solvers (specialization for CBlockwiseLinearSolverTag sovers)
-	 */
-	template <class _CSystem, class _CLinearSolver>
-	class CLinearSolverWrapper<_CSystem, _CLinearSolver, CBlockwiseLinearSolverTag> {
-	public:
-		/**
-		 *	@brief estabilishes final block matrix structure before solving iteratively
-		 *
-		 *	@param[in] r_solver is linear solver
-		 *	@param[in] r_lambda is the block matrix
-		 *
-		 *	@return Always returns true.
-		 */
-		static inline bool FinalBlockStructure(CLinearSolver &r_solver,
-			const CUberBlockMatrix &UNUSED(r_lambda))
-		{
-			r_solver.Clear_SymbolicDecomposition();
-			// will trigger automatic recalculation and saves one needless converting lambda to cs*
-
-			return true;
-		}
-
-		/**
-		 *	@brief solves a system, reusing the previously calculated block ordering
-		 *
-		 *	@param[in] r_solver is linear solver
-		 *	@param[in] r_lambda is the block matrix
-		 *	@param[in] r_v_eta is the right side vector
-		 *
-		 *	@return Returns true on success, false on failure.
-		 */
-		static inline bool Solve(CLinearSolver &r_solver,
-			const CUberBlockMatrix &r_lambda, Eigen::VectorXd &r_v_eta)
-		{
-			return r_solver.Solve_PosDef_Blocky(r_lambda, r_v_eta);
-		}
-	};
-
-	typedef CLinearSolverWrapper<CSystem, CLinearSolver, _TySolverTag> _TyLinearSolverWrapper; /**< @brief wrapper for linear solvers (shields solver capability to solve blockwise) */
-
 #ifdef __NONLINEAR_SOLVER_L_DUMP_TIMESTEPS
 	size_t m_n_loop_size_cumsum; /**< @brief cumulative sum of loops processed so far */
 #endif // __NONLINEAR_SOLVER_L_DUMP_TIMESTEPS
@@ -344,14 +267,13 @@ public:
 	 *	@param[in] f_nonlinear_solve_error_threshold is error threshold
 	 *		for the nonlinear solver
 	 *	@param[in] b_verbose is verbosity flag
-	 *	@param[in] linear_solver is linear solver instance for solving for lambda
-	 *	@param[in] linear_solver2 is linear solver instance for updating L
+	 *	@param[in] linear_solver is linear solver instance
+	 *	@param[in] b_use_schur is Schur complement trick flag (not supported)
 	 */
 	CNonlinearSolver_L(CSystem &r_system, size_t n_linear_solve_threshold,
 		size_t n_nonlinear_solve_threshold, size_t n_nonlinear_solve_max_iteration_num,
 		double f_nonlinear_solve_error_threshold, bool b_verbose,
-		CLinearSolver linear_solver = CLinearSolver(),
-		CLinearSolver linear_solver2 = CLinearSolver())
+		CLinearSolver linear_solver = CLinearSolver(), bool UNUSED(b_use_schur) = false)
 		:m_r_system(r_system), m_linear_solver(linear_solver),
 		m_linear_solver2(linear_solver2),
 #ifdef __NONLINEAR_SOLVER_L_USE_SPARSE_BACKSUBST
@@ -625,7 +547,7 @@ public:
 				// unconstrained blocky ordering on lambda
 
 				CUberBlockMatrix lord;
-				m_lambda.Permute_UpperTriangluar_To(lord, p_order,
+				m_lambda.Permute_UpperTriangular_To(lord, p_order,
 					m_lambda.n_BlockColumn_Num(), true);
 				// order the matrix
 
@@ -639,7 +561,7 @@ public:
 
 				CUberBlockMatrix _blockL, blockL;
 				m_lambda.CopyLayoutTo(_blockL);
-				_blockL.Permute_UpperTriangluar_To(blockL, p_order, m_lambda.n_BlockColumn_Num());
+				_blockL.Permute_UpperTriangular_To(blockL, p_order, m_lambda.n_BlockColumn_Num());
 				std::vector<size_t> workspace;
 				blockL.From_Sparse(0, 0, L, false, workspace);
 				n_nnz_blocky = blockL.n_NonZero_Num();
@@ -664,7 +586,7 @@ public:
 				// unconstrained blocky ordering on lambda
 
 				CUberBlockMatrix lord;
-				m_lambda.Permute_UpperTriangluar_To(lord, p_order,
+				m_lambda.Permute_UpperTriangular_To(lord, p_order,
 					m_lambda.n_BlockColumn_Num(), true);
 				// order the matrix
 
@@ -678,7 +600,7 @@ public:
 
 				CUberBlockMatrix _blockL, blockL;
 				m_lambda.CopyLayoutTo(_blockL);
-				_blockL.Permute_UpperTriangluar_To(blockL, p_order, m_lambda.n_BlockColumn_Num());
+				_blockL.Permute_UpperTriangular_To(blockL, p_order, m_lambda.n_BlockColumn_Num());
 				std::vector<size_t> workspace;
 				blockL.From_Sparse(0, 0, L, false, workspace);
 				n_nnz_blocky_constr = blockL.n_NonZero_Num();
@@ -2508,7 +2430,7 @@ protected:
 		// refresh/update the ordering (update means append with identity)
 
 		m_p_lambda_elem_ordering = m_lambda_ordering.p_ExpandBlockOrdering(m_lambda);
-		m_lambda.Permute_UpperTriangluar_To(m_lambda_perm, m_p_lambda_block_ordering,
+		m_lambda.Permute_UpperTriangular_To(m_lambda_perm, m_p_lambda_block_ordering,
 			m_lambda.n_BlockColumn_Num(), true);
 		// make a reordered version of lambda (*always* changes if lambda changes)
 

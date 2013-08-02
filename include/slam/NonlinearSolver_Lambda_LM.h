@@ -22,7 +22,7 @@
  */
 
 #include "slam/FlatSystem.h"
-#include <iostream>			// SOSO
+#include <iostream> // SOSO
 
 /**
  *	@def __NONLINEAR_SOLVER_LAMBDA_DUMP_CHI2
@@ -51,12 +51,14 @@ public:
 	typedef typename CSystem::_TyEdgeMultiPool _TyEdgeMultiPool; /**< @brief edge multipool type */
 
 	typedef typename CLinearSolver::_Tag _TySolverTag; /**< @brief linear solver tag */
+	typedef CLinearSolverWrapper<_TyLinearSolver, _TySolverTag> _TyLinearSolverWrapper; /**< @brief wrapper for linear solvers (shields solver capability to solve blockwise) */
 
 	typedef typename CUniqueTypelist<CAMatrixBlockSizes>::_TyResult _TyAMatrixBlockSizes; /**< @brief possible block matrices, that can be found in A */
 
 protected:
 	CSystem &m_r_system; /**< @brief reference to the system */
 	CLinearSolver m_linear_solver; /**< @brief linear solver */
+	CLinearSolver_Schur<CLinearSolver, _TyAMatrixBlockSizes> m_schur_solver; /**< @brief linear solver with Schur trick */
 
 	CUberBlockMatrix m_lambda; /**< @brief the lambda matrix (built / updated incrementally) */
 	Eigen::VectorXd m_v_dx; /**< @brief dx vector */
@@ -72,6 +74,7 @@ protected:
 	size_t m_n_nonlinear_solve_max_iteration_num; /**< @brief maximal number of iterations in incremental nonlinear solve */
 	double m_f_nonlinear_solve_error_threshold; /**< @brief error threshold in incremental nonlinear solve */ // t_odo - document these in elementwise A and L
 	bool m_b_verbose; /**< @brief verbosity flag */
+	bool m_b_use_schur; /**< @brief use schur complement flag */
 
 	size_t m_n_real_step; /**< @brief counter of incremental steps (no modulo) */
 
@@ -87,84 +90,6 @@ protected:
 	CTimer m_timer; /**< @brief timer object */
 
 	bool m_b_had_loop_closure; /**< @brief (probable) loop closure flag */
-
-	/**
-	 *	@brief wrapper for linear solvers (shields solver capability to solve blockwise)
-	 *	@tparam CSolverTag is linear solver tag
-	 */
-	template <class _CSystem, class _CLinearSolver, class CSolverTag>
-	class CLinearSolverWrapper {
-	public:
-		/**
-		 *	@brief estabilishes final block matrix structure before solving iteratively
-		 *
-		 *	@param[in] r_solver is linear solver
-		 *	@param[in] r_lambda is the block matrix
-		 *
-		 *	@return Always returns true.
-		 */
-		static inline bool FinalBlockStructure(CLinearSolver &r_solver,
-			const CUberBlockMatrix &r_lambda)
-		{
-			return true;
-		}
-
-		/**
-		 *	@brief calculates ordering, solves a system
-		 *
-		 *	@param[in] r_solver is linear solver
-		 *	@param[in] r_lambda is the block matrix
-		 *	@param[in] r_v_eta is the right side vector
-		 *
-		 *	@return Returns true on success, false on failure.
-		 */
-		static inline bool Solve(CLinearSolver &r_solver,
-			const CUberBlockMatrix &r_lambda, Eigen::VectorXd &r_v_eta)
-		{
-			return r_solver.Solve_PosDef(r_lambda, r_v_eta);
-		}
-	};
-
-	/**
-	 *	@brief wrapper for linear solvers (specialization for CBlockwiseLinearSolverTag sovers)
-	 */
-	template <class _CSystem, class _CLinearSolver>
-	class CLinearSolverWrapper<_CSystem, _CLinearSolver, CBlockwiseLinearSolverTag> {
-	public:
-		/**
-		 *	@brief estabilishes final block matrix structure before solving iteratively
-		 *
-		 *	@param[in] r_solver is linear solver
-		 *	@param[in] r_lambda is the block matrix
-		 *
-		 *	@return Always returns true.
-		 */
-		static inline bool FinalBlockStructure(CLinearSolver &r_solver,
-			const CUberBlockMatrix &UNUSED(r_lambda))
-		{
-			r_solver.Clear_SymbolicDecomposition();
-			// will trigger automatic recalculation and saves one needless converting lambda to cs*
-
-			return true;
-		}
-
-		/**
-		 *	@brief solves a system, reusing the previously calculated block ordering
-		 *
-		 *	@param[in] r_solver is linear solver
-		 *	@param[in] r_lambda is the block matrix
-		 *	@param[in] r_v_eta is the right side vector
-		 *
-		 *	@return Returns true on success, false on failure.
-		 */
-		static inline bool Solve(CLinearSolver &r_solver,
-			const CUberBlockMatrix &r_lambda, Eigen::VectorXd &r_v_eta)
-		{
-			return r_solver.Solve_PosDef_Blocky(r_lambda, r_v_eta);
-		}
-	};
-
-	typedef CLinearSolverWrapper<CSystem, CLinearSolver, _TySolverTag> _TyLinearSolverWrapper; /**< @brief wrapper for linear solvers (shields solver capability to solve blockwise) */
 
 public:
 	/**
@@ -182,13 +107,14 @@ public:
 	 *		for the nonlinear solver
 	 *	@param[in] b_verbose is verbosity flag
 	 *	@param[in] linear_solver is linear solver instance
+	 *	@param[in] b_use_schur is Schur complement trick flag
 	 */
 	CNonlinearSolver_Lambda_LM(CSystem &r_system, size_t n_linear_solve_threshold,
 		size_t n_nonlinear_solve_threshold, size_t n_nonlinear_solve_max_iteration_num,
 		double f_nonlinear_solve_error_threshold, bool b_verbose,
-		CLinearSolver linear_solver = CLinearSolver())
+		CLinearSolver linear_solver = CLinearSolver(), bool b_use_schur = true)
 		:m_r_system(r_system), m_linear_solver(linear_solver),
-		m_n_verts_in_lambda(0), m_n_edges_in_lambda(0),
+		m_schur_solver(linear_solver), m_n_verts_in_lambda(0), m_n_edges_in_lambda(0),
 #ifdef __SLAM_COUNT_ITERATIONS_AS_VERTICES
 		m_n_last_optimized_vertex_num(0),
 #else // __SLAM_COUNT_ITERATIONS_AS_VERTICES
@@ -200,7 +126,7 @@ public:
 		m_f_nonlinear_solve_error_threshold(f_nonlinear_solve_error_threshold),
 		m_b_verbose(b_verbose), m_n_real_step(0), m_b_system_dirty(false),
 		m_n_iteration_num(0), m_f_serial_time(0), m_f_ata_time(0), m_f_premul_time(0),
-		m_f_chol_time(0), m_f_norm_time(0), m_b_had_loop_closure(false)
+		m_f_chol_time(0), m_f_norm_time(0), m_b_had_loop_closure(false), m_b_use_schur(b_use_schur)
 	{
 		_ASSERTE(!m_n_nonlinear_solve_threshold || !m_n_linear_solve_threshold); // only one of those
 	}
@@ -475,31 +401,29 @@ public:
 		if(!m_b_system_dirty) {
 			m_r_system.r_Edge_Pool().For_Each_Parallel(m_n_edges_in_lambda,
 				m_r_system.r_Edge_Pool().n_Size(), CCalculate_Hessians());
-		} else {
+		} else
 			m_r_system.r_Edge_Pool().For_Each_Parallel(CCalculate_Hessians());
-		}
 
 		double alpha = 0.0;
 		const double tau = 1e-3;
 		/*for(size_t i = 0, n = m_lambda.n_BlockColumn_Num(); i < n; ++ i) {
-			size_t last = m_lambda.n_BlockColumn_Block_Num(i) - 1;
-			CUberBlockMatrix::_TyMatrixXdRef block = m_lambda.t_BlockAt(last, i);
+			size_t n_last = m_lambda.n_BlockColumn_Block_Num(i) - 1;
+			CUberBlockMatrix::_TyMatrixXdRef block = m_lambda.t_BlockAt(n_last, i);
 			for(size_t j = 0, m = block.rows(); j < m; ++ j)
-				alpha = std::max(block(j, j),alpha);
+				alpha = std::max(block(j, j), alpha);
 		}*/
 		for(size_t i = 0, n = m_r_system.n_Edge_Num(); i < n; ++ i) {
 			const _TyBaseEdge &e = m_r_system.r_Edge_Pool()[i];
-			alpha = std::max(e.f_Max_VertexHessianDiagValue(),alpha);
+			alpha = std::max(e.f_Max_VertexHessianDiagValue(), alpha);
 		}
 		alpha *= tau;
-		//alpha = 1.44; // copy from g2op for 10khogman
+		//alpha = 1.44; // copy from g2o for 10khogman
 		std::cout << "alfa: " << alpha << std::endl;
 
-		if(!m_b_system_dirty) {
+		if(!m_b_system_dirty)
 			Refresh_Lambda(0/*m_n_verts_in_lambda*/, m_n_edges_in_lambda, alpha); // calculate only for new edges // @todo - but how to mark affected vertices?
-		} else {
+		else
 			Refresh_Lambda(0, 0, alpha); // calculate for entire system
-		}
 		m_b_system_dirty = false;
 		m_n_verts_in_lambda = m_r_system.r_Vertex_Pool().n_Size();
 		m_n_edges_in_lambda = m_r_system.r_Edge_Pool().n_Size(); // right? // yes.
@@ -510,18 +434,57 @@ public:
 
 		m_v_dx.resize(n_variables_size, 1);
 
+#if 0
+		{
+			// test Schur
+			size_t n_cameras;
+			std::vector<size_t> order(m_lambda.n_BlockColumn_Num());
+			n_cameras = m_schur_solver.n_Schur_Ordering(m_lambda, &order[0], order.size());
+			size_t n_points = m_lambda.n_BlockColumn_Num() - n_cameras; // the rest
+
+			Collect_RightHandSide_Vector(m_v_dx); // !!
+			Eigen::VectorXd schur_sol(n_variables_size);
+			bool b_cholesky_result = m_schur_solver.Schur_Solve(m_lambda,
+				m_v_dx, schur_sol, &order[0], order.size(), n_cameras);
+
+			//Collect_RightHandSide_Vector(m_v_dx);
+			//bool b_cholesky_result;
+			{
+				Eigen::VectorXd &v_eta = m_v_dx; // dx is calculated inplace from eta
+				b_cholesky_result = m_linear_solver.Solve_PosDef(m_lambda, v_eta); // p_dx = eta = lambda / eta
+				if(m_b_verbose)
+					printf("%s", (b_cholesky_result)? "Cholesky rulez!\n" : "optim success: 0\n");
+			}
+			// calculate cholesky
+
+			double f_error = (m_v_dx - schur_sol).norm();
+			printf("error is %g\n", f_error);
+			if(n_cameras * 6 + n_points * 3 == schur_sol.rows()) { // 6 and 3 is only good for BA
+				f_error = (m_v_dx.head(n_cameras * 6) - schur_sol.head(n_cameras * 6)).norm();
+				printf("error in head is %g\n", f_error);
+				f_error = (m_v_dx.tail(n_points * 3) - schur_sol.tail(n_points * 3)).norm();
+				printf("error in tail is %g\n", f_error);
+			}
+			// see how precise we are
+		}
+#endif // 0
+		// test schur complement by comparing with the result of Cholesky
+
 		double last_error = f_Chi_Squared_Error_Denorm();
-		std::cout << "initial chi2: " << last_error << std::endl;
+		//std::cout << "initial chi2: " << last_error << std::endl;
 
 		//initialize vertex saver
 		Eigen::VectorXd v_saved_state;
 		v_saved_state.resize(n_variables_size, 1);
 
+		if(m_b_use_schur)
+			m_schur_solver.SymbolicDecomposition_Blocky(m_lambda);
+		// calculate the ordering once, it does not change
+
 		//n_max_iteration_num = 20;
 		int fail = 10;
 		for(size_t n_iteration = 0; n_iteration < n_max_iteration_num; ++ n_iteration) {
-			std::cout << "alfa: " << alpha << std::endl;
-
+			//std::cout << "---------------" << std::endl;
 			++ m_n_iteration_num;
 			// debug
 
@@ -599,31 +562,31 @@ public:
 				bool b_cholesky_result;
 				{
 					Eigen::VectorXd &v_eta = m_v_dx; // dx is calculated inplace from eta
-					if(n_max_iteration_num > 1) {
-						do {
-							if(!n_iteration &&
-							   !_TyLinearSolverWrapper::FinalBlockStructure(m_linear_solver, m_lambda)) {
-								b_cholesky_result = false;
 
-								break;
-							}
-							// prepare symbolic decomposition, structure of lambda won't change in the next steps
-							//fprintf( stderr, "*\n" );
-							/*int r = (int)m_lambda.n_Row_Num();
-							int c = (int)m_lambda.n_Column_Num();
-							Eigen::MatrixXd lambada(r, c);
-							m_lambda.Convert_to_Dense(lambada);*/
-							/*std::cout << "-------------------------------------------------" << std::endl;
-							std::cout << lambada << std::endl;
-							std::cout << "-------------------------------------------------" << std::endl;*/
-							b_cholesky_result = _TyLinearSolverWrapper::Solve(m_linear_solver, m_lambda, v_eta);
-							// p_dx = eta = lambda / eta
-						} while(0);
-					} else
-						b_cholesky_result = m_linear_solver.Solve_PosDef(m_lambda, v_eta); // p_dx = eta = lambda / eta
+					if(!m_b_use_schur) { // use cholesky
+						if(n_max_iteration_num > 1) {
+							do {
+								if(!n_iteration &&
+								   !_TyLinearSolverWrapper::FinalBlockStructure(m_linear_solver, m_lambda)) {
+									b_cholesky_result = false;
 
-					if(m_b_verbose)
-						printf("%s", (b_cholesky_result)? "Cholesky rulez!\n" : "optim success: 0\n");
+									break;
+								}
+								// prepare symbolic decomposition, structure of lambda won't change in the next steps
+								b_cholesky_result = _TyLinearSolverWrapper::Solve(m_linear_solver, m_lambda, v_eta);
+								// p_dx = eta = lambda / eta
+							} while(0);
+						} else
+							b_cholesky_result = m_linear_solver.Solve_PosDef(m_lambda, v_eta); // p_dx = eta = lambda / eta
+					} else { // use Schur complement
+						b_cholesky_result = m_schur_solver.Solve_PosDef_Blocky(m_lambda, v_eta);
+						// Schur
+					}
+
+					if(m_b_verbose) {
+						printf("%s", (b_cholesky_result)? ((m_b_use_schur)? "Schur rulez!\n" :
+							"Cholesky rulez!\n") : "optim success: 0\n");
+					}
 				}
 				// calculate cholesky, reuse block ordering if the linear solver supports it
 
@@ -664,6 +627,7 @@ public:
 
 				if(b_cholesky_result) {
 					PushValuesInGraphSystem(m_v_dx);
+
 					m_b_system_dirty = true;
 				}
 				// update the system (in parallel)
@@ -788,18 +752,18 @@ protected:
 	};
 
 	/**
-	 *	@brief function object that loads state of all the vertices
+	 *	@brief function object that saves state of all the vertices
 	 */
 	class CLoadState {
 	protected:
-		const Eigen::VectorXd &m_r_state; /**< @brief reference to the state vector (in) */
+		Eigen::VectorXd &m_r_state; /**< @brief reference to the state vector (out) */
 
 	public:
 		/**
 		 *	@brief default constructor
 		 *	@param[in] r_state is reference to the state vector
 		 */
-		inline CLoadState(const Eigen::VectorXd &r_state)
+		inline CLoadState(Eigen::VectorXd &r_state)
 			:m_r_state(r_state)
 		{}
 
@@ -899,8 +863,8 @@ protected:
 
 		/*double alpha = 0.01; // ela?
 		for(size_t i = 0, n = m_lambda.n_BlockColumn_Num(); i < n; ++ i) {
-			size_t last = m_lambda.n_BlockColumn_Block_Num(i) - 1;
-			CUberBlockMatrix::_TyMatrixXdRef block = m_lambda.t_BlockAt(last, i);
+			size_t n_last = m_lambda.n_BlockColumn_Block_Num(i) - 1;
+			CUberBlockMatrix::_TyMatrixXdRef block = m_lambda.t_BlockAt(n_last, i);
 			for(size_t j = 0, m = block.rows(); j < m; ++ j)
 				block(j, j) += alpha;
 		}*/
@@ -960,10 +924,10 @@ protected:
 	 *	@brief refreshes the lambda matrix by recalculating edge hessians
 	 */
 	inline void Refresh_Lambda(size_t n_referesh_from_vertex = 0,
-		size_t n_refresh_from_edge = 0, double alpha = 0.01)
+		size_t n_referesh_from_edge = 0, double alpha = 0.01)
 	{
-		if(n_refresh_from_edge) {
-			m_r_system.r_Edge_Pool().For_Each_Parallel(n_refresh_from_edge,
+		if(n_referesh_from_edge) {
+			m_r_system.r_Edge_Pool().For_Each_Parallel(n_referesh_from_edge,
 				m_r_system.r_Edge_Pool().n_Size(), CCalculate_Hessians());
 		} else {
 			m_r_system.r_Edge_Pool().For_Each_Parallel(CCalculate_Hessians());
@@ -984,8 +948,8 @@ protected:
 
 		// ela?
 		for(size_t i = n_referesh_from_vertex, n = m_lambda.n_BlockColumn_Num(); i < n; ++ i) {
-			size_t last = m_lambda.n_BlockColumn_Block_Num(i) - 1;
-			CUberBlockMatrix::_TyMatrixXdRef block = m_lambda.t_BlockAt(last, i);
+			size_t n_last = m_lambda.n_BlockColumn_Block_Num(i) - 1;
+			CUberBlockMatrix::_TyMatrixXdRef block = m_lambda.t_BlockAt(n_last, i);
 			for(size_t j = 0, m = block.rows(); j < m; ++ j)
 				block(j, j) += alpha;
 		}

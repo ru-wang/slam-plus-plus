@@ -672,6 +672,10 @@ public:
 		m_p_HtSiH = r_lambda.p_FindBlock(m_n_order, m_n_order, n_dimension, n_dimension, true, false);
 #endif // __BASE_TYPES_USE_ID_ADDRESSING
 		// find a block for hessian on the diagonal (edges can't do it, would have conflicts)
+
+		_ASSERTE(m_p_HtSiH);
+		// if this triggers, most likely __BASE_TYPES_USE_ID_ADDRESSING is enabled (see FlatSystem.h)
+		// and the edges come in some random order
 	}
 
 	inline void Calculate_Hessians()
@@ -702,12 +706,17 @@ public:
 
 	inline void Alloc_LBlocks(CUberBlockMatrix &r_L) const
 	{
+		double *UNUSED(p_block_addr);
 #ifdef __BASE_TYPES_USE_ID_ADDRESSING
-		r_L.p_GetBlock_Log(m_n_id, m_n_id, n_dimension, n_dimension, true, true); // don't care about the pointer, it is handled differently
+		p_block_addr = r_L.p_GetBlock_Log(m_n_id, m_n_id, n_dimension, n_dimension, true, true); // don't care about the pointer, it is handled differently
 #else // __BASE_TYPES_USE_ID_ADDRESSING
-		r_L.p_FindBlock(m_n_order, m_n_order, n_dimension, n_dimension, true, true); // don't care about the pointer, it is handled differently
+		p_block_addr = r_L.p_FindBlock(m_n_order, m_n_order, n_dimension, n_dimension, true, true); // don't care about the pointer, it is handled differently
 #endif // __BASE_TYPES_USE_ID_ADDRESSING
 		// find a block for hessian on the diagonal (edges can't do it, would have conflicts) // also clear it to zero! L is updated additively
+
+		_ASSERTE(p_block_addr);
+		// if this triggers, most likely __BASE_TYPES_USE_ID_ADDRESSING is enabled (see FlatSystem.h)
+		// and the edges come in some random order
 	}
 
 #endif // __SE_TYPES_SUPPORT_L_SOLVERS // --- ~L-SLAM specific functions ---
@@ -981,6 +990,11 @@ public:
 			n_measurement_dimension, n_vertex1_dimension, true, false);
 #endif // __BASE_TYPES_USE_ID_ADDRESSING
 		// just place blocks at (edge order, vertex order)
+
+		_ASSERTE(m_p_RH[0]);
+		_ASSERTE(m_p_RH[1]);
+		// if this triggers, most likely __BASE_TYPES_USE_ID_ADDRESSING is enabled (see FlatSystem.h)
+		// and the edges come in some random order
 	}
 
 	inline void Calculate_Jacobians()
@@ -1024,6 +1038,13 @@ public:
 		m_p_vertex1->Add_ReferencingEdge(this);
 		// the vertices need to know this edge in order to calculate sum of jacobians on the diagonal of lambda // t_odo - should the lambda solver call this instead? might avoid duplicate records in the future // lambda solver is calling this only once in it's lifetime, no duplicates will occur
 
+		_ASSERTE((m_p_vertex_id[0] > m_p_vertex_id[1]) ==
+			(m_p_vertex0->n_Order() > m_p_vertex1->n_Order()));
+		// if this triggers, then the edge has the vertices assigned in a different
+		// order than the ids (vertex[0] is id[1] and vice versa) consequently, the hessians
+		// will have correct shape in the matrix, but the data will be transposed
+		// and you will get either not pos def / rubbish solutions
+
 		size_t n_dimension0 = n_vertex0_dimension;
 		size_t n_dimension1 = n_vertex1_dimension;
 #ifdef __BASE_TYPES_USE_ID_ADDRESSING
@@ -1058,6 +1079,10 @@ public:
 		m_p_HtSiH = r_lambda.p_FindBlock(n_order_0, n_order_1, n_dimension0, n_dimension1, true, false);
 #endif // __BASE_TYPES_USE_ID_ADDRESSING
 		// find a block for hessian above the diagonal, and with the right shape
+
+		_ASSERTE(m_p_HtSiH);
+		// if this triggers, most likely __BASE_TYPES_USE_ID_ADDRESSING is enabled (see FlatSystem.h)
+		// and the edges come in some random order
 	}
 
 	inline void Calculate_Hessians()
@@ -1079,6 +1104,7 @@ public:
 #if 1
 		size_t n_id_0 = m_p_vertex_id[0];
 		size_t n_id_1 = m_p_vertex_id[1]; // this is closer in cache
+		_ASSERTE((n_id_0 > n_id_1) == (m_p_vertex0->n_Order() > m_p_vertex1->n_Order())); // if this triggers, then the edge has the vertices assigned in different order than the ids (vertex[0] is id[1] and vice versa)
 		if((b_transpose_hessian = (n_id_0 > n_id_1))) {
 			std::swap(n_id_0, n_id_1);
 			std::swap(n_dimension0, n_dimension1);

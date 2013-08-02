@@ -38,6 +38,7 @@
 #endif // _USE_MATH_DEFINES
 #include <math.h>
 #include <float.h>
+#include <iostream>
 //#include "slam/BlockMatrix.h"
 #include "eigen/Eigen/Cholesky"
 
@@ -100,13 +101,14 @@ public:
 		 *	@param[in] r_t_vertex2 is the delta vector
 		 *	@param[out] r_t_dest is the result of the operation
 		 */
-		static void Smart_Plus_Cam(const Eigen::Matrix<double, 10, 1> &r_t_vertex1,
-			const Eigen::Matrix<double, 10, 1> &r_t_vertex2, Eigen::Matrix<double, 10, 1> &r_t_dest)
+		static void Smart_Plus_Cam(const Eigen::Matrix<double, 6, 1> &r_t_vertex1,
+			const Eigen::Matrix<double, 6, 1> &r_t_vertex2, Eigen::Matrix<double, 6, 1> &r_t_dest)
 		{
-			_ASSERTE(r_t_vertex1.rows() == 10 && r_t_vertex2.rows() == 10);
+			_ASSERTE(r_t_vertex1.rows() == 6 && r_t_vertex2.rows() == 6);
 
 			r_t_dest.head<3>() = r_t_vertex1.head<3>() + r_t_vertex2.head<3>(); // accelerated using SSE
-			r_t_dest.tail<4>() = r_t_vertex1.tail<4>() + r_t_vertex2.tail<4>(); // accelerated using SSE
+			//SOSO: ignore fx, fy, cx, cy, we ahve them fixed
+			//r_t_dest.tail<4>() = r_t_vertex1.tail<4>();// + r_t_vertex2.tail<4>(); // accelerated using SSE
 
 			//sum the rotations
 			Eigen::Matrix3d pQ = Operator_rot(r_t_vertex1.segment<3>(3));
@@ -139,25 +141,33 @@ public:
 		 *	@param[in] r_t_vertex2 is the second vertex - camera
 		 *	@param[out] r_t_dest is filled with absolute coordinates of result
 		 */
-		static void Project_P2C(const Eigen::Matrix<double, 10, 1> &r_t_vertex1,
+		static void Project_P2C(const Eigen::Matrix<double, 6, 1> &r_t_vertex1, const Eigen::Matrix<double, 5, 1> &intrinsics,
 			const Eigen::Matrix<double, 3, 1> &r_t_vertex2, Eigen::Matrix<double, 2, 1> &r_t_dest)
 		{
 			//construct camera intrinsics matrix
+			double fx = intrinsics(0);
+			double fy = intrinsics(1);
+			//double ap = 1.0029;
+			double cx = intrinsics(2);
+			double cy = intrinsics(3);
+			double k = intrinsics(4);
+
 			Eigen::Matrix<double, 3, 3> A;
-			A(0, 0) = r_t_vertex1(6); 	A(0, 1) = 0; 				A(0, 2) = r_t_vertex1(8);
-			A(1, 0) = 0; 				A(1, 1) = r_t_vertex1(7); 	A(1, 2) = r_t_vertex1(9);
+			A(0, 0) = fx; 	A(0, 1) = 0; 				A(0, 2) = cx;
+			A(1, 0) = 0; 				A(1, 1) = fy; 	A(1, 2) = cy;
 			A(2, 0) = 0; 				A(2, 1) = 0; 				A(2, 2) = 1;
 
 			//construct [R | t]
-			Eigen::Matrix<double, 3, 4> Rt;	//TODO: rotate T ? - check dataset specs
+			Eigen::Matrix<double, 3, 4> Rt;
 			Rt.block<3, 3>(0, 0) = Operator_rot(r_t_vertex1.segment<3>(3));
 			Rt.col(3) = r_t_vertex1.head<3>();
 
 			//construct point vector
 			Eigen::Matrix<double, 4, 1> X;
-			X(0) = r_t_vertex2(0);
+			X.head<3>() = r_t_vertex2;
+			/*X(0) = r_t_vertex2(0);
 			X(1) = r_t_vertex2(1);
-			X(2) = r_t_vertex2(2);
+			X(2) = r_t_vertex2(2);*/
 			X(3) = 1;
 
 			//project world to camera
@@ -167,6 +177,11 @@ public:
 			Eigen::Matrix<double, 3, 1> uv = A * x;
 			//normalize
 			uv = uv / uv(2);
+
+			//apply radial distortion
+			double r = sqrt((uv(0)-A(0, 2))*(uv(0)-A(0, 2)) + (uv(1)-A(1, 2))*(uv(1)-A(1, 2)));
+			uv(0) =  A(0, 2) + (1 + r*k) * (uv(0) - A(0, 2));
+			uv(1) =  A(1, 2) + (1 + r*k) * (uv(1) - A(1, 2));
 
 			r_t_dest(0) = uv(0);
 #ifdef DATA_UPSIDE_DOWN
@@ -187,52 +202,51 @@ public:
 		 *	@param[out] r_t_pose3_pose2 is filled with the second jacobian
 		 */
 		template <class _TyDestVector, class _TyDestMatrix0, class _TyDestMatrix1> // want to be able to call this with differnent dest types (sometimes generic VectorXd / MatrixXd, sometimes with Vector3d / Matrix3d)
-		static void Project_P2C(const Eigen::Matrix<double, 10, 1> &r_t_vertex1,
+		static void Project_P2C(const Eigen::Matrix<double, 6, 1> &r_t_vertex1, const Eigen::Matrix<double, 5, 1> &intrinsics,
 			const Eigen::Matrix<double, 3, 1> &r_t_vertex2, _TyDestVector &r_t_dest,
 			_TyDestMatrix0 &r_t_pose3_pose1, _TyDestMatrix1 &r_t_pose3_pose2)
 		{
 			/* TODO: make more efficient */
-
 			//lets try it according to g2o
 			const double delta = 1e-9;
 			const double scalar = 1.0 / (delta);
-			const double delta_pixel = 1e-6;
-			const double scalar_pixel = 1.0 / (delta_pixel);
+			//const double delta_pixel = 1e-6;
+			//const double scalar_pixel = 1.0 / (delta_pixel);
 
-			//fprintf(stderr,"BEGIN: %f %f %f %f %f %f %f %f %f %f / %f %f %f \n", r_t_vertex1(0), r_t_vertex1(1), r_t_vertex1(2), r_t_vertex1(3),
-			//		r_t_vertex1(4), r_t_vertex1(5), r_t_vertex1(6), r_t_vertex1(7), r_t_vertex1(8), r_t_vertex1(9), r_t_vertex2(0), r_t_vertex2(1), r_t_vertex2(2));
-
-			Eigen::Matrix<double, 10, 10> Eps;// = delta * Eigen::MatrixXd::Identity(10, 10); // MatrixXd needs to allocate storage on heap ... many milliseconds lost
-			Eps = Eigen::Matrix<double, 10, 10>::Identity() * delta; // faster, all memory on stack
-			Eps(6, 6) = delta_pixel; Eps(7, 7) = delta_pixel;
-			Eps(9, 9) = delta_pixel; Eps(8, 8) = delta_pixel;
+			Eigen::Matrix<double, 6, 6> Eps;// = delta * Eigen::MatrixXd::Identity(10, 10); // MatrixXd needs to allocate storage on heap ... many milliseconds lost
+			Eps = Eigen::Matrix<double, 6, 6>::Identity() * delta; // faster, all memory on stack
+			//Eps(6, 6) = delta_pixel; Eps(7, 7) = delta_pixel;
+			//Eps(9, 9) = delta_pixel; Eps(8, 8) = delta_pixel;
 
 			_TyDestMatrix0 &H1 = r_t_pose3_pose1;
 			_TyDestMatrix1 &H2 = r_t_pose3_pose2;
-			_ASSERTE(H1.rows() == 2 && H1.cols() == 10 && H2.rows() == 2 && H2.cols() == 3); // just make sure the shape is right
+			_ASSERTE(H1.rows() == 2 && H1.cols() == 6 && H2.rows() == 2 && H2.cols() == 3); // just make sure the shape is right
 			// can actually work inplace
 
-			Project_P2C(r_t_vertex1, r_t_vertex2, r_t_dest);
+			Project_P2C(r_t_vertex1, intrinsics, r_t_vertex2, r_t_dest);
 			//r_t_dest = d; // possibly an unnecessary copy
 
 			Eigen::Matrix<double, 2, 1> d1;
-			Eigen::Matrix<double, 10, 1> p_delta;
+			Eigen::Matrix<double, 6, 1> p_delta;
 			Eigen::Matrix<double, 3, 1> p_delta2;
 			//for XYZ and RPY
-			for(int j = 0; j < 10; ++ j) {
+			for(int j = 0; j < 6; ++ j) {
 
-				Smart_Plus_Cam(r_t_vertex1, Eps.block(0, j, 10, 1), p_delta);
-				Project_P2C(p_delta, r_t_vertex2, d1);
-				if(j < 6)
-					H1.block(0, j, 2, 1) = /*Eigen::Matrix<double, 2, 1>::Ones()*/(d1 - r_t_dest) * scalar;
-				else
-					H1.block(0, j, 2, 1) = /*Eigen::Matrix<double, 2, 1>::Ones()*/(d1 - r_t_dest) * scalar_pixel;
+				Smart_Plus_Cam(r_t_vertex1, Eps.block(0, j, 6, 1), p_delta);
+				Project_P2C(p_delta, intrinsics, r_t_vertex2, d1);
+				//if(j < 6)
+					H1.block(0, j, 2, 1) = (d1 - r_t_dest) * scalar;
+				//else {
+					//put just zeros in here
+				//	H1.block(0, j, 2, 1) = Eigen::Matrix<double, 2, 1>::Zero(2, 1)/*(d1 - r_t_dest) * scalar_pixel*/;
+				//}
+				//if(j < 4)
+				//	H1.block(0, 6+j, 2, 1) = Eigen::Matrix<double, 2, 1>::Zero(2, 1);
 
 				if(j < 3) {
 					Smart_Plus_XYZ(r_t_vertex2, Eps.block(0, j, 3, 1), p_delta2);
-					Project_P2C(r_t_vertex1, p_delta2, d1);
-					//fprintf(stderr, "(%f %f -- %f %f) --- (%f %f)\n", r_t_dest(0), r_t_dest(1), d1(0), d1(1), ((d1 - r_t_dest) * scalar)(0), ((d1 - r_t_dest) * scalar)(1));
-					H2.block(0, j, 2, 1) = /*Eigen::Matrix<double, 2, 1>::Zero()*/(d1 - r_t_dest) * scalar;
+					Project_P2C(r_t_vertex1, intrinsics, p_delta2, d1);
+					H2.block(0, j, 2, 1) = (d1 - r_t_dest) * scalar;
 				}
 			}
 
@@ -246,7 +260,7 @@ public:
 			fprintf(stderr, "\n");*/
 
 			//lets do analytical H2
-			/*float fx = r_t_vertex1(6); float fy = r_t_vertex1(7);
+			/*float fx = intrinsics(0); float fy = intrinsics(1);
 			float tx = r_t_vertex1(0); float ty = r_t_vertex1(1); float tz = r_t_vertex1(2);
 			float x = r_t_vertex2(0); float y = r_t_vertex2(1); float z = r_t_vertex2(2);
 			Eigen::Matrix3d R = Operator_rot(r_t_vertex1.segment<3>(3));

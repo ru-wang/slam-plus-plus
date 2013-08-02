@@ -262,6 +262,7 @@ void PrintHelp()
 		"--lambda|-,\\      uses lambda-SLAM (default, preferred batch solver)\n"
 		"--l-slam|-L       uses L-SLAM\n"
 		"--fast-l-slam|-fL uses the new fast L-SLAM solver (preferred incremental solver)\n"
+		"--use-schur|-us   uses Schur complement to accelerate linear solving\n"
 		"--infile|-i <filename>    specifies input file <filename>; it can cope with\n"
 		"                  many file types and conventions\n"
 		"--parse-lines-limit|-pll <N>    sets limit of lines read from the input file\n"
@@ -379,10 +380,10 @@ int main(int n_arg_num, const char **p_arg_list)
 	// display switches
 
 	TDatasetPeeker peek(t_cmd_args.p_s_input_file, t_cmd_args.n_max_lines_to_process);
-	if(t_cmd_args.b_10k_opts && peek.b_has_landmark) {
+	if(t_cmd_args.b_10k_opts && (peek.b_has_landmark || peek.b_has_ba)) { // BA implies landmarks
 		fprintf(stderr, "error: --pose-only flag detected, but the system has landmarks (flag cleared)\n");
 		t_cmd_args.b_10k_opts = false;
-	} else if(!t_cmd_args.b_10k_opts && !peek.b_has_landmark) {
+	} else if(!t_cmd_args.b_10k_opts && !peek.b_has_landmark && !peek.b_has_ba) { // BA implies landmarks
 		fprintf(stderr, "warning: the system doesn't seem to have landmarks"
 			" and --pose-only flag not present: could run faster\n");
 	}
