@@ -22,6 +22,7 @@
  */
 
 #include "slam/FlatSystem.h"
+#include "slam/LinearSolver_Schur.h"
 
 /**
  *	@brief nonlinear blocky solver working above the A matrix
@@ -102,9 +103,9 @@ public:
 	 *	@param[in] linear_solver is linear solver instance
 	 *	@param[in] b_use_schur is Schur complement trick flag
 	 */
-	CNonlinearSolver_A(CSystem &r_system, size_t n_linear_solve_threshold,
-		size_t n_nonlinear_solve_threshold, size_t n_nonlinear_solve_max_iteration_num,
-		double f_nonlinear_solve_error_threshold, bool b_verbose,
+	CNonlinearSolver_A(CSystem &r_system, size_t n_linear_solve_threshold = 0,
+		size_t n_nonlinear_solve_threshold = 0, size_t n_nonlinear_solve_max_iteration_num = 5,
+		double f_nonlinear_solve_error_threshold = .01, bool b_verbose = false,
 		CLinearSolver linear_solver = CLinearSolver(), bool b_use_schur = true)
 		:m_r_system(r_system), m_linear_solver(linear_solver),
 		m_schur_solver(linear_solver), m_n_edges_in_A(0),
@@ -322,7 +323,7 @@ public:
 	 *	@param[in] n_max_iteration_num is the maximal number of iterations
 	 *	@param[in] f_min_dx_norm is the residual norm threshold
 	 */
-	void Optimize(size_t n_max_iteration_num, double f_min_dx_norm) // throw(std::bad_alloc)
+	void Optimize(size_t n_max_iteration_num = 5, double f_min_dx_norm = .01) // throw(std::bad_alloc)
 	{
 		const size_t n_variables_size = m_r_system.n_VertexElement_Num();
 		const size_t n_measurements_size = m_r_system.n_EdgeElement_Num();
@@ -445,8 +446,8 @@ public:
 					}
 
 					if(m_b_verbose) {
-						printf("%s", (b_cholesky_result)? ((m_b_use_schur)? "Schur rulez!\n" :
-							"Cholesky rulez!\n") : "optim success: 0\n");
+						printf("%s %s", (m_b_use_schur)? "Schur" : "Cholesky",
+							(b_cholesky_result)? "succeeded\n" : "failed\n");
 					}
 				}
 				// calculate cholesky, reuse block ordering if the linear solver supports it

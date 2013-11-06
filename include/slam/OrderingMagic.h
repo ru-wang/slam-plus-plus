@@ -243,6 +243,8 @@ public:
 	 *	@param[in] n_constraints_size is size og the ordering constraint vector
 	 *		(must match the number of r_A block columns, except it is ignored
 	 *		if p_constraints is 0)
+	 *	@param[in] b_need_inverse is inverse ordering flag (if set, inverse ordering is
+	 *		calculated as well, possibly at lower cost; otherwise it is left unchanged)
 	 *
 	 *	@return Returns const pointer to the ordering vector (not to be deleted).
 	 *
@@ -270,6 +272,8 @@ public:
 	 *	@param[in] n_constraints_size is size og the ordering constraint vector
 	 *		(must match the number of r_A block columns, except it is ignored
 	 *		if p_constraints is 0)
+	 *	@param[in] b_need_inverse is inverse ordering flag (if set, inverse ordering is
+	 *		calculated as well, possibly at lower cost; otherwise it is left unchanged)
 	 *
 	 *	@return Returns const pointer to the ordering vector (not to be deleted).
 	 *
@@ -290,6 +294,8 @@ public:
 	 *	@brief calculates blockwise ordering in a matrix, using the AMD library
 	 *
 	 *	@param[in] r_A is the block matrix (must be symmetric)
+	 *	@param[in] b_need_inverse is inverse ordering flag (if set, inverse ordering is
+	 *		calculated as well, possibly at lower cost; otherwise it is left unchanged)
 	 *
 	 *	@return Returns const pointer to the ordering vector (not to be deleted).
 	 *
@@ -405,6 +411,8 @@ public:
 	 *	@param[in] n_constraints_size is size og the ordering constraint vector
 	 *		(must match the number of p_A columns, except it is ignored
 	 *		if p_constraints is 0)
+	 *	@param[in] b_need_inverse is inverse ordering flag (if set, inverse ordering is
+	 *		calculated as well, possibly at lower cost; otherwise it is left unchanged)
 	 *
 	 *	@return Returns const pointer to the ordering vector (not to be deleted).
 	 *
@@ -427,6 +435,8 @@ public:
 	 *
 	 *	@param[in] p_A is the sparse matrix (must be symmetric, the contents will
 	 *		be dammaged by this call)
+	 *	@param[in] b_need_inverse is inverse ordering flag (if set, inverse ordering is
+	 *		calculated as well, possibly at lower cost; otherwise it is left unchanged)
 	 *
 	 *	@return Returns const pointer to the ordering vector (not to be deleted).
 	 *
@@ -494,6 +504,14 @@ public:
 
 	/**
 	 *	@brief checks if a given permutation is a valid ordering
+	 *
+	 *	A valid ordering is a permutation of a sequence of integers, starting
+	 *	with zero and going to size - 1. Every index therefore occurs exactly
+	 *	once, and there are no out of range indices (and therefore no index is
+	 *	missing).
+	 *
+	 *	@param[in] p_order is the permutation array
+	 *	@param[in] n_size is size of the permutation (in elements)
 	 *
 	 *	@return Returns true if the ordering is valid, otherwise returns false.
 	 *

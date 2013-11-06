@@ -930,9 +930,9 @@ public:
 	 */
 	inline CSEBaseEdgeImpl(size_t n_vertex0_id, size_t n_vertex1_id,
 		const _TyVector &r_v_measurement, const _TyMatrix &r_t_sigma_inv)
-		:m_v_measurement(r_v_measurement), m_t_sigma_inv(r_t_sigma_inv),
+		:m_v_measurement(r_v_measurement), m_t_sigma_inv(r_t_sigma_inv)
 #ifdef __SE_TYPES_SUPPORT_A_SOLVERS
-		m_t_square_root_sigma_inv_upper(r_t_sigma_inv.llt().matrixU()) // calculate R
+		, m_t_square_root_sigma_inv_upper(r_t_sigma_inv.llt().matrixU()) // calculate R
 #endif // __SE_TYPES_SUPPORT_A_SOLVERS
 	{
 		m_p_vertex_id[0] = n_vertex0_id;

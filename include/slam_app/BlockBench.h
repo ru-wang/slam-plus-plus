@@ -15,7 +15,7 @@
 #define __UBER_BLOCK_MATRIX_BENCHMARK_INCLUDED
 
 /**
- *	@file include/slam/BlockBench.h
+ *	@file include/slam_app/BlockBench.h
  *	@date 2012
  *	@author -tHE SWINe-
  *	@brief block matrix benchmark
@@ -42,7 +42,7 @@
  *
  */
 
-#include "slam/Parser.h"
+#include "slam/Parser.h" // uses CParserBase::ReadLine() and CParserBase::TrimSpace()
 #include "slam/Timer.h"
 #include "slam/BlockMatrix.h"
 

@@ -41,7 +41,7 @@ ENDIF(SLAM_P_P_LINEAR_SOLVER_TYPE EQUAL 1 AND CMAKE_SIZEOF_VOID_P EQUAL 8 AND NO
 
 # explicitly ask about compiler flags
 IF(UNIX)
-	SET(MY_CXX_FLAGS_RELEASE "-ftemplate-depth-1024 -funsafe-loop-optimizations -fprefetch-loop-arrays -O3 -DNDEBUG -fopenmp -ffast-math"
+	SET(MY_CXX_FLAGS_RELEASE "-ftemplate-depth=1024 -funsafe-loop-optimizations -fprefetch-loop-arrays -O3 -DNDEBUG -fopenmp -ffast-math"
 		CACHE STRING "C++ compiler flags")
 	SET(CMAKE_CXX_FLAGS_RELEASE "${MY_CXX_FLAGS_RELEASE}")
 	SET(MY_C_FLAGS_RELEASE "-funsafe-loop-optimizations -fprefetch-loop-arrays -O3 -DNDEBUG -ffast-math"
@@ -144,9 +144,11 @@ SET(SLAM_P_P_DATA_PATH ${CMAKE_INSTALL_PREFIX}/data CACHE PATH
 
 # if doing 64-bit build, we need CAMD with both DLONG and NLONG to be able to run short CHOLMOD
 IF(SLAM_P_P_SHORT_CHOLMOD AND CMAKE_SIZEOF_VOID_P EQUAL 8 AND NOT SLAM_P_P_32BIT_BUILD)
-	SET(SLAM_P_P_LIBRARIES csparse cxsparse camd_dlong cholmod eigen)
+	SET(SLAM_P_P_LIBRARIES slampp_base csparse cxsparse camd_dlong cholmod eigen)
+	SET(SLAM_EXAMPLE_LIBRARIES slampp_base csparse cxsparse camd_dlong cholmod eigen)
 ELSE(SLAM_P_P_SHORT_CHOLMOD AND CMAKE_SIZEOF_VOID_P EQUAL 8 AND NOT SLAM_P_P_32BIT_BUILD)
-	SET(SLAM_P_P_LIBRARIES csparse cxsparse cholmod eigen)
+	SET(SLAM_P_P_LIBRARIES slampp_base csparse cxsparse cholmod eigen)
+	SET(SLAM_EXAMPLE_LIBRARIES slampp_base csparse cxsparse cholmod eigen)
 ENDIF(SLAM_P_P_SHORT_CHOLMOD AND CMAKE_SIZEOF_VOID_P EQUAL 8 AND NOT SLAM_P_P_32BIT_BUILD)
 
 # Include project headers.

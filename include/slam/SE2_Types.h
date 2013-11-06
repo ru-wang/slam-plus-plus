@@ -37,6 +37,7 @@
 
 #include "slam/BaseTypes.h"
 #include "slam/2DSolverBase.h"
+#include "slam/Parser.h" // parsed types passed to constructors
 
 /**
  *	@brief SE(2) pose vertex type
@@ -65,7 +66,7 @@ public:
 	inline void Operator_Plus(const Eigen::VectorXd &r_v_delta) // "smart" plus
 	{
 		m_v_state += r_v_delta.segment<3>(m_n_order); // pick part of the delta vector, belonging to this vertex, apply +
-		m_v_state(2) = CBase2DSolver::C2DJacobians::f_ClampAngle_2Pi(m_v_state(2)); // clamp angle
+		m_v_state(2) = C2DJacobians::f_ClampAngle_2Pi(m_v_state(2)); // clamp angle
 	}
 
 	/**
@@ -74,7 +75,7 @@ public:
 	inline void Operator_Minus(const Eigen::VectorXd &r_v_delta) // "smart" minus
 	{
 		m_v_state -= r_v_delta.segment<3>(m_n_order); // pick part of the delta vector, belonging to this vertex, apply -
-		m_v_state(2) = CBase2DSolver::C2DJacobians::f_ClampAngle_2Pi(m_v_state(2)); // clamp angle
+		m_v_state(2) = C2DJacobians::f_ClampAngle_2Pi(m_v_state(2)); // clamp angle
 	}
 };
 
@@ -179,18 +180,18 @@ public:
 	class CRelative_to_Absolute_XYT_Initializer {
 	protected:
 		const Eigen::Vector3d &m_r_v_pose1; /**< @brief the first vertex */
-		const CParserBase::TEdge2D &m_r_edge; /**< @brief the edge, shared by r_v_vertex1 and the vertex being initialized */
+		const Eigen::Vector3d &m_r_v_edge; /**< @brief the edge, shared by r_v_vertex1 and the vertex being initialized */
 
 	public:
 		/**
 		 *	@brief default constructor
 		 *
 		 *	@param[in] r_v_vertex1 is the first vertex
-		 *	@param[in] r_edge is the edge, shared by r_v_vertex1 and the vertex being initialized
+		 *	@param[in] r_v_edge is the edge, shared by r_v_vertex1 and the vertex being initialized
 		 */
 		inline CRelative_to_Absolute_XYT_Initializer(const Eigen::Vector3d &r_v_vertex1,
-			const CParserBase::TEdge2D &r_edge)
-			:m_r_v_pose1(r_v_vertex1), m_r_edge(r_edge)
+			const Eigen::Vector3d &r_v_edge)
+			:m_r_v_pose1(r_v_vertex1), m_r_v_edge(r_v_edge)
 		{}
 
 		/**
@@ -200,7 +201,7 @@ public:
 		inline operator CVertexPose2D() const
 		{
 			Eigen::Vector3d v_pose2;
-			CBase2DSolver::C2DJacobians::Relative_to_Absolute(m_r_v_pose1, m_r_edge.m_v_delta, v_pose2);
+			C2DJacobians::Relative_to_Absolute(m_r_v_pose1, m_r_v_edge, v_pose2);
 			return CVertexPose2D(v_pose2);
 		}
 	};
@@ -230,7 +231,36 @@ public:
 		m_p_vertex0 = &r_system.template r_Get_Vertex<CVertexPose2D>(r_t_edge.m_n_node_0,
 			CInitializeNullVertex());
 		m_p_vertex1 = &r_system.template r_Get_Vertex<CVertexPose2D>(r_t_edge.m_n_node_1,
-			CRelative_to_Absolute_XYT_Initializer(m_p_vertex0->v_State(), r_t_edge));
+			CRelative_to_Absolute_XYT_Initializer(m_p_vertex0->v_State(), r_t_edge.m_v_delta));
+		// get vertices (initialize if required)
+		// "template" is required by g++, otherwise gives "expected primary-expression before '>' token"
+
+		_ASSERTE(((CSEBaseVertex*)m_p_vertex0)->n_Dimension() == 3);
+		_ASSERTE(((CSEBaseVertex*)m_p_vertex1)->n_Dimension() == 3);
+		// make sure the dimensionality is correct (might not be)
+	}
+
+	/**
+	 *	@brief constructor; initializes edge with data
+	 *
+	 *	@tparam CSystem is type of system where this edge is being stored
+	 *
+	 *	@param[in] n_node0 is (zero-based) index of the first (origin) node
+	 *	@param[in] n_node1 is (zero-based) index of the second (endpoint) node
+	 *	@param[in] v_delta is vector of delta x position, delta y-position and delta-theta
+	 *	@param[in] r_t_inv_sigma is the information matrix
+	 *	@param[in,out] r_system is reference to system (used to query edge vertices)
+	 */
+	template <class CSystem>
+	CEdgePose2D(int n_node0, int n_node1, Eigen::Vector3d v_delta,
+		Eigen::Matrix3d &r_t_inv_sigma, CSystem &r_system)
+		:CSEBaseEdgeImpl<CEdgePose2D, CVertexPose2D, CVertexPose2D, 3>(n_node0,
+		n_node1, v_delta, r_t_inv_sigma)
+	{
+		m_p_vertex0 = &r_system.template r_Get_Vertex<CVertexPose2D>(n_node0,
+			CInitializeNullVertex());
+		m_p_vertex1 = &r_system.template r_Get_Vertex<CVertexPose2D>(n_node1,
+			CRelative_to_Absolute_XYT_Initializer(m_p_vertex0->v_State(), v_delta));
 		// get vertices (initialize if required)
 		// "template" is required by g++, otherwise gives "expected primary-expression before '>' token"
 
@@ -262,12 +292,12 @@ public:
 		Eigen::Matrix3d &r_t_jacobian1, Eigen::Vector3d &r_v_expectation,
 		Eigen::Vector3d &r_v_error) const
 	{
-		CBase2DSolver::C2DJacobians::Absolute_to_Relative(m_p_vertex0->v_State(),
+		C2DJacobians::Absolute_to_Relative(m_p_vertex0->v_State(),
 			m_p_vertex1->v_State(), r_v_expectation, r_t_jacobian0, r_t_jacobian1);
 		// calculates the expectation and the jacobians
 
 		r_v_error = m_v_measurement - r_v_expectation;
-		r_v_error(2) = CBase2DSolver::C2DJacobians::f_ClampAngularError_2Pi(r_v_error(2));
+		r_v_error(2) = C2DJacobians::f_ClampAngularError_2Pi(r_v_error(2));
 		// calculates error (possibly re-calculates, if running A-SLAM)
 	}
 
@@ -300,17 +330,17 @@ public:
 	class CRelative_to_Absolute_RangeBearing_Initializer { // t_odo - optimize for z=0 // can't
 	protected:
 		const Eigen::Vector3d &m_r_v_pose1; /**< @brief the first vertex */
-		const CParserBase::TLandmark2D &m_r_edge; /**< @brief the edge, shared by r_v_vertex1 and the vertex being initialized */
+		const Eigen::Vector2d &m_r_v_edge; /**< @brief the edge, shared by r_v_vertex1 and the vertex being initialized */
 
 	public:
 		/**
 		 *	@brief default constructor
 		 *	@param[in] r_v_vertex1 is the first vertex
-		 *	@param[in] r_edge is the edge, shared by r_v_vertex1 and the vertex being initialized
+		 *	@param[in] r_v_edge is the edge, shared by r_v_vertex1 and the vertex being initialized
 		 */
 		inline CRelative_to_Absolute_RangeBearing_Initializer(const Eigen::Vector3d &r_v_vertex1,
-			const CParserBase::TLandmark2D &r_edge)
-			:m_r_v_pose1(r_v_vertex1), m_r_edge(r_edge)
+			const Eigen::Vector2d &r_v_edge)
+			:m_r_v_pose1(r_v_vertex1), m_r_v_edge(r_v_edge)
 		{}
 
 		/**
@@ -320,9 +350,9 @@ public:
 		inline operator CVertexLandmark2D() const
 		{
 			Eigen::Vector3d pose1(m_r_v_pose1(0), m_r_v_pose1(1), m_r_v_pose1(2)); // fixme - is this correct? is it 3D or just 2D?
-			Eigen::Vector3d relPose(m_r_edge.m_v_delta(0), m_r_edge.m_v_delta(1), 0); // 2D to 3D (append 0)
+			Eigen::Vector3d relPose(m_r_v_edge(0), m_r_v_edge(1), 0); // 2D to 3D (append 0)
 			Eigen::Vector3d	v_result;
-			CBase2DSolver::C2DJacobians::Relative_to_Absolute(pose1, relPose, v_result);
+			C2DJacobians::Relative_to_Absolute(pose1, relPose, v_result);
 			return CVertexLandmark2D(Eigen::Vector2d(v_result.segment<2>(0)));
 		}
 	};
@@ -338,27 +368,6 @@ public:
 	 */
 	inline CEdgePoseLandmark2D()
 	{}
-
-	/**
-	 *	@brief converts vector from Euclidean to polar coordinates
-	 *	@param[in] r_v_vec is a vector in Euclidean coordinates
-	 *	@return Returns the given vector, converted to polar coordinates.
-	 */
-	static inline Eigen::Vector2d v_ToPolar(const Eigen::Vector2d &r_v_vec)
-	{
-		return Eigen::Vector2d(r_v_vec.norm(),
-			CBase2DSolver::C2DJacobians::f_ClampAngle_2Pi(atan2(r_v_vec(1), r_v_vec(0))));
-	}
-
-	/**
-	 *	@brief converts covariance matrix from Euclidean to polar coordinates
-	 *	@param[in] r_t_mat is a covariance matrix in Euclidean coordinates
-	 *	@return Returns the given matrix, converted to polar coordinates.
-	 */
-	static inline Eigen::Matrix2d t_ToPolar(const Eigen::Matrix2d &UNUSED(r_t_mat))
-	{
-		return Eigen::Matrix2d::Identity();
-	}
 
 	/**
 	 *	@brief constructor; converts parsed edge to edge representation
@@ -386,7 +395,7 @@ public:
 		m_p_vertex0 = &r_system.template r_Get_Vertex<CVertexPose2D>(r_t_edge.m_n_node_0,
 			CInitializeNullVertex());
 		m_p_vertex1 = &r_system.template r_Get_Vertex<CVertexLandmark2D>(r_t_edge.m_n_node_1,
-			CRelative_to_Absolute_RangeBearing_Initializer(m_p_vertex0->v_State(), r_t_edge));
+			CRelative_to_Absolute_RangeBearing_Initializer(m_p_vertex0->v_State(), r_t_edge.m_v_delta));
 		// get references to the vertices, initialize the vertices, if neccessary
 		// "template" is required by g++, otherwise gives "expected primary-expression before '>' token"
 
@@ -395,6 +404,47 @@ public:
 		// make sure the dimensionality is correct (might not be)
 
 		m_t_sigma_inv_xy = r_t_edge.m_t_inv_sigma;
+		// it's in different coordinate space, save it
+	}
+
+	/**
+	 *	@brief constructor; initializes edge with data
+	 *
+	 *	@tparam CSystem is type of system where this edge is being stored
+	 *
+	 *	@param[in] n_node0 is (zero-based) index of the first (origin) node
+	 *	@param[in] n_node1 is (zero-based) index of the second (endpoint) node
+	 *	@param[in] r_v_delta is vector of delta x position  and delta y-position
+	 *	@param[in] r_t_inv_sigma is the information matrix
+	 *	@param[in,out] r_system is reference to system (used to query edge vertices)
+	 */
+	template <class CSystem>
+	CEdgePoseLandmark2D(int n_node0, int n_node1, Eigen::Vector2d &r_v_delta,
+		Eigen::Matrix2d &r_t_inv_sigma, CSystem &r_system)
+		:CSEBaseEdgeImpl<CEdgePoseLandmark2D, CVertexPose2D, CVertexLandmark2D,
+		2>(n_node0, n_node1, v_ToPolar(r_v_delta), t_ToPolar(r_t_inv_sigma))
+	{
+		if(r_system.r_Vertex_Pool().n_Size() > size_t(n_node0) &&
+		   r_system.r_Vertex_Pool()[n_node0].n_Dimension() == 2)
+			std::swap(m_p_vertex_id[0], m_p_vertex_id[1]);
+		else if(r_system.r_Vertex_Pool().n_Size() > size_t(n_node1) &&
+		   r_system.r_Vertex_Pool()[n_node1].n_Dimension() == 3)
+			std::swap(m_p_vertex_id[0], m_p_vertex_id[1]);
+		// try to detect inverted edges (those where landmark is not second),
+		// and invert them if needed
+
+		m_p_vertex0 = &r_system.template r_Get_Vertex<CVertexPose2D>(n_node0,
+			CInitializeNullVertex());
+		m_p_vertex1 = &r_system.template r_Get_Vertex<CVertexLandmark2D>(n_node1,
+			CRelative_to_Absolute_RangeBearing_Initializer(m_p_vertex0->v_State(), r_v_delta));
+		// get references to the vertices, initialize the vertices, if neccessary
+		// "template" is required by g++, otherwise gives "expected primary-expression before '>' token"
+
+		_ASSERTE(((CSEBaseVertex*)m_p_vertex0)->n_Dimension() == 3);
+		_ASSERTE(((CSEBaseVertex*)m_p_vertex1)->n_Dimension() == 2);
+		// make sure the dimensionality is correct (might not be)
+
+		m_t_sigma_inv_xy = r_t_inv_sigma;
 		// it's in different coordinate space, save it
 	}
 
@@ -421,13 +471,13 @@ public:
 		Eigen::Matrix2d &r_t_jacobian1, Eigen::Vector2d &r_v_expectation,
 		Eigen::Vector2d &r_v_error) const
 	{
-		CBase2DSolver::C2DJacobians::Observation2D_RangeBearing(
+		C2DJacobians::Observation2D_RangeBearing(
 			m_p_vertex0->v_State(), m_p_vertex1->v_State(),
 			r_v_expectation, r_t_jacobian0, r_t_jacobian1);
 		// calculates the expectation and the jacobians (possibly re-calculates, if running A-SLAM)
 
 		r_v_error = m_v_measurement - r_v_expectation;
-		r_v_error(1) = CBase2DSolver::C2DJacobians::f_ClampAngularError_2Pi(r_v_error(1));
+		r_v_error(1) = C2DJacobians::f_ClampAngularError_2Pi(r_v_error(1));
 	}
 
 	/**
@@ -447,6 +497,27 @@ public:
 
 		//return (v_error_xy.transpose() * m_t_sigma_inv_xy).dot(v_error_xy); // ||h_i(O_i) - z_i||^2 lambda_i
 		return v_error_xy.dot(m_t_sigma_inv_xy * v_error_xy);
+	}
+
+	/**
+	 *	@brief converts vector from Euclidean to polar coordinates
+	 *	@param[in] r_v_vec is a vector in Euclidean coordinates
+	 *	@return Returns the given vector, converted to polar coordinates.
+	 */
+	static inline Eigen::Vector2d v_ToPolar(const Eigen::Vector2d &r_v_vec)
+	{
+		return Eigen::Vector2d(r_v_vec.norm(),
+			C2DJacobians::f_ClampAngle_2Pi(atan2(r_v_vec(1), r_v_vec(0))));
+	}
+
+	/**
+	 *	@brief converts covariance matrix from Euclidean to polar coordinates
+	 *	@param[in] r_t_mat is a covariance matrix in Euclidean coordinates
+	 *	@return Returns the given matrix, converted to polar coordinates.
+	 */
+	static inline Eigen::Matrix2d t_ToPolar(const Eigen::Matrix2d &UNUSED(r_t_mat))
+	{
+		return Eigen::Matrix2d::Identity();
 	}
 };
 

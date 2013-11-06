@@ -15,8 +15,8 @@
 #define __LINEAR_SOLVER_SCHUR_INCLUDED
 
 /**
- *	@file include/slam/LinearSolver_UberBlock.h
- *	@brief the native linear solver model
+ *	@file include/slam/LinearSolver_Schur.h
+ *	@brief blocky linear solver wrapper that enables Schur complement optimization
  *	@author -tHE SWINe-
  *	@date 2013-01-28
  */
@@ -65,7 +65,7 @@ public:
 	public:
 		/**
 		 *	@brief default constructor
-		 *	@pram[in] p_graph is const pointer to the graph
+		 *	@param[in] p_graph is const pointer to the graph
 		 */
 		inline CCompareVertexDegree(const cs *p_graph)
 			:m_p_graph(p_graph)
@@ -81,8 +81,7 @@ public:
 		 */
 		inline bool operator ()(size_t n_vertex_a, size_t n_vertex_b)
 		{
-			const size_t n = m_p_graph->n;
-			_ASSERTE(n_vertex_a < n && n_vertex_b < n);
+			_ASSERTE(n_vertex_a < size_t(m_p_graph->n) && n_vertex_b < size_t(m_p_graph->n));
 			return m_p_graph->p[n_vertex_a + 1] - m_p_graph->p[n_vertex_a] <
 				m_p_graph->p[n_vertex_b + 1] - m_p_graph->p[n_vertex_b];
 		}
@@ -108,7 +107,14 @@ public:
 
 public:
 	/**
-	 *	@note there is some workspace, which could be reused
+	 *	@brief calculates ordering for Schur
+	 *
+	 *	@param[out] r_ordering is filled with the ordering (does not need to be allocated)
+	 *	@param[in] r_lambda is the matrix to be ordered on
+	 *
+	 *	@return Returns number of connected vertices (the size of the Schur factor).
+	 *
+	 *	@note There is some workspace, which could be reused.
 	 */
 	static size_t n_Calculate_Ordering(std::vector<size_t> &r_ordering,
 		const CUberBlockMatrix &r_lambda) // throw(std::bad_alloc)
@@ -161,6 +167,20 @@ public:
 		}
 	}
 
+	/**
+	 *	@brief calculates guided ordering for Schur
+	 *
+	 *	@param[out] r_ordering is filled with the ordering (does not need to be allocated)
+	 *	@param[in] n_pose_vertex_dimension is dimension of pose (e.g. 3 for 2D SLAM)
+	 *	@param[in] n_landmark_vertex_dimension is dimension of landmark (e.g. 2 for 2D SLAM)
+	 *	@param[in] r_lambda is the matrix to be ordered on
+	 *
+	 *	@return Returns number of poses (the size of the Schur factor).
+	 *
+	 *	@note In case this is used, simpler linear solver can be used
+	 *		as the block sizes are known beforehand, and are constant
+	 *		for each section of the factorized matrix.
+	 */
 	static size_t n_Calculate_GuidedOrdering(std::vector<size_t> &r_ordering,
 		size_t n_pose_vertex_dimension, size_t n_landmark_vertex_dimension,
 		const CUberBlockMatrix &r_lambda) // throw(std::bad_alloc)
@@ -1449,18 +1469,19 @@ public:
  *
  *	@tparam CBaseSolver is a type of basic linear solver,
  *		to be used to solve the Schur complement subproblem
- *	@tparam CBlockMatrixTypelist is is typelist, containing Eigen
+ *	@tparam CAMatrixBlockSizes is is typelist, containing Eigen
  *		matrices with known compile-time sizes
  */
 template <class CBaseSolver, class CAMatrixBlockSizes>
 class CLinearSolver_Schur {
 public:
 	typedef CBlockwiseLinearSolverTag _Tag; /**< @brief solver type tag */
-	typedef CBaseSolver _TyBaseSolver; /** @brief name of the base linear solver */
+	typedef CBaseSolver _TyBaseSolver; /**< @brief name of the base linear solver */
 
 	typedef typename CUniqueTypelist<CAMatrixBlockSizes>::_TyResult _TyAMatrixBlockSizes; /**< @brief list of block matrix sizes */
 	typedef typename __fbs_ut::CBlockSizesAfterPreMultiplyWithSelfTranspose<
 		_TyAMatrixBlockSizes>::_TyResult _TyLambdaMatrixBlockSizes; /**< @brief possible block matrices, found in lambda and L */
+	//typedef typename _TyBaseSolver::_TySystem::_TyHessianMatrixBlockList _TyLambdaMatrixBlockSizes; // could use that instead, but there might be other prior knowledge of block sizes
 
 	typedef typename CTransformTypelist<_TyAMatrixBlockSizes,
 		__fbs_ut::CEigenToDimension>::_TyResult CDimsList; /**< @brief list of block sizes as CCTSize2D */
@@ -1469,17 +1490,20 @@ public:
 	typedef typename CSortTypelist<CWidthList,
 		__fbs_ut::CCompareScalar_Less>::_TyResult _TyVertexSizeList; /**< @brief sorted list of all possible vertex sizes */
 
+	/**
+	 *	@brief configuration, stored as enum
+	 */
 	enum {
-		vertex_Size_Num = CTypelistLength<_TyVertexSizeList>::n_result, /** @brief number of different vertex dimensions */
+		vertex_Size_Num = CTypelistLength<_TyVertexSizeList>::n_result, /**< @brief number of different vertex dimensions */
 
-		vertex_Size_SmallIdx = 0, /** @brief index of "small" vertex size */
-		vertex_Size_BigIdx = (vertex_Size_Num > 1)? 1 : 0, /** @brief index of "big" vertex size */
+		vertex_Size_SmallIdx = 0, /**< @brief index of "small" vertex size */
+		vertex_Size_BigIdx = (vertex_Size_Num > 1)? 1 : 0, /**< @brief index of "big" vertex size */
 		// choose index that is in the list (to avoid bounds violation)
 
 		vertex_Size_Small = CTypelistItemAt<typename CConcatTypelist<_TyVertexSizeList,
-			__fbs_ut::CCTSize<-1> >::_TyResult, vertex_Size_SmallIdx>::_TyResult::n_size, /** @brief value of "small" vertex size */
+			__fbs_ut::CCTSize<-1> >::_TyResult, vertex_Size_SmallIdx>::_TyResult::n_size, /**< @brief value of "small" vertex size */
 		vertex_Size_Big = CTypelistItemAt<typename CConcatTypelist<_TyVertexSizeList,
-			__fbs_ut::CCTSize<-1> >::_TyResult, vertex_Size_BigIdx>::_TyResult::n_size /** @brief value of "big" vertex size */
+			__fbs_ut::CCTSize<-1> >::_TyResult, vertex_Size_BigIdx>::_TyResult::n_size /**< @brief value of "big" vertex size */
 		// padd the list with a single -1 item to allow compilation even with empty lists
 		// (maybe not very useful, but at least will not give confusing complicated error messages)
 	};
@@ -1693,8 +1717,8 @@ public:
 		V.Save_MatrixMarket("lambda_perm10.mtx", "lambda_perm10.bla");
 		C.Save_MatrixMarket("lambda_perm11.mtx", "lambda_perm11.bla");
 		C_inv.Save_MatrixMarket("lambda_perm11_inv.mtx", "lambda_perm11_inv.bla");
-		schur_compl.Save_MatrixMarket("schur.mtx", "schur.bla");
-		lambda_perm.Rasterize("schur0_lambda_perm.tga", 3);
+		schur_compl.Save_MatrixMarket("schur.mtx", "schur.bla");*/
+		/*lambda_perm.Rasterize("schur0_lambda_perm.tga", 3);
 		A.Rasterize("schur1_lambda_perm00.tga", 3);
 		U.Rasterize("schur2_lambda_perm01.tga", 3);
 		V.Rasterize("schur3_lambda_perm10.tga", 3);

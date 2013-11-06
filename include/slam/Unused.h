@@ -21,34 +21,21 @@
  *	@date 2010-11-25
  */
 
-#ifdef UNUSED
-#elif defined(__GNUC__)
+#ifndef UNUSED
 /**
  *	@def UNUSED
- *	@brief marks function argument / variable as deliberately unused
+ *	@brief marks function argument	 / variable as deliberately unused
  *	@param x is parameter to be marked as unused
  *	@note This is especially useful for template programming or defining common interface classes
  *		where functions having unused parameters are pretty common cause of numerous g++ warnings.
  */
+#if defined(__GNUC__)
 #define UNUSED(x) x __attribute__((unused))
 #elif defined(__LCLINT__)
-/**
- *	@def UNUSED
- *	@brief marks function argument / variable as deliberately unused
- *	@param x is parameter to be marked as unused
- *	@note This is especially useful for template programming or defining common interface classes
- *		where functions having unused parameters are pretty common cause of numerous g++ warnings.
- */
 #define UNUSED(x) /*@unused@*/ x
-#else
-/**
- *	@def UNUSED
- *	@brief marks function argument / variable as deliberately unused
- *	@param x is parameter to be marked as unused
- *	@note This is especially useful for template programming or defining common interface classes
- *		where functions having unused parameters are pretty common cause of numerous g++ warnings.
- */
+#else // __GNUC__
 #define UNUSED(x) x
-#endif
+#endif // __GNUC__
+#endif // UNUSED
 
 #endif // __UNUSED_INCLUDED

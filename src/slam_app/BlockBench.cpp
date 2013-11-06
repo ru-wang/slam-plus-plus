@@ -11,13 +11,13 @@
 */
 
 /**
- *	@file src/slam/BlockBench.cpp
+ *	@file src/slam_app/BlockBench.cpp
  *	@date 2012
  *	@author -tHE SWINe-
  *	@brief block matrix benchmark
  */
 
-#include "slam/BlockBench.h"
+#include "slam_app/BlockBench.h"
 
 /*
  *								=== CBlockMatrixBenchmark ===

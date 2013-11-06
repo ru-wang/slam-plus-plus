@@ -11,49 +11,82 @@
 
 #include "slam/BaseTypes.h"
 #include "slam/SE2_Types.h"
-//#include "slam/2DSolverBase.h"
-//#include "slam/3DSolverBase.h"
 #include "slam/BASolverBase.h"
-#include <iostream> //SOSO
+#include <iostream> // SOSO
 
 /*class CVertexIntrinsics : public CSEBaseVertexImpl<CVertexIntrinsics, 4> { // this says to use base vertex implementation for class with name CVertexPose2D, while the vertex has 3 dimensions; this will generate member variable m_v_state ("member vector" state), which will be Eigen dense column vector with the given number of dimensions
 public:
     __BA_TYPES_ALIGN_OPERATOR_NEW // imposed by the use of eigen, copy this
+
+	/ **
+	 *	@brief default constructor; has no effect
+	 * /
     inline CVertexPoseBA() // copy this
     {}
 
+	/ **
+	 *	@brief constructor from vector type
+	 *	@param[in] r_v_state is state of the vertex
+	 * /
     inline CVertexIntrinsics(const Eigen::VectorXd &r_v_state) // copy this, change the dimension of the vector to appropriate
         :CSEBaseVertexImpl<CVertexIntrinsics, 4>(r_v_state) // change the dimension here as well
     {}
 
+	/ **
+	 *	@copydoc CSEBaseVertex::Operator_Plus()
+	 * /
     inline void Operator_Plus(const Eigen::VectorXd &r_v_delta) // "smart" plus
     {
     	m_v_state.segment<4>() += r_v_delta.segment<4>(m_n_order);
     }
 };*/
 
+/**
+ *	@brief bundle adjustment camera pose
+ */
 class CVertexCam : public CSEBaseVertexImpl<CVertexCam, 6> { // this says to use base vertex implementation for class with name CVertexPose2D, while the vertex has 3 dimensions; this will generate member variable m_v_state ("member vector" state), which will be Eigen dense column vector with the given number of dimensions
+protected:
+    Eigen::Matrix<double, 5, 1> m_v_intrinsics; /**< @brief vertex cam should hold own camera params (these are not being optimized) */
+
 public:
     __BA_TYPES_ALIGN_OPERATOR_NEW // imposed by the use of eigen, copy this
 
-    //vertex cam should hold own camera params
-    Eigen::Matrix<double, 5, 1> intrinsics;
-
+	/**
+	 *	@brief default constructor; has no effect
+	 */
     inline CVertexCam() // copy this
     {}
 
+	/**
+	 *	@brief constructor from vector type
+	 *	@param[in] r_v_state is state of the vertex
+	 */
     inline CVertexCam(const Eigen::VectorXd &r_v_state) // copy this, change the dimension of the vector to appropriate
-        :CSEBaseVertexImpl<CVertexCam, 6>(r_v_state.head<6>()) // change the dimension here as well
-    {
-    	intrinsics = r_v_state.tail<5>();
-    }
+        :CSEBaseVertexImpl<CVertexCam, 6>(r_v_state.head<6>()), // change the dimension here as well
+		m_v_intrinsics(r_v_state.tail<5>())
+    {}
 
-	/*inline void Alloc_HessianBlocks(CUberBlockMatrix &r_lambda)
+	/**
+	 *	@brief constructor from parsed type
+	 *	@param[in] r_t_vertex is state of the vertex
+	 */
+    inline CVertexCam(const CParserBase::TVertexCam3D &r_t_vertex) // copy this, change the dimension of the vector to appropriate
+        :CSEBaseVertexImpl<CVertexCam, 6>(r_t_vertex.m_v_position.head<6>()), // change the dimension here as well
+		m_v_intrinsics(r_t_vertex.m_v_position.tail<5>())
+    {}
+
+	/**
+	 *	@brief gets intrinsic parameters of the camera
+	 *	@return Returns const reference to the parameters of the camera.
+	 */
+	inline const Eigen::Matrix<double, 5, 1> &v_Intrinsics() const
 	{
-		m_p_HtSiH = r_lambda.p_FindBlock(m_n_order, m_n_order, 2, n_dimension, true, false);
-		// find a block for hessian on the diagonal (edges can't do it, would have conflicts)
-	}*/ // no!
+		return m_v_intrinsics;
+	}
 
+	/**
+	 *	@copydoc CSEBaseVertex::Operator_Plus()
+	 */
     inline void Operator_Plus(const Eigen::VectorXd &r_v_delta) // "smart" plus
     {
         //focal lengths and principal points are added normally
@@ -64,38 +97,64 @@ public:
     	m_v_state.head<3>() += r_v_delta.segment<3>(m_n_order); // can select 3D segment starting at m_n_order; SSE accelerated
 
 		//sum the rotations
-		Eigen::Matrix3d pQ = CBase3DSolver::C3DJacobians::Operator_rot(m_v_state.segment<3>(3));
-		Eigen::Matrix3d dQ = CBase3DSolver::C3DJacobians::Operator_rot(r_v_delta.segment<3>(m_n_order + 3));
+		Eigen::Matrix3d pQ = C3DJacobians::Operator_rot(m_v_state.segment<3>(3));
+		Eigen::Matrix3d dQ = C3DJacobians::Operator_rot(r_v_delta.segment<3>(m_n_order + 3));
 
 		Eigen::Matrix3d QQ;// = pQ * dQ;
 		QQ.noalias() = pQ * dQ; // noalias says that the destination is not the same as the multiplicands and that the multiplication can be carried out without allocating intermediate storage
-		m_v_state.segment<3>(3) = CBaseBASolver::CBAJacobians::Operator_arot(QQ); // also, no need for the intermediate object
+		m_v_state.segment<3>(3) = CBAJacobians::Operator_arot(QQ); // also, no need for the intermediate object
     }
+
+	/**
+	 *	@copydoc CSEBaseVertex::Operator_Minus()
+	 */
+    inline void Operator_Minus(const Eigen::VectorXd &r_v_delta) // "smart" minus
+	{
+		Operator_Plus(-r_v_delta); // ...
+	}
 };
 
+/**
+ *	@brief bundle adjustment (observed) keypoint vertex
+ */
 class CVertexXYZ : public CSEBaseVertexImpl<CVertexXYZ, 3> { // this says to use base vertex implementation for class with name CVertexPose2D, while the vertex has 3 dimensions; this will generate member variable m_v_state ("member vector" state), which will be Eigen dense column vector with the given number of dimensions
 public:
     __BA_TYPES_ALIGN_OPERATOR_NEW // imposed by the use of eigen, copy this
 
+	/**
+	 *	@brief default constructor; has no effect
+	 */
     inline CVertexXYZ() // copy this
     {}
 
+	/**
+	 *	@brief constructor from vector type
+	 *	@param[in] r_v_state is state of the vertex
+	 */
     inline CVertexXYZ(const Eigen::Vector3d &r_v_state) // copy this, change the dimension of the vector to appropriate
         :CSEBaseVertexImpl<CVertexXYZ, 3>(r_v_state) // change the dimension here as well
     {}
 
-	/*inline void Alloc_HessianBlocks(CUberBlockMatrix &r_lambda)
-	{
-		m_p_HtSiH = r_lambda.p_FindBlock(m_n_order, m_n_order, 2, n_dimension, true, false);
-		// find a block for hessian on the diagonal (edges can't do it, would have conflicts)
-	}*/ // no!
+	/**
+	 *	@brief constructor from parsed type
+	 *	@param[in] r_t_vertex is state of the vertex
+	 */
+    inline CVertexXYZ(const CParserBase::TVertexXYZ &r_t_vertex) // copy this, change the dimension of the vector to appropriate
+        :CSEBaseVertexImpl<CVertexXYZ, 3>(r_t_vertex.m_v_position) // change the dimension here as well
+    {}
 
+	/**
+	 *	@copydoc CSEBaseVertex::Operator_Plus()
+	 */
     inline void Operator_Plus(const Eigen::VectorXd &r_v_delta) // "smart" plus
     {
     	//pose is added as SE3
     	m_v_state += r_v_delta.segment<3>(m_n_order); // can select 3D segment starting at m_n_order; SSE accelerated
     }
 
+	/**
+	 *	@copydoc CSEBaseVertex::Operator_Minus()
+	 */
     inline void Operator_Minus(const Eigen::VectorXd &r_v_delta) // "smart" plus
 	{
 		//pose is added as SE3
@@ -171,7 +230,7 @@ public:
 		Eigen::Matrix<double, 2, 3> &r_t_jacobian1, Eigen::Matrix<double, 2, 1> &r_v_expectation,
 		Eigen::Matrix<double, 2, 1> &r_v_error) const // change dimensionality of eigen types, if required
 	{
-		CBaseBASolver::CBAJacobians::Project_P2C(m_p_vertex0->v_State() /* Cam */, m_p_vertex0->intrinsics /* camera intrinsic params */,
+		CBAJacobians::Project_P2C(m_p_vertex0->v_State() /* Cam */, m_p_vertex0->v_Intrinsics() /* camera intrinsic params */,
 			m_p_vertex1->v_State() /* XYZ */, r_v_expectation, r_t_jacobian0, r_t_jacobian1); // write your jacobian calculation code here (vertex state vectors are inputs, the rest are the outputs that you need to fill)
 		// calculates the expectation and the jacobians
 
@@ -222,7 +281,7 @@ public:
  *	@brief edge traits for BA solver
  */
 template <class CParsedStructure>
-class CBATraits {
+class CBAEdgeTraits {
 public:
 	typedef CFailOnEdgeType _TyEdge; /**< @brief it should fail on unknown edge types */
 
@@ -241,7 +300,7 @@ public:
  *	@brief edge traits for BA solver
  */
 template <>
-class CBATraits<CParserBase::TEdgeP2C3D> {
+class CBAEdgeTraits<CParserBase::TEdgeP2C3D> {
 public:
 	typedef CEdgeP2C3D _TyEdge; /**< @brief the edge type to construct from the parsed type */
 };
@@ -250,7 +309,7 @@ public:
  *	@brief edge traits for BA solver
  */
 template <>
-class CBATraits<CParserBase::TVertexXYZ> {
+class CBAEdgeTraits<CParserBase::TVertexXYZ> {
 public:
 	typedef CVertexXYZ _TyEdge; /**< @brief the edge type to construct from the parsed type */
 };
@@ -259,195 +318,46 @@ public:
  *	@brief edge traits for BA solver
  */
 template <>
-class CBATraits<CParserBase::TVertexCam3D> {
+class CBAEdgeTraits<CParserBase::TVertexCam3D> {
 public:
 	typedef CVertexCam _TyEdge; /**< @brief the edge type to construct from the parsed type */
 };
 
 /**
- *	@brief parser loop consumer, working with flat system
- *
- *	@tparam CSystem is flat system type
- *	@tparam CNonlinearSolver is nonlinear solver type
- *	@tparam CEdgeTraits is edge traits template (performs
- *		lookup of edge representation type by parser type)
- *
- *	@note This is currently limited to binary edges. A modification to edge map would be needed
- *		(or removal of the edge map, which would work if there are no duplicate edges).
- *	@todo This is redundant, need to make vertex traits and use only a single parse loop.
+ *	@brief vertex traits for BA solver
  */
-template <class CSystem, class CNonlinearSolver, template <class> class CEdgeTraits>
-class CBAParseLoop /*: public CParser::CParserAdaptor*/ {
-protected:
-	CSystem &m_r_system; /**< @brief reference to the system being parsed into */
-	CNonlinearSolver &m_r_solver; /**< @brief reference to the solver (for incremental solving) */
-	std::map<std::pair<size_t, size_t>, size_t> m_edge_map; /**< @brief map of edges by vertices (currently handles binary edges only) */
-
+template <class CParsedStructure>
+class CBAVertexTraits {
 public:
-	/**
-	 *	@brief default constructor; sets the parse loop up
-	 *
-	 *	@param[in] r_system is reference to the system being parsed into
-	 *	@param[in] r_solver is reference to the solver (for incremental solving)
-	 */
-	inline CBAParseLoop(CSystem &r_system, CNonlinearSolver &r_solver)
-		:m_r_system(r_system), m_r_solver(r_solver)
-	{}
+	typedef CFailOnVertexType _TyVertex; /**< @brief it should fail on unknown vertex types */
 
 	/**
-	 *	@brief processes an edge, based on it's type and the edge traits
-	 *	@tparam CParsedEdge is parsed edge type
-	 *	@param[in] r_edge is reference to the parsed edge
-	 *	@note This function throws std::bad_alloc, and also
-	 *		std::runtime_error as a means of error reporting.
+	 *	@brief gets reason for error
+	 *	@return Returns const null-terminated string, containing
+	 *		description of the error (human readable).
 	 */
-	template <class CParsedEdge>
-	void AppendSystem(const CParsedEdge &r_edge) // throws(std::bad_alloc, std::runtime_error)
+	static const char *p_s_Reason()
 	{
-		CProcessEdge<CParsedEdge, typename CEdgeTraits<CParsedEdge>::_TyEdge>::Do(m_r_system,
-			m_r_solver, r_edge, m_edge_map);
+		return "unknown vertex type occured";
 	}
+};
 
-	class CMakeVertexXYZ {
-		const Eigen::Matrix<double, 3, 1> &m_r_init;
+/**
+ *	@brief vertex traits for BA solver
+ */
+template <>
+class CBAVertexTraits<CParserBase::TVertexXYZ> {
+public:
+	typedef CVertexXYZ _TyVertex; /**< @brief the edge type to construct from the parsed type */
+};
 
-	public:
-		inline CMakeVertexXYZ(const Eigen::Matrix<double, 3, 1> &r_init)
-			:m_r_init(r_init)
-		{}
-
-		inline operator CVertexXYZ() const
-		{
-			return CVertexXYZ(m_r_init);
-		}
-	};
-
-	void AppendSystem(const CParserBase::TVertexXYZ &r_vertex) // throws(std::bad_alloc, std::runtime_error)
-	{
-		m_r_system.template r_Get_Vertex<CVertexXYZ>(r_vertex.m_n_id, CMakeVertexXYZ(r_vertex.m_v_position));
-	}
-
-	class CMakeVertexCam3D {
-		const Eigen::Matrix<double, 11, 1> &m_r_init;
-
-	public:
-		inline CMakeVertexCam3D(const Eigen::Matrix<double, 11, 1> &r_init)
-			:m_r_init(r_init)
-		{}
-
-		inline operator CVertexCam() const
-		{
-			return CVertexCam(m_r_init);
-		}
-	};
-
-	void AppendSystem(const CParserBase::TVertexCam3D &r_vertex) // throws(std::bad_alloc, std::runtime_error)
-	{
-		m_r_system.template r_Get_Vertex<CVertexCam>(r_vertex.m_n_id, CMakeVertexCam3D(r_vertex.m_v_position));
-	}
-
-protected:
-	/**
-	 *	@brief edge processing functor
-	 *
-	 *	@tparam CParsedEdge is type of edge as parsed
-	 *	@tparam CRepresentation is type of edge as represented in the system
-	 */
-	template <class CParsedEdge, class CRepresentation>
-	class CProcessEdge {
-	public:
-		/**
-		 *	@brief edge processing function
-		 *
-		 *	@param[in] r_system is reference to the system being parsed into
-		 *	@param[in] r_solver is reference to the solver (for incremental solving)
-		 *	@param[in] r_edge is reference to the parsed edge
-		 *	@param[in,out] r_edge_map is map of edge indices by edge vertices
-		 *
-		 *	@note This function throws std::bad_alloc.
-		 */
-		static inline void Do(CSystem &r_system, CNonlinearSolver &r_solver,
-			const CParsedEdge &r_edge, std::map<std::pair<size_t, size_t>, size_t> &r_edge_map) // throws(std::bad_alloc)
-		{
-			std::pair<size_t, size_t> edge_verts(r_edge.m_n_node_0, r_edge.m_n_node_1);
-			// this needs to be changed for multi-edge datasets
-
-			std::map<std::pair<size_t, size_t>, size_t>::const_iterator p_edge_id_it;
-			if((p_edge_id_it = r_edge_map.find(edge_verts)) != r_edge_map.end()) {
-				size_t n_edge_id = (*p_edge_id_it).second;
-				// gets repeated edge id from the map
-
-				CRepresentation &r_rep_edge = *(CRepresentation*)&r_system.r_Edge_Pool()[n_edge_id];
-				// gets the edge itself (kind of relies on the type correctness but that should be ok)
-
-				r_rep_edge.Update(r_edge); // t_odo - not implemented for SE2 or SE3
-				// update the reading
-
-				//printf("handling dup edge ...\n");
-				r_solver.Incremental_Step(r_rep_edge);
-				// notify the solver of change
-			} else {
-				r_edge_map[edge_verts] = r_system.r_Edge_Pool().n_Size();
-				// record edge id
-
-				CRepresentation &r_rep_edge = r_system.r_Add_Edge(CRepresentation(r_edge, r_system));
-				// add the edge to the system (convert parsed edge to internal representation)
-
-				r_solver.Incremental_Step(r_rep_edge);
-				// call solver with the new edge
-			}
-		}
-	};
-
-	/**
-	 *	@brief edge processing functor (specialization for ignored edge types)
-	 *
-	 *	@tparam CParsedEdge is type of edge as parsed
-	 */
-	template <class CParsedEdge>
-	class CProcessEdge<CParsedEdge, CIgnoreEdgeType> {
-	public:
-		/**
-		 *	@brief edge processing function (for edges to be ignored)
-		 *
-		 *	@param[in] r_system is reference to the system being parsed into (unused)
-		 *	@param[in] r_solver is reference to the solver (unused)
-		 *	@param[in] r_edge is reference to the parsed edge (unused)
-		 *	@param[in] r_edge_map is map of edge indices by edge vertices (unused)
-		 */
-		static inline void Do(CSystem &UNUSED(r_system),
-			CNonlinearSolver &UNUSED(r_solver), const CParsedEdge &UNUSED(r_edge),
-			std::map<std::pair<size_t, size_t>, size_t> &UNUSED(r_edge_map))
-		{}
-	};
-
-	/**
-	 *	@brief edge processing functor (specialization for edge
-	 *		types that cause the parse loop to fail)
-	 *
-	 *	@tparam CParsedEdge is type of edge as parsed
-	 */
-	template <class CParsedEdge>
-	class CProcessEdge<CParsedEdge, CFailOnEdgeType> {
-	public:
-		/**
-		 *	@brief edge processing function (for edges that cause the parse loop to fail)
-		 *
-		 *	@param[in] r_system is reference to the system being parsed into (unused)
-		 *	@param[in] r_solver is reference to the solver (unused)
-		 *	@param[in] r_edge is reference to the parsed edge (unused)
-		 *	@param[in] r_edge_map is map of edge indices by edge vertices (unused)
-		 *
-		 *	@note This function throws std::runtime_error as a means of error reporting.
-		 */
-		static inline void Do(CSystem &UNUSED(r_system), CNonlinearSolver &UNUSED(r_solver),
-			const CParsedEdge &UNUSED(r_edge), std::map<std::pair<size_t, size_t>, size_t> &UNUSED(r_edge_map)) // throws(std::runtime_error)
-		{
-			typedef CEdgeTraits<CParsedEdge> TEdgeType; // g++ doesn't like 'typename' here
-			throw std::runtime_error(TEdgeType::p_s_Reason());
-			// "CParseLoop encountered edge type that is not permitted by the configuration"
-		}
-	};
+/**
+ *	@brief vertex traits for BA solver
+ */
+template <>
+class CBAVertexTraits<CParserBase::TVertexCam3D> {
+public:
+	typedef CVertexCam _TyVertex; /**< @brief the edge type to construct from the parsed type */
 };
 
 #endif

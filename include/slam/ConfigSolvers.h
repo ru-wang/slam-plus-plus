@@ -22,9 +22,21 @@
  */
 
 #ifndef __SLAMPP_CONFIGURATION_INCLUDED
-#error "error: \'slam/Config.h\' must be included before \'slam/ConfigSolvers.h\'"
-// configure first, includes later
+#define __SE_TYPES_SUPPORT_A_SOLVERS
+#define __SE_TYPES_SUPPORT_LAMBDA_SOLVERS
+#define __SE_TYPES_SUPPORT_L_SOLVERS
 #endif // !__SLAMPP_CONFIGURATION_INCLUDED
+// if the config is not included, just enable everything (default)
+
+/**
+ *	@def __SLAM_COUNT_ITERATIONS_AS_VERTICES
+ *	@brief if defined, the incremental updates are scheduled per N vertices,
+ *		if not defined, they are scheduled per N edges (presumably faster in batch each 1,
+ *		practically slower in batch each 10)
+ */
+#if !defined(__SLAM_COUNT_ITERATIONS_AS_EDGES) && !defined(__SLAM_COUNT_ITERATIONS_AS_VERTICES)
+#define __SLAM_COUNT_ITERATIONS_AS_VERTICES
+#endif // !__SLAM_COUNT_ITERATIONS_AS_EDGES && !__SLAM_COUNT_ITERATIONS_AS_VERTICES
 
 #include "slam/NonlinearSolver_A.h"
 #include "slam/NonlinearSolver_Lambda.h"
@@ -32,6 +44,9 @@
 //#include "slam/NonlinearSolver_L.h"
 #include "slam/NonlinearSolver_FastL.h"
 // hint - disable or enable solvers at will
+
+#include "slam/SolverTraits.h"
+// some helper classes
 
 /**
  *	@def _TySolverA_Name
@@ -102,6 +117,17 @@
 #else // __SE_TYPES_SUPPORT_L_SOLVERS
 #define _TySolverFastL_Name CSolverNotSupported
 #endif // __SE_TYPES_SUPPORT_L_SOLVERS
+
+/**
+ *	@brief nonlinear solver type
+ */
+enum ENonlinearSolverType {
+	nlsolver_A, /**< @brief nonlinear solver A */
+	nlsolver_Lambda, /**< @brief nonlinear solver lambda */
+	nlsolver_LambdaLM, /**< @brief nonlinear solver lambda with Levenberg-Marquardt */
+	nlsolver_L, /**< @brief nonlinear solver L */
+	nlsolver_FastL /**< @brief nonlinear progressively reordering solver L */
+};
 
 /**
  *	@brief a list of all the available and unavailable solvers

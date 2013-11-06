@@ -71,6 +71,7 @@
 
 #include "Unused.h"
 #include "slam/Debug.h" // _ASSERTE
+#include <vector>
 
 /**
  *	@brief contains static assertion template for page size check (g++ compatible, unused)

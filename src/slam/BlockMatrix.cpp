@@ -5174,7 +5174,7 @@ TBmp *CUberBlockMatrix::p_Rasterize(const CUberBlockMatrix &r_prev_state,
 		// dimensions of the block
 
 		size_t n_prev_block_lbound = 0;
-		size_t n_prev_block_num = (j < n_prev_col_num)?
+		size_t UNUSED(n_prev_block_num) = (j < n_prev_col_num)?
 			r_prev_state.m_block_cols_list[j].block_list.size() : 0;
 		// prepare a lower bound and number of blocks in the same column in the "previous" matrix
 
@@ -6645,9 +6645,8 @@ void CUberBlockMatrix::Permute_UpperTriangular_To(CUberBlockMatrix &r_dest,
 			std::lower_bound(r_t_src.block_list.begin(),
 			p_end_it, n_min_block_row_column, CompareBlockRow);
 #endif // _MSC_VER && !__MWERKS__ && _MSC_VER >= 1400*/ // can't do this, there's a permutation in there
-		size_t n_off;
-		r_t_dest.block_list.resize((p_end_it - p_block_it) +
-			((b_keep_upper_left_part)? n_off = r_t_dest.block_list.size() : 0));
+		size_t n_off = (b_keep_upper_left_part)? r_t_dest.block_list.size() : 0;
+		r_t_dest.block_list.resize((p_end_it - p_block_it) + n_off);
 		_TyBlockIter p_dest_it = (b_keep_upper_left_part)?
 			r_t_dest.block_list.begin() + n_off : r_t_dest.block_list.begin();
 		// see how much blocks there are in the selected range
@@ -8442,10 +8441,17 @@ bool CUberBlockMatrix::Load_BlockLayout(const char *p_s_layout_filename) // thro
 			return false;
 		// open the layout file
 
+#if defined(_MSC_VER) && !defined(__MWERKS__) && _MSC_VER >= 1400
+		if(fscanf_s(p_fr, PRIsize " x " PRIsize " (" PRIsize ")\n"
+		   PRIsize " x " PRIsize " (" PRIsize ")\n", &n_layout_h,
+		   &n_layout_w, &n_layout_nnz, &n_layout_bh,
+		   &n_layout_bw, &n_layout_bnnz) != 6)
+#else //_MSC_VER && !__MWERKS__ && _MSC_VER >= 1400
 		if(fscanf(p_fr, PRIsize " x " PRIsize " (" PRIsize ")\n"
 		   PRIsize " x " PRIsize " (" PRIsize ")\n", &n_layout_h,
 		   &n_layout_w, &n_layout_nnz, &n_layout_bh,
 		   &n_layout_bw, &n_layout_bnnz) != 6)
+#endif //_MSC_VER && !__MWERKS__ && _MSC_VER >= 1400
 			break;
 		// read layout geometry
 
@@ -8460,7 +8466,11 @@ bool CUberBlockMatrix::Load_BlockLayout(const char *p_s_layout_filename) // thro
 
 		bool b_fail = false;
 		for(size_t i = 0, n = n_layout_bh + 1; i < n; ++ i) {
+#if defined(_MSC_VER) && !defined(__MWERKS__) && _MSC_VER >= 1400
+			if(fscanf_s(p_fr, PRIsize, &rows_cumsums[i]) != 1) {
+#else //_MSC_VER && !__MWERKS__ && _MSC_VER >= 1400
 			if(fscanf(p_fr, PRIsize, &rows_cumsums[i]) != 1) {
+#endif //_MSC_VER && !__MWERKS__ && _MSC_VER >= 1400
 				b_fail = true;
 				break;
 			}
@@ -8468,7 +8478,11 @@ bool CUberBlockMatrix::Load_BlockLayout(const char *p_s_layout_filename) // thro
 		if(b_fail)
 			break;
 		for(size_t i = 0, n = n_layout_bw + 1; i < n; ++ i) {
+#if defined(_MSC_VER) && !defined(__MWERKS__) && _MSC_VER >= 1400
+			if(fscanf_s(p_fr, PRIsize, &cols_cumsums[i]) != 1) {
+#else //_MSC_VER && !__MWERKS__ && _MSC_VER >= 1400
 			if(fscanf(p_fr, PRIsize, &cols_cumsums[i]) != 1) {
+#endif //_MSC_VER && !__MWERKS__ && _MSC_VER >= 1400
 				b_fail = true;
 				break;
 			}
@@ -8568,8 +8582,13 @@ bool CUberBlockMatrix::Load_MatrixMarket(const char *p_s_filename, size_t n_bloc
 			}
 			// specifier must come before header
 
+#if defined(_MSC_VER) && !defined(__MWERKS__) && _MSC_VER >= 1400
+			if(sscanf_s(s_line.c_str(), PRIsize " " PRIsize " " PRIsize,
+			   &n_rows, &n_cols, &n_nnz) != 3) {
+#else //_MSC_VER && !__MWERKS__ && _MSC_VER >= 1400
 			if(sscanf(s_line.c_str(), PRIsize " " PRIsize " " PRIsize,
 			   &n_rows, &n_cols, &n_nnz) != 3) {
+#endif //_MSC_VER && !__MWERKS__ && _MSC_VER >= 1400
 				fclose(p_fr);
 				return false;
 			}
@@ -8696,8 +8715,13 @@ bool CUberBlockMatrix::Load_MatrixMarket_Layout(const char *p_s_filename) // thr
 			}
 			// specifier must come before header
 
+#if defined(_MSC_VER) && !defined(__MWERKS__) && _MSC_VER >= 1400
+			if(sscanf_s(s_line.c_str(), PRIsize " " PRIsize " " PRIsize,
+			   &n_rows, &n_cols, &n_nnz) != 3) {
+#else //_MSC_VER && !__MWERKS__ && _MSC_VER >= 1400
 			if(sscanf(s_line.c_str(), PRIsize " " PRIsize " " PRIsize,
 			   &n_rows, &n_cols, &n_nnz) != 3) {
+#endif //_MSC_VER && !__MWERKS__ && _MSC_VER >= 1400
 				fclose(p_fr);
 				return false;
 			}
@@ -8725,7 +8749,11 @@ bool CUberBlockMatrix::Load_MatrixMarket_Layout(const char *p_s_filename) // thr
 		} else {
 			double f_value;
 			size_t n_rowi, n_coli;
+#if defined(_MSC_VER) && !defined(__MWERKS__) && _MSC_VER >= 1400
+			int n = sscanf_s(s_line.c_str(), PRIsize " " PRIsize " %lf", &n_rowi, &n_coli, &f_value);
+#else //_MSC_VER && !__MWERKS__ && _MSC_VER >= 1400
 			int n = sscanf(s_line.c_str(), PRIsize " " PRIsize " %lf", &n_rowi, &n_coli, &f_value);
+#endif //_MSC_VER && !__MWERKS__ && _MSC_VER >= 1400
 			if(n < 2) {
 				fclose(p_fr);
 				return false;

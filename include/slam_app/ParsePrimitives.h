@@ -15,7 +15,7 @@
 #define __GRAPH_PARSER_PRIMITIVES_INCLUDED
 
 /**
- *	@file include/slam/ParsePrimitives.h
+ *	@file include/slam_app/ParsePrimitives.h
  *	@brief plugins for a simple .graph file parser
  *	@author -tHE SWINe-
  *	@date 2012-02-06
@@ -56,7 +56,8 @@ public:
 		const std::string &UNUSED(r_s_token), _TyParseLoop &UNUSED(r_parse_loop))
 	{
 		// here, a primitive of type r_s_token should be parsed from r_s_line
-		// and if successful, passed to r_parse_loop
+		// and if successful, passed to r_parse_loop by calling InitializeVertex()
+		// for vertex types or AppendSystem() for edge types
 
 		return true;
 	}
@@ -192,7 +193,7 @@ public:
 			// Ela's datasets have first and second vertex swapped
 
 			Eigen::Vector3d v_new_edge;
-			CBase2DSolver::C2DJacobians::Absolute_to_Relative(
+			C2DJacobians::Absolute_to_Relative(
 				Eigen::Vector3d(p_measurement[0], p_measurement[1], p_measurement[2]),
 				Eigen::Vector3d(0, 0, 0), v_new_edge); // t_odo - move this to the parser (it is a part of edge inversion)
 			for(int i = 0; i < 3; ++ i)
@@ -333,7 +334,7 @@ public:
 		CParserBase::TVertex2D vert(n_pose_id, p_vertex[0], p_vertex[1], p_vertex[2]);
 		// process the measurement
 
-		r_parse_loop.AppendSystem(vert);
+		r_parse_loop.InitializeVertex(vert);
 		// t_odo - append the measurement to the system, or something
 
 		return true;
@@ -411,7 +412,7 @@ public:
 				 cos_y*sin_x, cos_z*cos_x + sin_z*sin_y*sin_x, -sin_z*cos_x + cos_z*sin_y*sin_x,
 				 -sin_y, sin_z*cos_y, cos_z*cos_y;
 
-			Eigen::Vector3d axis = CBase3DSolver::C3DJacobians::Operator_arot(Q);
+			Eigen::Vector3d axis = C3DJacobians::Operator_arot(Q);
 
 			CParserBase::TEdge3D edge(p_pose_idx[0], p_pose_idx[1],
 				p_measurement[0], p_measurement[1], p_measurement[2],
@@ -487,13 +488,13 @@ public:
 		     cos_y*sin_x, cos_z*cos_x + sin_z*sin_y*sin_x, -sin_z*cos_x + cos_z*sin_y*sin_x,
 		     -sin_y, sin_z*cos_y, cos_z*cos_y;
 
-		Eigen::Vector3d axis = CBase3DSolver::C3DJacobians::Operator_arot(Q);
+		Eigen::Vector3d axis = C3DJacobians::Operator_arot(Q);
 
 		CParserBase::TVertex3D vert(n_pose_id, p_vertex[0],
 			p_vertex[1], p_vertex[2], axis(0), axis(1), axis(2));
 		// process the measurement
 
-		r_parse_loop.AppendSystem(vert);
+		r_parse_loop.InitializeVertex(vert);
 		// t_odo - append the measurement to the system, or something
 
 		return true;
@@ -545,7 +546,7 @@ public:
 		CParserBase::TVertexXYZ vert(n_pose_id, p_vertex[0], p_vertex[1], p_vertex[2]);
 		// process the measurement
 
-		r_parse_loop.AppendSystem(vert);
+		r_parse_loop.InitializeVertex(vert);
 		// t_odo - append the measurement to the system, or something
 
 		return true;
@@ -586,16 +587,17 @@ public:
 	{
 		int n_pose_id;
 		double p_vertex[12];
-		if(sscanf(r_s_line.c_str(), "%d %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf",
-		   &n_pose_id, p_vertex, p_vertex + 1, p_vertex + 2,
-		   p_vertex + 3, p_vertex + 4, p_vertex + 5, p_vertex + 6, p_vertex + 7, p_vertex + 8, p_vertex + 9, p_vertex + 10, p_vertex + 11) != 1 + 7 + 5) {
+		if(sscanf(r_s_line.c_str(), "%d %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf"/*" %lf %lf"*/,
+		   &n_pose_id, p_vertex, p_vertex + 1, p_vertex + 2, p_vertex + 3, p_vertex + 4,
+		   p_vertex + 5, p_vertex + 6, p_vertex + 7, p_vertex + 8, p_vertex + 9, p_vertex + 10,
+		   p_vertex + 11) != 1 + 7 + 5) {
 		   	_ASSERTE(n_line_no < SIZE_MAX);
 			fprintf(stderr, "error: line " PRIsize ": line is truncated\n", n_line_no + 1);
 			return false;
 		}
 		// read the individual numbers
 
-		Eigen::Quaternion<double> quat(p_vertex[3], p_vertex[4], p_vertex[5], p_vertex[6]);
+		Eigen::Quaternion<double> quat(p_vertex[6], p_vertex[3], p_vertex[4], p_vertex[5]);
 		quat = quat.inverse();
 		//Eigen::Matrix3d Q = quat.toRotationMatrix();
 		//Q = Q.inverse().eval();
@@ -604,9 +606,9 @@ public:
 		Eigen::Vector3d t_vec(p_vertex[0], p_vertex[1], p_vertex[2]);
 		//rotate
 		Eigen::Vector3d c = quat * (-t_vec);
-		//Eigen::Vector3d axis = CBase3DSolver::C3DJacobians::Operator_arot(Q);
+		//Eigen::Vector3d axis = C3DJacobians::Operator_arot(Q);
 		Eigen::Vector3d axis;
-		CBase3DSolver::C3DJacobians::Quat_to_AxisAngle(quat, axis);
+		C3DJacobians::Quat_to_AxisAngle(quat, axis);
 
 		CParserBase::TVertexCam3D vert(n_pose_id, c[0],
 			c[1], c[2], axis(0), axis(1), axis(2), p_vertex[7], p_vertex[8], p_vertex[9], p_vertex[10], p_vertex[11]);
@@ -614,7 +616,7 @@ public:
 
 		//camera intrinsic parameters
 
-		r_parse_loop.AppendSystem(vert);
+		r_parse_loop.InitializeVertex(vert);
 		// t_odo - append the measurement to the system, or something
 
 		return true;
@@ -678,6 +680,56 @@ public:
 
 		r_parse_loop.AppendSystem(landmark);
 		// t_odo - append the measurement to the system, or something
+
+		return true;
+	}
+};
+
+/**
+ *	@brief 2D pose edge parse primitive handler
+ */
+class CGPSPhaseParsePrimitive {
+public:
+	/**
+	 *	@brief enumerates all tokens that identify this parsed primitive
+	 *
+	 *	@param[in,out] r_token_name_map is map of token names
+	 *	@param[in] n_assigned_id is id assigned by the parser to this primitive
+	 */
+	static void EnumerateTokens(std::map<std::string, int> &r_token_name_map,
+		int n_assigned_id) // throws(std::bad_alloc)
+	{
+		r_token_name_map["PHASE"] = n_assigned_id;
+		// add as uppercase!
+	}
+
+	/**
+	 *	@brief parses this primitive and dispatches it to the parse loop
+	 *
+	 *	@param[in] n_line_no is zero-based line number (for error reporting)
+	 *	@param[in] r_s_line is string, containing the current line (without the token)
+	 *	@param[in] r_s_token is string, containing the token name (in uppercase)
+	 *	@param[in,out] r_parse_loop is target for passing the parsed primitives to
+	 *
+	 *	@return Returns true on success, false on failure.
+	 */
+	template <class _TyParseLoop>
+	static bool Parse_and_Dispatch(size_t n_line_no, const std::string &r_s_line,
+		const std::string &UNUSED(r_s_token), _TyParseLoop &r_parse_loop)
+	{
+		// #PHASE PoseNum AmbNum PhaseMeas East North Up
+		int p_pose_idx[2];
+		double p_measurement[4];
+		if(sscanf(r_s_line.c_str(), "%d %d %lf %lf %lf %lf",
+		   p_pose_idx, p_pose_idx + 1, p_measurement, p_measurement + 1,
+		   p_measurement + 2, p_measurement + 3) != 6) {
+		   	_ASSERTE(n_line_no < SIZE_MAX);
+			fprintf(stderr, "error: line " PRIsize ": line is truncated\n", n_line_no + 1);
+			return false;
+		}
+		// read the individual numbers
+
+		// todo - add the GPS edge to the system
 
 		return true;
 	}

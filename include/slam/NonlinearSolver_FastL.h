@@ -249,6 +249,8 @@ protected:
 	_TyTime m_f_ordering11_part_time; /**< @brief time spent in calculating the incremental ordering, only the small or inflated lambda_11 cases */
 	_TyTime m_f_ordering11_full_time; /**< @brief time spent in calculating the incremental ordering, only the full lambda_perm cases */
 
+	std::vector<size_t> lambda_perm_frontline; /**< @brief cached frontline of the lambda_perm matrix */
+
 	CTimer m_shared_timer; /**< @brief timer object */
 
 #ifdef __NONLINEAR_SOLVER_FAST_L_DUMP_TIMESTEPS
@@ -273,9 +275,9 @@ public:
 	 *	@param[in] linear_solver is linear solver instance
 	 *	@param[in] b_use_schur is Schur complement trick flag (not supported)
 	 */
-	CNonlinearSolver_FastL(CSystem &r_system, size_t n_linear_solve_threshold,
-		size_t n_nonlinear_solve_threshold, size_t n_nonlinear_solve_max_iteration_num,
-		double f_nonlinear_solve_error_threshold, bool b_verbose,
+	CNonlinearSolver_FastL(CSystem &r_system, size_t n_linear_solve_threshold = 0,
+		size_t n_nonlinear_solve_threshold = 0, size_t n_nonlinear_solve_max_iteration_num = 5,
+		double f_nonlinear_solve_error_threshold = .01, bool b_verbose = false,
 		CLinearSolver linear_solver = CLinearSolver(), bool UNUSED(b_use_schur) = false)
 		:m_r_system(r_system), m_linear_solver(linear_solver),
 		m_linear_solver2(linear_solver), m_b_had_loop_closure(false),
@@ -396,6 +398,8 @@ public:
 		/*printf("in unrelated news, small cholesky ran " PRIsize " times\n", m_n_dense_cholesky_num);
 		printf("\t dense: %f\n", m_f_dense_cholesky_time);
 		printf("\tsparse: %f\n", m_f_sparse_cholesky_time);*/ // dont want to do it runtime
+#else // __NONLINEAR_SOLVER_FAST_L_DETAILED_TIMING
+		printf("it took: %f\n", f_total_time);
 #endif // __NONLINEAR_SOLVER_FAST_L_DETAILED_TIMING
 	}
 
@@ -930,7 +934,7 @@ public:
 	 *
 	 *	@note This function throws std::bad_alloc and std::runtime_error (when L is not-pos-def).
 	 */
-	void Optimize(size_t n_max_iteration_num, double f_min_dx_norm) // throw(std::bad_alloc, std::runtime_error)
+	void Optimize(size_t n_max_iteration_num = 5, double f_min_dx_norm = .01) // throw(std::bad_alloc, std::runtime_error)
 	{
 		if(!RefreshLambdaL())
 			return;
@@ -995,8 +999,8 @@ public:
 						// dx = L'/d // note this never fails (except if L is null)
 
 						if(m_b_verbose) {
-							printf("%s", (b_utsolve_result)? "backsubstitution rulez!\n" :
-								"backsubstitution failed!\n");
+							printf("%s", (b_utsolve_result)? "backsubstitution succeeded\n" :
+								"backsubstitution failed\n");
 						}
 					}
 					// L solves with permutation (note that m_v_d is not modified!)
@@ -1106,7 +1110,7 @@ public:
 							b_cholesky_result = m_linear_solver.Solve_PosDef(m_lambda, v_eta); // p_dx = eta = lambda / eta
 
 						if(m_b_verbose)
-							printf("%s", (b_cholesky_result)? "Cholesky rulez!\n" : "optim success: 0\n");
+							printf("%s", (b_cholesky_result)? "Cholesky succeeded\n" : "Cholesky failed\n");
 					}
 					// lambda is good without permutation (there is one inside and we save copying eta arround)
 #else // 1
@@ -1135,7 +1139,7 @@ public:
 						// solve the permutated lambda
 
 						if(m_b_verbose)
-							printf("%s", (b_cholesky_result)? "perv Cholesky rulez!\n" : "perm optim success: 0\n");
+							printf("%s", (b_cholesky_result)? "perm Cholesky succeeded\n" : "perm Cholesky failed\n");
 
 						m_lambda_perm.Permute_LeftHandSide_Vector(&m_v_dx(0), &m_v_perm_temp(0), m_v_dx.rows(),
 							m_p_lambda_block_ordering, m_lambda_perm.n_BlockRow_Num());
@@ -1532,7 +1536,7 @@ protected:
 			for(size_t i = n_order_min + 1; i < n_order_max; ++ i)
 				n_min_vertex = std::min(n_min_vertex, m_p_lambda_block_ordering[i]);
 		}
-		const bool b_is_identity_perm = b_identity_perm; // make a copy
+		//const bool b_is_identity_perm = b_identity_perm; // make a copy
 		//if(!b_Is_PoseOnly_SLAM)
 		//	b_identity_perm = false; // don't allow omega upd for VP // it *is* buggy
 		// see if the ordering is identity ordering
@@ -1941,8 +1945,6 @@ protected:
 		timer.Accum_DiffSample(m_f_fullL_d);
 	}
 
-	std::vector<size_t> lambda_perm_frontline;
-
 	/**
 	 *	@brief refreshes the L matrix either from (pert of) lambda or from omega
 	 *
@@ -2028,8 +2030,8 @@ protected:
 			for(size_t i = n_order_min + 1; i < n_order_max - 1; ++ i) {
 				if(lambda_perm_frontline[i] < n_order_min) {
 					++ n_blocks_above;
-					/*b_blocks_above = true;
-					break;* /
+					//b_blocks_above = true;
+					//break;
 				}
 			}
 			if(n_blocks_above) {
@@ -2468,6 +2470,17 @@ protected:
 					printf((i)? ", " PRIsize : PRIsize, p_order[i]);
 				printf("}, order-min = " PRIsize "\n", n_order_min);*/ // debug
 
+				/*{
+					m_lambda.Permute_UpperTriangular_To(m_lambda_perm, m_p_lambda_block_ordering,
+						m_lambda.n_BlockColumn_Num(), true, n_order_min); // only writes a small square n_order_min - n_order_max // saves 1.45 seconds -> 0.47 seconds
+					// make a new reordered version of lambda (*always* changes if lambda changes)
+					// this is not very fast, a significant portion of m_lambda_perm could be reused
+					// note that the resumed cholesky will not reference anything but lambda11, no need to fill the prev columns
+					// need to be careful about use of lambda_perm elsewhere, though (but elsewhere mostly L is used,
+					// noone cares about lambda_perm, except maybe for its dimensions)
+				}*/
+				// this is incorrect, the elimination tree will be incomplete like this (the left part of lambda is missing)
+
 #if 1
 				/*CUberBlockMatrix lambda_perm_1; // right part of lambda_perm
 				m_lambda.Permute_UpperTriangular_To(lambda_perm_1, m_p_lambda_block_ordering,
@@ -2484,6 +2497,7 @@ protected:
 				// note that this does leave allocated blocks, but in the next round, lambda will reperm and free those
 
 				// t_odo - change ifdef and try with this one
+				// t_odo - test with landmark datasets
 #else
 				m_lambda.Permute_UpperTriangular_To(m_lambda_perm, m_p_lambda_block_ordering,
 					m_lambda.n_BlockColumn_Num(), true);
@@ -2772,7 +2786,6 @@ protected:
 			// print timing to a file
 #endif // __NONLINEAR_SOLVER_FAST_L_DUMP_L_UPDATE_VARIANT_TIMES
 
-
 #ifdef __NONLINEAR_SOLVER_FASTL_DUMP_RSS2013_PRESENTATION_ANIMATION_DATA
 			char p_s_filename[256];
 
@@ -2829,8 +2842,9 @@ protected:
 		//m_L.Rasterize("lslam7_LAfterOpt.tga");
 #endif // _DEBUG
 
+#if 0
 		char p_s_filename[256];
-		sprintf(p_s_filename, "fastLdump/%05d_0_stats.txt", m_lambda.n_BlockColumn_Num());
+		sprintf(p_s_filename, "fastLdump/%05" _PRIsize "_0_stats.txt", m_lambda.n_BlockColumn_Num());
 		FILE *p_fw;
 		if((p_fw = fopen(p_s_filename, "w"))) {
 			size_t n_nnzb_lam = m_lambda.n_Block_Num();
@@ -2878,13 +2892,14 @@ protected:
 				fprintf(p_fw, (i)? ", " PRIsize : "order = {" PRIsize, m_p_lambda_block_ordering[i]);
 			fprintf(p_fw, "}\n");
 			fclose(p_fw);
-			sprintf(p_s_filename, "fastLdump/%05d_1_lambda.mtx", m_lambda.n_BlockColumn_Num());
+			sprintf(p_s_filename, "fastLdump/%05" _PRIsize "_1_lambda.mtx", m_lambda.n_BlockColumn_Num());
 			char p_s_filename2[256];
-			sprintf(p_s_filename2, "fastLdump/%05d_1_lambda.bla", m_lambda.n_BlockColumn_Num());
+			sprintf(p_s_filename2, "fastLdump/%05" _PRIsize "_1_lambda.bla", m_lambda.n_BlockColumn_Num());
 			m_lambda.Save_MatrixMarket(p_s_filename, p_s_filename2);
 			// save the matrices as well, for later study
 		}
 		// inverstigating the super-efficient layout; save stats and the lambda matrix
+#endif // 0
 
 		return true;
 	}

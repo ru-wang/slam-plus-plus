@@ -7046,7 +7046,6 @@ public:
 	 *	@brief loads a matrix from a file, assuming the layout is ready
 	 *
 	 *	@param[in] p_s_filename is input file name in matrix marked format (.mtx)
-	 *	@param[in] p_s_layout_filename is input file name for the block layout (.bla)
 	 *
 	 *	@return Returns true on success, false on failure.
 	 *
@@ -7080,9 +7079,11 @@ public:
 
 	/**
 	 *	@brief checks matrix integrity
+	 *	@param[in] b_full_check is full check flag (if set, performs also checks that
+	 *		require more than O(n) time, otherwise skips them)
 	 *	@note This only takes effect in debug builds, otherwise it's an empty function.
 	 */
-	inline void CheckIntegrity(bool b_full_check = false) const
+	inline void CheckIntegrity(bool UNUSED(b_full_check) = false) const
 	{
 #if defined(_DEBUG) && !defined(__UBER_BLOCK_MATRIX_DISABLE_INTEGRITY_CHECK)
 		_ASSERTE(m_block_cols_list.empty() || m_block_cols_list.front().n_cumulative_width_sum == 0);

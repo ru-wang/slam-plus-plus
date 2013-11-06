@@ -34,18 +34,18 @@
  *	then there is just a vector of edge pointers and that shields everything out of that
  *		* yes, this was indeed implemented
  *
- *	t_odo - figure out what else the edge needs to implement and add it, implement ASLAM solver and test it with the new structure
+ *	t_odo - figure out what else the edge needs to implement and add it, implement ASLAM solver
+ *		and test it with the new structure
  *	@todo - describe the "virtual call evasion" technique used here
- *	t_odo - figure out what operations can be possibly offloaded to solver to simplify the edge (and vertex) classes // created base edge and vertex implementation templates
+ *	t_odo - figure out what operations can be possibly offloaded to solver to simplify the edge
+ *			(and vertex) classes // created base edge and vertex implementation templates
  *	t_odo - handle the unary factor bussiness nicely
  *	t_odo - abstract the linear solvers, test cholmod performance
- *
  *
  *	@date 2012-09-12
  *
  *	Fixed linux build issues, namely missing template argument in CMultiPool specialization
  *	for a single type, added namespace for types contained in CFlatSystem, and some other minor bugs.
- *
  *
  *	@date 2013-05-23
  *
@@ -53,9 +53,18 @@
  *	(the caller was supposed to decide whether they want parallel), but it ended up used in a way
  *	that requires this.
  *
+ *	@date 2013-11-01
+ *
+ *	Added support for fixed vertices (they must have b_IsFixed() function, and the vertices must
+ *	be determined on initialization, changing to fixed / not fixed later on is not supported at the
+ *	moment).
+ *
  */
 
+#include "eigen/Eigen/Dense"
 #include "slam/TypeList.h"
+#include "slam/Segregated.h"
+#include "slam/BlockMatrix.h"
 
 /**
  *	@def __BASE_TYPES_USE_ID_ADDRESSING
@@ -71,9 +80,34 @@
 // decide whether to align pool data // todo - document it and add manual overrides
 
 /**
- *	@brief very basic implementation of unary factor initialization
+ *	@brief very basic implementation of unary factor initialization that uses unit UF
  */
 class CBasicUnaryFactorFactory {
+public:
+	/**
+	 *	@brief initializes unary factor, based on the first edge introduced to the system
+	 *
+	 *	@param[out] r_t_unary_factor is the unary factor matrix
+	 *	@param[out] r_v_unary_error is the error vector associated with the first vertex
+	 *	@param[in] r_edge is the first edge in the system (value not used)
+	 */
+	template <class CEdge>
+	inline void operator ()(Eigen::MatrixXd &r_t_unary_factor,
+		Eigen::VectorXd &r_v_unary_error, const CEdge &UNUSED(r_edge))
+	{
+		size_t n_edge_dimension = CEdge::n_vertex0_dimension;
+		r_t_unary_factor.resize(n_edge_dimension, n_edge_dimension); // unary factor is a unit matrix
+		r_t_unary_factor.setIdentity();
+		r_v_unary_error = Eigen::VectorXd(n_edge_dimension);
+		r_v_unary_error.setZero(); // no error on the first vertex
+	}
+};
+
+/**
+ *	@brief implementation of unary factor initialization that takes cholesky
+ *		of the information matrix of the first edge as unary factor
+ */
+class CProportionalUnaryFactorFactory {
 public:
 	/**
 	 *	@brief initializes unary factor, based on the first edge introduced to the system
@@ -83,16 +117,11 @@ public:
 	 *	@param[in] r_edge is the first edge in the system
 	 */
 	template <class CEdge>
-	inline void operator ()(Eigen::MatrixXd &r_t_unary_factor, Eigen::VectorXd &r_v_unary_error, const CEdge &r_edge)
+	inline void operator ()(Eigen::MatrixXd &r_t_unary_factor,
+		Eigen::VectorXd &r_v_unary_error, const CEdge &r_edge)
 	{
-		//size_t n_edge_dimension = r_edge.n_Dimension();
-		size_t n_edge_dimension = CEdge::n_vertex0_dimension;//r_edge.p_Vertex(0)->n_Dimension();
-#if 1
-		r_t_unary_factor.resize(n_edge_dimension, n_edge_dimension); // unary factor is an identity matrix
-		r_t_unary_factor.setIdentity();
-#else
-		r_t_unary_factor = r_edge.t_Sigma_Inv().llt().matrixU();
-#endif
+		size_t n_edge_dimension = r_edge.n_Dimension();
+		r_t_unary_factor = r_edge.t_Sigma_Inv().llt().matrixU(); // unary factor is cholesky of the information matrix
 		r_v_unary_error = Eigen::VectorXd(n_edge_dimension);
 		r_v_unary_error.setZero(); // no error on the first vertex
 	}
@@ -342,6 +371,7 @@ public:
 	 *	@tparam COp is client function object
 	 *
 	 *	@param[in] op is instance of the client function object
+	 *	@param[in] n_parallel_thresh is threshold for parallelized processing
 	 *
 	 *	@note This performs the iteration in parallel, the function object must be reentrant.
 	 *	@note This does not return the function object (avoids synchronization
@@ -388,6 +418,7 @@ public:
 	 *		in this multipool and performs operation on each
 	 *
 	 *	@tparam COp is client function object
+	 *	@param[in] n_parallel_thresh is threshold for parallelized processing
 	 *
 	 *	@param[in] n_first is zero-based index of the first element to be processed
 	 *	@param[in] n_last is zero-based index of one after the last element to be processed
@@ -518,7 +549,7 @@ public:
 	}
 
 	/**
-	 *	@copydoc CMultiPool::For_Each_Parallel(COp)
+	 *	@copydoc CMultiPool::For_Each_Parallel(COp,const int)
 	 */
 	template <class COp>
 	void For_Each_Parallel(COp op, const int n_parallel_thresh = 50)
@@ -546,7 +577,7 @@ public:
 	}
 
 	/**
-	 *	@copydoc CMultiPool::For_Each_Parallel(size_t,size_t,COp)
+	 *	@copydoc CMultiPool::For_Each_Parallel(size_t,size_t,COp,const int)
 	 */
 	template <class COp>
 	void For_Each_Parallel(size_t n_first, size_t n_last, COp op, const int n_parallel_thresh = 50)
@@ -581,6 +612,20 @@ public:
 
 } // ~__multipool
 
+namespace plot_quality {
+
+/**
+ *	@brief plot quality profile names
+ */
+enum EQualityProfile {
+	plot_Draft, /**< @brief fast plots for debugging */
+	plot_Printing, /**< @brief nice plots for papers or web */
+	plot_Printing_LandmarkTicksOnly, /**< @brief same as plot_Printing but only landmarks have ticks (not poses) */
+	plot_Printing_NoTicks /**< @brief same as plot_Printing but there are no ticks for poses or landmarks */
+};
+
+} // ~plot_quality
+
 /**
  *	@brief optimization system, customized for work with different primitives
  *
@@ -589,9 +634,12 @@ public:
  *	@tparam CBaseEdge is base edge type (all edge types must be derived from it)
  *	@tparam CEdgeTypelist is list of edge types permitted in the system
  *	@tparam CUnaryFactorFactory is class, responsible for the initialization of unary factor
+ *	@tparam b_allow_fixed_vertices is fixed vertex enable flag (fixed vertices need special processing)
+ *	@tparam n_pool_page_size is edge or vertex pool page size, in elements
  */
 template <class CBaseVertex, class CVertexTypelist, /*template <class> class CVertexTypeTraits,*/ // unused
-	class CBaseEdge, class CEdgeTypelist, class CUnaryFactorFactory = CBasicUnaryFactorFactory>
+	class CBaseEdge, class CEdgeTypelist, class CUnaryFactorFactory = CBasicUnaryFactorFactory,
+	const bool b_allow_fixed_vertices = false, const int n_pool_page_size = 1024>
 class CFlatSystem {
 protected:
 	/**
@@ -645,6 +693,32 @@ protected:
 	typedef typename CTransformTypelist<CEdgeTypelist,
 		CEdgeTypeToSecondUnaryFactorType>::_TyResult TSecondAUnaryFactorList; /**< @brief list of unary factor matrix block types per all the second vertices in all edges (some of the blocks in A) */
 
+	/**
+	 *	@brief void pool type
+	 *	@tparam _TyBase is base class of elements stored in this pool
+	 *	@note This is implemented only to reduce the overhead of implementing all
+	 *		the code that deals with the pools twice. Some of it can be unified like this.
+	 */
+	template <class _TyBase>
+	struct TVoidPool {
+		/**
+		 *	@copydoc __multipool::CMultiPool::n_Size()
+		 */
+		inline size_t n_Size() const
+		{
+			return 0;
+		}
+
+		/**
+		 *	@copydoc __multipool::CMultiPool::operator []()
+		 */
+		inline _TyBase &operator [](size_t UNUSED(n_index)) const
+		{
+			throw std::runtime_error("attempted element access on void pool");
+			return *((_TyBase*)0);
+		}
+	};
+
 public:
 	typedef size_t _TyId; /**< @brief data type used as the index in the flat structures */
 
@@ -652,7 +726,8 @@ public:
 	 *	@brief configuration, stored as enum
 	 */
 	enum {
-		pool_PageSize = 1024 /**< @brief data storage page size */
+		pool_PageSize = n_pool_page_size, /**< @brief data storage page size */
+		allow_FixedVertices = (b_allow_fixed_vertices)? 1 : 0 /**< @brief allows / disallows fixed vertices */
 	};
 
 	typedef CBaseVertex _TyBaseVertex; /**< @brief the data type for storing vertices */
@@ -664,15 +739,161 @@ public:
 		CConcatTypelist<TFirstAJacobianList, TSecondAJacobianList>::_TyResult, typename
 		CConcatTypelist<TFirstAUnaryFactorList, TSecondAUnaryFactorList>::_TyResult>::_TyResult>::_TyResult
 		_TyJacobianMatrixBlockList; /**< @brief list of jacobian and UF matrix block types (blocks in A) */
+	typedef typename __fbs_ut::CBlockSizesAfterPreMultiplyWithSelfTranspose<
+		_TyJacobianMatrixBlockList>::_TyResult _TyHessianMatrixBlockList; /**< @brief list of hessian and UF matrix block types (blocks in lambda and L) */
 
 	typedef __multipool::CMultiPool<_TyBaseVertex, _TyVertexTypelist, pool_PageSize> _TyVertexMultiPool; /**< @brief vertex multipool type */
+	typedef typename CTypelistItemAt<CTypelist<TVoidPool<_TyBaseVertex>, CTypelist<_TyVertexMultiPool,
+		CTypelistEnd> >, allow_FixedVertices>::_TyResult _TyFixVertexMultiPool; /**< @brief fixed vertex multipool type (same as vertex multipool if enabled, otherwise a void type) */
 	typedef __multipool::CMultiPool<_TyBaseEdge, _TyEdgeTypelist, pool_PageSize> _TyEdgeMultiPool; /**< @brief edge multipool type */
 
 protected:
+	typedef typename CTypelistItemAt<CTypelist<TVoidPool<_TyBaseVertex*>, CTypelist<std::vector<_TyBaseVertex*>,
+		CTypelistEnd> >, allow_FixedVertices>::_TyResult _TyVertexLookup; /**< @brief lookup table for the vertices (only used if fixed vertices are enabled) */
+
+	/**
+	 *	@brief code for vertex insertion, based on whether the fixed vertices are allowed
+	 *	@tparam b_fixed_vertices_enabled is fixed vertex enable flag (they need special processing)
+	 */
+	template <class _CBaseVertex, class _CVertexTypelist, class _CBaseEdge,
+		class _CEdgeTypelist, class _CUnaryFactorFactory,
+		const bool b_fixed_vertices_enabled, const int _n_pool_page_size>
+	class CGetVertexImpl {
+	public:
+		/**
+		 *	@brief finds vertex by id, or create a new one in case there is no vertex with such id
+		 *
+		 *	@tparam CVertexType is the vertex type name
+		 *	@tparam CInitializer is the lazy initializer type name
+		 *
+		 *	@param[in] n_id is the id of the vertex required (must be id of an existing vertex,
+		 *		or one larger than id of the last vertex)
+		 *	@param[in] init is the initializer functor; it is only called (converted to vertex)
+		 *		in case new vertex is created
+		 *	@param[in,out] r_vertex_pool is vertex pool for optimized vertices
+		 *	@param[in] r_fix_vertex_pool is vertex pool for fixed vertices (unused)
+		 *	@param[in] r_vertex_lookup is lookup table that contains both fixed and optimized vertices (unused)
+		 *	@param[in,out] r_n_vertex_element_num is number of elements of all the
+		 *		optimized vertices so far
+		 *
+		 *	@return Returns reference to the vertex, associated with id n_id.
+		 *
+		 *	@note This function throws std::bad_alloc.
+		 *	@note This function throws std::runtime_error (in case vertex ids aren't contiguous).
+		 */
+		template <class CVertexType, class CInitializer>
+		static CVertexType &r_Get_Vertex(_TyId n_id, CInitializer init,
+			_TyVertexMultiPool &r_vertex_pool, _TyFixVertexMultiPool &UNUSED(r_fix_vertex_pool),
+			_TyVertexLookup &UNUSED(r_vertex_lookup), size_t &r_n_vertex_element_num) // throw(std::bad_alloc)
+		{
+			if(n_id == r_vertex_pool.n_Size()) {
+				CVertexType &r_t_new_vert = r_vertex_pool.r_Add_Element((CVertexType)(init));
+#ifdef __BASE_TYPES_USE_ID_ADDRESSING
+				r_t_new_vert.Set_Id(n_id);
+#endif // __BASE_TYPES_USE_ID_ADDRESSING
+				r_t_new_vert.Set_Order(r_n_vertex_element_num);
+				r_n_vertex_element_num += r_t_new_vert.n_Dimension();
+				return r_t_new_vert;
+			} else {
+				if(n_id < r_vertex_pool.n_Size())
+					return *(CVertexType*)&r_vertex_pool[n_id]; // a bit of dirty casting
+				throw std::runtime_error("vertices must be accessed in incremental manner");
+
+				// if we want to support fixed vertices, we need vertex map for this
+				// but otherwise the allocation of the matrices is taken care of by assigning id / order
+				// (need to specify that id is *column* id, *not* vertex / edge id)
+
+				// alternately we could keep fixed vertices in the same pool, which will probably break stuff
+
+				// finally, we could have pointer lists for fixed / not fixed vertices
+				// that could almost allow changing the fixed-ness on the fly
+			}
+		}
+	};
+
+	/**
+	 *	@brief code for vertex insertion, based on whether the fixed vertices are allowed
+	 *		(specialization for the case when the fixed vertices are allowed)
+	 */
+	template <class _CBaseVertex, class _CVertexTypelist, class _CBaseEdge,
+		class _CEdgeTypelist, class _CUnaryFactorFactory, const int _n_pool_page_size>
+	class CGetVertexImpl<_CBaseVertex, _CVertexTypelist, _CBaseEdge,
+		_CEdgeTypelist, _CUnaryFactorFactory, true, _n_pool_page_size> {
+	public:
+		/**
+		 *	@brief finds vertex by id, or create a new one in case there is no vertex with such id
+		 *
+		 *	@tparam CVertexType is the vertex type name
+		 *	@tparam CInitializer is the lazy initializer type name
+		 *
+		 *	@param[in] n_id is the id of the vertex required (must be id of an existing vertex,
+		 *		or one larger than id of the last vertex)
+		 *	@param[in] init is the initializer functor; it is only called (converted to vertex)
+		 *		in case new vertex is created
+		 *	@param[in,out] r_vertex_pool is vertex pool for optimized vertices
+		 *	@param[in,out] r_fix_vertex_pool is vertex pool for fixed vertices
+		 *	@param[in,out] r_vertex_lookup is lookup table that contains both fixed and optimized vertices
+		 *	@param[in,out] r_n_vertex_element_num is number of elements of all the
+		 *		optimized vertices so far
+		 *
+		 *	@return Returns reference to the vertex, associated with id n_id.
+		 *
+		 *	@note This function throws std::bad_alloc.
+		 *	@note This function throws std::runtime_error (in case vertex ids aren't contiguous).
+		 */
+		template <class CVertexType, class CInitializer>
+		static CVertexType &r_Get_Vertex(_TyId n_id, CInitializer init,
+			_TyVertexMultiPool &r_vertex_pool, _TyFixVertexMultiPool &r_fix_vertex_pool,
+			_TyVertexLookup &r_vertex_lookup, size_t &r_n_vertex_element_num) // throw(std::bad_alloc)
+		{
+			if(n_id == r_vertex_lookup.n_Size()) {
+				CVertexType t_new_vert = (CVertexType)(init);
+				// make a new vertex
+
+				bool b_fixed = t_new_vert.b_IsFixed();
+				// determine whether the vertex is fixed
+
+				CVertexType &r_t_new_vert = ((b_fixed)? r_fix_vertex_pool :
+					r_vertex_pool).r_Add_Element(t_new_vert);
+				// add to the appropriate pool
+
+				if(b_fixed) {
+#ifdef __BASE_TYPES_USE_ID_ADDRESSING
+					r_t_new_vert.Set_Id(-1); // no id; not to be placed in the system matrix
+#endif // __BASE_TYPES_USE_ID_ADDRESSING
+					r_t_new_vert.Set_Order(-1); // no order; not to be placed in the system matrix
+				} else {
+#ifdef __BASE_TYPES_USE_ID_ADDRESSING
+					r_t_new_vert.Set_Id(r_vertex_pool.n_Size() - 1); // id in vertices that are not fixed
+#endif // __BASE_TYPES_USE_ID_ADDRESSING
+					r_t_new_vert.Set_Order(r_n_vertex_element_num); // order only of vertices that are not fixed
+					r_n_vertex_element_num += r_t_new_vert.n_Dimension();
+				}
+				// take care of ordering
+
+				r_vertex_lookup.push_back(&r_t_new_vert);
+				// add pointer to the lookup table
+
+				return r_t_new_vert;
+			} else {
+				if(n_id < r_vertex_lookup.n_Size())
+					return *(CVertexType*)&r_vertex_lookup[n_id]; // a bit of dirty casting
+				throw std::runtime_error("vertices must be accessed in incremental manner");
+			}
+		}
+	};
+
+	typedef CGetVertexImpl<CBaseVertex, CVertexTypelist, CBaseEdge, CEdgeTypelist,
+		CUnaryFactorFactory, b_allow_fixed_vertices, n_pool_page_size> _TyGetVertexImpl; /**< @brief type with specialized implementation of GetVertex function */
+
+protected:
+	_TyVertexLookup m_vertex_lookup; /**< @brief lookup table for vertices (by id; only used if allow_FixedVertices is set) */
 	_TyVertexMultiPool m_vertex_pool; /**< @brief vertex multipool */
 	_TyEdgeMultiPool m_edge_pool; /**< @brief edge multipool */
 	size_t m_n_vertex_element_num; /**< @brief sum of the numbers of all vertex elements, (also the size of permutation vector) */
 	size_t m_n_edge_element_num; /**< @brief sum of all permutation vector components + unary factor rank (also size of the A matrix) */
+
+	_TyFixVertexMultiPool m_fixed_vertex_pool; /**< @brief fixed vertex multipool (only used if allow_FixedVertices is set) */
 
 	CUnaryFactorFactory m_unary_factor_factory; /**< @brief unary factor initializer */
 	Eigen::MatrixXd m_t_unary_factor; /**< @brief the unary factor matrix */
@@ -735,10 +956,21 @@ public:
 	/**
 	 *	@brief gets number of vertices in the system
 	 *	@return Returns number of vertices in the system.
+	 *	@note This is only number of vertices that are not fixed,
+	 *		and that are potentially included in the system matrix.
 	 */
 	inline size_t n_Vertex_Num() const
 	{
 		return m_vertex_pool.n_Size();
+	}
+
+	/**
+	 *	@brief gets number of fixed vertices in the system
+	 *	@return Returns number of fixed vertices in the system.
+	 */
+	inline size_t n_FixedVertex_Num() const
+	{
+		return m_fixed_vertex_pool.n_Size();
 	}
 
 	/**
@@ -753,6 +985,8 @@ public:
 	/**
 	 *	@brief gets the size of the permutation vector
 	 *	@return Returns the sum of the numbers of all vertex elements, (also the size of permutation vector).
+	 *	@note This is only sum of numbers of elements of vertices that are not fixed,
+	 *		and that are potentially included in the system matrix.
 	 */
 	inline size_t n_VertexElement_Num() const
 	{
@@ -780,6 +1014,8 @@ public:
 	/**
 	 *	@brief gets reference to vertex multipool
 	 *	@return Returns reference to vertex multipool.
+	 *	@note This pool contains only vertices that are not fixed,
+	 *		and that are potentially included in the system matrix.
 	 */
 	inline _TyVertexMultiPool &r_Vertex_Pool()
 	{
@@ -789,10 +1025,32 @@ public:
 	/**
 	 *	@brief gets reference to vertex multipool
 	 *	@return Returns const reference to vertex multipool.
+	 *	@note This pool contains only vertices that are not fixed,
+	 *		and that are potentially included in the system matrix.
 	 */
 	inline const _TyVertexMultiPool &r_Vertex_Pool() const
 	{
 		return m_vertex_pool;
+	}
+
+	/**
+	 *	@brief gets reference to fixed vertex multipool
+	 *	@return Returns reference to fixed vertex multipool.
+	 *	@note This is only available if allow_FixedVertices is set.
+	 */
+	inline _TyFixVertexMultiPool &r_FixedVertex_Pool()
+	{
+		return m_fixed_vertex_pool;
+	}
+
+	/**
+	 *	@brief gets reference to fixed vertex multipool
+	 *	@return Returns const reference to fixed vertex multipool.
+	 *	@note This is only available if allow_FixedVertices is set.
+	 */
+	inline const _TyFixVertexMultiPool &r_FixedVertex_Pool() const
+	{
+		return m_fixed_vertex_pool;
 	}
 
 	/**
@@ -805,18 +1063,19 @@ public:
 	 *		or one larger than id of the last vertex)
 	 *	@param[in] init is the initializer functor; it is only called (converted to vertex) in case new vertex is created
 	 *
-	 *	@return Returns reference to the vertex assoucated with id n_id.
+	 *	@return Returns reference to the vertex, associated with id n_id.
 	 *
 	 *	@note This function throws std::bad_alloc.
 	 *	@note This function throws std::runtime_error (in case vertex ids aren't contiguous).
-	 *
-	 *	@todo Remove the type token, let caller specialize the function explicitly
-	 *		(see if it's supported by both msvc and g++).
 	 */
 	template <class CVertexType, class CInitializer>
-	CVertexType &r_Get_Vertex(_TyId n_id, CInitializer init) // throw(std::bad_alloc)
+	inline CVertexType &r_Get_Vertex(_TyId n_id, CInitializer init) // throw(std::bad_alloc)
 	{
-		if(n_id == m_vertex_pool.n_Size()) {
+		return _TyGetVertexImpl::template r_Get_Vertex<CVertexType>(n_id, init,
+			m_vertex_pool, m_fixed_vertex_pool, m_vertex_lookup, m_n_vertex_element_num);
+		// use specialized implementation, based on whether fixed vertices are enabled or not
+
+		/*if(n_id == m_vertex_pool.n_Size()) {
 			CVertexType &r_t_new_vert = m_vertex_pool.r_Add_Element((CVertexType)(init));
 #ifdef __BASE_TYPES_USE_ID_ADDRESSING
 			r_t_new_vert.Set_Id(n_id);
@@ -825,11 +1084,11 @@ public:
 			m_n_vertex_element_num += r_t_new_vert.n_Dimension();
 			return r_t_new_vert;
 		} else {
-			if(n_id < m_vertex_pool.n_Size()) {
+			if(n_id < m_vertex_pool.n_Size())
 				return *(CVertexType*)&m_vertex_pool[n_id]; // a bit of dirty casting
-			}
 			throw std::runtime_error("vertices must be accessed in incremental manner");
-		}
+		}*/
+		// old implementation that does not allow fixed vertices
 	}
 
 	/**
@@ -862,6 +1121,29 @@ public:
 		// the first edge is preceded by the unary factor
 
 		return r_t_new_edge;
+	}
+
+	/**
+	 *	@brief plots the system as a .tga (targa) image
+	 *
+	 *	@param[in] p_s_filename is the output file name
+	 *	@param[in] n_quality_profile is plot profile (one of plot_*)
+	 *
+	 *	@return Returns true on success, false on failure.
+	 */
+	bool Plot2D(const char *p_s_filename, plot_quality::EQualityProfile n_quality_profile) // todo - do the same for 3D
+	{
+		switch(n_quality_profile) {
+		case plot_quality::plot_Draft:
+			return Plot2D(p_s_filename, 1024, 8192, 2, 1, 1, 1, false, true, 32, false);
+		case plot_quality::plot_Printing:
+			return Plot2D(p_s_filename, 2048, 2048, 10, 3, 7, 1, true, false, 10);
+		case plot_quality::plot_Printing_LandmarkTicksOnly:
+			return Plot2D(p_s_filename, 2048, 2048, 10, 3, 7, 1, true, false, 10, true);
+		case plot_quality::plot_Printing_NoTicks:
+			return Plot2D(p_s_filename, 2048, 2048, 0, 0, 7, 1, true, false, 4);
+		};
+		return false;
 	}
 
 	/**
@@ -990,6 +1272,8 @@ public:
 				f_x, f_y + n_cross_size_px, 0xffff0000U, n_cross_line_width);
 		}
 		// draw vertices
+
+		// todo - support fixed vertices
 
 		for(size_t i = 0, n = m_edge_pool.n_Size(); i < n; ++ i) {
 			const _TyBaseEdge &r_edge = m_edge_pool[i];
@@ -1153,6 +1437,8 @@ public:
 		}
 		// draw vertices
 
+		// todo - support fixed vertices
+
 		for(size_t i = 0, n = m_edge_pool.n_Size(); i < n; ++ i) {
 			const _TyBaseEdge &r_edge = m_edge_pool[i];
 
@@ -1205,6 +1491,8 @@ public:
 			for(size_t j = 0, m = r_v_state.rows(); j < m; ++ j)
 				fprintf(p_fw, (j)? ((j + 1 == m)? " %f\n" : " %f") : ((j + 1 == m)? "%f\n" : "%f"), r_v_state(j)); // t_odo - support any dimensionality
 		}
+
+		// todo - support const vertices
 
 		if(ferror(p_fw)) {
 			//fprintf(stderr, "error: error writing \'%\' (disk full?)\n", p_s_filename);

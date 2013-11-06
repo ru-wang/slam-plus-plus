@@ -11,14 +11,14 @@
 */
 
 /**
- *	@file src/slam/BlockUnit.cpp
+ *	@file src/slam_app/BlockUnit.cpp
  *	@date 2012
  *	@author -tHE SWINe-
  *	@brief block matrix unit tests
  */
 
 #include <stdio.h>
-#include "slam/BlockUnit.h"
+#include "slam_app/BlockUnit.h"
 #include "slam/Parser.h" // uses CParserBase::ReadLine() and CParserBase::TrimSpace()
 
 /*

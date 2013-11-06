@@ -270,9 +270,9 @@ public:
 	 *	@param[in] linear_solver is linear solver instance
 	 *	@param[in] b_use_schur is Schur complement trick flag (not supported)
 	 */
-	CNonlinearSolver_L(CSystem &r_system, size_t n_linear_solve_threshold,
-		size_t n_nonlinear_solve_threshold, size_t n_nonlinear_solve_max_iteration_num,
-		double f_nonlinear_solve_error_threshold, bool b_verbose,
+	CNonlinearSolver_L(CSystem &r_system, size_t n_linear_solve_threshold = 0,
+		size_t n_nonlinear_solve_threshold = 0, size_t n_nonlinear_solve_max_iteration_num = 5,
+		double f_nonlinear_solve_error_threshold = .01, bool b_verbose = false,
 		CLinearSolver linear_solver = CLinearSolver(), bool UNUSED(b_use_schur) = false)
 		:m_r_system(r_system), m_linear_solver(linear_solver),
 		m_linear_solver2(linear_solver2),
@@ -922,7 +922,7 @@ public:
 	 *
 	 *	@note This function throws std::bad_alloc and std::runtime_error (when L is not-pos-def).
 	 */
-	void Optimize(size_t n_max_iteration_num, double f_min_dx_norm) // throw(std::bad_alloc, std::runtime_error)
+	void Optimize(size_t n_max_iteration_num = 5, double f_min_dx_norm = .01) // throw(std::bad_alloc, std::runtime_error)
 	{
 		if(!RefreshLambdaL())
 			return;
@@ -994,7 +994,7 @@ public:
 						cs_usolve(m_p_L, &m_v_dx(0)); // dx = L'/d // note this never fails (except if L is null)
 						b_cholesky_result = true; // always
 						if(m_b_verbose)
-							printf("backsubstitution rulez!\n");
+							printf("backsubstitution succeeded\n");
 					}
 #elif  defined(__NONLINEAR_SOLVER_L_USE_SPARSE_BACKSUBST)
 					{
@@ -1008,7 +1008,7 @@ public:
 						InversePermuteVector(m_p_lambda_elem_ordering, &m_v_perm_temp(0), &m_v_dx(0), m_v_dx.rows());
 						b_cholesky_result = true; // always
 						if(m_b_verbose)
-							printf("backsubstitution rulez!\n");
+							printf("backsubstitution succeeded\n");
 					}
 					// L solves with permutation (note that m_v_d is not modified!)
 #else // 0
@@ -1037,8 +1037,8 @@ public:
 
 						InversePermuteVector(m_p_lambda_elem_ordering, &m_v_perm_temp(0), &m_v_dx(0), m_v_dx.rows());
 						if(m_b_verbose) {
-							printf("%s", (b_cholesky_result)? "backsubstitution rulez!\n" :
-								"backsubstitution failed!\n");
+							printf("%s", (b_cholesky_result)? "backsubstitution succeeded\n" :
+								"backsubstitution failed\n");
 						}
 					}
 					// L solves with permutation (note that m_v_d is not modified!)
@@ -1141,7 +1141,7 @@ public:
 							b_cholesky_result = m_linear_solver.Solve_PosDef(m_lambda, v_eta); // p_dx = eta = lambda / eta
 
 						if(m_b_verbose)
-							printf("%s", (b_cholesky_result)? "Cholesky rulez!\n" : "optim success: 0\n");
+							printf("%s", (b_cholesky_result)? "Cholesky succeeded\n" : "Cholesky failed\n");
 					}
 					// lambda is good without permutation (there is one inside and we save copying eta arround)
 #else // 1
@@ -1173,7 +1173,7 @@ public:
 						// solve the permutated lambda
 
 						if(m_b_verbose)
-							printf("%s", (b_cholesky_result)? "perv Cholesky rulez!\n" : "perm optim success: 0\n");
+							printf("%s", (b_cholesky_result)? "perm Cholesky succeeded\n" : "perm Cholesky failed\n");
 
 						InversePermuteVector(m_p_lambda_elem_ordering, &m_v_perm_temp(0), &m_v_dx(0), m_v_dx.rows());
 						// permute the result in eta back to bx
