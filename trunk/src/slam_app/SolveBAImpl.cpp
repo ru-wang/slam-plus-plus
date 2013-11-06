@@ -11,13 +11,13 @@
 */
 
 /**
- *	@file src/slam/SolveBAImpl.cpp
+ *	@file src/slam_app/SolveBAImpl.cpp
  *	@brief contains instantiation of bundle adjustment solver templates
  *	@author -tHE SWINe-
  *	@date 2013-06-14
  */
 
-#include "slam/Main.h"
+#include "slam_app/Main.h"
 #include "slam/ConfigSolvers.h" // only included in files that actually need the solvers (slow to compile)
 #include "slam/BA_Types.h"
 
@@ -42,7 +42,8 @@ int n_Run_BA_Solver(TCommandLineArgs t_args) // throw(std::runtime_error, std::b
 		t_args.n_solver_choice = nlsolver_LambdaLM;
 	// use Levenberg-Marquardt for bundle adjustment, GN not good enough
 
-	typedef CSolverCaller<CSystemType, CBATraits, CBAParseLoop> CSpecializedSolverCaller;
+	typedef CSolverCaller<CSystemType, CBAEdgeTraits,
+		CBAVertexTraits, CParseLoop> CSpecializedSolverCaller;
 	// specify how the nonlinear solver should be called
 
 	return CTypelistForEach<CCompiledSolverList,

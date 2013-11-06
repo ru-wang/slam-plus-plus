@@ -21,8 +21,9 @@
  *	@date 2012-09-03
  */
 
-#include "slam/Parser.h"
+//#include "slam/Parser.h"
 #include "slam/FlatSystem.h"
+#include <map>
 
 /**
  *	@brief set this in edge traits for the CParseLoop to ignore this edge
@@ -36,18 +37,41 @@ class CIgnoreEdgeType {};
 class CFailOnEdgeType {};
 
 /**
+ *	@brief set this in vertex traits for the CParseLoop to ignore this vertex
+ */
+typedef CIgnoreEdgeType CIgnoreVertexType;
+
+/**
+ *	@brief set this in vertex traits for the CParseLoop to throw error on this vertex
+ *	@note The trait must implement p_s_Reason() function, that will give error description
+ */
+typedef CFailOnEdgeType CFailOnVertexType;
+
+/**
+ *	@brief vertex traits for solvers that ignore vertices
+ */
+template <class CParsedStructure>
+class CIgnoreAllVertexTraits {
+public:
+	typedef CIgnoreVertexType _TyVertex; /**< @brief it should quietly ignore unknown vertex types */
+};
+
+/**
  *	@brief parser loop consumer, working with flat system
  *
  *	@tparam CSystem is flat system type
  *	@tparam CNonlinearSolver is nonlinear solver type
  *	@tparam CEdgeTraits is edge traits template (performs
  *		lookup of edge representation type by parser type)
+ *	@tparam CVertexTraits is vertex traits template (performs
+ *		lookup of vertex representation type by parser type)
  *
  *	@note This is currently limited to binary edges. A modification to edge map would be needed
  *		(or removal of the edge map, which would work if there are no duplicate edges).
  */
-template <class CSystem, class CNonlinearSolver, template <class> class CEdgeTraits>
-class CParseLoop /*: public CParser::CParserAdaptor*/ {
+template <class CSystem, class CNonlinearSolver, template <class> class CEdgeTraits,
+	template <class> class CVertexTraits = CIgnoreAllVertexTraits>
+class CParseLoop {
 protected:
 	CSystem &m_r_system; /**< @brief reference to the system being parsed into */
 	CNonlinearSolver &m_r_solver; /**< @brief reference to the solver (for incremental solving) */
@@ -76,6 +100,19 @@ public:
 	{
 		CProcessEdge<CParsedEdge, typename CEdgeTraits<CParsedEdge>::_TyEdge>::Do(m_r_system,
 			m_r_solver, r_edge, m_edge_map);
+	}
+
+	/**
+	 *	@brief processes a vertex, based on it's type and the vertex traits
+	 *	@tparam CParsedVertex is parsed vertex type
+	 *	@param[in] r_vertex is reference to the parsed vertex
+	 *	@note This function throws std::bad_alloc, and also
+	 *		std::runtime_error as a means of error reporting.
+	 */
+	template <class CParsedVertex>
+	void InitializeVertex(const CParsedVertex &r_vertex) // throw(std::bad_alloc, std::runtime_error)
+	{
+		CProcessVertex<CParsedVertex, typename CVertexTraits<CParsedVertex>::_TyVertex>::Do(m_r_system, r_vertex);
 	}
 
 protected:
@@ -178,6 +215,73 @@ protected:
 			typedef CEdgeTraits<CParsedEdge> TEdgeType; // g++ doesn't like 'typename' here
 			throw std::runtime_error(TEdgeType::p_s_Reason());
 			// "CParseLoop encountered edge type that is not permitted by the configuration"
+		}
+	};
+
+	/**
+	 *	@brief vertex processing functor
+	 *
+	 *	@tparam CParsedVertex is type of vertex as parsed
+	 *	@tparam CRepresentation is type of vertex as represented in the system
+	 */
+	template <class CParsedVertex, class CRepresentation>
+	class CProcessVertex {
+	public:
+		/**
+		 *	@brief vertex processing function
+		 *
+		 *	@param[in] r_system is reference to the system being parsed into
+		 *	@param[in] r_vertex is reference to the parsed vertex
+		 *
+		 *	@note This function throws std::bad_alloc.
+		 */
+		static inline void Do(CSystem &r_system, const CParsedVertex &r_vertex) // throw(std::bad_alloc)
+		{
+			r_system.template r_Get_Vertex<CRepresentation>(r_vertex.m_n_id, CRepresentation(r_vertex));
+			// add the vertex to the system (convert parsed vertex to internal representation)
+		}
+	};
+
+	/**
+	 *	@brief vertex processing functor (specialization for ignored vertex types)
+	 *
+	 *	@tparam CParsedVertex is type of vertex as parsed
+	 */
+	template <class CParsedVertex>
+	class CProcessVertex<CParsedVertex, CIgnoreVertexType> {
+	public:
+		/**
+		 *	@brief vertex processing function (for vertexs to be ignored)
+		 *
+		 *	@param[in] r_system is reference to the system being parsed into (unused)
+		 *	@param[in] r_vertex is reference to the parsed vertex (unused)
+		 */
+		static inline void Do(CSystem &UNUSED(r_system), const CParsedVertex &UNUSED(r_vertex))
+		{}
+	};
+
+	/**
+	 *	@brief vertex processing functor (specialization for vertex
+	 *		types that cause the parse loop to fail)
+	 *
+	 *	@tparam CParsedVertex is type of vertex as parsed
+	 */
+	template <class CParsedVertex>
+	class CProcessVertex<CParsedVertex, CFailOnVertexType> {
+	public:
+		/**
+		 *	@brief vertex processing function (for vertexs that cause the parse loop to fail)
+		 *
+		 *	@param[in] r_system is reference to the system being parsed into (unused)
+		 *	@param[in] r_vertex is reference to the parsed vertex (unused)
+		 *
+		 *	@note This function throws std::runtime_error as a means of error reporting.
+		 */
+		static inline void Do(CSystem &UNUSED(r_system), const CParsedVertex &UNUSED(r_vertex)) // throw(std::runtime_error)
+		{
+			typedef CVertexTraits<CParsedVertex> TVertexType; // g++ doesn't like 'typename' here
+			throw std::runtime_error(TVertexType::p_s_Reason());
+			// "CParseLoop encountered vertex type that is not permitted by the configuration"
 		}
 	};
 };

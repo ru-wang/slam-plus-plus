@@ -370,6 +370,8 @@ public:
  *	@param[in] p_fw is output file
  *	@param[in] n_remains is number of remaining pixels in the scanline to be encoded
  *	@param[in] p_ptr is pointer to the current pixel
+ *
+ *	@return Returns pointer to one past the last scanline pixel on success, 0 on failure.
  */
 template <class CColorOp>
 static const uint32_t *_p_Write_RLE_Scanline(FILE *p_fw,

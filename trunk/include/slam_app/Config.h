@@ -15,7 +15,7 @@
 #define __SLAMPP_CONFIGURATION_INCLUDED
 
 /**
- *	@file include/slam/Config.h
+ *	@file include/slam_app/Config.h
  *	@author -tHE SWINe-
  *	@brief main application configuration file
  *	@note Also a precompiled header (makes the compilation faster in windows).
@@ -23,10 +23,6 @@
  */
 
 #include <csparse/cs.hpp>
-
-/*#define EIGEN_NO_DEBUG
-#define EIGEN_NO_STATIC_ASSERT*/
-// to compile with the experimental allocator
 
 #include "eigen/Eigen/Dense"
 #include "eigen/Eigen/Core"
@@ -40,7 +36,7 @@
 #endif // _WIN32 || _WIN64
 #include "slam/Debug.h"
 #include "slam/Unused.h"
-#include "slam/Parser.h"
+#include "slam_app/ParsePrimitives.h"
 #include "slam/Timer.h"
 
 /**
@@ -89,14 +85,6 @@
  *		mode, if __USE_CXSPARSE is defined and __USE_CHOLMOD or __USE_NATIVE_CHOLESKY are not)
  */
 //#define __CXSPARSE_SHORT
-
-/**
- *	@def __SLAM_COUNT_ITERATIONS_AS_VERTICES
- *	@brief if defined, the incremental updates are scheduled per N vertices,
- *		if not defined, they are scheduled per N edges (presumably faster in batch each 1,
- *		practically slower in batch each 10)
- */
-#define __SLAM_COUNT_ITERATIONS_AS_VERTICES
 
 /**
  *	@def __LINEAR_SOLVER_OVERRIDE

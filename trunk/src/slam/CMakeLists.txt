@@ -1,8 +1,8 @@
 
 # Set required variables.
-SET(SLAM_P_P_BINARY_NAME "slam_plus_plus")
+SET(SLAM_BASE_LIBRARY_NAME "slampp_base")
 
-FILE(GLOB_RECURSE SLAM_P_P_HEADERS ${SLAM_P_P_SOURCE_DIR}/include/slam/*.h)
+FILE(GLOB_RECURSE SLAM_BASE_LIBRARY_HEADERS ${SLAM_P_P_SOURCE_DIR}/include/slam/*.h)
 
 IF(SLAM_P_P_SHORT_CXSPARSE)
 	ADD_DEFINITIONS(-D__CXSPARSE_SHORT)
@@ -20,40 +20,21 @@ IF(SLAM_P_P_GPU_BLAS)
 		-D__CUDA_RUNTIME_H__)
 ENDIF(SLAM_P_P_GPU_BLAS)
 
-ADD_DEFINITIONS(-DCERES_NO_PROTOCOL_BUFFERS)
-
-SET(SLAM_P_P_SOURCES
-#  ${PROJECT_SOURCE_DIR}/external/Ceres/internal/ceres/block_sparse_matrix.cc
-#  ${PROJECT_SOURCE_DIR}/external/Ceres/internal/ceres/block_structure.cc
-#  ${PROJECT_SOURCE_DIR}/external/Ceres/internal/ceres/sparse_matrix.cc
-#  ${PROJECT_SOURCE_DIR}/external/Ceres/internal/ceres/triplet_sparse_matrix.cc
-#  ${PROJECT_SOURCE_DIR}/external/Ceres/internal/ceres/linear_operator.cc
-#  ${PROJECT_SOURCE_DIR}/external/Ceres/internal/ceres/miniglog/glog/logging.cc
-  BlockBench.cpp
-  BlockBenchImpl0.cpp
-  BlockBenchImpl1.cpp
+SET(SLAM_BASE_LIBRARY_SOURCES
   BlockMatrix.cpp
-  BlockUnit.cpp
-  Covado.cpp
   LinearSolver_CholMod.cpp
   LinearSolver_CSparse.cpp
   LinearSolver_CXSparse.cpp
   OrderingMagic.cpp
-  Main.cpp
   Parser.cpp
-  Solve2DImpl.cpp
-  Solve2DPoseOnlyImpl.cpp
-  Solve3DImpl.cpp
-  SolveBAImpl.cpp
   Tga.cpp
   Timer.cpp)
 
-IF(SLAM_P_P_LINEAR_SOLVER_TYPE)
-	ADD_DEFINITIONS("-D__LINEAR_SOLVER_OVERRIDE=${SLAM_P_P_LINEAR_SOLVER_TYPE}")
-ENDIF(SLAM_P_P_LINEAR_SOLVER_TYPE)
-
-# Build and install SLAM_plus_plus executable.
-ADD_EXECUTABLE(${SLAM_P_P_BINARY_NAME} ${SLAM_P_P_SOURCES} ${SLAM_P_P_HEADERS})
-TARGET_LINK_LIBRARIES(${SLAM_P_P_BINARY_NAME} ${SLAM_P_P_LIBRARIES})
-INSTALL(TARGETS ${SLAM_P_P_BINARY_NAME}
-  RUNTIME DESTINATION bin)
+# Build and install SLAM_base library.
+ADD_LIBRARY(${SLAM_BASE_LIBRARY_NAME} STATIC
+	${SLAM_BASE_LIBRARY_SOURCES}
+	${SLAM_BASE_LIBRARY_HEADERS})
+INSTALL(TARGETS ${SLAM_BASE_LIBRARY_NAME}
+	RUNTIME DESTINATION bin
+	LIBRARY DESTINATION lib
+	ARCHIVE DESTINATION lib)

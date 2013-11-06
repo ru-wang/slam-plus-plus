@@ -5,7 +5,7 @@
 								|                                   |
 								|  Copyright  (c) -tHE SWINe- 2012  |
 								|                                   |
-								|     NonlinearSolver_Lambda.h      |
+								|    NonlinearSolver_Lambda_LM.h    |
 								|                                   |
 								+-----------------------------------+
 */
@@ -15,8 +15,8 @@
 #define __NONLINEAR_BLOCKY_SOLVER_LAMBDA_LM_INCLUDED
 
 /**
- *	@file include/slam/NonlinearSolver_Lambda.h
- *	@brief nonlinear blocky solver working above the lambda matrix
+ *	@file include/slam/NonlinearSolver_Lambda_LM.h
+ *	@brief nonlinear blocky solver working above the lambda matrix, with Levenberg Marquardt
  *	@author -tHE SWINe-
  *	@date 2012-09-13
  */
@@ -109,9 +109,9 @@ public:
 	 *	@param[in] linear_solver is linear solver instance
 	 *	@param[in] b_use_schur is Schur complement trick flag
 	 */
-	CNonlinearSolver_Lambda_LM(CSystem &r_system, size_t n_linear_solve_threshold,
-		size_t n_nonlinear_solve_threshold, size_t n_nonlinear_solve_max_iteration_num,
-		double f_nonlinear_solve_error_threshold, bool b_verbose,
+	CNonlinearSolver_Lambda_LM(CSystem &r_system, size_t n_linear_solve_threshold = 0,
+		size_t n_nonlinear_solve_threshold = 0, size_t n_nonlinear_solve_max_iteration_num = 5,
+		double f_nonlinear_solve_error_threshold = .01, bool b_verbose = false,
 		CLinearSolver linear_solver = CLinearSolver(), bool b_use_schur = true)
 		:m_r_system(r_system), m_linear_solver(linear_solver),
 		m_schur_solver(linear_solver), m_n_verts_in_lambda(0), m_n_edges_in_lambda(0),
@@ -124,9 +124,9 @@ public:
 		m_n_nonlinear_solve_threshold(n_nonlinear_solve_threshold),
 		m_n_nonlinear_solve_max_iteration_num(n_nonlinear_solve_max_iteration_num),
 		m_f_nonlinear_solve_error_threshold(f_nonlinear_solve_error_threshold),
-		m_b_verbose(b_verbose), m_n_real_step(0), m_b_system_dirty(false),
+		m_b_verbose(b_verbose), m_b_use_schur(b_use_schur), m_n_real_step(0), m_b_system_dirty(false),
 		m_n_iteration_num(0), m_f_serial_time(0), m_f_ata_time(0), m_f_premul_time(0),
-		m_f_chol_time(0), m_f_norm_time(0), m_b_had_loop_closure(false), m_b_use_schur(b_use_schur)
+		m_f_chol_time(0), m_f_norm_time(0), m_b_had_loop_closure(false)
 	{
 		_ASSERTE(!m_n_nonlinear_solve_threshold || !m_n_linear_solve_threshold); // only one of those
 	}
@@ -385,7 +385,7 @@ public:
 	 *	@param[in] n_max_iteration_num is the maximal number of iterations
 	 *	@param[in] f_min_dx_norm is the residual norm threshold
 	 */
-	void Optimize(size_t n_max_iteration_num, double f_min_dx_norm) // throw(std::bad_alloc)
+	void Optimize(size_t n_max_iteration_num = 5, double f_min_dx_norm = .01) // throw(std::bad_alloc)
 	{
 		const size_t n_variables_size = m_r_system.n_VertexElement_Num();
 		const size_t n_measurements_size = m_r_system.n_EdgeElement_Num();
@@ -405,6 +405,7 @@ public:
 			m_r_system.r_Edge_Pool().For_Each_Parallel(CCalculate_Hessians());
 
 		double alpha = 0.0;
+		double nu = 2.0;
 		const double tau = 1e-3;
 		/*for(size_t i = 0, n = m_lambda.n_BlockColumn_Num(); i < n; ++ i) {
 			size_t n_last = m_lambda.n_BlockColumn_Block_Num(i) - 1;
@@ -453,7 +454,7 @@ public:
 				Eigen::VectorXd &v_eta = m_v_dx; // dx is calculated inplace from eta
 				b_cholesky_result = m_linear_solver.Solve_PosDef(m_lambda, v_eta); // p_dx = eta = lambda / eta
 				if(m_b_verbose)
-					printf("%s", (b_cholesky_result)? "Cholesky rulez!\n" : "optim success: 0\n");
+					printf("%s", (b_cholesky_result)? "Cholesky succeeded\n" : "Cholesky failed\n");
 			}
 			// calculate cholesky
 
@@ -547,7 +548,8 @@ public:
 #endif // _DEBUG
 
 			double f_serial_start = m_timer.f_Time();
-
+			//save original x
+			Eigen::VectorXd v_x = m_v_dx;
 			{
 				{}
 				// no AtA :(
@@ -584,8 +586,8 @@ public:
 					}
 
 					if(m_b_verbose) {
-						printf("%s", (b_cholesky_result)? ((m_b_use_schur)? "Schur rulez!\n" :
-							"Cholesky rulez!\n") : "optim success: 0\n");
+						printf("%s %s", (m_b_use_schur)? "Schur" : "Cholesky",
+							(b_cholesky_result)? "succeeded\n" : "failed\n");
 					}
 				}
 				// calculate cholesky, reuse block ordering if the linear solver supports it
@@ -637,13 +639,17 @@ public:
 				// in case cholesky failed, quit
 
 				double f_error = f_Chi_Squared_Error_Denorm();
+				double rho = (last_error - f_error) / (m_v_dx.transpose()).dot(alpha * m_v_dx + v_x);
+
 				std::cout << "chi2: " << f_error << std::endl;
-				if(f_error <= last_error) {
-					alpha = alpha / 10; // g2o calculates scale
+				if(rho > 0) {
+					alpha = alpha * std::max(1/3.0, 1.0-pow((2*rho-1), 3));
 					last_error = f_error;
+					nu = 2;
 				} else {
 					fprintf(stderr, "warning: chi2 rising\n");
-					alpha = alpha * 10; // g2o has ni
+					alpha = alpha * nu; // g2o has ni
+					nu *= 2;
 					if(fail > 0) {
 						-- fail;
 						n_max_iteration_num ++;

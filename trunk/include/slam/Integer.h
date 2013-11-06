@@ -17,6 +17,7 @@
 /**
  *	@file include/slam/Integer.h
  *	@author -tHE SWINe-
+ *	@date 2008
  *	@brief standard integer types
  *
  *	@note This was never tested on compilers other than MSVC or g++, in case you are using another
@@ -42,7 +43,7 @@
  *
  *	@date 2010-10-29
  *
- *	Unified windows detection macro to "#if defined(_WIN32) || defined(_WIN64)".
+ *	Unified windows detection macro to "\#if defined(_WIN32) || defined(_WIN64)".
  *
  *	@date 2010-11-25
  *
@@ -62,6 +63,14 @@
  *	@date 2011-11-01
  *
  *	Changed some 64-bit integer constants to two-part 32-bit constants to avoid some g++ complaints.
+ *
+ *	@date 2012-06-19
+ *
+ *	Moved multiple inclusion guard before file documentation comment.
+ *
+ *	@date 2012-06-21
+ *
+ *	Added the n_RightFill_Ones(), n_LeadingZero_Num() and n_Mask() functions.
  *
  *	@date 2013-01-13
  *
@@ -257,8 +266,15 @@
  */
 #ifndef PRIsize
 #if defined(_MSC_VER) && !defined(__MWERKS__)
+#if defined(_M_X64) || defined(_M_AMD64) || defined(_M_IA64) || defined(__x86_64) || defined(__amd64) || defined(__ia64)
+#define PRIsize "%I64u"
+#define _PRIsize "I64u"
+// %u doesn't work correctly if compiling for x64
+#else // _M_X64 || _M_AMD64 || _M_IA64 || __x86_64 || __amd64 || __ia64
 #define PRIsize "%u"
 #define _PRIsize "u"
+// %u is ok for x86
+#endif // _M_X64 || _M_AMD64 || _M_IA64 || __x86_64 || __amd64 || __ia64
 #else // MSVC
 #define PRIsize "%zd"
 #define _PRIsize "zd"
@@ -904,10 +920,18 @@ inline bool b_Is_POT(_Ty n_x)
 
 /**
  *	@brief calculates power of two greater or equal to the argument
+ *
  *	@tparam _Ty is integer data type; this works for both signed and unsigned types
+ *
  *	@param[in] n_x is input number, which must not be negative
- *	@return Returns power of two greater or equal to n_x. In case such number is not representable by given type, returns null.
- *	@note In case _Ty is signed and n_x is greater than the largest power of two, representable by this type (can be set to zero by masking-out the sign bit).
+ *
+ *	@return Returns power of two greater or equal to n_x.
+ *
+ *	@note In case _Ty is unsigned and n_x is greater than the largest power of two,
+ *		representable by the given type, returns null.
+ *	@note In case _Ty is signed and n_x is greater than the largest power of two,
+ *		representable by this type, returns the maximum negative value representable
+ *		by this type (can be set to zero by masking-out the sign bit).
  */
 template <class _Ty>
 inline _Ty n_Make_POT(_Ty n_x)
@@ -923,19 +947,19 @@ inline _Ty n_Make_POT(_Ty n_x)
  *	@brief calculates power of two greater or equal to the argument, at compile-time
  *	@param[in] n_x is input number, which must not be negative
  *	@return Returns power of two below or equal to n_x.
- *	@note As this is evaluated at compile-time and the speed is of little interest, this just calls
- *		n_Align_Up_Static() macro and the power-of-two requirement is therefore relaxed.
+ *	@note Overflow handling may be compiler dependent (depends on whether enums
+ *		are signed or unsigned), may return 0 or maximum negative value, respectively.
  */
 #if defined(_MSC_VER) && !defined(__MWERKS__) && _MSC_VER < 1400
-#define n_Make_POT_Static(n_x) ul_bithacks::CMakePOT_Static<(n_x) - 1>::CShifter_Static<sizeof(n_x) * 8 / 2>::result + 1
+#define n_Make_POT_Static(n_x) (ul_bithacks::CMakePOT_Static<(n_x) - 1>::CShifter_Static<sizeof(n_x) * 8 / 2>::result + 1)
 #else // _MSC_VER && !__MWERKS__ && _MSC_VER < 1400
-#define n_Make_POT_Static(n_x) ul_bithacks::CShifter_Static<(n_x) - 1, sizeof(n_x) * 8 / 2>::result + 1
+#define n_Make_POT_Static(n_x) (ul_bithacks::CShifter_Static<(n_x) - 1, sizeof(n_x) * 8 / 2>::result + 1)
 #endif // _MSC_VER && !__MWERKS__ && _MSC_VER < 1400
 
 /**
  *	@brief calculates power of two below or equal to the argument
  *	@tparam _Ty is integer data type; this works for both signed and unsigned types
- *	@param[in] n_x is input number, which must not be negative
+ *	@param[in] n_x is input number, which must not be zero or negative
  *	@return Returns power of two below or equal to n_x.
  */
 template <class _Ty>
@@ -950,15 +974,13 @@ inline _Ty n_Make_Lower_POT(_Ty n_x)
 
 /**
  *	@brief calculates power of two below or equal to the argument, at compile-time
- *	@param[in] n_x is input number, which must not be negative
+ *	@param[in] n_x is input number, which must not be zero or negative
  *	@return Returns power of two below or equal to n_x.
- *	@note As this is evaluated at compile-time and the speed is of little interest, this just calls
- *		n_Align_Up_Static() macro and the power-of-two requirement is therefore relaxed.
  */
 #if defined(_MSC_VER) && !defined(__MWERKS__) && _MSC_VER < 1400
-#define n_Make_Lower_POT_Static(n_x) ul_bithacks::CMakePOT_Static<(n_x) >> 1>::CShifter_Static<sizeof(n_x) * 8 / 2>::result + 1
+#define n_Make_Lower_POT_Static(n_x) (ul_bithacks::CMakePOT_Static<(n_x) >> 1>::CShifter_Static<sizeof(n_x) * 8 / 2>::result + 1)
 #else // _MSC_VER && !__MWERKS__ && _MSC_VER < 1400
-#define n_Make_Lower_POT_Static(n_x) ul_bithacks::CShifter_Static<(n_x) / 2, sizeof(n_x) * 8 / 2>::result + 1
+#define n_Make_Lower_POT_Static(n_x) (ul_bithacks::CShifter_Static<(n_x) / 2, sizeof(n_x) * 8 / 2>::result + 1)
 #endif // _MSC_VER && !__MWERKS__ && _MSC_VER < 1400
 
 /**
@@ -1058,7 +1080,7 @@ inline _Ty n_Log2(_Ty n_x)
 {
 	if(!n_x)
 		return 0;
-	n_x = n_Make_Lower_POT(n_x) - 1; // set all bits left of highest set bit in n_x
+	n_x = n_Make_Lower_POT(n_x) - 1; // set all bits right of highest set bit in n_x
 	return n_SetBit_Num(n_x); // count bits set
 }
 

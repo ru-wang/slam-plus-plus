@@ -15,13 +15,13 @@
 #define __SLAMPP_MAIN_INCLUDED
 
 /**
- *	@file include/slam/Main.h
+ *	@file include/slam_app/Main.h
  *	@brief contains some of the common classes required in main() and the documentation pages
  *	@author -tHE SWINe-
  *	@date 2013-06-14
  */
 
-#include "slam/Config.h"
+#include "slam_app/Config.h"
 
 /**
  *	@mainpage SLAM ++
@@ -150,6 +150,7 @@
  *	* implement new vertex types (contain "smart" plus code)
  *	* implement new edge types (contain jacobians code)
  *	* implement edge type traits to connect to parse loop if using the builtin parser, or implement your own parse loop
+ *		* implement vertex type traits (only if using the builtin parser and vertex initialization is required)
  *	* write specialization of a system that would use your new types
  *	* add a new branch in Main.cpp to call your new code, or call the optimizer yourself
  *
@@ -186,6 +187,9 @@
  *	};
  *	@endcode
  *
+ *	Note that parsed vertex types are implemented in similar fashion, just start
+ *	by copying e.g. CParserBase::TVertexXYZ and modifying it to suit your needs.
+ *
  *	Once you have parsed type, you need to implement code to parse it. Start by making a copy
  *	of CIgnoreParsePrimitive in ParsePrimitives.h:
  *
@@ -205,7 +209,8 @@
  *			const std::string &UNUSED(r_s_token), _TyParseLoop &r_parse_loop)
  *		{
  *			// here, a primitive of type r_s_token should be parsed from r_s_line
- *			// and if successful, passed to r_parse_loop
+ *			// and if successful, passed to r_parse_loop by calling InitializeVertex()
+ *			// for vertex types or AppendSystem() for edge types
  *
  *			return true;
  *		}
@@ -262,9 +267,11 @@
  *	@endcode
  *
  *	If you did that, you also need to change the CParserBase::CParserAdaptor class,
- *	back in Parser.h to include your new type(s). Create a variant of the CParserBase::CParserAdaptor::AppendSystem() function
- *	for every new type added (just copy-paste and rename). This also needs to be done in
- *	TDatasetPeeker in Main.cpp since it inherits from parser adaptor.
+ *	back in Parser.h to include your new type(s). Create a variant of the
+ *	CParserBase::CParserAdaptor::AppendSystem() function for every new edge type added
+ *	(just copy-paste and rename), or a variant of CParserBase::CParserAdaptor::InitializeVertex()
+ *	in case the persed type is a vertex. This also needs to be done in TDatasetPeeker in Main.cpp
+ *	since it inherits from parser adaptor.
  *
  *	This is, however, not always neccessary. If you just want to solve your specific problem,
  *	you can leave CStandardParsedPrimitives and CParserBase::CParserAdaptor as is.
@@ -316,16 +323,20 @@
  *	        :CSEBaseVertexImpl<CVertexPose2D, 3>(r_v_state) // change the dimension here as well
  *	    {}
  *
+ *	    inline CVertexPose2D(const CParserBase::TVertex2D &r_v_vertex) // copy this, change the dimension of the vector to appropriate
+ *	        :CSEBaseVertexImpl<CVertexPose2D, 3>(r_v_vertex.m_v_position) // change the dimension here as well
+ *	    {}
+ *
  *	    inline void Operator_Plus(const Eigen::VectorXd &r_v_delta) // "smart" plus
  *	    {
  *	        m_v_state += r_v_delta.segment<3>(m_n_order); // pick part of the delta vector, belonging to this vertex, apply +
- *	        m_v_state(2) = CBase2DSolver::C2DJacobians::f_ClampAngle_2Pi(m_v_state(2)); // clamp angle
+ *	        m_v_state(2) = C2DJacobians::f_ClampAngle_2Pi(m_v_state(2)); // clamp angle
  *	    }
  *
  *	    inline void Operator_Minus(const Eigen::VectorXd &r_v_delta) // "smart" minus
  *	    {
  *	        m_v_state -= r_v_delta.segment<3>(m_n_order); // pick part of the delta vector, belonging to this vertex, apply -
- *	        m_v_state(2) = CBase2DSolver::C2DJacobians::f_ClampAngle_2Pi(m_v_state(2)); // clamp angle
+ *	        m_v_state(2) = C2DJacobians::f_ClampAngle_2Pi(m_v_state(2)); // clamp angle
  *	    }
  *	};
  *	@endcode
@@ -369,7 +380,7 @@
  *	        inline operator CVertexPose2D() const // this function calculates initial prior from the state of the first vertex m_r_v_pose1 and from the edge measurement m_r_edge
  *	        {
  *	            Eigen::Vector3d v_pose2;
- *	            CBase2DSolver::C2DJacobians::Relative_to_Absolute(m_r_v_pose1, m_r_edge.m_v_delta, v_pose2); // implement your own equation here
+ *	            C2DJacobians::Relative_to_Absolute(m_r_v_pose1, m_r_edge.m_v_delta, v_pose2); // implement your own equation here
  *	            return CVertexPose2D(v_pose2);
  *	        }
  *	    };
@@ -400,13 +411,13 @@
  *	        Eigen::Matrix3d &r_t_jacobian1, Eigen::Vector3d &r_v_expectation,
  *	        Eigen::Vector3d &r_v_error) const // change dimensionality of eigen types, if required
  *	    {
- *	        CBase2DSolver::C2DJacobians::Absolute_to_Relative(m_p_vertex0->v_State(),
+ *	        C2DJacobians::Absolute_to_Relative(m_p_vertex0->v_State(),
  *	            m_p_vertex1->v_State(), r_v_expectation, r_t_jacobian0, r_t_jacobian1); // write your jacobian calculation code here (vertex state vectors are inputs, the rest are the outputs
  *	            that you need to fill)
  *	        // calculates the expectation and the jacobians
  *
  *	        r_v_error = m_v_measurement - r_v_expectation;
- *	        r_v_error(2) = CBase2DSolver::C2DJacobians::f_ClampAngularError_2Pi(r_v_error(2)); // write your error calculation code here
+ *	        r_v_error(2) = C2DJacobians::f_ClampAngularError_2Pi(r_v_error(2)); // write your error calculation code here
  *	        // calculates error (possibly re-calculates, if running A-SLAM)
  *	    }
  *
@@ -462,8 +473,11 @@
  *	also the edges which you don't want to handle to provide more meaningful error messages
  *	than "unknown edge type occured", but it is not mandatory.
  *
- *	With all that, the parser knows how to parse your new edge types, the parse loop knows
- *	how to redirect those to the system and how to call optimizer.
+ *	If you require vertex initialization, you need to implement vertex traits in pretty
+ *	much the same fashion. Otherwise, CIgnoreAllVertexTraits can be used.
+ *
+ *	With all that, the parser knows how to parse your new data types, the parse loop knows
+ *	how to redirect those to the system and how to call the optimizer.
  *
  *	@section sec5 Implement your own parse loop
  *
@@ -519,14 +533,16 @@
  *	// prepare nonlinear solver
  *
  *	typedef CMyNewEdgeTraits CEdgeTraitsType; // use any edge traits appropriate
+ *	typedef CIgnoreAllVertexTraits CVertexTraitsType; // use any vertex traits appropriate
  *	typedef CParseLoop<CSystemType, CSpecializedNonlinearSolverType,
- *	    CEdgeTraitsType> CSpecializedParseLoopType;
+ *	    CEdgeTraitsType, CVertexTraitsType> CSpecializedParseLoopType;
  *	CSpecializedParseLoopType parse_loop(system, nonlinear_solver);
- *	// prepare parse loop
+ *	// prepare parse loop (using the default vertex traits)
  *
- *	typedef MakeTypelist_Safe((MyNewEdgeParsePrimitive)) CMyParsedPrimitives; // list of the new parsed primitives
+ *	typedef MakeTypelist_Safe((MyNewEdgeParsePrimitive,
+ *		MyNewVertexParsePrimitives)) CMyParsedPrimitives; // list of the new parsed primitives
  *	typedef typename CConcatTypelist<CMyParsedPrimitives,
- *		CStandardParsedPrimitives>::_TyResult CParsePrimitivesList; // list of parsed primitives
+ *		CStandardParsedPrimitives>::_TyResult CParsePrimitivesList; // list of all parsed primitives
  *	// this is only required if you did not modify CStandardParsedPrimitives already
  *	// also, for handling your custom problems, CMyParsedPrimitives might be just enough (no concatenation required)
  *
@@ -625,7 +641,7 @@ struct TDatasetPeeker : public CParserBase::CParserAdaptor {
 	 *	@param[in] r_t_vertex is the vertex to be appended
 	 *	@note The vertices can be ignored in most of the solvers.
 	 */
-	virtual void AppendSystem(const CParserBase::TVertex2D &UNUSED(r_t_vertex))
+	virtual void InitializeVertex(const CParserBase::TVertex2D &UNUSED(r_t_vertex))
 	{
 		b_has_vertex = true;
 	}
@@ -644,7 +660,7 @@ struct TDatasetPeeker : public CParserBase::CParserAdaptor {
 	 *	@param[in] r_t_vertex is the vertex to be appended
 	 *	@note The vertices can be ignored in most of the solvers.
 	 */
-	virtual void AppendSystem(const CParserBase::TVertex3D &UNUSED(r_t_vertex))
+	virtual void InitializeVertex(const CParserBase::TVertex3D &UNUSED(r_t_vertex))
 	{
 		b_has_vertex3d = true;
 	}
@@ -654,7 +670,7 @@ struct TDatasetPeeker : public CParserBase::CParserAdaptor {
 	 *	@param[in] r_t_vertex is the vertex to be appended
 	 *	@note The vertices can be ignored in most of the solvers.
 	 */
-	virtual void AppendSystem(const CParserBase::TVertexXYZ &UNUSED(r_t_vertex))
+	virtual void InitializeVertex(const CParserBase::TVertexXYZ &UNUSED(r_t_vertex))
 	{
 		b_has_ba = true;
 	}
@@ -664,7 +680,7 @@ struct TDatasetPeeker : public CParserBase::CParserAdaptor {
 	 *	@param[in] r_t_vertex is the vertex to be appended
 	 *	@note The vertices can be ignored in most of the solvers.
 	 */
-	virtual void AppendSystem(const CParserBase::TVertexCam3D &UNUSED(r_t_vertex))
+	virtual void InitializeVertex(const CParserBase::TVertexCam3D &UNUSED(r_t_vertex))
 	{
 		b_has_ba = true;
 	}
@@ -685,12 +701,14 @@ struct TDatasetPeeker : public CParserBase::CParserAdaptor {
  *	@tparam CSystemType is system type (derived from CFlatSystem)
  *	@tparam CNonlinearSolverType is nonlinear solver template name
  *	@tparam CEdgeTraitsType is edge traits template name
+ *	@tparam CVertexTraitsType is vertex traits template name
  *	@tparam CParseLoopType is parse loop template name
  */
 template <class CSystemType,
 	template <class, class, class> class CNonlinearSolverType,
 	template <class> class CEdgeTraitsType,
-	template <class, class, template <class> class> class CParseLoopType>
+	template <class> class CVertexTraitsType,
+	template <class, class, template <class> class, template <class> class> class CParseLoopType>
 class CTester {
 public:
 #ifdef __USE_NATIVE_CHOLESKY
@@ -755,7 +773,7 @@ public:
 		// prepare nonlinear solver
 
 		typedef CParseLoopType<CSystemType, CSpecializedNonlinearSolverType,
-			CEdgeTraitsType> CSpecializedParseLoop;
+			CEdgeTraitsType, CVertexTraitsType> CSpecializedParseLoop;
 		CSpecializedParseLoop parse_loop(system, nonlinear_solver);
 		// prepare parse loop
 
@@ -920,6 +938,8 @@ public:
  *	@note The benchmarks mostly use four block sizes, the specified n x n
  *		and (n + 1) x n, n x (n + 1) and (n + 1) x (n + 1), as happens
  *		in landmark datasets.
+ *
+ *	@return Returns benchmark result, 0 on success, nonzero on failure.
  */
 int n_Run_BlockBenchmark(int n_block_size,
 	const char *p_s_bench_name, const char *p_s_bench_type);
@@ -937,45 +957,41 @@ int n_Run_BlockBenchmark1(int n_block_size,
 void PrintHelp();
 
 /**
- *	@brief nonlinear solver type
+ *	@brief prints all the important compiler / optimization switches this app was built with
  */
-enum ENonlinearSolverType {
-	nlsolver_A, /**< @brief nonlinear solver A */
-	nlsolver_Lambda, /**< @brief nonlinear solver lambda */
-	nlsolver_LambdaLM, /**< @brief nonlinear solver lambda with Levenberg-Marquardt */
-	nlsolver_L, /**< @brief nonlinear solver L */
-	nlsolver_FastL, /**< @brief nonlinear progressively reordering solver L */
-	nlsolver_SPCG /**< @brief nonlinear solver SPCG */
-};
+void DisplaySwitches();
+
+#include "slam/ConfigSolvers.h"
+// need solver types for commandline parser
 
 /**
  *	@brief structure, containing values of all the commandline arguments
  */
 struct TCommandLineArgs {
 	ENonlinearSolverType n_solver_choice; /**< @brief nonlinear solver selector */
-	bool b_write_bitmaps;
-	bool b_no_show;
-	bool b_show_commandline;
-	bool b_show_flags;
-	bool b_show_detailed_timing;
+	bool b_write_bitmaps; /**< @brief bitmaps write flag */
+	bool b_no_show; /**< @brief bitmaps show flag (only on windows) */
+	bool b_show_commandline; /**< @brief commandline repeat flag */
+	bool b_show_flags; /**< @brief show build flags flag */
+	bool b_show_detailed_timing; /**< @brief show detailed timing flag */
 	bool b_verbose; /**< @brief verbosity flag; true means verbose, false means silent */
-	bool b_use_schur;
-	bool b_run_matrix_benchmarks;
-	bool b_run_matrix_unit_tests;
-	bool b_use_old_system;
-	bool b_10k_opts;
-	bool b_use_SE3; // note this is not overriden in commandline but detected in peek-parsing
-	bool b_use_BA; // note this is not overriden in commandline but detected in peek-parsing
-	const char *p_s_input_file; /** <@brief path to the data file */
-	int n_max_lines_to_process; /** <@brief maximal number of lines to process */
+	bool b_use_schur; /**< @brief use Schur component flag */
+	bool b_run_matrix_benchmarks; /**< @brief run block matrix benchmarks flag */
+	bool b_run_matrix_unit_tests; /**< @brief run block matrix unit tests flag */
+	bool b_use_old_system; /**< @brief old system flag (deprecated) */
+	bool b_10k_opts; /**< @brief optimize pose-only problems */
+	bool b_use_SE3; /**< @brief process SE3 system @note This is not overriden in commandline but detected in peek-parsing. */
+	bool b_use_BA; /**< @brief process bundle adjustment system @note This is not overriden in commandline but detected in peek-parsing. */
+	const char *p_s_input_file; /**< @brief path to the data file */
+	int n_max_lines_to_process; /**< @brief maximal number of lines to process */
 	size_t n_linear_solve_each_n_steps; /**< @brief linear solve period, in steps (0 means disabled) */
 	size_t n_nonlinear_solve_each_n_steps; /**< @brief nonlinear solve period, in steps (0 means disabled) */
 	size_t n_max_nonlinear_solve_iteration_num; /**< @brief maximal number of iterations in nonlinear solve step */
 	double f_nonlinear_solve_error_threshold; /**< @brief error threshold for nonlinear solve */
-	size_t n_max_final_optimization_iteration_num; // as many other solvers
-	double f_final_optimization_threshold;
-	const char *p_s_bench_name;
-	const char *p_s_bench_type;
+	size_t n_max_final_optimization_iteration_num; /**< @brief number of nonlinear solver iterations */ // as many other solvers
+	double f_final_optimization_threshold; /**< @brief final optimization threshold */
+	const char *p_s_bench_name; /**< @brief benchmark file name (only if b_run_matrix_benchmarks is set) */
+	const char *p_s_bench_type; /**< @brief benchmark type (only if b_run_matrix_benchmarks is set) */
 
 	/**
 	 *	@brief selects default values for commandline args
@@ -1044,8 +1060,6 @@ struct TCommandLineArgs {
 				b_show_commandline = false;
 			else if(!strcmp(p_arg_list[i], "--lambda") || !strcmp(p_arg_list[i], "-,\\"))
 				n_solver_choice = nlsolver_Lambda;
-			else if(!strcmp(p_arg_list[i], "--precond") || !strcmp(p_arg_list[i], "-spcg"))
-				n_solver_choice = nlsolver_SPCG;
 			else if(!strcmp(p_arg_list[i], "--no-flags") || !strcmp(p_arg_list[i], "-nf"))
 				b_show_flags = false;
 			else if(!strcmp(p_arg_list[i], "--run-matrix-unit-tests") || !strcmp(p_arg_list[i], "-rmut"))
@@ -1109,130 +1123,31 @@ struct TCommandLineArgs {
 
 		return true;
 	}
-};
-
-/**
- *	@brief token, used as a placeholder for solver templates,
- *		that were not included in the build
- *
- *	@tparam CSystem is the system type (unused)
- *	@tparam CLinearSolver is a linear solver (unused)
- *	@tparam CBlockSizes is a list of matrix block sizes (unused)
- */
-template <class CSystem, class CLinearSolver, class CBlockSizes>
-class CSolverNotIncluded {};
-
-/**
- *	@brief token, used as a placeholder for solver templates,
- *		that are not supported by SE types
- *
- *	@tparam CSystem is the system type (unused)
- *	@tparam CLinearSolver is a linear solver (unused)
- *	@tparam CBlockSizes is a list of matrix block sizes (unused)
- */
-template <class CSystem, class CLinearSolver, class CBlockSizes>
-class CSolverNotSupported {};
-
-/**
- *	@brief pair of nonlinear solver id and the type, along with traits
- *
- *	@tparam n_solver_type_id is nonlinear solver id
- *	@tparam CNonlinearSolverType is nonlinear solver template name
- */
-template <const int n_solver_type_id,
-	template <class, class, class> class CNonlinearSolverType>
-class CSolverTypeIdPair {
-public:
-	enum {
-		solver_type_Id = n_solver_type_id /**< @brief nonlinear solver id */
-	};
 
 	/**
 	 *	@brief runs the application, using this solver
 	 *
 	 *	@tparam CSystemType is system type (derived from CFlatSystem)
 	 *	@tparam CEdgeTraitsType is edge traits template name
+	 *	@tparam CVertexTraitsType is vertex traits template name
 	 *	@tparam CParseLoopType is parse loop template name
-	 *
-	 *	@param[in] t_args is parsed commandline arguments value
 	 *
 	 *	@return Returns true on success, false on failure.
 	 */
-	template <class CSystemType, template <class> class CEdgeTraitsType,
-		template <class, class, template <class> class vcneedsnamehere> class CParseLoopType>
-	static inline bool Run_MainApp(TCommandLineArgs t_args) // throw(std::runtime_error, std::bad_alloc)
+	template <class CSystemType, template <class, class, class> class CNonlinearSolverType,
+		template <class> class CEdgeTraitsType, template <class> class CVertexTraitsType,
+		template <class, class, template <class> class vcneedsnamehere,
+		template <class> class vcneedsnamehereaswell> class CParseLoopType>
+	inline bool Run() // throw(std::runtime_error, std::bad_alloc)
 	{
-		return CTester<CSystemType, CNonlinearSolverType, CEdgeTraitsType, CParseLoopType>::Run_and_Shout(
-			t_args.p_s_input_file, t_args.n_max_lines_to_process, t_args.n_linear_solve_each_n_steps,
-			t_args.n_nonlinear_solve_each_n_steps, t_args.n_max_nonlinear_solve_iteration_num,
-			t_args.f_nonlinear_solve_error_threshold, t_args.n_max_final_optimization_iteration_num,
-			t_args.f_final_optimization_threshold, t_args.b_verbose, t_args.b_use_schur,
-			t_args.b_show_detailed_timing, t_args.b_write_bitmaps);
+		return CTester<CSystemType, CNonlinearSolverType, CEdgeTraitsType,
+			CVertexTraitsType, CParseLoopType>::Run_and_Shout(
+			p_s_input_file, n_max_lines_to_process, n_linear_solve_each_n_steps,
+			n_nonlinear_solve_each_n_steps, n_max_nonlinear_solve_iteration_num,
+			f_nonlinear_solve_error_threshold, n_max_final_optimization_iteration_num,
+			f_final_optimization_threshold, b_verbose, b_use_schur,
+			b_show_detailed_timing, b_write_bitmaps);
 		// run with parameters
-	}
-};
-
-/**
- *	@brief pair of nonlinear solver id and the type,
- *		along with traits (specialization for solvers that were not included)
- *	@tparam n_solver_type_id is nonlinear solver id
- */
-template <const int n_solver_type_id>
-class CSolverTypeIdPair<n_solver_type_id, CSolverNotIncluded> {
-public:
-	enum {
-		solver_type_Id = n_solver_type_id /**< @brief nonlinear solver id */
-	};
-
-	/**
-	 *	@brief runs the application, using this solver
-	 *
-	 *	@tparam CSystemType is system type (derived from CFlatSystem)
-	 *	@tparam CEdgeTraitsType is edge traits template name
-	 *	@tparam CParseLoopType is parse loop template name
-	 *
-	 *	@param[in] t_args is parsed commandline arguments value
-	 *
-	 *	@return Returns true on success, false on failure.
-	 */
-	template <class CSystemType, template <class> class CEdgeTraitsType,
-		template <class, class, template <class> class vcneedsnamehere> class CParseLoopType>
-	static inline bool Run_MainApp(TCommandLineArgs UNUSED(t_args))
-	{
-		fprintf(stderr, "error: the selected solver was not included\n");
-		return false;
-	}
-};
-
-/**
- *	@brief pair of nonlinear solver id and the type,
- *		along with traits (specialization for unsupported solvers)
- *	@tparam n_solver_type_id is nonlinear solver id
- */
-template <const int n_solver_type_id>
-class CSolverTypeIdPair<n_solver_type_id, CSolverNotSupported> {
-public:
-	enum {
-		solver_type_Id = n_solver_type_id /**< @brief nonlinear solver id */
-	};
-
-	/**
-	 *	@brief runs the application, using this solver
-	 *
-	 *	@tparam CSystemType is system type (derived from CFlatSystem)
-	 *	@tparam CEdgeTraitsType is edge traits template name
-	 *	@tparam CParseLoopType is parse loop template name
-	 *
-	 *	@param[in] t_args is parsed commandline arguments value
-	 *
-	 *	@return Returns true on success, false on failure.
-	 */
-	template <class CSystemType, template <class> class CEdgeTraitsType,
-		template <class, class, template <class> class vcneedsnamehere> class CParseLoopType>
-	static inline bool Run_MainApp(TCommandLineArgs UNUSED(t_args))
-	{
-		fprintf(stderr, "error: the selected solver is not supported by the SE types\n");
-		return false;
 	}
 };
 
@@ -1241,10 +1156,12 @@ public:
  *
  *	@tparam CSystemType is system type (derived from CFlatSystem)
  *	@tparam CEdgeTraitsType is edge traits template name
+ *	@tparam CVertexTraitsType is vertex traits template name
  *	@tparam CParseLoopType is parse loop template name
  */
 template <class CSystemType, template <class> class CEdgeTraitsType,
-	template <class, class, template <class> class> class CParseLoopType>
+	template <class> class CVertexTraitsType, template <class, class,
+	template <class> class, template <class> class> class CParseLoopType>
 class CSolverCaller {
 protected:
 	TCommandLineArgs m_t_args; /**< @brief copy of parsed commandline args */
@@ -1253,7 +1170,7 @@ protected:
 public:
 	/**
 	 *	@brief default constructor
-	 *	@param[in] _t_args is a copy of parsed commandline args
+	 *	@param[in] t_args is a copy of parsed commandline args
 	 */
 	inline CSolverCaller(TCommandLineArgs t_args)
 		:m_t_args(t_args), m_n_result(-1)
@@ -1268,12 +1185,16 @@ public:
 	{
 		if(m_t_args.n_solver_choice == int(CSolverType::solver_type_Id)) {
 			m_n_result = (CSolverType::template Run_MainApp<CSystemType, CEdgeTraitsType,
-				CParseLoopType>(m_t_args))? 0 : -1;
+				CVertexTraitsType, CParseLoopType>(m_t_args))? 0 : -1;
 			// call the traits
 		}
 		// find the solver in the list
 	}
 
+	/**
+	 *	@brief gets result value of the solver call (as in main() result values)
+	 *	@return Returns value of the result, 0 means success, other values are failure.
+	 */
 	inline int n_Result() const
 	{
 		return m_n_result;

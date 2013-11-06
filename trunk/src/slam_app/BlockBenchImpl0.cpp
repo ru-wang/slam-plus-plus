@@ -11,15 +11,27 @@
 */
 
 /**
- *	@file src/slam/BlockBenchImpl0.cpp
+ *	@file src/slam_app/BlockBenchImpl0.cpp
  *	@brief contains instantiation of some of the block benchmark templates
  *	@author -tHE SWINe-
  *	@date 2013-06-14
  */
 
-#include "slam/Main.h"
+#include "slam_app/Main.h"
 
-int n_Run_BlockBenchmark(int n_block_size, const char *p_s_bench_name, const char *p_s_bench_type)
+/**
+ *	@def BBPARAM
+ *	@brief decorates arguments of n_Run_BlockBenchmark() to avoid unused variable warnings
+ *		if benchmarks are disabled
+ */
+#ifdef __UBER_BLOCK_MATRIX_BENCHMARK_INCLUDED
+#define BBPARAM(x) x
+#else // __UBER_BLOCK_MATRIX_BENCHMARK_INCLUDED
+#define BBPARAM(x) UNUSED(x)
+#endif // __UBER_BLOCK_MATRIX_BENCHMARK_INCLUDED
+
+int n_Run_BlockBenchmark(int BBPARAM(n_block_size),
+	const char *BBPARAM(p_s_bench_name), const char *BBPARAM(p_s_bench_type))
 {
 	/*CBlockMatrixBenchmark::MatrixMultiplication_UnitTest();
 	CBlockMatrixBenchmark::MatrixAddition_UnitTest();

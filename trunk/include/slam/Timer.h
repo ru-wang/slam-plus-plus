@@ -294,7 +294,7 @@ protected:
  *	This would be used as follows:
  *	@code
  *	CTimer timer; // a global timer object (don't want to construct many of those, want to share it)
- *	double f_time_a, f_time_b; // time spent in different parts of the algorithm
+ *	double f_time_a = 0, f_time_b = 0; // time spent in different parts of the algorithm
  *	double f_total_time; // total time (we want to represent it explicitly to avoid later mistakes)
  *
  *	CTimerSampler tic(timer); // timing starts here
@@ -302,7 +302,7 @@ protected:
  *	tic.Accum_DiffSample(f_time_a); // like a "toc" and a next "tic"
  *	AlgorithmPartB();
  *	tic.Accum_DiffSample(f_time_b); // like a "toc"
- *	tic.Accum_CumTime(f_total_time); // does not imply a sample (the last sample is used)
+ *	tic.Accum_CumTime_LastSample(f_total_time); // does not imply a sample (the last sample is used)
  *	@endcode
  *
  *	To measure in a tree structure, one would need a stackable timer sampler (problems with
@@ -341,7 +341,7 @@ protected:
  */
 class CTimerSampler {
 public:
-	typedef double _TySample;
+	typedef double _TySample; /**< @brief time sample data type */
 
 protected:
 	CTimer &m_r_timer; /**< @brief reference to the shared timer object */
@@ -352,12 +352,25 @@ protected:
 	// cold
 
 public:
+	/**
+	 *	@brief default constructor
+	 *	@param[in] r_timer is timer object to be used by this sampler
+	 */
 	inline CTimerSampler(CTimer &r_timer)
 		:m_r_timer(r_timer), m_f_last_sample_time(r_timer.f_Time())
 	{
 		m_f_start_time = m_f_last_sample_time;
 	}
 
+	/**
+	 *	@brief accumulates differential sample
+	 *
+	 *	This increments the argument by the amount of time that passed since
+	 *	the last call to Accum_DiffSample() or since the constructor in case
+	 *	Accum_DiffSample() was not called before.
+	 *
+	 *	@param[in,out] r_f_time_accum is time accumulation variable
+	 */
 	inline void Accum_DiffSample(_TySample &r_f_time_accum)
 	{
 		double f_time = m_r_timer.f_Time();
@@ -366,7 +379,19 @@ public:
 		m_f_last_sample_time = f_time;
 	}
 
-	inline void Accum_CumTime(_TySample &r_f_time_accum) const // does not modify the timer
+	/**
+	 *	@brief accumulates cummulative sample
+	 *
+	 *	This increments the argument by the amount of time that passed since
+	 *	the constructor.
+	 *
+	 *	@param[in,out] r_f_time_accum is time accumulation variable
+	 *
+	 *	@note This doesn't imply timer sample, instead time when Accum_DiffSample()
+	 *		was called the last time is used (if it was never called, this function
+	 *		has no effect).
+	 */
+	inline void Accum_CumTime_LastSample(_TySample &r_f_time_accum) const // does not modify the timer
 	{
 		r_f_time_accum += m_f_last_sample_time - m_f_start_time;
 	}
@@ -377,39 +402,81 @@ public:
  */
 class CVoidTimerSampler {
 public:
+	/**
+	 *	@brief (dummy) time sample data type
+	 */
 	struct _TySample {
+		/**
+		 *	@brief default constructor
+		 */
 		inline _TySample()
 		{}
 
+		/**
+		 *	@brief initialization constructor (has no effect)
+		 *	@param[in] s is time sample (ignored)
+		 */
 		inline _TySample(double UNUSED(s))
 		{}
 
+		/**
+		 *	@brief conversion to double
+		 *	@return Returns 0 (always).
+		 */
 		inline operator double() const
 		{
 			return .0;
 		}
 
+		/**
+		 *	@brief copy-operator (has no effect)
+		 *	@param[in] s is time sample (ignored)
+		 */
 		inline void operator =(double UNUSED(s)) const
 		{}
 
+		/**
+		 *	@brief copy-operator (has no effect)
+		 *	@param[in] s is time sample (ignored)
+		 */
 		inline void operator =(_TySample UNUSED(s)) const
 		{}
 
+		/**
+		 *	@brief addition operator (has no effect)
+		 *	@param[in] s is time sample (ignored)
+		 */
 		inline void operator +=(double UNUSED(s)) const
 		{}
 
+		/**
+		 *	@brief addition operator (has no effect)
+		 *	@param[in] s is time sample (ignored)
+		 */
 		inline void operator +=(_TySample UNUSED(s)) const
 		{}
 	};
 
 public:
+	/**
+	 *	@brief default constructor (has no effect)
+	 *	@param[in] r_timer is timer object to be used by this sampler (unused)
+	 */
 	inline CVoidTimerSampler(CTimer &UNUSED(r_timer))
 	{}
 
+	/**
+	 *	@brief accumulates differential sample (has no effect)
+	 *	@param[in,out] r_f_time_accum is time accumulation variable (unused)
+	 */
 	inline void Accum_DiffSample(_TySample &UNUSED(r_f_time_accum))
 	{}
 
-	inline void Accum_CumTime(_TySample &UNUSED(r_f_time_accum)) const
+	/**
+	 *	@brief accumulates cummulative sample (has no effect)
+	 *	@param[in,out] r_f_time_accum is time accumulation variable (unused)
+	 */
+	inline void Accum_CumTime_LastSample(_TySample &UNUSED(r_f_time_accum)) const
 	{}
 };
 

@@ -307,7 +307,7 @@ bool CParser::Parse(const char *p_s_filename, CParserAdaptor *p_callback,
 						// Ela's datasets have first and second vertex swapped
 
 						Eigen::Vector3d v_new_edge;
-						CBase2DSolver::C2DJacobians::Absolute_to_Relative(
+						C2DJacobians::Absolute_to_Relative(
 							Eigen::Vector3d(p_measurement[0], p_measurement[1], p_measurement[2]),
 							Eigen::Vector3d(0, 0, 0), v_new_edge); // t_odo - move this to the parser (it is a part of edge inversion)
 						for(int i = 0; i < 3; ++ i)
@@ -418,7 +418,7 @@ bool CParser::Parse(const char *p_s_filename, CParserAdaptor *p_callback,
 						 cos_y*sin_x, cos_z*cos_x + sin_z*sin_y*sin_x, -sin_z*cos_x + cos_z*sin_y*sin_x,
 						 -sin_y, sin_z*cos_y, cos_z*cos_y;
 
-					Eigen::Vector3d axis = CBase3DSolver::C3DJacobians::Operator_arot(Q);
+					Eigen::Vector3d axis = C3DJacobians::Operator_arot(Q);
 
 					TVertex3D vert(n_pose_id, p_vertex[0], p_vertex[1], p_vertex[2], axis(0), axis(1), axis(2));
 					// process the measurement
@@ -476,7 +476,7 @@ bool CParser::Parse(const char *p_s_filename, CParserAdaptor *p_callback,
 							 cos_y*sin_x, cos_z*cos_x + sin_z*sin_y*sin_x, -sin_z*cos_x + cos_z*sin_y*sin_x,
 							 -sin_y, sin_z*cos_y, cos_z*cos_y;
 
-						Eigen::Vector3d axis = CBase3DSolver::C3DJacobians::Operator_arot(Q);
+						Eigen::Vector3d axis = C3DJacobians::Operator_arot(Q);
 
 						TEdge3D edge(p_pose_idx[0], p_pose_idx[1],
 							p_measurement[0], p_measurement[1], p_measurement[2], axis(0), axis(1), axis(2), p_matrix);

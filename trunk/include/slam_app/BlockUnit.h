@@ -15,7 +15,7 @@
 #define __UBER_BLOCK_MATRIX_UNIT_TESTS_INCLUDED
 
 /**
- *	@file include/slam/BlockUnit.h
+ *	@file include/slam_app/BlockUnit.h
  *	@date 2012
  *	@author -tHE SWINe-
  *	@brief block matrix unit tests

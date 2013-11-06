@@ -1621,7 +1621,6 @@ public:
 		 *
 		 *	@param[in] r_t_block is current matrix block
 		 *	@param[in] r_t_row is row for the current matrix block
-		 *	@param[in] r_t_col is column for the current matrix block
 		 *	@param[out] p_dest_vector is pointer to the (whole) destination vector
 		 *	@param[in] r_src is source vector map (only the part
 		 *		that aligns with the current matrix block)
@@ -1630,16 +1629,16 @@ public:
 #pragma inline_recursion(on)
 #endif // _MSC_VER && !__MWERKS__
 		static __forceinline void Loop(const TColumn::TBlockEntry &r_t_block, const TRow &r_t_row,
-			const TColumn &r_t_col, double *p_dest_vector, const _TySrcVectorShape &r_src)
+			/*const TColumn &r_t_col,*/ double *p_dest_vector, const _TySrcVectorShape &r_src)
 		{
 			if(r_t_row.n_height == CCurrentRowHeight::n_size) {
 				CPreMAD_InnerLoop<_TyGppContext, CTypelist<CCurrentRowHeight, CTypelistEnd>,
-					CColumnWidth>::Loop(r_t_block, r_t_row, r_t_col, p_dest_vector, r_src);
+					CColumnWidth>::Loop(r_t_block, r_t_row, /*r_t_col,*/ p_dest_vector, r_src);
 				// execute inner loop (use the specialization for end-of-the-list that actually
 				// contains the implementaiton - avoids having the same code in two places)
 			} else {
 				CPreMAD_InnerLoop<_TyGppContext, typename _CRowHeightsList::_TyTail, CColumnWidth>::Loop(
-					r_t_block, r_t_row, r_t_col, p_dest_vector, r_src);
+					r_t_block, r_t_row, /*r_t_col,*/ p_dest_vector, r_src);
 				// not CCurrentRowHeight::n_size, gotta be one of the rest of the list
 			}
 		}
@@ -1686,7 +1685,6 @@ public:
 		 *
 		 *	@param[in] r_t_block is current matrix block
 		 *	@param[in] r_t_row is row for the current matrix block
-		 *	@param[in] r_t_col is column for the current matrix block
 		 *	@param[out] p_dest_vector is pointer to the (whole) destination vector
 		 *	@param[in] r_src is source vector map (only the part
 		 *		that aligns with the current matrix block)
@@ -1695,7 +1693,7 @@ public:
 #pragma inline_recursion(on)
 #endif // _MSC_VER && !__MWERKS__
 		static __forceinline void Loop(const TColumn::TBlockEntry &r_t_block, const TRow &r_t_row,
-			const TColumn &r_t_col, double *p_dest_vector, const _TySrcVectorShape &r_src)
+			/*const TColumn &r_t_col,*/ double *p_dest_vector, const _TySrcVectorShape &r_src)
 		{
 			_ASSERTE(r_t_row.n_height == CLastRowHeight::n_size); // this is the last option, make sure it is this one (omits the branch)
 			const size_t n_row = r_t_row.n_cumulative_height_sum; // src vector offset
@@ -1838,7 +1836,7 @@ public:
 				// get block row ...
 
 				CPreMAD_InnerLoop<_TyGppContext, _CSelectedRowHeightsList, CLastColumnWidth>::Loop(r_t_block,
-					r_t_row, r_t_col, p_dest_vector, src);
+					r_t_row, /*r_t_col,*/ p_dest_vector, src);
 				// wrap the inner loop in a block size decission tree
 			}
 		}
@@ -3802,28 +3800,72 @@ public:
 		}
 	};
 
+	/**
+	 *	@brief outer loop of the Cholesky decomposition
+	 *
+	 *	@param[in] n_col_j_width is width of the j-th block column
+	 *	@param[in] j is zero-based index the j-th block column
+	 *	@param[in] n is number of block columns in the matrix
+	 *	@param[in] r_block_cols_list is list of block columns in the factorized matrix
+	 *	@param[in] r_col_A_j is reference to the j-th column in the original matrix
+	 *	@param[in] r_lambda is reference to original matrix
+	 *	@param[in] r_elim_tree is reference to the elimination tree
+	 *	@param[in] ereach_stack is temporary workspace
+	 *	@param[in] bitfield is temporary workspace
+	 *	@param[in] alloc is reference to the block allocator for the factorized matrix
+	 *
+	 *	@return Returns true on success, false on failure (not positive definite).
+	 *
+	 *	@note This function throws std::bad_alloc.
+	 */
 	static __forceinline bool b_Column_Loop(const size_t n_col_j_width, const size_t j, const size_t n,
 		std::vector<TColumn> &r_block_cols_list, const TColumn &r_col_A_j,
 		const CUberBlockMatrix &r_lambda, const std::vector<size_t> &r_elim_tree,
-		std::vector<size_t> &ereach_stack, std::vector<size_t> &bitfield, _TyDenseAllocator &alloc) // todo - doc, throws, ...
+		std::vector<size_t> &ereach_stack, std::vector<size_t> &bitfield, _TyDenseAllocator &alloc) // throw(std::bad_alloc) // todo - doc, throws, ...
 	{
 		return CCholesky_ColumnLoop<CBlockMatrixTypelist,
 			CColumnWidthsList>::b_Loop(n_col_j_width, j, n, r_block_cols_list, r_col_A_j,
 			r_lambda, r_elim_tree, ereach_stack, bitfield, alloc);
 	}
-	
+
+	/**
+	 *	@brief column loop of cholesky decomposition
+	 *
+	 *	@tparam _TyGppContext is template instance context for g++ (compatibility workarround)
+	 *	@tparam _CColumnWidthList is list of possible column widths
+	 */
 	template <class _TyGppContext, class _CColumnWidthList>
 	class CCholesky_ColumnLoop {
 	public:
-		typedef typename _CColumnWidthList::_TyHead CCurrentColumnWidth;
+		typedef typename _CColumnWidthList::_TyHead CCurrentColumnWidth; /**< @brief column width for this decision tree recursion */
 
+		/**
+		 *	@brief outer loop of the Cholesky decomposition
+		 *
+		 *	Wraps the body of the loop in block column size decision tree.
+		 *
+		 *	@param[in] n_col_j_width is width of the j-th block column
+		 *	@param[in] j is zero-based index the j-th block column
+		 *	@param[in] n is number of block columns in the matrix
+		 *	@param[in] r_block_cols_list is list of block columns in the factorized matrix
+		 *	@param[in] r_col_A_j is reference to the j-th column in the original matrix
+		 *	@param[in] r_lambda is reference to original matrix
+		 *	@param[in] r_elim_tree is reference to the elimination tree
+		 *	@param[in] ereach_stack is temporary workspace
+		 *	@param[in] bitfield is temporary workspace
+		 *	@param[in] alloc is reference to the block allocator for the factorized matrix
+		 *
+		 *	@return Returns true on success, false on failure (not positive definite).
+		 *
+		 *	@note This function throws std::bad_alloc.
+		 */
 #if defined(_MSC_VER) && !defined(__MWERKS__)
 #pragma inline_recursion(on)
 #endif // _MSC_VER && !__MWERKS__
 		static __forceinline bool b_Loop(const size_t n_col_j_width, const size_t j, const size_t n,
 			std::vector<TColumn> &r_block_cols_list, const TColumn &r_col_A_j,
 			const CUberBlockMatrix &r_lambda, const std::vector<size_t> &r_elim_tree,
-			std::vector<size_t> &ereach_stack, std::vector<size_t> &bitfield, _TyDenseAllocator &alloc)
+			std::vector<size_t> &ereach_stack, std::vector<size_t> &bitfield, _TyDenseAllocator &alloc) // throw(std::bad_alloc)
 		{
 			if(n_col_j_width == CCurrentColumnWidth::n_size) {
 				return CCholesky_ColumnLoop<_TyGppContext, CTypelist<CCurrentColumnWidth,
@@ -3837,19 +3879,45 @@ public:
 		}
 	};
 
+	/**
+	 *	@brief column loop of cholesky decomposition (specialization for the chosen column width)
+	 *
+	 *	@tparam _TyGppContext is template instance context for g++ (compatibility workarround)
+	 *	@tparam CColumnWidth_j is width of the current column
+	 */
 	template <class _TyGppContext, class CColumnWidth_j>
 	class CCholesky_ColumnLoop<_TyGppContext, CTypelist<CColumnWidth_j, CTypelistEnd> > {
 	public:
 		typedef typename CMakeMatrixRef<CColumnWidth_j::n_size, CColumnWidth_j::n_size>::_Ty _TyDiagBlock; /**< @brief reference to the diagonal block */
 		typedef typename CMakeMatrixRef<CColumnWidth_j::n_size, CColumnWidth_j::n_size>::_TyMatrix _TyDiagMatrix; /**< @brief a dense matrix with the same shape as the diagonal block */
 
+		/**
+		 *	@brief outer loop of the Cholesky decomposition
+		 *
+		 *	Contains a specialized instance the loop body for the given column width.
+		 *
+		 *	@param[in] n_col_j_width is width of the j-th block column (unused)
+		 *	@param[in] j is zero-based index the j-th block column
+		 *	@param[in] n is number of block columns in the matrix
+		 *	@param[in] r_block_cols_list is list of block columns in the factorized matrix
+		 *	@param[in] r_col_A_j is reference to the j-th column in the original matrix
+		 *	@param[in] r_lambda is reference to original matrix
+		 *	@param[in] r_elim_tree is reference to the elimination tree
+		 *	@param[in] ereach_stack is temporary workspace
+		 *	@param[in] bitfield is temporary workspace
+		 *	@param[in] alloc is reference to the block allocator for the factorized matrix
+		 *
+		 *	@return Returns true on success, false on failure (not positive definite).
+		 *
+		 *	@note This function throws std::bad_alloc.
+		 */
 #if defined(_MSC_VER) && !defined(__MWERKS__)
 #pragma inline_recursion(on)
 #endif // _MSC_VER && !__MWERKS__
 		static __forceinline bool b_Loop(const size_t UNUSED(n_col_j_width), const size_t j, const size_t n,
 			std::vector<TColumn> &r_block_cols_list, const TColumn &r_col_A_j,
 			const CUberBlockMatrix &r_lambda, const std::vector<size_t> &r_elim_tree,
-			std::vector<size_t> &ereach_stack, std::vector<size_t> &bitfield, _TyDenseAllocator &alloc)
+			std::vector<size_t> &ereach_stack, std::vector<size_t> &bitfield, _TyDenseAllocator &alloc) // throw(std::bad_alloc)
 		{
 			_ASSERTE(n_col_j_width == CColumnWidth_j::n_size);
 
@@ -5001,8 +5069,10 @@ public:
 	 *	@tparam CUnnaryOperator is unary operator object type, must implement
 	 *		static function Do, parametrizable by Eigen::Map specialization
 	 *
-	 *	@param[in] p_block is pointer ot the current matrix block data
-	 *	@param[in] n_block_area is number of elements in the current matrix block
+	 *	@param[out] p_block_dest is pointer ot the current matrix block data
+	 *	@param[in] p_block_src is pointer ot the current matrix block data
+	 *	@param[in] n_block_row_num is number of elements in the current matrix block
+	 *	@param[in] n_block_column_num is number of elements in the current matrix block
 	 */
 	template <class CUnaryOperator>
 	static __forceinline void BlockwiseUnary_Static_Op(double *p_block_dest,
@@ -5020,7 +5090,8 @@ public:
 	 *	@tparam CUnnaryOperator is unary operator object type, must implement
 	 *		static function Do, parametrizable by Eigen::Map specialization
 	 *
-	 *	@param[in] p_block is pointer ot the current matrix block data
+	 *	@param[out] p_block_dest is pointer ot the current matrix block data
+	 *	@param[in] p_block_src is pointer ot the current matrix block data
 	 *	@param[in] n_block_row_column_num is number of elements in the current matrix block
 	 */
 	template <class CUnaryOperator>

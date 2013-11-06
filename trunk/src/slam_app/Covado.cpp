@@ -11,7 +11,7 @@
 */
 
 /**
- *	@file src/slam/Covado.cpp
+ *	@file src/slam_app/Covado.cpp
  *	@brief covariance conversion utility
  *	@author -tHE SWINe-
  *	@date 2013-06-14
@@ -43,10 +43,10 @@
 
 #ifdef __RUN_COVADO
 
-#include "slam/Config.h"
-#include "slam/SE2_Types.h"
-#include "slam/SE3_Types.h"
-#include "slam/BA_Types.h"
+#include "slam_app/Config.h"
+#include "slam_app/SE2_Types.h"
+#include "slam_app/SE3_Types.h"
+#include "slam_app/BA_Types.h"
 
 #include <iostream> // want to print Eigen matrices in easy way
 
@@ -193,7 +193,7 @@ public:
 			// transform the rotation to a (normalized) quaternion
 
 			Eigen::Vector3d v_axis_angle;
-			CBase3DSolver::C3DJacobians::Quat_to_AxisAngle(v_quat, v_axis_angle);
+			C3DJacobians::Quat_to_AxisAngle(v_quat, v_axis_angle);
 
 			samples[i].segment<3>(3) = v_axis_angle;
 			// the rotation part changes
@@ -782,3 +782,170 @@ public:
 // composite rss-generated images
 
 #endif // __DUMP_RSS2013_PRESENTATION_ANIMATION_DATA
+
+#include "slam_app/Config.h"
+
+/**
+ *	@brief test of matrix orderings (for fastL debugging)
+ */
+class COrderingTest {
+public:
+	/**
+	 *	@brief default constructor; hijacks the application on startup (if enabled)
+	 */
+	inline COrderingTest()
+	{
+		/*main();
+
+		exit(-5);*/
+	}
+
+	/**
+	 *	@brief main function; runs the test
+	 */
+	void main()
+	{
+		int n_frame = 943;
+
+		char p_s_info[256], p_s_matrix[256], p_s_layout[256];
+		sprintf(p_s_info, "fastLdump/%05d_0_stats.txt", n_frame);
+		sprintf(p_s_matrix, "fastLdump/%05d_1_lambda.mtx", n_frame);
+		sprintf(p_s_layout, "fastLdump/%05d_1_lambda.bla", n_frame);
+
+		CUberBlockMatrix lambda;
+		if(!lambda.Load_MatrixMarket(p_s_matrix, p_s_layout)) {
+			fprintf(stderr, "error: failed to load block matrix (\'%s\', \'%s\')\n",
+				p_s_matrix, p_s_layout);
+			return;
+		}
+
+		printf("have lambda " PRIsize " x " PRIsize ", " PRIsize " nnz blocks\n",
+			lambda.n_BlockRow_Num(), lambda.n_BlockColumn_Num(), lambda.n_Block_Num());
+
+		size_t n_lambda_nnzb, n_L_nnzb, n_order_min;
+		std::vector<size_t> order_fastL;
+
+		{
+			order_fastL.resize(lambda.n_BlockColumn_Num());
+			FILE *p_fr = fopen(p_s_info, "r");
+			if(fscanf(p_fr, PRIsize " %% blocks in lambda\n", &n_lambda_nnzb) != 1 ||
+			   fscanf(p_fr, PRIsize " %% blocks in L\n", &n_L_nnzb) != 1 ||
+			   fscanf(p_fr, PRIsize " %% order_min\n", &n_order_min) != 1) {
+				fclose(p_fr);
+				return;
+			}
+			for(size_t i = 0, n = order_fastL.size(); i < n; ++ i) {
+				if(fscanf(p_fr, (i)? ", " PRIsize : "order = {" PRIsize, &order_fastL[i]) != 1) {
+					fclose(p_fr);
+					return;
+				}
+			}	
+			fclose(p_fr);
+		}
+		// read the stats file
+
+		if(CMatrixOrdering::b_IsValidOrdering(&order_fastL[0], order_fastL.size()))
+			printf("have a valid ordering\n");
+		else
+			fprintf(stderr, "error: the given ordering is invalid\n");
+		// make sure the rodering is ok
+
+		CUberBlockMatrix lambda_perm;
+		lambda.Permute_UpperTriangular_To(lambda_perm, &order_fastL[0], order_fastL.size(), true);
+		// apply the permutation
+
+		CUberBlockMatrix R;
+		R.CholeskyOf(lambda_perm);
+
+		printf("the calculated R has " PRIsize " nnz blocks\n", R.n_Block_Num());
+	}
+} ord_test; /**< @brief test of matrix orderings (for fastL debugging) */
+
+/**
+ *	@brief test of maximum independent set calculation
+ */
+class CMISTest {
+public:
+	/**
+	 *	@brief default constructor; hijacks the application on startup (if enabled)
+	 */
+	inline CMISTest()
+	{
+		/*main();
+
+		exit(-5);*/
+	}
+
+	/**
+	 *	@brief main function; runs the test
+	 */
+	void main()
+	{
+		int n_frame = 64;
+
+		char p_s_info[256], p_s_matrix[256], p_s_layout[256];
+		sprintf(p_s_info, "fastLdump/%05d_0_stats.txt", n_frame);
+		sprintf(p_s_matrix, "fastLdump/%05d_1_lambda.mtx", n_frame);
+		sprintf(p_s_layout, "fastLdump/%05d_1_lambda.bla", n_frame);
+
+		CUberBlockMatrix lambda;
+		if(!lambda.Load_MatrixMarket(p_s_matrix, p_s_layout)) {
+			fprintf(stderr, "error: failed to load block matrix (\'%s\', \'%s\')\n",
+				p_s_matrix, p_s_layout);
+			return;
+		}
+
+		cs *p_lambda = lambda.p_BlockStructure_to_Sparse();
+		// load a sparse matrix lambda
+
+		cs *p_lambda_t = cs_transpose(p_lambda, 0);
+		cs *p_lambda_full = cs_add(p_lambda, p_lambda_t, 1, 1);
+		cs_spfree(p_lambda_t);
+		cs_spfree(p_lambda);
+		p_lambda = p_lambda_full;
+		// need full AT+A (like AMD, except we require the diagonal to be present here)
+
+		CDebug::Dump_SparseMatrix("mis_0_graph.tga", p_lambda);
+
+		/*int p_rem_test[] = {1, 3, 7, 8, 14};
+		cs *p_subgraph = p_Subgraph(p_lambda, p_rem_test, p_rem_test + 5);
+		CDebug::Dump_SparseMatrix("mis_1_test-subgraph.tga", p_subgraph);
+		cs_spfree(p_subgraph);*/
+		// seems to work nicely
+
+		CTimer t;
+
+		std::vector<size_t> mis = CSchurOrdering::/*t_MIS*//*t_MIS_ExStack*//*t_MIS_Parallel*/t_MIS_FirstFit(p_lambda);
+		std::sort(mis.begin(), mis.end());
+
+		printf("max independent set is: %d (it took %.2f msec,"
+			" %d could be expected in a connected graph)\n",
+			int(mis.size()), t.f_Time() * 1e3f, int(p_lambda->n + 1) / 2);
+
+		printf("those are: {%d", int(mis[0]));
+		for(size_t i = 1, n = mis.size(); i < n; ++ i)
+			printf(", %d", int(mis[i]));
+		printf("}\n");
+
+		std::vector<size_t> ordering;
+		CSchurOrdering::Complement_VertexSet(ordering, mis, p_lambda->n);
+		ordering.insert(ordering.end(), mis.begin(), mis.end());
+		std::vector<size_t> inv_ordering(ordering.size());
+		for(size_t i = 0, n = ordering.size(); i < n; ++ i)
+			inv_ordering[ordering[i]] = i;
+		// have the other vertices first, mis vertices last
+
+		cs *p_lambda_perm = cs_symperm(p_lambda, (csi*)&inv_ordering[0], 0);
+
+		CDebug::Dump_SparseMatrix("mis_1_graph-perm.tga", p_lambda_perm);
+
+		CUberBlockMatrix lambda_perm;
+		lambda.Permute_UpperTriangular_To(lambda_perm, &inv_ordering[0], inv_ordering.size(), true);
+		lambda_perm.Rasterize("mis_2_lambda-perm.tga");
+
+		//printf("max independent set is: %d\n", n_MIS(p_lambda));
+
+		cs_spfree(p_lambda_perm);
+		cs_spfree(p_lambda);
+	}
+} mis_test; /**< @brief test of maximum independent set calculation */
