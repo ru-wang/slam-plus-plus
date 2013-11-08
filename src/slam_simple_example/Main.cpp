@@ -70,17 +70,6 @@ int main(int UNUSED(n_arg_num), const char **UNUSED(p_arg_list))
 	solver.Optimize();
 	// optimize the system
 
-	// todo - do incremental L example
-	// todo - show how parse loops work?
-	// todo - show how to add more edge / vertex types?
-	// todo - show how to specify unary factor?
-	// todo - show how to specify initial positions of vertices?
-	// todo - show how to make own types?
-
-	// todo - need to implement "simple" constructors in the rest of the edges (without the use of parser types)
-	// todo - need to use the quality profiles everywhere
-	// todo - use CSystemType::_TyHessianMatrixBlockList everywhere
-
 	system.Plot2D("result.tga", plot_quality::plot_Printing); // plot in print quality
 	solver.Dump(); // show some stats
 
