@@ -22,6 +22,8 @@
  */
 
 #include "slam/Parser.h"
+#include "slam/2DSolverBase.h" // CBase2DSolver::Absolute_to_Relative() and such
+#include "slam/3DSolverBase.h" // CBase3DSolver::Absolute_to_Relative() and such
 
 /**
  *	@brief an example parse primitive handler
@@ -114,17 +116,29 @@ public:
 		}
 		// read the individual numbers
 
+		/*const double ro = 0.02, mean = 0;
+		for(int i = 0; i < 3; ++ i) {
+			double x0 = (rand() + 1.0) / (RAND_MAX + 1.0); // avoid 0.0 as that will result in -inf
+			double x1 = rand() / double(RAND_MAX);
+			p_measurement[i] += mean + (sqrt(-2 * log(x0) / log(exp(1.0))) * cos(2 * M_PI * x1)) * ro; // Box-Muller
+		}*/
+		// add some stronger gaussian noise
+
 		if(p_pose_idx[0] < p_pose_idx[1]) {
 			//fprintf(stderr, "warning: doing inversion on possibly straight edge. contact your dataset master\n");
 			// not any more, you don't
 
 			if(fabs(p_matrix[0]) < 1e-5 || fabs(p_matrix[3]) < 1e-5 || fabs(p_matrix[5]) < 1e-5) {
 				if(fabs(p_matrix[0]) > 1e-5 && fabs(p_matrix[2]) > 1e-5 && fabs(p_matrix[3]) > 1e-5) {
-					//if(!r_b_warned_about_reverse_order) {
+					bool b_warned_about_reverse_order = false;
+					// this has the drawback of only warning once per application execution.
+					// instead it should warn once per parser instance.
+
+					if(!b_warned_about_reverse_order) {
 						fprintf(stderr, "warning: the inverse sigma matrix is in the french order."
 							" contact your dataset master\n");
-					//	r_b_warned_about_reverse_order = true;
-					//}
+						b_warned_about_reverse_order = true;
+					}
 				} else {
 					fprintf(stderr, "error: the inverse sigma matrix is in unknown order."
 						" contact your dataset master\n");
@@ -151,14 +165,22 @@ public:
 			// the manhattan datasets have poses in descending order (e.g. EDGE 1 0), the edges need to be inverted here
 			// in case the order is ascending, it is possible that the inversion is inadvertent
 
+			bool b_is_g2o_order = false;
 			if(fabs(p_matrix[0]) < 1e-5 || fabs(p_matrix[2]) < 1e-5 || fabs(p_matrix[3]) < 1e-5) {
 				if(fabs(p_matrix[0]) > 1e-5 && fabs(p_matrix[3]) > 1e-5 && fabs(p_matrix[5]) > 1e-5) {
-					//if(!r_b_warned_about_reverse_order) {
+					b_is_g2o_order = true;
+					// use the sigma as is then
+
+					static bool b_warned_about_reverse_order = false;
+					// this has the drawback of only warning once per application execution.
+					// instead it should warn once per parser instance.
+
+					if(!b_warned_about_reverse_order) {
 						fprintf(stderr, "warning: the inverse sigma matrix is in the g2o order."
 							" however, this dataset requires edge inversion and french order was expected."
 							" contact your dataset master\n");
-					//	r_b_warned_about_reverse_order = true;
-					//}
+						b_warned_about_reverse_order = true;
+					}
 				} else {
 					fprintf(stderr, "error: the inverse sigma matrix is in unknown order."
 						" contact your dataset master\n");
@@ -203,7 +225,8 @@ public:
 
 			//if((*p_tok_it).second == token_Edge2D) {
 				CParserBase::TEdge2D edge(p_ela_pose_idx/*p_pose_idx*/[0], p_ela_pose_idx/*p_pose_idx*/[1],
-					p_measurement[0], p_measurement[1], p_measurement[2], p_intel_matrix/*p_matrix*/);
+					p_measurement[0], p_measurement[1], p_measurement[2],
+					(b_is_g2o_order)? p_matrix : p_intel_matrix/*p_matrix*/);
 				// process the measurement
 
 				r_parse_loop.AppendSystem(edge);
@@ -396,7 +419,7 @@ public:
 			if(fabs(p_matrix[0]) < 1e-5 || fabs(p_matrix[6]) < 1e-5 || fabs(p_matrix[11]) < 1e-5 ||
 			   fabs(p_matrix[15]) < 1e-5 || fabs(p_matrix[18]) < 1e-5 || fabs(p_matrix[20]) < 1e-5) {
 				fprintf(stderr, "error: the inverse sigma matrix is in unknown order."
-						" contact your dataset master\n");
+					" contact your dataset master\n");
 			}
 			// make sure inverse sigma is diagonal and ordered as expected
 

@@ -53,45 +53,6 @@ protected:
 	std::vector<double> m_workspace_double; /**< @brief space for permuted right-hand-side vector */
 	const size_t *m_p_inv_order; /**< @brief pointer to the inverse ordering */
 
-#if 0
-	/**
-	 *	@brief matrix ordering calculator
-	 */
-	class CMatrixOrdering {
-	protected:
-		std::vector<size_t> m_ordering_invert; /**< @brief storage for the inverse elementwise ordering vector */
-
-	public:
-		/**
-		 *	@brief calculates inverse ordering while maintaining and reusing storage
-		 *
-		 *	@param[in] p_ordering is an ordering to be inverted
-		 *	@param[in] n_ordering_size is size of the given ordering
-		 *
-		 *	@return Returns const pointer to the inverse of the given ordering (not to be deleted).
-		 *
-		 *	@note The buffer for inverse ordering is reused in the next function call,
-		 *		invalidating the previous result (create more instances of CMatrixOrdering
-		 *		if multiple inverse orderings need to exist at the same time).
-		 *	@note Due to the buffer reuse, this can not invert ordering, inverted
-		 *		by the same object (calling the same function on the result of the previous
-		 *		call, on the same object). This doesn't apply to the results of the other functions.
-		 *	@note This function throws std::bad_alloc.
-		 */
-		const size_t *p_InvertOrdering(const size_t *p_ordering, size_t n_ordering_size) // throw(std::bad_alloc)
-		{
-			_ASSERTE(m_ordering_invert.empty() || p_ordering != &m_ordering_invert[0]); // can't invert twice
-			if(m_ordering_invert.size() < n_ordering_size) {
-				m_ordering_invert.clear();
-				m_ordering_invert.resize(std::max(n_ordering_size, 2 * m_ordering_invert.capacity()));
-			}
-			for(size_t i = 0; i < n_ordering_size; ++ i)
-				m_ordering_invert[p_ordering[i]] = i;
-			return &m_ordering_invert[0];
-		}
-	};
-#endif // 0
-
 	CMatrixOrdering m_mord; /**< @brief storage for the inverse ordering */
 
 public:
@@ -288,8 +249,8 @@ public:
 		free(p_order); // allocated using "C" libs
 #else // __USE_CS_AMD
 		//const size_t *p_order = m_mord.p_BlockOrdering(r_lambda, 0, 0); // use CAMD with no constraints
-		const size_t *p_order = m_mord.p_BlockOrdering(r_lambda); // use AMD (gives a better postordering than CAMD, requires less memory)
-		m_p_inv_order = m_mord.p_InvertOrdering(p_order, r_lambda.n_BlockColumn_Num()); // !!
+		const size_t *p_order = m_mord.p_BlockOrdering(r_lambda, true); // use AMD (gives a better postordering than CAMD, requires less memory)
+		m_p_inv_order = m_mord.p_Get_InverseOrdering(); // p_InvertOrdering(p_order, r_lambda.n_BlockColumn_Num()); // !!
 #endif // __USE_CS_AMD
 		// calculate ordering
 

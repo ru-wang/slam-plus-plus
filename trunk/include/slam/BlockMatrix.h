@@ -2047,6 +2047,24 @@ public:
 		bool b_mind_uninitialized = true); // throw(std::bad_alloc)
 
 	/**
+	 *	@brief finds a matrix block, strictly inside the matrix, or allocates it
+	 *
+	 *	@param[in] n_row_index is index of a row (in blocks!)
+	 *	@param[in] n_column_index is index of a column (in blocks!)
+	 *	@param[in] n_block_row_num is number of block rows (in elements)
+	 *	@param[in] n_block_column_num is number of block columns (in elements)
+	 *	@param[out] r_b_is_uninitialized is the initialization flag
+	 *
+	 *	@return Returns pointer to raw data (storage order same as in Eigen) on success,
+	 *		or 0 on failure.
+	 *
+	 *	@note This function throws std::bad_alloc.
+	 *	@note This can only allocate new block rows / columns at the edge of the matrix.
+	 */
+	double *p_GetBlock_Log_Alloc(size_t n_row_index, size_t n_column_index,
+		size_t n_block_row_num, size_t n_block_column_num, bool &r_b_is_uninitialized); // throw(std::bad_alloc)
+
+	/**
 	 *	@brief finds a matrix block
 	 *
 	 *	@param[in] n_row is starting row of the block (in elements)
@@ -2068,6 +2086,23 @@ public:
 	double *p_FindBlock(size_t n_row, size_t n_column, size_t n_block_row_num,
 		size_t n_block_column_num, bool b_alloc_if_not_found = true,
 		bool b_mind_uninitialized = true); // throw(std::bad_alloc)
+
+	/**
+	 *	@brief finds a matrix block, or allocates it
+	 *
+	 *	@param[in] n_row is starting row of the block (in elements)
+	 *	@param[in] n_column is starting column of the block (in elements)
+	 *	@param[in] n_block_row_num is number of block rows (in elements)
+	 *	@param[in] n_block_column_num is number of block columns (in elements)
+	 *	@param[out] r_b_is_uninitialized is the initialization flag
+	 *
+	 *	@return Returns pointer to raw data (storage order same as in Eigen) on success,
+	 *		or 0 on failure.
+	 *
+	 *	@note This function throws std::bad_alloc.
+	 */
+	double *p_FindBlock_Alloc(size_t n_row, size_t n_column, size_t n_block_row_num,
+		size_t n_block_column_num, bool &r_b_is_uninitialized); // throw(std::bad_alloc)
 
 	/**
 	 *	@brief finds a matrix block (read-only)
@@ -6620,6 +6655,7 @@ public:
 			if(!CFBS_Cholesky<CBlockMatrixTypelist>::b_Column_Loop(r_col_A_j.n_width, j, n,
 			   m_block_cols_list, r_col_A_j, r_lambda, r_elim_tree, ereach_stack, bitfield, alloc)) {
 				//printf("error: not pos def\n"); // not pos def
+				Clear(); // otherwise leaving uninit columns behind, CheckIntegrity() will yell
 				return false;
 			}
 #else // 1
@@ -6757,6 +6793,7 @@ public:
 				   n_col_j_width, r_col_L_j.block_list.begin(), r_col_L_j.block_list.end() - 1,
 				   (*p_A_block_it).second, m_block_cols_list)) {
 					//printf("error: not pos def\n"); // not pos def
+					Clear(); // otherwise leaving uninit columns behind, CheckIntegrity() will yell
 					return false;
 				}
 				// execute cdiv using FBS
@@ -6830,6 +6867,7 @@ public:
 			if(!CFBS_Cholesky<CBlockMatrixTypelist>::b_Column_Loop(r_col_A_j.n_width, j, n,
 			   m_block_cols_list, r_col_A_j, r_lambda, r_elim_tree, ereach_stack, bitfield, alloc)) {
 				//printf("error: not pos def\n"); // not pos def
+				Clear(); // otherwise leaving uninit columns behind, CheckIntegrity() will yell
 				return false;
 			}
 #else // 1
@@ -7268,6 +7306,7 @@ protected:
 		return f_a + f_b;
 	}
 
+public:
 	/**
 	 *	@brief gets (aligned) dense storage
 	 *
@@ -7287,6 +7326,7 @@ protected:
 		// use the allocator class, but only instantiate it as needed so it is possible to swap matrices
 	}
 
+protected:
 	/**
 	 *	@brief determines whether a row is referenced by columns
 	 *	@param[in] n_row_index is (zero-based) row index

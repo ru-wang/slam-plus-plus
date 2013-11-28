@@ -75,7 +75,7 @@ class CParseLoop {
 protected:
 	CSystem &m_r_system; /**< @brief reference to the system being parsed into */
 	CNonlinearSolver &m_r_solver; /**< @brief reference to the solver (for incremental solving) */
-	std::map<std::pair<size_t, size_t>, size_t> m_edge_map; /**< @brief map of edges by vertices (currently handles binary edges only) */
+	//std::map<std::pair<size_t, size_t>, size_t> m_edge_map; /**< @brief map of edges by vertices (currently handles binary edges only) */
 
 public:
 	/**
@@ -99,7 +99,7 @@ public:
 	void AppendSystem(const CParsedEdge &r_edge) // throw(std::bad_alloc, std::runtime_error)
 	{
 		CProcessEdge<CParsedEdge, typename CEdgeTraits<CParsedEdge>::_TyEdge>::Do(m_r_system,
-			m_r_solver, r_edge, m_edge_map);
+			m_r_solver, r_edge/*, m_edge_map*/);
 	}
 
 	/**
@@ -136,8 +136,9 @@ protected:
 		 *	@note This function throws std::bad_alloc.
 		 */
 		static inline void Do(CSystem &r_system, CNonlinearSolver &r_solver,
-			const CParsedEdge &r_edge, std::map<std::pair<size_t, size_t>, size_t> &r_edge_map) // throw(std::bad_alloc)
+			const CParsedEdge &r_edge/*, std::map<std::pair<size_t, size_t>, size_t> &r_edge_map*/) // throw(std::bad_alloc)
 		{
+#if 0
 			std::pair<size_t, size_t> edge_verts(r_edge.m_n_node_0, r_edge.m_n_node_1);
 			// this needs to be changed for multi-edge datasets
 
@@ -158,7 +159,9 @@ protected:
 			} else {
 				r_edge_map[edge_verts] = r_system.r_Edge_Pool().n_Size();
 				// record edge id
-
+#else // 0
+			{ // duplicate edges are handled, can be put in the system
+#endif // 0
 				CRepresentation &r_rep_edge = r_system.r_Add_Edge(CRepresentation(r_edge, r_system));
 				// add the edge to the system (convert parsed edge to internal representation)
 
@@ -185,8 +188,8 @@ protected:
 		 *	@param[in] r_edge_map is map of edge indices by edge vertices (unused)
 		 */
 		static inline void Do(CSystem &UNUSED(r_system),
-			CNonlinearSolver &UNUSED(r_solver), const CParsedEdge &UNUSED(r_edge),
-			std::map<std::pair<size_t, size_t>, size_t> &UNUSED(r_edge_map))
+			CNonlinearSolver &UNUSED(r_solver), const CParsedEdge &UNUSED(r_edge)/*,
+			std::map<std::pair<size_t, size_t>, size_t> &UNUSED(r_edge_map)*/)
 		{}
 	};
 
@@ -210,7 +213,7 @@ protected:
 		 *	@note This function throws std::runtime_error as a means of error reporting.
 		 */
 		static inline void Do(CSystem &UNUSED(r_system), CNonlinearSolver &UNUSED(r_solver),
-			const CParsedEdge &UNUSED(r_edge), std::map<std::pair<size_t, size_t>, size_t> &UNUSED(r_edge_map)) // throw(std::runtime_error)
+			const CParsedEdge &UNUSED(r_edge)/*, std::map<std::pair<size_t, size_t>, size_t> &UNUSED(r_edge_map)*/) // throw(std::runtime_error)
 		{
 			typedef CEdgeTraits<CParsedEdge> TEdgeType; // g++ doesn't like 'typename' here
 			throw std::runtime_error(TEdgeType::p_s_Reason());

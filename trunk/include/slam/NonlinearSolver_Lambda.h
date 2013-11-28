@@ -394,7 +394,7 @@ public:
 		}
 
 #ifdef __NONLINEAR_SOLVER_LAMBDA_DUMP_CHI2
-		if(b_new_vert) {
+		if(n_new_vertex_num) {
 			FILE *p_fw = fopen("chi2perVert.txt", (m_n_real_step > 0)? "a" : "w");
 			fprintf(p_fw, "%f\n", f_Chi_Squared_Error_Denorm());
 			fclose(p_fw);

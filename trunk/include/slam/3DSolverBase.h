@@ -39,6 +39,7 @@
 #include <float.h>
 //#include "slam/BlockMatrix.h"
 #include "eigen/Eigen/Cholesky"
+#include "eigen/Eigen/Geometry" // quaternions
 
 /**
  *	@brief calculates 3D jacobians of difference (u [-] v) using code exported from Matlab
@@ -553,23 +554,9 @@ public:
 
 		Eigen::Vector3d v_aang;
 		Eigen::Quaterniond qdest = (q1_inv * q2).normalized();
-		double fullangle = f_Quat_to_AxisAngle(qdest, v_aang); // use quaternion to calculate the rotation
-		double fixup = 2 * acos(qdest.w()) - fullangle;
-		_ASSERTE(fixup >= 0);
+		f_Quat_to_AxisAngle(qdest, v_aang); // use quaternion to calculate the rotation
 		r_t_dest.template tail<3>() = v_aang;
 
-		double f_theta2 = f_theta * f_theta;
-		double f_omega2 = f_omega * f_omega;
-		double f_theta3 = f_theta2 * f_theta;
-		double f_omega3 = f_omega2 * f_omega;
-		double f_sin_theta = sin(.5 * f_theta);
-		double f_cos_theta = cos(.5 * f_theta);
-		double f_sin_omega = sin(.5 * f_omega);
-		double f_cos_omega = cos(.5 * f_omega);
-		double f_sin_theta2 = f_sin_theta * f_sin_theta;
-		double f_cos_theta2 = f_cos_theta * f_cos_theta;
-		double f_sin_omega2 = f_sin_omega * f_sin_omega;
-		double f_cos_omega2 = f_cos_omega * f_cos_omega;
 		double ux = r_t_vertex1(0);
 		double uy = r_t_vertex1(1);
 		double uz = r_t_vertex1(2);
@@ -582,15 +569,11 @@ public:
 		double va = r_t_vertex2(3);
 		double vb = r_t_vertex2(4);
 		double vc = r_t_vertex2(5);
-		double ua2 = ua * ua;
-		double ub2 = ub * ub;
-		double uc2 = uc * uc;
-		double va2 = va * va;
-		double vb2 = vb * vb;
-		double vc2 = vc * vc;
+		// just rename the variables
 
-		double thetaMLVar = f_theta, sintheta = f_sin_theta, costheta = f_cos_theta, omega = f_omega, cosomega = f_cos_omega, sinomega = f_sin_omega;
-
+#if 0
+		double thetaMLVar = f_theta, sintheta = f_sin_theta, costheta = f_cos_theta,
+			omega = f_omega, cosomega = f_cos_omega, sinomega = f_sin_omega;
 		if(omega < 0.1 || thetaMLVar < 0.1 || /*fabs(omega - M_PI) < 0.1 || fabs(thetaMLVar - M_PI) < 0.1 ||*/ omega >= 2 * M_PI - 0.1 || thetaMLVar >= 2 * M_PI - 0.1) {
 			// use the numerical jacobians
 			/* TODO: make more efficient */
@@ -624,29 +607,35 @@ public:
 
 			return;
 		}
+		// handle low angles using numerical jacobians (avoid division by zero in the analytical equations)
+#endif // 0
 
 		double Ju[6][6] = {0}, Jv[6][6] = {0};
-		double Jup[6][6] = {0}, Jvp[6][6] = {0};
-
-		Calculate3DJacobians(Ju, Jv, thetaMLVar, omega, 
-			ux, uy, uz, ua, ub, uc,
-			vx, vy, vz, va, vb, vc);
-		Calculate3DJacobians_Plus(Jup, ux, uy, uz, ua, ub, uc);
-		Calculate3DJacobians_Plus(Jvp, vx, vy, vz, va, vb, vc);
+		Calculate3DJacobians(Ju, Jv, f_theta, f_omega, 
+			ux, uy, uz, ua, ub, uc, vx, vy, vz, va, vb, vc);
 		// todo - simplify plus, actually only interested in
 
-		_TyDestMatrix0 jup;
-		_TyDestMatrix1 jvp;
 		_TyDestMatrix0 &ju = r_t_pose3_pose1;
 		_TyDestMatrix1 &jv = r_t_pose3_pose2;
 		for(int i = 0; i < 6; ++ i) {
 			for(int j = 0; j < 6; ++ j) {
 				ju(i, j) = Ju[i][j];
 				jv(i, j) = Jv[i][j];
-				jup(i, j) = Jup[i][j];
-				jvp(i, j) = Jvp[i][j];
 			}
 		}
+		// get the data out
+
+		/*FILE *p_fw = fopen("jacobs3d_anal_manifold.m", "a");
+		if(p_fw) {
+			CDebug::Print_DenseMatrix_in_MatlabFormat(p_fw, r_t_vertex1, "u = ", ";\n");
+			CDebug::Print_DenseMatrix_in_MatlabFormat(p_fw, r_t_vertex2, "v = ", ";\n");
+			CDebug::Print_DenseMatrix_in_MatlabFormat(p_fw, r_t_dest, "d_gt = ", "; % difference between u and v\n");
+			CDebug::Print_DenseMatrix_in_MatlabFormat(p_fw, ju, "H1_gt = ", "; % the first jacobian\n");
+			CDebug::Print_DenseMatrix_in_MatlabFormat(p_fw, jv, "H2_gt = ", "; % the second jacobian\n");
+			fprintf(p_fw, "%s", "\n% ---\n\n");
+			fclose(p_fw);
+		}*/
+		// get some "ground truth" for analytical jacobian debugging
 
 #ifdef _DEBUG
 		Eigen::Matrix<double, 6, 6> num_H1;

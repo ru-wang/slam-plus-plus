@@ -360,6 +360,35 @@ double *CUberBlockMatrix::p_GetBlock_Log(size_t n_row_index, size_t n_column_ind
 	}
 }
 
+double *CUberBlockMatrix::p_GetBlock_Log_Alloc(size_t n_row_index, size_t n_column_index,
+	size_t n_block_row_num, size_t n_block_column_num, bool &r_b_is_uninitialized)  // throw(std::bad_alloc)
+{
+	size_t m, n;
+	if(n_row_index > (m = m_block_rows_list.size()) ||
+	   n_column_index > (n = m_block_cols_list.size()))
+		return 0;
+	// must be inside or just adjacent
+
+	if(n_row_index == m) {
+		TRow t_row;
+		t_row.n_height = n_block_row_num;
+		t_row.n_cumulative_height_sum = m_n_row_num;
+		m_block_rows_list.push_back(t_row);
+		m_n_row_num += n_block_row_num;
+	}
+	if(n_column_index == n) {
+		TColumn t_col;
+		t_col.n_width = n_block_column_num;
+		t_col.n_cumulative_width_sum = m_n_col_num;
+		m_block_cols_list.push_back(t_col);
+		m_n_col_num += n_block_column_num;
+	}
+	// extend the matrix, if required (p_AllocBlockData requires row and column to exist)
+
+	return p_AllocBlockData(n_row_index, n_column_index,
+		n_block_row_num, n_block_column_num, r_b_is_uninitialized);
+}
+
 double *CUberBlockMatrix::p_FindBlock(size_t n_row, size_t n_column, size_t n_block_row_num,
 	size_t n_block_column_num, bool b_alloc_if_not_found /*= true*/,
 	bool b_mind_uninitialized /*= true*/) // throw(std::bad_alloc)
@@ -395,6 +424,17 @@ double *CUberBlockMatrix::p_FindBlock(size_t n_row, size_t n_column, size_t n_bl
 	} else
 		return p_GetBlockData(n_row_index, n_column_index);
 	// alloc data
+}
+
+double *CUberBlockMatrix::p_FindBlock_Alloc(size_t n_row, size_t n_column, size_t n_block_row_num,
+	size_t n_block_column_num, bool &r_b_is_uninitialized)
+{
+	size_t n_row_index, n_column_index;
+	if((n_row_index = n_RowAlloc(n_row, n_block_row_num)) == size_t(-1) ||
+	   (n_column_index = n_ColumnAlloc(n_column, n_block_column_num)) == size_t(-1))
+		return 0;
+	return p_AllocBlockData(n_row_index, n_column_index,
+		n_block_row_num, n_block_column_num, r_b_is_uninitialized);
 }
 
 const double *CUberBlockMatrix::p_FindBlock(size_t n_row, size_t n_column,
@@ -7678,6 +7718,7 @@ bool CUberBlockMatrix::CholeskyOf(const CUberBlockMatrix &r_lambda,
 			Eigen::LLT<Eigen::MatrixXd, Eigen::Upper> chol(L_block_jj); // Eigen::LLT only accesses a half of the matrix (upper tri in this case), no need to clear the lower half
 			if(chol.info() != Eigen::Success) {
 				//printf("error: not pos def\n"); // not pos def
+				Clear(); // otherwise leaving uninit columns behind, CheckIntegrity() will yell
 				return false;
 			}
 			L_block_jj = chol.matrixU();
@@ -7951,6 +7992,7 @@ bool CUberBlockMatrix::CholeskyOf(const CUberBlockMatrix &r_lambda,
 			Eigen::LLT<Eigen::MatrixXd, Eigen::Upper> chol(L_block_jj); // Eigen::LLT only accesses a half of the matrix (upper tri in this case), no need to clear the lower half
 			if(chol.info() != Eigen::Success) {
 				//printf("error: not pos def\n"); // not pos def
+				Clear(); // otherwise leaving uninit columns behind, CheckIntegrity() will yell
 				return false;
 			}
 			L_block_jj = chol.matrixU();
