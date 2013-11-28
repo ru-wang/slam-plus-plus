@@ -693,6 +693,15 @@ struct TDatasetPeeker : public CParserBase::CParserAdaptor {
 	{
 		b_has_ba = true;
 	}
+
+	/**
+	 *	@brief appends the system with an camera measurement
+	 *	@param[in] r_t_edge is the measurement to be appended
+	 */
+	virtual void AppendSystem(const CParserBase::TEdgeP2SC3D &UNUSED(r_t_edge))
+	{
+		// todo
+	}
 };
 
 /**

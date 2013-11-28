@@ -38,7 +38,7 @@ PROJECT_NAME           = "SLAM ++"
 # could be handy for archiving the generated documentation or if some version
 # control system is used.
 
-PROJECT_NUMBER         = "Version 1.11"
+PROJECT_NUMBER         = "Version 1.12"
 
 # Using the PROJECT_BRIEF tag one can provide an optional one line description
 # for a project that appears at the top of each page and should give viewer a
@@ -737,7 +737,8 @@ INPUT                  = E:\my-projects\Robotics\SLAM_plus_plus\sourceforge_svn\
                          E:\my-projects\Robotics\SLAM_plus_plus\sourceforge_svn\code\trunk\include\slam_app \
                          E:\my-projects\Robotics\SLAM_plus_plus\sourceforge_svn\code\trunk\src\slam \
                          E:\my-projects\Robotics\SLAM_plus_plus\sourceforge_svn\code\trunk\src\slam_app \
-                         E:\my-projects\Robotics\SLAM_plus_plus\sourceforge_svn\code\trunk\src\slam_simple_example
+                         E:\my-projects\Robotics\SLAM_plus_plus\sourceforge_svn\code\trunk\src\slam_simple_example \
+                         E:\my-projects\Robotics\SLAM_plus_plus\sourceforge_svn\code\trunk\src\slam_online_example
 
 # This tag can be used to specify the character encoding of the source files
 # that doxygen parses. Internally doxygen uses the UTF-8 encoding. Doxygen uses

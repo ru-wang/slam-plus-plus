@@ -2,9 +2,9 @@
 <VisualStudioProject
 	ProjectType="Visual C++"
 	Version="9.00"
-	Name="SLAM_plus_plus"
-	ProjectGUID="{999461D9-FEE4-4D9E-8226-58B4600F55F2}"
-	RootNamespace="SLAM_plus_plus"
+	Name="SLAM_online_example"
+	ProjectGUID="{0EED0474-C879-427B-A057-D3C31182D3CF}"
+	RootNamespace="SLAM_online_example"
 	Keyword="Win32Proj"
 	TargetFrameworkVersion="196613"
 	>
@@ -22,7 +22,7 @@
 		<Configuration
 			Name="Debug|Win32"
 			OutputDirectory="..\bin\$(ConfigurationName)"
-			IntermediateDirectory="SLAM_plus_plus\$(ConfigurationName)"
+			IntermediateDirectory="SLAM_online_example\$(ConfigurationName)"
 			ConfigurationType="1"
 			CharacterSet="0"
 			>
@@ -102,7 +102,7 @@
 		<Configuration
 			Name="Debug|x64"
 			OutputDirectory="..\bin\$(ConfigurationName)64"
-			IntermediateDirectory="SLAM_plus_plus\$(ConfigurationName)64"
+			IntermediateDirectory="SLAM_online_example\$(ConfigurationName)64"
 			ConfigurationType="1"
 			CharacterSet="0"
 			>
@@ -181,7 +181,7 @@
 		<Configuration
 			Name="Release|Win32"
 			OutputDirectory="..\bin\$(ConfigurationName)"
-			IntermediateDirectory="SLAM_plus_plus\$(ConfigurationName)"
+			IntermediateDirectory="SLAM_online_example\$(ConfigurationName)"
 			ConfigurationType="1"
 			CharacterSet="0"
 			WholeProgramOptimization="1"
@@ -273,7 +273,7 @@
 		<Configuration
 			Name="Release|x64"
 			OutputDirectory="..\bin\$(ConfigurationName)64"
-			IntermediateDirectory="SLAM_plus_plus\$(ConfigurationName)64"
+			IntermediateDirectory="SLAM_online_example\$(ConfigurationName)64"
 			ConfigurationType="1"
 			CharacterSet="0"
 			WholeProgramOptimization="1"
@@ -374,117 +374,7 @@
 			UniqueIdentifier="{4FC737F1-C7A5-4376-A066-2A32D752A2FF}"
 			>
 			<File
-				RelativePath="..\src\slam_app\BlockBench.cpp"
-				>
-			</File>
-			<File
-				RelativePath="..\src\slam_app\BlockBenchImpl0.cpp"
-				>
-			</File>
-			<File
-				RelativePath="..\src\slam_app\BlockBenchImpl1.cpp"
-				>
-			</File>
-			<File
-				RelativePath="..\src\slam_app\BlockUnit.cpp"
-				>
-			</File>
-			<File
-				RelativePath="..\src\slam_app\Covado.cpp"
-				>
-			</File>
-			<File
-				RelativePath=".\DTL.cpp"
-				>
-				<FileConfiguration
-					Name="Debug|Win32"
-					ExcludedFromBuild="true"
-					>
-					<Tool
-						Name="VCCLCompilerTool"
-					/>
-				</FileConfiguration>
-				<FileConfiguration
-					Name="Debug|x64"
-					ExcludedFromBuild="true"
-					>
-					<Tool
-						Name="VCCLCompilerTool"
-					/>
-				</FileConfiguration>
-				<FileConfiguration
-					Name="Release|Win32"
-					ExcludedFromBuild="true"
-					>
-					<Tool
-						Name="VCCLCompilerTool"
-					/>
-				</FileConfiguration>
-				<FileConfiguration
-					Name="Release|x64"
-					ExcludedFromBuild="true"
-					>
-					<Tool
-						Name="VCCLCompilerTool"
-					/>
-				</FileConfiguration>
-			</File>
-			<File
-				RelativePath="..\src\slam_app\Main.cpp"
-				>
-				<FileConfiguration
-					Name="Debug|Win32"
-					>
-					<Tool
-						Name="VCCLCompilerTool"
-						UsePrecompiledHeader="0"
-						PrecompiledHeaderThrough="slam/Config.h"
-					/>
-				</FileConfiguration>
-				<FileConfiguration
-					Name="Debug|x64"
-					>
-					<Tool
-						Name="VCCLCompilerTool"
-						UsePrecompiledHeader="0"
-						PrecompiledHeaderThrough="slam/Config.h"
-						PrecompiledHeaderFile="$(IntDir)\$(TargetName)64.pch"
-					/>
-				</FileConfiguration>
-				<FileConfiguration
-					Name="Release|Win32"
-					>
-					<Tool
-						Name="VCCLCompilerTool"
-						UsePrecompiledHeader="0"
-						PrecompiledHeaderThrough="slam/Config.h"
-					/>
-				</FileConfiguration>
-				<FileConfiguration
-					Name="Release|x64"
-					>
-					<Tool
-						Name="VCCLCompilerTool"
-						UsePrecompiledHeader="0"
-						PrecompiledHeaderThrough="slam/Config.h"
-						PrecompiledHeaderFile="$(IntDir)\$(TargetName)64.pch"
-					/>
-				</FileConfiguration>
-			</File>
-			<File
-				RelativePath="..\src\slam_app\Solve2DImpl.cpp"
-				>
-			</File>
-			<File
-				RelativePath="..\src\slam_app\Solve2DPoseOnlyImpl.cpp"
-				>
-			</File>
-			<File
-				RelativePath="..\src\slam_app\Solve3DImpl.cpp"
-				>
-			</File>
-			<File
-				RelativePath="..\src\slam_app\SolveBAImpl.cpp"
+				RelativePath="..\src\slam_online_example\Main.cpp"
 				>
 			</File>
 		</Filter>
@@ -521,10 +411,6 @@
 					>
 				</File>
 				<File
-					RelativePath="..\include\slam_app\BlockBench.h"
-					>
-				</File>
-				<File
 					RelativePath="..\include\slam\BlockMatrix.h"
 					>
 				</File>
@@ -534,10 +420,6 @@
 				</File>
 				<File
 					RelativePath="..\include\slam\BlockMatrixFBSUtil.h"
-					>
-				</File>
-				<File
-					RelativePath="..\include\slam_app\BlockUnit.h"
 					>
 				</File>
 				<File
@@ -642,22 +524,6 @@
 				</File>
 				<File
 					RelativePath="..\include\slam\Unused.h"
-					>
-				</File>
-			</Filter>
-			<Filter
-				Name="slam_app"
-				>
-				<File
-					RelativePath="..\include\slam_app\Config.h"
-					>
-				</File>
-				<File
-					RelativePath="..\include\slam_app\Main.h"
-					>
-				</File>
-				<File
-					RelativePath="..\include\slam_app\ParsePrimitives.h"
 					>
 				</File>
 			</Filter>

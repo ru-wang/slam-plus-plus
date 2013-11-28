@@ -207,6 +207,7 @@ protected:
 #endif // !__NONLINEAR_SOLVER_FAST_L_DETAILED_TIMING
 	typedef _TyTimeSampler::_TySample _TyTime; /**< @brief time type */
 
+	bool m_b_inhibit_optimization; /**< @brief optimization enable falg */
 	size_t m_n_iteration_num; /**< @brief number of linear solver iterations */
 	_TyTime m_f_chol_time; /**< @brief time spent in Choleski() section */
 	_TyTime m_f_norm_time; /**< @brief time spent in norm calculation section */
@@ -296,8 +297,8 @@ public:
 		m_n_nonlinear_solve_max_iteration_num(n_nonlinear_solve_max_iteration_num),
 		m_f_nonlinear_solve_error_threshold(f_nonlinear_solve_error_threshold),
 		m_b_verbose(b_verbose), m_n_real_step(0), m_b_system_dirty(false),
-		m_b_linearization_dirty(false), m_n_iteration_num(0),
-		m_f_chol_time(0), m_f_norm_time(0), m_f_vert_upd_time(0),
+		m_b_linearization_dirty(false), m_b_inhibit_optimization(false),
+		m_n_iteration_num(0), m_f_chol_time(0), m_f_norm_time(0), m_f_vert_upd_time(0),
 		m_n_full_forwardsubst_num(0), m_n_resumed_forwardsubst_num(0),
 		m_n_resumed_perm_forwardsubst_num(0), m_n_L_optim_num(0), m_n_lambda_optim_num(0),
 		m_n_Lup_num(0), m_n_omega_update_num(0), m_n_lambda_update_num(0), m_n_full_L_num(0),
@@ -328,8 +329,7 @@ public:
 	 *	@brief destructor (only required if ? is defined)
 	 */
 	inline ~CNonlinearSolver_FastL()
-	{
-	}
+	{}
 
 	/**
 	 *	@brief displays performance info on stdout
@@ -460,6 +460,30 @@ public:
 			return f_chi2;
 		} else
 			return m_r_system.r_Edge_Pool().For_Each(CSum_ChiSquareError());
+	}
+
+	/**
+	 *	@brief delays optimization upon Incremental_Step()
+	 */
+	inline void Delay_Optimization()
+	{
+		m_b_inhibit_optimization = true;
+	}
+
+	/**
+	 *	@brief enables optimization upon Incremental_Step()
+	 *
+	 *	This is default behavior. In case it was disabled (by Delay_Optimization()),
+	 *	and optimization is required, this will also run the optimization.
+	 */
+	inline void Enable_Optimization()
+	{
+		if(m_b_inhibit_optimization) {
+			m_b_inhibit_optimization = false;
+
+			TryOptimize(m_n_nonlinear_solve_max_iteration_num, m_f_nonlinear_solve_error_threshold);
+			// optimize
+		}
 	}
 
 	/**
@@ -694,47 +718,49 @@ protected:
 		bool b_optimization_triggered = false;
 
 		size_t n_vertex_num = m_r_system.r_Vertex_Pool().n_Size();
+		if(!m_b_inhibit_optimization) {
 #ifdef __SLAM_COUNT_ITERATIONS_AS_VERTICES
-		size_t n_new_vertex_num = n_vertex_num - m_n_last_optimized_vertex_num;
-		if(!n_new_vertex_num) // evidently, this backfires; need to have another m_n_last_optimized_vertex_num where it would remember when was the system last extended and check if there are new vertices since *then* // fixed now
-			return; // no new vertices; don't go in ... (otherwise 2x slower on molson35, for obvious reasons)
-		// the optimization periods are counted in vertices, not in edges (should save work on 10k, 100k)
+			size_t n_new_vertex_num = n_vertex_num - m_n_last_optimized_vertex_num;
+			if(!n_new_vertex_num) // evidently, this backfires; need to have another m_n_last_optimized_vertex_num where it would remember when was the system last extended and check if there are new vertices since *then* // fixed now
+				return; // no new vertices; don't go in ... (otherwise 2x slower on molson35, for obvious reasons)
+			// the optimization periods are counted in vertices, not in edges (should save work on 10k, 100k)
 #else // __SLAM_COUNT_ITERATIONS_AS_VERTICES
-		++ m_n_step;
+			++ m_n_step;
 #endif // __SLAM_COUNT_ITERATIONS_AS_VERTICES
 
 #ifdef __SLAM_COUNT_ITERATIONS_AS_VERTICES
-		if(m_n_nonlinear_solve_threshold && n_new_vertex_num >= m_n_nonlinear_solve_threshold) {
+			if(m_n_nonlinear_solve_threshold && n_new_vertex_num >= m_n_nonlinear_solve_threshold) {
 #else // __SLAM_COUNT_ITERATIONS_AS_VERTICES
-		if(m_n_nonlinear_solve_threshold && m_n_step == m_n_nonlinear_solve_threshold) {
+			if(m_n_nonlinear_solve_threshold && m_n_step == m_n_nonlinear_solve_threshold) {
 #endif // __SLAM_COUNT_ITERATIONS_AS_VERTICES
 #ifdef __SLAM_COUNT_ITERATIONS_AS_VERTICES
-			m_n_last_optimized_vertex_num = n_vertex_num;
+				m_n_last_optimized_vertex_num = n_vertex_num;
 #else // __SLAM_COUNT_ITERATIONS_AS_VERTICES
-			m_n_step = 0;
-#endif // __SLAM_COUNT_ITERATIONS_AS_VERTICES
-			// do this first, in case Optimize() threw
-
-			b_optimization_triggered = true;
-			// nonlinear optimization
-#ifdef __SLAM_COUNT_ITERATIONS_AS_VERTICES
-		} else if(m_n_linear_solve_threshold && n_new_vertex_num >= m_n_linear_solve_threshold) {
-#else // __SLAM_COUNT_ITERATIONS_AS_VERTICES
-		} else if(m_n_linear_solve_threshold && m_n_step % m_n_linear_solve_threshold == 0) {
-#endif // __SLAM_COUNT_ITERATIONS_AS_VERTICES
-#ifdef __SLAM_COUNT_ITERATIONS_AS_VERTICES
-			_ASSERTE(!m_n_nonlinear_solve_threshold);
-			m_n_last_optimized_vertex_num = n_vertex_num;
-#else // __SLAM_COUNT_ITERATIONS_AS_VERTICES
-			if(!m_n_nonlinear_solve_threshold)
 				m_n_step = 0;
 #endif // __SLAM_COUNT_ITERATIONS_AS_VERTICES
-			// do this first, in case Optimize() threw
+				// do this first, in case Optimize() threw
 
-			n_max_iteration_num = 1;
-			f_min_dx_norm = m_f_nonlinear_solve_error_threshold; // right?
-			b_optimization_triggered = true;
-			// simple optimization
+				b_optimization_triggered = true;
+				// nonlinear optimization
+#ifdef __SLAM_COUNT_ITERATIONS_AS_VERTICES
+			} else if(m_n_linear_solve_threshold && n_new_vertex_num >= m_n_linear_solve_threshold) {
+#else // __SLAM_COUNT_ITERATIONS_AS_VERTICES
+			} else if(m_n_linear_solve_threshold && m_n_step % m_n_linear_solve_threshold == 0) {
+#endif // __SLAM_COUNT_ITERATIONS_AS_VERTICES
+#ifdef __SLAM_COUNT_ITERATIONS_AS_VERTICES
+				_ASSERTE(!m_n_nonlinear_solve_threshold);
+				m_n_last_optimized_vertex_num = n_vertex_num;
+#else // __SLAM_COUNT_ITERATIONS_AS_VERTICES
+				if(!m_n_nonlinear_solve_threshold)
+					m_n_step = 0;
+#endif // __SLAM_COUNT_ITERATIONS_AS_VERTICES
+				// do this first, in case Optimize() threw
+
+				n_max_iteration_num = 1;
+				f_min_dx_norm = m_f_nonlinear_solve_error_threshold; // right?
+				b_optimization_triggered = true;
+				// simple optimization
+			}
 		}
 
 		if(!b_optimization_triggered) {

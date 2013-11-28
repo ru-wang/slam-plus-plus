@@ -65,8 +65,6 @@
 #include "slam/TypeList.h"
 #include "slam/Integer.h"
 #include "eigen/Eigen/Dense"
-#include "slam/2DSolverBase.h" // CBase2DSolver::Absolute_to_Relative() and such
-#include "slam/3DSolverBase.h" // CBase3DSolver::Absolute_to_Relative() and such
 
 /**
  *	@brief a simple .graph file parser
@@ -320,11 +318,11 @@ public:
 		 *	@param[in] ax is x axis angle
 		 *	@param[in] ay is y axis angle
 		 *	@param[in] az is z axis angle
-		 *	@param[in] fx is x ?
-		 *	@param[in] fy is y ?
-		 *	@param[in] cx is x ?
-		 *	@param[in] cy is y ?
-		 *	@param[in] d is ? // SOSO: write what these are
+		 *	@param[in] fx is focal length
+		 *	@param[in] fy is fx * (aspect ratio of pixel)
+		 *	@param[in] cx is principal point in x axis
+		 *	@param[in] cy is principal point in y axis
+		 *	@param[in] d is first distortion coefficient of the radial distortion
 		 *
 		 *	@note The vertices are only used as ground truth. Those are mostly not processed.
 		 */
@@ -411,6 +409,51 @@ public:
 		EIGEN_MAKE_ALIGNED_OPERATOR_NEW
 	};
 
+		/**
+		 *	@brief P2C measurement base class
+		 */
+		struct TEdgeP2SC3D : public CParseEntity {
+			int m_n_node_0; /**< @brief (zero-based) index of the 3D point */
+			int m_n_node_1; /**< @brief (zero-based) index of the camera vertex */
+			Eigen::Matrix<double, 3, 1> m_v_delta; /**< @brief dealte measurement (also called "z") */
+			Eigen::Matrix<double, 3, 3> m_t_inv_sigma; /**< @brief inverse sigma matrix, elements are square roots (also called "Sz") */
+
+			/**
+			 *	@brief default constructor
+			 *
+			 *	@param[in] n_node_0 is (zero-based) index of the 3D point
+			 *	@param[in] n_node_1 is (zero-based) index of the camera vertex
+			 *	@param[in] f_delta_x1 is delta x position - left cam
+			 *	@param[in] f_delta_y is delta y position
+			 *	@param[in] f_delta_x2 is delta x position - right cam
+			 *	@param[in] p_upper_matrix_3x3 is row-major upper triangular and diagonal 3x3 matrix,
+			 *		elements are square roots
+			 *
+			 *	The matrix is stored row by row from top to bottom,
+			 *	with left to right column order. Example:
+			 *	@code
+			 *	|0 1 2|
+			 *	|  3 4|
+			 *	|    5|
+			 *	@endcode
+			 */
+			inline TEdgeP2SC3D(int n_node_0, int n_node_1,
+				double f_delta_x1, double f_delta_y, double f_delta_x2, const double *p_upper_matrix_3x3)
+				:m_n_node_0(n_node_0), m_n_node_1(n_node_1)
+			{
+				m_v_delta << f_delta_x1, f_delta_y, f_delta_x2;
+				// no constructor for 2-valued vector
+
+				m_t_inv_sigma <<
+								p_upper_matrix_3x3[0], p_upper_matrix_3x3[1], p_upper_matrix_3x3[2],
+								p_upper_matrix_3x3[1], p_upper_matrix_3x3[3], p_upper_matrix_3x3[4],
+								p_upper_matrix_3x3[2], p_upper_matrix_3x3[4], p_upper_matrix_3x3[5];
+				// fill the matrix
+			}
+
+			EIGEN_MAKE_ALIGNED_OPERATOR_NEW
+		};
+
 	/**
 	 *	@brief a simple callback class, to be used by the parser
 	 *	@note This has the disadvantage of having to be modified after adding a new
@@ -469,6 +512,12 @@ public:
 		 *	@param[in] r_t_edge is the measurement to be appended
 		 */
 		virtual void AppendSystem(const TEdgeP2C3D &r_t_edge) = 0;
+
+		/**
+		 *	@brief appends the system with an camera measurement
+		 *	@param[in] r_t_edge is the measurement to be appended
+		 */
+		virtual void AppendSystem(const TEdgeP2SC3D &r_t_edge) = 0;
 	};
 
 protected:

@@ -1,13 +1,30 @@
+Changes from 1.1 to 1.12 (2013-11-28):
+
+* Added small_online_example.
+
+Changes from 1.10 to 1.11 (2013-11-08):
+
+* Improved code documentation.
+* Improved parser design to support vertex initialization (for BA).
+* Changed CMakeLists.txt and added slam_small_example.
+
+Changes from 1.1 to 1.10 (2013-08-02):
+
+* Fixed some bugs in bundle adjustment.
+* Fixed some old typos.
+* Added more configuration options to CMakeLists.txt.
+* Prepared some stuff for Raspberry Pi.
+
 Changes from 1.01 to 1.1 (2013-06-24):
 
-* added native block Cholesky implementation
-* added the fast L solver, which is described in our Rss 2013 paper
-    * note that it will not work with other than native Cholesky
+* Added native block Cholesky implementation.
+* Added the fast L solver, which is described in our Rss 2013 paper.
+    * Note that it will not work with other than native Cholesky.
 
 
 Changes from 1.0 to 1.01 (2013-05-14):
 
-* updated Cholmod to 2.1.2 and selected the fast supernodal analysis as default
-* updated METIS to 4.0.1, and selected it to be disabled by default as it was
-  causing problems while compiling on some Linux systems
-* disabled -march=native on Apple systems, as it was causing problems
+* Updated Cholmod to 2.1.2 and selected the fast supernodal analysis as default.
+* Updated METIS to 4.0.1, and selected it to be disabled by default as it was
+  causing problems while compiling on some Linux systems.
+* Disabled -march=native on Apple systems, as it was causing problems.

@@ -201,7 +201,7 @@ public:
 	 *	@note This function is required for CNonlinearSolver_Lambda.
 	 */
 	inline std::pair<const double*, const double*>
-		t_Get_LambdaEta_Contribution(const CSEBaseVertex *p_which) const
+		t_Get_LambdaEta_Contribution(const CSEBaseVertex *p_which)
 	{
 		return t_Get_LambdaEta_Contribution_Derived(p_which);
 	}
@@ -290,7 +290,7 @@ protected:
 	 *	@copydoc t_Get_LambdaEta_Contribution()
 	 */
 	virtual std::pair<const double*, const double*>
-		t_Get_LambdaEta_Contribution_Derived(const CSEBaseVertex *p_which) const = 0;
+		t_Get_LambdaEta_Contribution_Derived(const CSEBaseVertex *p_which) = 0;
 
 #endif // __SE_TYPES_SUPPORT_LAMBDA_SOLVERS // --- ~lambda-SLAM specific functions ---
 
@@ -324,7 +324,7 @@ protected:
 
 #ifdef __SE_TYPES_SUPPORT_LAMBDA_SOLVERS // --- ~lambda-SLAM specific members ---
 
-	std::vector<const CSEBaseEdge*> m_edge_list; /**< @brief a list of edges, referencing this vertex (only used by Lambda solver) */
+	std::vector<CSEBaseEdge*> m_edge_list; /**< @brief a list of edges, referencing this vertex (only used by Lambda solver) */
 
 #endif // __SE_TYPES_SUPPORT_LAMBDA_SOLVERS // --- ~lambda-SLAM specific members ---
 
@@ -450,7 +450,7 @@ public:
 	 *	@note This function throws std::bad_alloc.
 	 *	@note This function is required for CNonlinearSolver_Lambda.
 	 */
-	inline void Add_ReferencingEdge(const CSEBaseEdge *p_edge) // throw(std::bad_alloc)
+	inline void Add_ReferencingEdge(CSEBaseEdge *p_edge) // throw(std::bad_alloc)
 	{
 		_ASSERTE(!b_IsReferencingEdge(p_edge));
 		m_edge_list.push_back(p_edge);
@@ -900,6 +900,7 @@ protected:
 #ifdef __SE_TYPES_SUPPORT_LAMBDA_SOLVERS // --- ~lambda-SLAM specific members ---
 
 	double *m_p_HtSiH; /**< @brief block of memory where Ht * inv(Sigma) * H matrix is stored (the one above diagonal) */
+	double *m_p_HtSiH_reduce; /**< @brief block of memory where Ht * inv(Sigma) * H matrix is stored in the matrix (should there be conflicts between duplicate edges, this is the target of reduction) */
 	typename _TyVertex0::_TyMatrixAlign m_t_HtSiH_vertex0; /**< @brief block of memory where Ht * inv(Sigma) * H matrix is stored (the vertex contribution) */
 	typename _TyVertex1::_TyMatrixAlign m_t_HtSiH_vertex1; /**< @brief block of memory where Ht * inv(Sigma) * H matrix is stored (the vertex contribution) */
 	typename _TyVertex0::_TyVectorAlign m_t_right_hand_vertex0; /**< @brief block of memory where right-hand side vector is stored (the vertex contribution) */
@@ -1045,6 +1046,7 @@ public:
 		// will have correct shape in the matrix, but the data will be transposed
 		// and you will get either not pos def / rubbish solutions
 
+		bool b_uninit_block;
 		size_t n_dimension0 = n_vertex0_dimension;
 		size_t n_dimension1 = n_vertex1_dimension;
 #ifdef __BASE_TYPES_USE_ID_ADDRESSING
@@ -1061,7 +1063,7 @@ public:
 		_ASSERTE(n_id_0 < n_id_1);
 		// they dont care about the man that ends up under the stage, they only care about the one above (column > row)
 
-		m_p_HtSiH = r_lambda.p_GetBlock_Log(n_id_0, n_id_1, n_dimension0, n_dimension1, true, false);
+		m_p_HtSiH = r_lambda.p_GetBlock_Log_Alloc(n_id_0, n_id_1, n_dimension0, n_dimension1, b_uninit_block);
 #else // __BASE_TYPES_USE_ID_ADDRESSING
 		size_t n_order_0 = m_p_vertex0->n_Order();
 		size_t n_order_1 = m_p_vertex1->n_Order();
@@ -1076,13 +1078,45 @@ public:
 		_ASSERTE(n_order_0 < n_order_1);
 		// they dont care about the man that ends up under the stage, they only care about the one above (column > row)
 
-		m_p_HtSiH = r_lambda.p_FindBlock(n_order_0, n_order_1, n_dimension0, n_dimension1, true, false);
+		m_p_HtSiH = r_lambda.p_FindBlock_Alloc(n_order_0, n_order_1, n_dimension0, n_dimension1, b_uninit_block);
 #endif // __BASE_TYPES_USE_ID_ADDRESSING
 		// find a block for hessian above the diagonal, and with the right shape
+
+		// t_odo - need a new function that finds a block, and says if it was there before, or not.
+		// that could break, if the lambda was already allocated. does that ever happen?
+		// note that m_p_vertex[]->Add_ReferencingEdge() is called here as well, and it is guaranteed
+		// to only be called once. that brings some guarantees ...
 
 		_ASSERTE(m_p_HtSiH);
 		// if this triggers, most likely __BASE_TYPES_USE_ID_ADDRESSING is enabled (see FlatSystem.h)
 		// and the edges come in some random order
+
+		bool b_duplicate_block = !b_uninit_block; // was it there already?
+		if(b_duplicate_block) {
+			m_p_HtSiH_reduce = m_p_HtSiH; // where to reduce
+			m_p_HtSiH = r_lambda.p_Get_DenseStorage(n_dimension0 * n_dimension1); // a temporary
+			// this edge is a duplicate edge; reduction of diagonal blocks is taken care of in the vertices.
+			// reduction of off-diagonal blocks needs to be taken care of explicitly
+
+			// need a new storage for the block data, so that Calculate_Hessians() has where to put it
+			// could put it in the lambda matrix pool, without putting it in any column (a bit dirty, but ok)
+
+			// finally, the reduction needs to be carried out somehow
+
+			// each duplicate edge between two vertices can be processed by either of the vertices,
+			// in CSEBaseVertexImpl::Calculate_Hessians(). there are some problems with load balancing, but
+			// it should generally work. there is a problem with matrix size, as the vertices do not have
+			// to be the same size, and each vertex does not know about the other vertex' dimension
+
+			// it needs to be done in the edge, but potentially invoked by the vertex
+			// to avoid conflicts, the reduction should be done by vertex with e.g. the larger id
+			// this will require one more pointer in edge (for the orig block) and one more list in the vertex
+			// otherwise, could have one more field in vertex, which would say where to reduce. that saves space
+			// as those lists would be normally empty
+
+			// what will happen in N-ary edges?
+		} else
+			m_p_HtSiH_reduce = 0; // do not reduce
 	}
 
 	inline void Calculate_Hessians()
@@ -1167,8 +1201,27 @@ public:
 		return f_max;
 	}
 
-	inline std::pair<const double*, const double*> t_Get_LambdaEta_Contribution(const CSEBaseVertex *p_which) const
+	inline std::pair<const double*, const double*> t_Get_LambdaEta_Contribution(const CSEBaseVertex *p_which)
 	{
+		if(m_p_HtSiH_reduce) {
+			size_t n_id_0 = m_p_vertex_id[0], n_id_1 = m_p_vertex_id[1];
+			const CSEBaseVertex *p_max_vert = (n_id_0 > n_id_1)?
+				(const CSEBaseVertex*)m_p_vertex0 : (const CSEBaseVertex*)m_p_vertex1;
+			if(p_max_vert == p_which) {
+				if(n_id_0 > n_id_1) {
+					Eigen::Map<Eigen::Matrix<double, n_vertex1_dimension, n_vertex0_dimension>,
+						CUberBlockMatrix::map_Alignment> t_HtSiH(m_p_HtSiH), t_HtSiH_reduce(m_p_HtSiH_reduce);
+					t_HtSiH_reduce.noalias() += t_HtSiH;
+				} else {
+					Eigen::Map<Eigen::Matrix<double, n_vertex0_dimension, n_vertex1_dimension>,
+						CUberBlockMatrix::map_Alignment> t_HtSiH(m_p_HtSiH), t_HtSiH_reduce(m_p_HtSiH_reduce);
+					t_HtSiH_reduce.noalias() += t_HtSiH;
+				}
+			}
+		}
+		// take care of hessian reduction, kind of silently, but it is guaranteed
+		// that this is called for all the updated vertices
+
 		_ASSERTE(p_which == m_p_vertex0 || p_which == m_p_vertex1);
 		return (p_which == m_p_vertex0)?
 			std::make_pair(m_t_HtSiH_vertex0.data(), m_t_right_hand_vertex0.data()) :
@@ -1398,7 +1451,7 @@ protected:
 	}
 
 	virtual std::pair<const double*, const double*>
-		t_Get_LambdaEta_Contribution_Derived(const CSEBaseVertex *p_which) const
+		t_Get_LambdaEta_Contribution_Derived(const CSEBaseVertex *p_which)
 	{
 		return CSEBaseEdgeImpl<CDerivedEdge, CVertex0, CVertex1,
 			_n_measurement_dimension>::t_Get_LambdaEta_Contribution(p_which);
