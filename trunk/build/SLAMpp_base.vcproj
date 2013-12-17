@@ -319,6 +319,10 @@
 				>
 			</File>
 			<File
+				RelativePath="..\src\slam\IncrementalPolicy.cpp"
+				>
+			</File>
+			<File
 				RelativePath="..\src\slam\LinearSolver_CholMod.cpp"
 				>
 			</File>
