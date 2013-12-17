@@ -1479,7 +1479,7 @@ public:
 	typedef CBaseSolver _TyBaseSolver; /**< @brief name of the base linear solver */
 
 	typedef typename CUniqueTypelist<CAMatrixBlockSizes>::_TyResult _TyAMatrixBlockSizes; /**< @brief list of block matrix sizes */
-	typedef typename __fbs_ut::CBlockSizesAfterPreMultiplyWithSelfTranspose<
+	typedef typename __fbs_ut::CBlockMatrixTypesAfterPreMultiplyWithSelfTranspose<
 		_TyAMatrixBlockSizes>::_TyResult _TyLambdaMatrixBlockSizes; /**< @brief possible block matrices, found in lambda and L */
 	//typedef typename _TyBaseSolver::_TySystem::_TyHessianMatrixBlockList _TyLambdaMatrixBlockSizes; // could use that instead, but there might be other prior knowledge of block sizes
 

@@ -22,6 +22,8 @@
  *	@note This file is not to be included; it is automatically included from BlockMatrix.h
  */
 
+#include "slam/BlockMatrixBase.h"
+
 /**
  *	@brief fixed block size utility classes and functions
  */
@@ -155,7 +157,32 @@ public:
  *	@tparam CMatrixType is specialization of Eigen::Matrix
  */
 template <class CMatrixType>
-class CEigenToDimension;
+class CEigenToDimension {
+public:
+#if !defined(_MSC_VER) || defined(__MWERKS__) // the below version does not work with Intellisense, the one in else branch does
+	typedef CCTSize2D<CMatrixType::RowsAtCompileTime,
+		CMatrixType::ColsAtCompileTime> _TyResult; /**< @brief size of the matrix, represented as CCTSize2D */
+#else // !_MSC_VER || __MWERKS__
+	typedef Eigen::internal::traits<CMatrixType> _TyMatrixTraits; /**< @brief matrix traits */
+	typedef CCTSize2D<_TyMatrixTraits::RowsAtCompileTime,
+		_TyMatrixTraits::ColsAtCompileTime> _TyResult; /**< @brief size of the matrix, represented as CCTSize2D */
+#endif // !_MSC_VER || __MWERKS__
+};
+
+/**
+ *	@brief converts eigen matrix type to simple CCTSize2D
+ *		(specialization for input already being CCTSize2D)
+ *
+ *	@tparam _n_row_num is number of rows (y component)
+ *	@tparam _n_column_num is number of columns (x component)
+ */
+template <int _n_row_num, int _n_column_num>
+class CEigenToDimension<CCTSize2D<_n_row_num, _n_column_num> > {
+public:
+	typedef CCTSize2D<_n_row_num, _n_column_num> _TyResult; /**< @brief size of the matrix, represented as CCTSize2D */
+};
+
+#if 0 // discarded as unnecessary complication, Eigen matrix types have RowsAtCompileTime and ColsAtCompileTime enum
 
 /**
  *	@brief specialization for matrices of double (the only supported type)
@@ -174,6 +201,8 @@ class CEigenToDimension<Eigen::Matrix<double, n_compile_time_row_num,
 public:
 	typedef CCTSize2D<n_compile_time_row_num, n_compile_time_col_num> _TyResult; /**< @brief size of the matrix, represented as CCTSize2D */
 };
+
+#endif // 0
 
 /**
  *	@brief transposes shape of Eigen::Matrix
@@ -215,14 +244,6 @@ class CMATRIX_BLOCK_DIMENSIONS_MUST_BE_KNOWN_AT_COMPILE_TIME;
  */
 template <>
 class CMATRIX_BLOCK_DIMENSIONS_MUST_BE_KNOWN_AT_COMPILE_TIME<true> {};
-
-/**
- *	@brief static assertion helper type
- *	@tparam n_size is size of object being used as assertion message
- *		(if it's a incomplete type, compiler will display object name in error output)
- */
-template <const size_t n_size>
-class CStaticAssert {};
 
 /**
  *	@brief predicate for filtering row height list by selected column width
@@ -276,24 +297,66 @@ public:
 };
 
 /**
+ *	@brief converts compile-time constant 2D vector to Eigen matrix type
+ *	@tparam CDimensionType is a compile-time constant 2D vector
+ */
+template <class CDimensionType>
+class CDimensionToEigen {
+public:
+	typedef Eigen::Matrix<double, CDimensionType::n_row_num, CDimensionType::n_column_num> _TyResult;
+};
+
+/**
+ *	@brief conversion of a pair of CCTSize to CCTSize2D matrix type with
+ *		known compile-time sizes (the result can be found in the _TyResult type)
+ *
+ *	@tparam _T1 is a specialization of CCTSize, containing number of matrix rows
+ *	@tparam _T2 is a specialization of CCTSize, containing number of matrix columns
+ */
+template <class _T1, class _T2>
+class CMakeCTSize2DType {
+public:
+	typedef CCTSize2D<_T1::n_size, _T2::n_size> _TyResult; /**< @brief the resulting Eigen matrix type */
+};
+
+/**
  *	@brief calculates a typelist of block sizes after the PreMultiplyWithSelfTranspose()
  *		operation (the result can be found in the _TyResult type)
  *	@tparam CBlockMatrixTypelist is typelist, containing Eigen
  *		matrices with known compile-time sizes
  */
 template <class CBlockMatrixTypelist>
-class CBlockSizesAfterPreMultiplyWithSelfTranspose {
+class CBlockMatrixTypesAfterPreMultiplyWithSelfTranspose {
 protected:
 	typedef CBlockMatrixTypelist _TyBlockMatrixTypelist; /**< @brief list of block sizes, represented as Eigen::Matrix */
 	typedef typename CTransformTypelist<_TyBlockMatrixTypelist,
-		__fbs_ut::CEigenToDimension>::_TyResult CDimsList; /**< @brief list of block sizes as CCTSize2D */
+		CEigenToDimension>::_TyResult CDimsList; /**< @brief list of block sizes as CCTSize2D */
 	typedef typename CUniqueTypelist<CDimsList>::_TyResult CDimsList_Uniq; /**< @brief list of block sizes as CCTSize2D (duplicate records removed) */
 	typedef typename CUniqueTypelist<typename CTransformTypelist<CDimsList_Uniq,
-		__fbs_ut::CTransformDimensionRowsToSize>::_TyResult>::_TyResult CRowHeightsList; /**< @brief list of unique block row heights */
+		CTransformDimensionRowsToSize>::_TyResult>::_TyResult CRowHeightsList; /**< @brief list of unique block row heights */
 
 public:
 	typedef typename CUniqueTypelist<typename CCarthesianProductTypelist<CRowHeightsList,
 		CRowHeightsList, CMakeMatrixSizeType>::_TyResult>::_TyResult _TyResult; /**< @brief the resulting typelist */
+};
+
+/**
+ *	@brief calculates a typelist of block sizes after the PreMultiplyWithSelfTranspose()
+ *		operation (the result can be found in the _TyResult type)
+ *	@tparam CBlockSizeTypelist is typelist, containing
+ *		list of block sizes as CCTSize2D
+ */
+template <class CBlockSizeTypelist>
+class CBlockSizesAfterPreMultiplyWithSelfTranspose {
+protected:
+	typedef CBlockSizeTypelist CDimsList; /**< @brief list of block sizes as CCTSize2D */
+	typedef typename CUniqueTypelist<CDimsList>::_TyResult CDimsList_Uniq; /**< @brief list of block sizes as CCTSize2D (duplicate records removed) */
+	typedef typename CUniqueTypelist<typename CTransformTypelist<CDimsList_Uniq,
+		CTransformDimensionRowsToSize>::_TyResult>::_TyResult CRowHeightsList; /**< @brief list of unique block row heights */
+
+public:
+	typedef typename CUniqueTypelist<typename CCarthesianProductTypelist<CRowHeightsList,
+		CRowHeightsList, CMakeCTSize2DType>::_TyResult>::_TyResult _TyResult; /**< @brief the resulting typelist */
 };
 
 /**
@@ -562,7 +625,7 @@ class CMakeSquareMatrixSizeDecisionTree {
 protected:
 	typedef CBlockMatrixTypelist _TyBlockMatrixTypelist; /**< @brief list of block sizes, represented as Eigen::Matrix */
 	typedef typename CTransformTypelist<_TyBlockMatrixTypelist,
-		__fbs_ut::CEigenToDimension>::_TyResult CDimsList; /**< @brief list of block sizes as CCTSize2D */
+		CEigenToDimension>::_TyResult CDimsList; /**< @brief list of block sizes as CCTSize2D */
 	typedef typename CFilterTypelist1<CDimsList, CIsSize2DSquare>::_TyResult CSquareDimsList; /**< @brief list of square block sizes as CCTSize2D */
 	typedef typename CTransformTypelist<CSquareDimsList, CTransformDimensionColumnsToSize>::_TyResult CWidthList; /**< @brief list of square block widths as CCTSize */
 	typedef typename CBinaryCombinationTypelist<CWidthList, CBinaryScalarAdd,
@@ -622,28 +685,28 @@ class CFixedBlockSize_BinaryBase {
 public:
 	typedef CBlockMatrixTypelistA _TyBlockMatrixTypelistA; /**< @brief list of block sizes, represented as Eigen::Matrix */
 	typedef typename CTransformTypelist<_TyBlockMatrixTypelistA,
-		__fbs_ut::CEigenToDimension>::_TyResult CDimsListA; /**< @brief list of block sizes as CCTSize2D */
+		CEigenToDimension>::_TyResult CDimsListA; /**< @brief list of block sizes as CCTSize2D */
 	typedef typename CUniqueTypelist<CDimsListA>::_TyResult CDimsList_UniqA; /**< @brief list of block sizes as CCTSize2D (duplicate records removed) */
 	typedef typename CUniqueTypelist<typename CTransformTypelist<CDimsList_UniqA,
-		__fbs_ut::CTransformDimensionColumnsToSize>::_TyResult>::_TyResult CColumnWidthsListA; /**< @brief list of unique block column widths */
+		CTransformDimensionColumnsToSize>::_TyResult>::_TyResult CColumnWidthsListA; /**< @brief list of unique block column widths */
 	typedef typename CUniqueTypelist<typename CTransformTypelist<CDimsList_UniqA,
-		__fbs_ut::CTransformDimensionRowsToSize>::_TyResult>::_TyResult CRowHeightsListA; /**< @brief list of unique block row heights */
+		CTransformDimensionRowsToSize>::_TyResult>::_TyResult CRowHeightsListA; /**< @brief list of unique block row heights */
 
 	typedef CBlockMatrixTypelistB _TyBlockMatrixTypelistB; /**< @brief list of block sizes, represented as Eigen::Matrix */
 	typedef typename CTransformTypelist<_TyBlockMatrixTypelistB,
-		__fbs_ut::CEigenToDimension>::_TyResult CDimsListB; /**< @brief list of block sizes as CCTSize2D */
+		CEigenToDimension>::_TyResult CDimsListB; /**< @brief list of block sizes as CCTSize2D */
 	typedef typename CUniqueTypelist<CDimsListB>::_TyResult CDimsList_UniqB; /**< @brief list of block sizes as CCTSize2D (duplicate records removed) */
 	typedef typename CUniqueTypelist<typename CTransformTypelist<CDimsList_UniqB,
-		__fbs_ut::CTransformDimensionColumnsToSize>::_TyResult>::_TyResult CColumnWidthsListB; /**< @brief list of unique block column widths */
+		CTransformDimensionColumnsToSize>::_TyResult>::_TyResult CColumnWidthsListB; /**< @brief list of unique block column widths */
 	typedef typename CUniqueTypelist<typename CTransformTypelist<CDimsList_UniqB,
-		__fbs_ut::CTransformDimensionRowsToSize>::_TyResult>::_TyResult CRowHeightsListB; /**< @brief list of unique block row heights */
+		CTransformDimensionRowsToSize>::_TyResult>::_TyResult CRowHeightsListB; /**< @brief list of unique block row heights */
 	// create typelists to generate the decision tree for block sizes
 
-	typedef __fbs_ut::CStaticAssert<sizeof(__fbs_ut::CMATRIX_BLOCK_DIMENSIONS_MUST_BE_KNOWN_AT_COMPILE_TIME<
-		!CFindTypelistItem<CColumnWidthsListA, __fbs_ut::CCTSize<Eigen::Dynamic> >::b_result &&
-		!CFindTypelistItem<CRowHeightsListA, __fbs_ut::CCTSize<Eigen::Dynamic> >::b_result &&
-		!CFindTypelistItem<CColumnWidthsListB, __fbs_ut::CCTSize<Eigen::Dynamic> >::b_result &&
-		!CFindTypelistItem<CRowHeightsListB, __fbs_ut::CCTSize<Eigen::Dynamic> >::b_result>)> _TyAssert0; /**< @brief make sure that all the blocks have the sizes fixed and known at compile-time */
+	typedef __ubm_static_check::CStaticAssert<sizeof(CMATRIX_BLOCK_DIMENSIONS_MUST_BE_KNOWN_AT_COMPILE_TIME<
+		!CFindTypelistItem<CColumnWidthsListA, CCTSize<Eigen::Dynamic> >::b_result &&
+		!CFindTypelistItem<CRowHeightsListA, CCTSize<Eigen::Dynamic> >::b_result &&
+		!CFindTypelistItem<CColumnWidthsListB, CCTSize<Eigen::Dynamic> >::b_result &&
+		!CFindTypelistItem<CRowHeightsListB, CCTSize<Eigen::Dynamic> >::b_result>)> _TyAssert0; /**< @brief make sure that all the blocks have the sizes fixed and known at compile-time */
 };
 
 /**
@@ -656,19 +719,19 @@ class CFixedBlockSize_UnaryBase {
 public:
 	typedef CBlockMatrixTypelist _TyBlockMatrixTypelist; /**< @brief list of block sizes, represented as Eigen::Matrix */
 	typedef typename CTransformTypelist<_TyBlockMatrixTypelist,
-		__fbs_ut::CEigenToDimension>::_TyResult CDimsList; /**< @brief list of block sizes as CCTSize2D */
+		CEigenToDimension>::_TyResult CDimsList; /**< @brief list of block sizes as CCTSize2D */
 	typedef typename CUniqueTypelist<CDimsList>::_TyResult CDimsList_Uniq; /**< @brief list of block sizes as CCTSize2D (duplicate records removed) */
 	typedef typename CUniqueTypelist<typename CTransformTypelist<CDimsList_Uniq,
-		__fbs_ut::CTransformDimensionColumnsToSize>::_TyResult>::_TyResult CColumnWidthsList; /**< @brief list of unique block column widths */
+		CTransformDimensionColumnsToSize>::_TyResult>::_TyResult CColumnWidthsList; /**< @brief list of unique block column widths */
 	typedef typename CUniqueTypelist<typename CTransformTypelist<CDimsList_Uniq,
-		__fbs_ut::CTransformDimensionRowsToSize>::_TyResult>::_TyResult CRowHeightsList; /**< @brief list of unique block row heights */
+		CTransformDimensionRowsToSize>::_TyResult>::_TyResult CRowHeightsList; /**< @brief list of unique block row heights */
 	typedef typename CUniqueTypelist<typename CTransformTypelist<CDimsList_Uniq,
-		__fbs_ut::CTransformDimensionToAreaSize>::_TyResult>::_TyResult CBlockAreasList; /**< @brief list of unique block areas (for elementwise ops) */
+		CTransformDimensionToAreaSize>::_TyResult>::_TyResult CBlockAreasList; /**< @brief list of unique block areas (for elementwise ops) */
 	// create typelists to generate the decision tree for block sizes
 
-	typedef __fbs_ut::CStaticAssert<sizeof(__fbs_ut::CMATRIX_BLOCK_DIMENSIONS_MUST_BE_KNOWN_AT_COMPILE_TIME<
-		!CFindTypelistItem<CColumnWidthsList, __fbs_ut::CCTSize<Eigen::Dynamic> >::b_result &&
-		!CFindTypelistItem<CRowHeightsList, __fbs_ut::CCTSize<Eigen::Dynamic> >::b_result>)> _TyAssert0; /**< @brief make sure that all the blocks have the sizes fixed and known at compile-time */
+	typedef __ubm_static_check::CStaticAssert<sizeof(CMATRIX_BLOCK_DIMENSIONS_MUST_BE_KNOWN_AT_COMPILE_TIME<
+		!CFindTypelistItem<CColumnWidthsList, CCTSize<Eigen::Dynamic> >::b_result &&
+		!CFindTypelistItem<CRowHeightsList, CCTSize<Eigen::Dynamic> >::b_result>)> _TyAssert0; /**< @brief make sure that all the blocks have the sizes fixed and known at compile-time */
 };
 
 } // ~__fbs_ut

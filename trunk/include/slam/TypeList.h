@@ -211,6 +211,69 @@ class CTypelistEnd {};
  */
 #define MakeTypelist8(x,y,z,w,s,t,p,q) CTypelist<x, MakeTypelist7(y, z, w, s, t, p, q) >
 
+/**
+ *	@def MakeTypelist9
+ *	@param[in] r is the item of typelist
+ *	@copydoc MakeTypelist8
+ */
+#define MakeTypelist9(x,y,z,w,s,t,p,q,r) CTypelist<x, MakeTypelist8(y, z, w, s, t, p, q, r) >
+
+/**
+ *	@def MakeTypelist10
+ *	@param[in] m is the item of typelist
+ *	@copydoc MakeTypelist9
+ */
+#define MakeTypelist10(x,y,z,w,s,t,p,q,r,m) \
+	CTypelist<x, MakeTypelist9(y, z, w, s, t, p, q, r, m) >
+
+/**
+ *	@def MakeTypelist11
+ *	@param[in] n is the item of typelist
+ *	@copydoc MakeTypelist10
+ */
+#define MakeTypelist11(x,y,z,w,s,t,p,q,r,m,n) \
+	CTypelist<x, MakeTypelist10(y, z, w, s, t, p, q, r, m, n) >
+
+/**
+ *	@def MakeTypelist12
+ *	@param[in] u is the item of typelist
+ *	@copydoc MakeTypelist11
+ */
+#define MakeTypelist12(x,y,z,w,s,t,p,q,r,m,n,u) \
+	CTypelist<x, MakeTypelist11(y, z, w, s, t, p, q, r, m, n, u) >
+
+/**
+ *	@def MakeTypelist13
+ *	@param[in] v is the item of typelist
+ *	@copydoc MakeTypelist12
+ */
+#define MakeTypelist13(x,y,z,w,s,t,p,q,r,m,n,u,v) \
+	CTypelist<x, MakeTypelist12(y, z, w, s, t, p, q, r, m, n, u, v) >
+
+/**
+ *	@def MakeTypelist14
+ *	@param[in] a is the item of typelist
+ *	@copydoc MakeTypelist13
+ */
+#define MakeTypelist14(x,y,z,w,s,t,p,q,r,m,n,u,v,a) \
+	CTypelist<x, MakeTypelist13(y, z, w, s, t, p, q, r, m, n, u, v, a) >
+
+/**
+ *	@def MakeTypelist15
+ *	@param[in] b is the item of typelist
+ *	@copydoc MakeTypelist14
+ */
+#define MakeTypelist15(x,y,z,w,s,t,p,q,r,m,n,u,v,a,b) \
+	CTypelist<x, MakeTypelist14(y, z, w, s, t, p, q, r, m, n, u, v, a, b) >
+
+/**
+ *	@def MakeTypelist16
+ *	@param[in] c is the item of typelist
+ *	@copydoc MakeTypelist15
+ */
+#define MakeTypelist16(x,y,z,w,s,t,p,q,r,m,n,u,v,a,b,c) \
+	CTypelist<x, MakeTypelist15(y, z, w, s, t, p, q, r, m, n, u, v, a, b, c) >
+
 #if !defined(_MSC_VER) || defined(__MWERKS__) || _MSC_VER >= 1400
 
 /**
@@ -327,6 +390,185 @@ struct CSafeTypelistCtor<void (*)(x, y, z, w, s, t, p)> {
 template <class x, class y, class z, class w, class s, class t, class p, class q>
 struct CSafeTypelistCtor<void (*)(x, y, z, w, s, t, p, q)> {
 	typedef MakeTypelist8(x, y, z, w, s, t, p, q) _Ty; /**< @brief resulting typelist */
+};
+
+/**
+ *	@brief safe typelist constructor
+ *
+ *	@tparam x is the item of typelist
+ *	@tparam y is the item of typelist
+ *	@tparam z is the item of typelist
+ *	@tparam w is the item of typelist
+ *	@tparam s is the item of typelist
+ *	@tparam t is the item of typelist
+ *	@tparam p is the item of typelist
+ *	@tparam q is the item of typelist
+ *	@tparam r is the item of typelist
+ */
+template <class x, class y, class z, class w, class s, class t, class p, class q, class r>
+struct CSafeTypelistCtor<void (*)(x, y, z, w, s, t, p, q, r)> {
+	typedef MakeTypelist9(x, y, z, w, s, t, p, q, r) _Ty; /**< @brief resulting typelist */
+};
+
+/**
+ *	@brief safe typelist constructor
+ *
+ *	@tparam x is the item of typelist
+ *	@tparam y is the item of typelist
+ *	@tparam z is the item of typelist
+ *	@tparam w is the item of typelist
+ *	@tparam s is the item of typelist
+ *	@tparam t is the item of typelist
+ *	@tparam p is the item of typelist
+ *	@tparam q is the item of typelist
+ *	@tparam r is the item of typelist
+ *	@tparam m is the item of typelist
+ */
+template <class x, class y, class z, class w, class s,
+	class t, class p, class q, class r, class m>
+struct CSafeTypelistCtor<void (*)(x, y, z, w, s, t, p, q, r, m)> {
+	typedef MakeTypelist10(x, y, z, w, s, t, p, q, r, m) _Ty; /**< @brief resulting typelist */
+};
+
+/**
+ *	@brief safe typelist constructor
+ *
+ *	@tparam x is the item of typelist
+ *	@tparam y is the item of typelist
+ *	@tparam z is the item of typelist
+ *	@tparam w is the item of typelist
+ *	@tparam s is the item of typelist
+ *	@tparam t is the item of typelist
+ *	@tparam p is the item of typelist
+ *	@tparam q is the item of typelist
+ *	@tparam r is the item of typelist
+ *	@tparam m is the item of typelist
+ *	@tparam n is the item of typelist
+ */
+template <class x, class y, class z, class w, class s,
+	class t, class p, class q, class r, class m, class n>
+struct CSafeTypelistCtor<void (*)(x, y, z, w, s, t, p, q, r, m, n)> {
+	typedef MakeTypelist11(x, y, z, w, s, t, p, q, r, m, n) _Ty; /**< @brief resulting typelist */
+};
+
+/**
+ *	@brief safe typelist constructor
+ *
+ *	@tparam x is the item of typelist
+ *	@tparam y is the item of typelist
+ *	@tparam z is the item of typelist
+ *	@tparam w is the item of typelist
+ *	@tparam s is the item of typelist
+ *	@tparam t is the item of typelist
+ *	@tparam p is the item of typelist
+ *	@tparam q is the item of typelist
+ *	@tparam r is the item of typelist
+ *	@tparam m is the item of typelist
+ *	@tparam n is the item of typelist
+ *	@tparam u is the item of typelist
+ */
+template <class x, class y, class z, class w, class s,
+	class t, class p, class q, class r, class m, class n, class u>
+struct CSafeTypelistCtor<void (*)(x, y, z, w, s, t, p, q, r, m, n, u)> {
+	typedef MakeTypelist12(x, y, z, w, s, t, p, q, r, m, n, u) _Ty; /**< @brief resulting typelist */
+};
+
+/**
+ *	@brief safe typelist constructor
+ *
+ *	@tparam x is the item of typelist
+ *	@tparam y is the item of typelist
+ *	@tparam z is the item of typelist
+ *	@tparam w is the item of typelist
+ *	@tparam s is the item of typelist
+ *	@tparam t is the item of typelist
+ *	@tparam p is the item of typelist
+ *	@tparam q is the item of typelist
+ *	@tparam r is the item of typelist
+ *	@tparam m is the item of typelist
+ *	@tparam n is the item of typelist
+ *	@tparam u is the item of typelist
+ *	@tparam v is the item of typelist
+ */
+template <class x, class y, class z, class w, class s, class t, class p, class q,
+	class r, class m, class n, class u, class v>
+struct CSafeTypelistCtor<void (*)(x, y, z, w, s, t, p, q, r, m, n, u, v)> {
+	typedef MakeTypelist13(x, y, z, w, s, t, p, q, r, m, n, u, v) _Ty; /**< @brief resulting typelist */
+};
+
+/**
+ *	@brief safe typelist constructor
+ *
+ *	@tparam x is the item of typelist
+ *	@tparam y is the item of typelist
+ *	@tparam z is the item of typelist
+ *	@tparam w is the item of typelist
+ *	@tparam s is the item of typelist
+ *	@tparam t is the item of typelist
+ *	@tparam p is the item of typelist
+ *	@tparam q is the item of typelist
+ *	@tparam r is the item of typelist
+ *	@tparam m is the item of typelist
+ *	@tparam n is the item of typelist
+ *	@tparam u is the item of typelist
+ *	@tparam v is the item of typelist
+ *	@tparam a is the item of typelist
+ */
+template <class x, class y, class z, class w, class s, class t, class p, class q,
+	class r, class m, class n, class u, class v, class a>
+struct CSafeTypelistCtor<void (*)(x, y, z, w, s, t, p, q, r, m, n, u, v, a)> {
+	typedef MakeTypelist14(x, y, z, w, s, t, p, q, r, m, n, u, v, a) _Ty; /**< @brief resulting typelist */
+};
+
+/**
+ *	@brief safe typelist constructor
+ *
+ *	@tparam x is the item of typelist
+ *	@tparam y is the item of typelist
+ *	@tparam z is the item of typelist
+ *	@tparam w is the item of typelist
+ *	@tparam s is the item of typelist
+ *	@tparam t is the item of typelist
+ *	@tparam p is the item of typelist
+ *	@tparam q is the item of typelist
+ *	@tparam r is the item of typelist
+ *	@tparam m is the item of typelist
+ *	@tparam n is the item of typelist
+ *	@tparam u is the item of typelist
+ *	@tparam v is the item of typelist
+ *	@tparam a is the item of typelist
+ *	@tparam b is the item of typelist
+ */
+template <class x, class y, class z, class w, class s, class t, class p, class q,
+	class r, class m, class n, class u, class v, class a, class b>
+struct CSafeTypelistCtor<void (*)(x, y, z, w, s, t, p, q, r, m, n, u, v, a, b)> {
+	typedef MakeTypelist15(x, y, z, w, s, t, p, q, r, m, n, u, v, a, b) _Ty; /**< @brief resulting typelist */
+};
+
+/**
+ *	@brief safe typelist constructor
+ *
+ *	@tparam x is the item of typelist
+ *	@tparam y is the item of typelist
+ *	@tparam z is the item of typelist
+ *	@tparam w is the item of typelist
+ *	@tparam s is the item of typelist
+ *	@tparam t is the item of typelist
+ *	@tparam p is the item of typelist
+ *	@tparam q is the item of typelist
+ *	@tparam r is the item of typelist
+ *	@tparam m is the item of typelist
+ *	@tparam n is the item of typelist
+ *	@tparam u is the item of typelist
+ *	@tparam v is the item of typelist
+ *	@tparam a is the item of typelist
+ *	@tparam b is the item of typelist
+ *	@tparam c is the item of typelist
+ */
+template <class x, class y, class z, class w, class s, class t, class p, class q,
+	class r, class m, class n, class u, class v, class a, class b, class c>
+struct CSafeTypelistCtor<void (*)(x, y, z, w, s, t, p, q, r, m, n, u, v, a, b, c)> {
+	typedef MakeTypelist16(x, y, z, w, s, t, p, q, r, m, n, u, v, a, b, c) _Ty; /**< @brief resulting typelist */
 };
 
 /**
