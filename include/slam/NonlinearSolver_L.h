@@ -34,6 +34,7 @@
  */
 
 #include "slam/FlatSystem.h"
+#include "slam/IncrementalPolicy.h"
 
 /**
  *	@def __NONLINEAR_SOLVER_L_DUMP_TIMESTEPS
@@ -104,9 +105,7 @@
  */
 #define __NONLIVEAR_SOLVER_L_PARALLEL_MATMULT_THRESH 200
 
-extern int n_dummy_param; // remove me
-
-#include "slam/OrderingMagic.h"
+//extern int n_dummy_param; // remove me
 
 /**
  *	@brief nonlinear blocky solver working above the L factor matrix
@@ -142,6 +141,25 @@ public:
 		b_Is_PoseOnly_SLAM = CTypelistLength<_TyAMatrixBlockSizes>::n_result == 1 /**< @brief determines if we're doing pose-only SLAM (10k) */
 	};
 
+	/**
+	 *	@brief solver interface properties, stored as enum (see also CSolverTraits)
+	 */
+	enum {
+		solver_HasDump = true, /**< @brief timing statistics support flag */
+		solver_HasChi2 = true, /**< @brief Chi2 error calculation support flag */
+		solver_HasMarginals = false, /**< @brief marginal covariance support flag */
+		solver_HasGaussNewton = true, /**< @brief Gauss-Newton support flag */
+		solver_HasLevenberg = false, /**< @brief Levenberg-Marquardt support flag */
+		solver_HasGradient = false, /**< @brief gradient-based linear solving support flag */
+		solver_HasSchur = false, /**< @brief Schur complement support flag */
+		solver_HasDelayedOptimization = false, /**< @brief delayed optimization support flag */
+		solver_IsPreferredBatch = false, /**< @brief preferred batch solver flag */
+		solver_IsPreferredIncremental = true, /**< @brief preferred incremental solver flag */
+		solver_ExportsJacobian = false, /**< @brief interface for exporting jacobian system matrix flag */
+		solver_ExportsHessian = false, /**< @brief interface for exporting hessian system matrix flag */
+		solver_ExportsFactor = false /**< @brief interface for exporting factorized system matrix flag */
+	};
+
 protected:
 	CSystem &m_r_system; /**< @brief reference to the system */
 	CLinearSolver m_linear_solver; /**< @brief linear solver */
@@ -150,7 +168,7 @@ protected:
 #ifdef __NONLINEAR_SOLVER_L_USE_SPARSE_BACKSUBST
 	cs *m_p_L; /**< @brief the copy of L matrix (required for backsubstitution) */ // todo - implement backsubstitution in CUberBlockMatrix, by blocks
 #endif // __NONLINEAR_SOLVER_L_USE_SPARSE_BACKSUBST
-	CUberBlockMatrix m_L; /**< @brief the L matrix (built / updated incrementally) */
+	CUberBlockMatrix m_R; /**< @brief the L matrix (built / updated incrementally) */
 
 	bool m_b_had_loop_closure; /**< @brief (probable) loop closure flag */
 	bool m_b_first_iteration_use_L; /**< @brief flag for using the L matrix or rather lambda in the first iteration of nonlinear optimization */
@@ -269,9 +287,12 @@ public:
 	 *	@param[in] b_verbose is verbosity flag
 	 *	@param[in] linear_solver is linear solver instance
 	 *	@param[in] b_use_schur is Schur complement trick flag (not supported)
+	 *
+	 *	@deprecated This is deprecated version of the constructor, use constructor
+	 *		with TIncrementalSolveSetting instead.
 	 */
-	CNonlinearSolver_L(CSystem &r_system, size_t n_linear_solve_threshold = 0,
-		size_t n_nonlinear_solve_threshold = 0, size_t n_nonlinear_solve_max_iteration_num = 5,
+	CNonlinearSolver_L(CSystem &r_system, size_t n_linear_solve_threshold,
+		size_t n_nonlinear_solve_threshold, size_t n_nonlinear_solve_max_iteration_num = 5,
 		double f_nonlinear_solve_error_threshold = .01, bool b_verbose = false,
 		CLinearSolver linear_solver = CLinearSolver(), bool UNUSED(b_use_schur) = false)
 		:m_r_system(r_system), m_linear_solver(linear_solver),
@@ -280,7 +301,7 @@ public:
 		m_p_L(0),
 #endif // __NONLINEAR_SOLVER_L_USE_SPARSE_BACKSUBST
 		m_b_had_loop_closure(false), m_b_first_iteration_use_L(true), m_b_L_up_to_date(true),
-		m_n_last_full_L_update_size(0), m_n_big_loop_threshold((n_dummy_param > 0)? n_dummy_param : 500),
+		m_n_last_full_L_update_size(0), m_n_big_loop_threshold(/*(n_dummy_param > 0)? n_dummy_param :*/ 500),
 		m_p_lambda_block_ordering(0), m_n_lambda_block_ordering_size(0), m_p_lambda_elem_ordering(0),
 		m_n_verts_in_lambda(0), m_n_edges_in_lambda(0),
 #ifdef __SLAM_COUNT_ITERATIONS_AS_VERTICES
@@ -304,6 +325,68 @@ public:
 		m_f_toupper2_time(0)
 	{
 		_ASSERTE(!m_n_nonlinear_solve_threshold || !m_n_linear_solve_threshold); // only one of those
+
+		/*printf("hardcoded: ");
+		__fbs_ut::CDumpBlockMatrixTypelist<_TyAMatrixBlockSizes>::Print();
+		printf("from system: ");
+		__fbs_ut::CDumpBlockMatrixTypelist<typename _TySystem::_TyJacobianMatrixBlockList>::Print();*/
+		// debug (now these are the same)
+
+#ifdef __NONLINEAR_SOLVER_L_DUMP_TIMESTEPS
+		m_n_loop_size_cumsum = 0;
+#endif // __NONLINEAR_SOLVER_L_DUMP_TIMESTEPS
+		/*m_n_dense_cholesky_num = 0;
+		m_f_dense_cholesky_time = 0;
+		m_f_sparse_cholesky_time = 0;*/
+	}
+
+	/**
+	 *	@brief initializes the nonlinear solver
+	 *
+	 *	@param[in] r_system is the system to be optimized
+	 *		(it is only referenced, not copied - must not be deleted)
+	 *	@param[in] t_incremental_config is incremental solving configuration
+	 *	@param[in] t_marginals_config is marginal covariance calculation configuration
+	 *	@param[in] b_verbose is verbosity flag
+	 *	@param[in] linear_solver is linear solver instance
+	 *	@param[in] b_use_schur is Schur complement trick flag (not supported)
+	 */
+	CNonlinearSolver_L(CSystem &r_system, 
+		TIncrementalSolveSetting t_incremental_config = TIncrementalSolveSetting(),
+		TMarginalsComputationPolicy t_marginals_config = TMarginalsComputationPolicy(),
+		bool b_verbose = false,
+		CLinearSolver linear_solver = CLinearSolver(), bool UNUSED(b_use_schur) = false)
+		:m_r_system(r_system), m_linear_solver(linear_solver),
+		m_linear_solver2(linear_solver2),
+#ifdef __NONLINEAR_SOLVER_L_USE_SPARSE_BACKSUBST
+		m_p_L(0),
+#endif // __NONLINEAR_SOLVER_L_USE_SPARSE_BACKSUBST
+		m_b_had_loop_closure(false), m_b_first_iteration_use_L(true), m_b_L_up_to_date(true),
+		m_n_last_full_L_update_size(0), m_n_big_loop_threshold(/*(n_dummy_param > 0)? n_dummy_param :*/ 500),
+		m_p_lambda_block_ordering(0), m_n_lambda_block_ordering_size(0), m_p_lambda_elem_ordering(0),
+		m_n_verts_in_lambda(0), m_n_edges_in_lambda(0),
+#ifdef __SLAM_COUNT_ITERATIONS_AS_VERTICES
+		m_n_last_optimized_vertex_num(0),
+#else // __SLAM_COUNT_ITERATIONS_AS_VERTICES
+		m_n_step(0),
+#endif // __SLAM_COUNT_ITERATIONS_AS_VERTICES
+		m_n_linear_solve_threshold(t_incremental_config.t_linear_freq.n_period),
+		m_n_nonlinear_solve_threshold(t_incremental_config.t_nonlinear_freq.n_period),
+		m_n_nonlinear_solve_max_iteration_num(t_incremental_config.n_max_nonlinear_iteration_num),
+		m_f_nonlinear_solve_error_threshold(t_incremental_config.f_nonlinear_error_thresh),
+		m_b_verbose(b_verbose), m_n_real_step(0), m_b_system_dirty(false),
+		m_b_linearization_dirty(false), m_n_iteration_num(0), m_f_serial_time(0), m_f_ata_time(0),
+		m_f_premul_time(0), m_f_chol_time(0), m_f_norm_time(0), m_n_full_forwardsubst_num(0),
+		m_n_resumed_forwardsubst_num(0), m_n_L_optim_num(0), m_n_lambda_optim_num(0), m_n_Lup_num(0),
+		m_n_omega_update_num(0), m_n_lambda_update_num(0), m_n_full_L_num(0), m_f_ordering_time(0),
+		m_f_fullL_time(0), m_f_l11_omega_calc_time(0), m_f_l11_omega_slice_time(0),
+		m_f_l11_omega_ata_time(0), m_f_l11_omega_add_time(0), m_f_l11_lambda_slice_time(0),
+		m_f_l11_lambda_ata_time(0), m_f_l11_lambda_add_time(0), m_f_lupdate_time(0),
+		m_f_toupper_time(0), m_f_d_time(0), m_f_backsubst_time(0), m_f_fullL_cholesky(0),
+		m_f_toupper2_time(0)
+	{
+		_ASSERTE(!m_n_nonlinear_solve_threshold || !m_n_linear_solve_threshold); // only one of those
+		_ASSERTE(!t_marginals_config.b_calculate); // not supported at the moment
 
 		/*printf("hardcoded: ");
 		__fbs_ut::CDumpBlockMatrixTypelist<_TyAMatrixBlockSizes>::Print();
@@ -615,7 +698,7 @@ public:
 			}
 			// constrained blocky ordering
 
-			size_t n_nnz_actual = m_L.n_NonZero_Num();
+			size_t n_nnz_actual = m_R.n_NonZero_Num();
 			// actual NNZ
 
 			FILE *p_fw = fopen("LDensityByOrdering.txt", (m_n_real_step > 0)? "a" : "w");
@@ -779,9 +862,9 @@ protected:
 		_ASSERTE(m_lambda.n_Row_Num() == m_lambda.n_Column_Num() &&
 			m_lambda.n_BlockColumn_Num() == m_r_system.r_Vertex_Pool().n_Size() &&
 			m_lambda.n_Column_Num() == n_variables_size);
-		_ASSERTE(!m_b_L_up_to_date || (m_L.n_Row_Num() == m_L.n_Column_Num() &&
-			m_L.n_BlockColumn_Num() == m_r_system.r_Vertex_Pool().n_Size() &&
-			m_L.n_Column_Num() == n_variables_size)); // lambda is square, blocks on either side = number of vertices
+		_ASSERTE(!m_b_L_up_to_date || (m_R.n_Row_Num() == m_R.n_Column_Num() &&
+			m_R.n_BlockColumn_Num() == m_r_system.r_Vertex_Pool().n_Size() &&
+			m_R.n_Column_Num() == n_variables_size)); // lambda is square, blocks on either side = number of vertices
 		// need to have lambda and perhaps also L
 
 		return true;
@@ -824,7 +907,7 @@ protected:
 					PermuteVector(m_p_lambda_elem_ordering, &m_v_d(0), &m_v_perm_temp(0), m_v_dx.rows());
 					Eigen::VectorXd vec_copy = m_v_perm_temp;
 					_ASSERTE(vec_copy == m_v_perm_temp); // makes sure that the vectors are the same
-					b_cholesky_result = m_L.UpperTriangular_Solve_FBS<_TyLambdaMatrixBlockSizes>(&vec_copy(0), vec_copy.rows());
+					b_cholesky_result = m_R.UpperTriangular_Solve_FBS<_TyLambdaMatrixBlockSizes>(&vec_copy(0), vec_copy.rows());
 					cs_usolve(m_p_L, &m_v_perm_temp(0)); // dx = L'/d // note this never fails (except if L is null)
 					_ASSERTE((vec_copy - m_v_perm_temp).norm() < 1e-7); // makes sure that the vectors are the same
 					InversePermuteVector(m_p_lambda_elem_ordering, &m_v_perm_temp(0), &m_v_dx(0), m_v_dx.rows());
@@ -835,7 +918,7 @@ protected:
 				{
 					_ASSERTE(m_p_lambda_elem_ordering);
 					PermuteVector(m_p_lambda_elem_ordering, &m_v_d(0), &m_v_perm_temp(0), m_v_dx.rows());
-					b_cholesky_result = m_L.UpperTriangular_Solve_FBS<_TyLambdaMatrixBlockSizes>(&m_v_perm_temp(0), m_v_perm_temp.rows());
+					b_cholesky_result = m_R.UpperTriangular_Solve_FBS<_TyLambdaMatrixBlockSizes>(&m_v_perm_temp(0), m_v_perm_temp.rows());
 					// dx = L'/d // note this never fails (except if L is null)
 					InversePermuteVector(m_p_lambda_elem_ordering, &m_v_perm_temp(0), &m_v_dx(0), m_v_dx.rows());
 				}
@@ -1002,7 +1085,7 @@ public:
 						PermuteVector(m_p_lambda_elem_ordering, &m_v_d(0), &m_v_perm_temp(0), m_v_dx.rows());
 						Eigen::VectorXd vec_copy = m_v_perm_temp;
 						_ASSERTE(vec_copy == m_v_perm_temp); // makes sure that the vectors are the same
-						b_cholesky_result = m_L.UpperTriangular_Solve_FBS<_TyLambdaMatrixBlockSizes>(&vec_copy(0), vec_copy.rows());
+						b_cholesky_result = m_R.UpperTriangular_Solve_FBS<_TyLambdaMatrixBlockSizes>(&vec_copy(0), vec_copy.rows());
 						cs_usolve(m_p_L, &m_v_perm_temp(0)); // dx = L'/d // note this never fails (except if L is null)
 						_ASSERTE((vec_copy - m_v_perm_temp).norm() < 1e-7); // makes sure that the vectors are the same
 						InversePermuteVector(m_p_lambda_elem_ordering, &m_v_perm_temp(0), &m_v_dx(0), m_v_dx.rows());
@@ -1015,7 +1098,7 @@ public:
 					{
 						_ASSERTE(m_p_lambda_elem_ordering);
 						PermuteVector(m_p_lambda_elem_ordering, &m_v_d(0), &m_v_perm_temp(0), m_v_dx.rows());
-						b_cholesky_result = m_L.UpperTriangular_Solve_FBS<_TyLambdaMatrixBlockSizes>(&m_v_perm_temp(0), m_v_perm_temp.rows());
+						b_cholesky_result = m_R.UpperTriangular_Solve_FBS<_TyLambdaMatrixBlockSizes>(&m_v_perm_temp(0), m_v_perm_temp.rows());
 						// dx = L'/d // note this never fails (except if L is null)
 
 #ifdef _DEBUG
@@ -1412,15 +1495,15 @@ protected:
 			throw std::bad_alloc();
 		// add unary factor (actually UF^T * UF, but it's the same matrix)
 
-		m_L.Clear();
+		m_R.Clear();
 		/*Eigen::MatrixXd t_uf_L = (r_t_uf.transpose() * r_t_uf).llt().matrixU();
-		if(!m_L.Append_Block(t_uf_L, 0, 0))
+		if(!m_R.Append_Block(t_uf_L, 0, 0))
 			throw std::bad_alloc();*/ // UF is kept in lambda, it is propagated to L additively
 		// add unary factor to L (actually cholesky(UF^T * UF), but it's the same matrix) // todo - is this right?
 
-		//m_r_system.r_Edge_Pool().For_Each(CAlloc_LambdaLBlocks(m_lambda, m_L)); // no, edges do not add L blocks
+		//m_r_system.r_Edge_Pool().For_Each(CAlloc_LambdaLBlocks(m_lambda, m_R)); // no, edges do not add L blocks
 		m_r_system.r_Edge_Pool().For_Each(CAlloc_LambdaBlocks(m_lambda));
-		m_r_system.r_Vertex_Pool().For_Each(CAlloc_LambdaLBlocks(m_lambda, m_L)); // can stay, there is no ordering to be applied
+		m_r_system.r_Vertex_Pool().For_Each(CAlloc_LambdaLBlocks(m_lambda, m_R)); // can stay, there is no ordering to be applied
 		// add all the hessian blocks
 	}
 
@@ -1438,11 +1521,11 @@ protected:
 
 		_ASSERTE(m_lambda.n_Row_Num() > 0 && m_lambda.n_Column_Num() == m_lambda.n_Row_Num()); // make sure lambda is not empty
 		//m_r_system.r_Edge_Pool().For_Each(n_skip_edges,
-		//	m_r_system.r_Edge_Pool().n_Size(), CAlloc_LambdaLBlocks(m_lambda, m_L)); // no, edges do not add L blocks
+		//	m_r_system.r_Edge_Pool().n_Size(), CAlloc_LambdaLBlocks(m_lambda, m_R)); // no, edges do not add L blocks
 		m_r_system.r_Edge_Pool().For_Each(n_skip_edges,
 			m_r_system.r_Edge_Pool().n_Size(), CAlloc_LambdaBlocks(m_lambda));
 		m_r_system.r_Vertex_Pool().For_Each(n_skip_vertices,
-			m_r_system.r_Vertex_Pool().n_Size(), CAlloc_LambdaLBlocks(m_lambda, m_L)); // will not work if ordering is applied (but it mostly isn't, the increments follow identity ordering)
+			m_r_system.r_Vertex_Pool().n_Size(), CAlloc_LambdaLBlocks(m_lambda, m_R)); // will not work if ordering is applied (but it mostly isn't, the increments follow identity ordering)
 		// add the hessian blocks of the new edges
 	}
 
@@ -1470,8 +1553,8 @@ protected:
 	void Check_LLambdaTracking() const
 	{
 		CUberBlockMatrix LtL_upper;
-		m_L.PreMultiplyWithSelfTransposeTo(LtL_upper, true);
-		//cs *p_L = m_L.p_Convert_to_Sparse();
+		m_R.PreMultiplyWithSelfTransposeTo(LtL_upper, true);
+		//cs *p_L = m_R.p_Convert_to_Sparse();
 		cs *p_lam = m_lambda.p_Convert_to_Sparse();
 		//cs *p_Lt = cs_transpose(p_L, 1);
 		cs *p_LtL = LtL_upper.p_Convert_to_Sparse();//cs_multiply(p_Lt, p_L);
@@ -1511,11 +1594,11 @@ protected:
 				throw std::runtime_error("Factorize_PosDef_Blocky() failed to increment L");
 			// use statically sized matrices up to 30x30, then dynamically allocated matrices up to 150x150
 
-			m_L.From_Matrix(n_order_min, n_order_min, r_L11_new);
-			// put r_L11_new to m_L
+			m_R.From_Matrix(n_order_min, n_order_min, r_L11_new);
+			// put r_L11_new to m_R
 		} else {
 			CUberBlockMatrix L11_old;
-			m_L.SliceTo(L11_old, n_order_min, n_order_max, n_order_min, n_order_max, true); // get L11 as well, need to clear the blocks first
+			m_R.SliceTo(L11_old, n_order_min, n_order_max, n_order_min, n_order_max, true); // get L11 as well, need to clear the blocks first
 			// todo - make a ClearBlocks() function to a) delete or b) memset(0) blocks in a rectangular area
 
 			L11_old.Scale_FBS_Parallel<_TyLambdaMatrixBlockSizes>(0);
@@ -1523,7 +1606,7 @@ protected:
 			// note that even if we thrash memory taken by (some) L11 blocks,
 			// it will be recollected once a full update takes place
 
-			if(!m_linear_solver2.Factorize_PosDef_Blocky(m_L, r_L11_new,
+			if(!m_linear_solver2.Factorize_PosDef_Blocky(m_R, r_L11_new,
 			   m_L_row_lookup_table, n_order_min, n_order_min))
 				throw std::runtime_error("Factorize_PosDef_Blocky() failed to increment L");
 		}
@@ -1543,11 +1626,11 @@ protected:
 				factor = cholesky.matrixU();
 				// calculate upper cholesky by eigen
 
-				size_t n_base_row = m_L.n_BlockRow_Base(n_order_min);
-				size_t n_base_col = n_base_row;//m_L.n_BlockColumn_Base(n_order_min); // note this is unnecessary, L is symmetric
-				m_L.Append_Block(factor.block<3, 3>(0, 0), n_base_row, n_base_col);
-				m_L.Append_Block(factor.block<3, 3>(0, 3), n_base_row, n_base_col + 3);
-				m_L.Append_Block(factor.block<3, 3>(3, 3), n_base_row + 3, n_base_col + 3);
+				size_t n_base_row = m_R.n_BlockRow_Base(n_order_min);
+				size_t n_base_col = n_base_row;//m_R.n_BlockColumn_Base(n_order_min); // note this is unnecessary, L is symmetric
+				m_R.Append_Block(factor.block<3, 3>(0, 0), n_base_row, n_base_col);
+				m_R.Append_Block(factor.block<3, 3>(0, 3), n_base_row, n_base_col + 3);
+				m_R.Append_Block(factor.block<3, 3>(3, 3), n_base_row + 3, n_base_col + 3);
 				// put the factor back to L
 			}*/
 			// custom cholesky code (only 6x6 matrices with two 3x3 poses)
@@ -1579,13 +1662,13 @@ protected:
 				// another cholesky
 #endif // _DEBUG
 
-				m_L.From_Matrix(n_order_min, n_order_min, r_L11_new);
-				// put r_L11_new to m_L
+				m_R.From_Matrix(n_order_min, n_order_min, r_L11_new);
+				// put r_L11_new to m_R
 
 #ifdef _DEBUG
 				CUberBlockMatrix chol2;
-				m_L.SliceTo(chol2, n_order_min, m_L.n_BlockColumn_Num(),
-					n_order_min, m_L.n_BlockColumn_Num());
+				m_R.SliceTo(chol2, n_order_min, m_R.n_BlockColumn_Num(),
+					n_order_min, m_R.n_BlockColumn_Num());
 				cs *p_chol3 = chol2.p_Convert_to_Sparse();
 				// cholesky that is put in L
 
@@ -1614,24 +1697,24 @@ protected:
 			r_L11_new.Cholesky_Dense<9>();
 			// calculate dense cholesky inplace
 
-			m_L.From_Matrix(n_order_min, n_order_min, r_L11_new);
-			// put r_L11_new to m_L
+			m_R.From_Matrix(n_order_min, n_order_min, r_L11_new);
+			// put r_L11_new to m_R
 
 			return; // complicate flow - better be safe and not do cholesky on L11 twice // todo
 		} else if(r_L11_new.n_Row_Num() == 12 && r_L11_new.n_Column_Num() == 12) {
 			r_L11_new.Cholesky_Dense<12>();
 			// calculate dense cholesky inplace
 
-			m_L.From_Matrix(n_order_min, n_order_min, r_L11_new);
-			// put r_L11_new to m_L
+			m_R.From_Matrix(n_order_min, n_order_min, r_L11_new);
+			// put r_L11_new to m_R
 
 			return; // complicate flow - better be safe and not do cholesky on L11 twice // todo
 		} else if(r_L11_new.n_Row_Num() == 15 && r_L11_new.n_Column_Num() == 15) {
 			r_L11_new.Cholesky_Dense<15>();
 			// calculate dense cholesky inplace
 
-			m_L.From_Matrix(n_order_min, n_order_min, r_L11_new);
-			// put r_L11_new to m_L
+			m_R.From_Matrix(n_order_min, n_order_min, r_L11_new);
+			// put r_L11_new to m_R
 
 			return; // complicate flow - better be safe and not do cholesky on L11 twice // todo
 		} else {
@@ -1668,13 +1751,13 @@ protected:
 				// another cholesky
 #endif // _DEBUG
 
-				m_L.From_Matrix(n_order_min, n_order_min, r_L11_new);
-				// put r_L11_new to m_L
+				m_R.From_Matrix(n_order_min, n_order_min, r_L11_new);
+				// put r_L11_new to m_R
 
 #ifdef _DEBUG
 				CUberBlockMatrix chol3;
-				m_L.SliceTo(chol3, n_order_min, m_L.n_BlockColumn_Num(),
-					n_order_min, m_L.n_BlockColumn_Num());
+				m_R.SliceTo(chol3, n_order_min, m_R.n_BlockColumn_Num(),
+					n_order_min, m_R.n_BlockColumn_Num());
 				cs *p_chol3 = chol3.p_Convert_to_Sparse();
 				// cholesky that is put in L
 
@@ -1703,7 +1786,7 @@ protected:
 
 				{
 					CUberBlockMatrix L11_old;
-					m_L.SliceTo(L11_old, n_order_min, n_order_max, n_order_min, n_order_max, true); // get L11 as well, need to clear the blocks first
+					m_R.SliceTo(L11_old, n_order_min, n_order_max, n_order_min, n_order_max, true); // get L11 as well, need to clear the blocks first
 					// todo - make a ClearBlocks() function to a) delete or b) memset(0) blocks in a rectangular area
 
 					L11_old.Scale_FBS_Parallel<_TyLambdaMatrixBlockSizes>(0);
@@ -1711,7 +1794,7 @@ protected:
 					// note that even if we thrash memory taken by (some) L11 blocks,
 					// it will be recollected once a full update takes place
 
-					if(!m_linear_solver2.Factorize_PosDef_Blocky(m_L, r_L11_new, m_L_row_lookup_table, n_order_min, n_order_min))
+					if(!m_linear_solver2.Factorize_PosDef_Blocky(m_R, r_L11_new, m_L_row_lookup_table, n_order_min, n_order_min))
 						throw std::runtime_error("Factorize_PosDef_Blocky() failed to increment L");
 				}
 				// and sparse
@@ -1741,7 +1824,7 @@ protected:
 		{
 #endif // __NONLINEAR_SOLVER_L_ENABLE_DENSE_CHOLESKY
 			CUberBlockMatrix L11_old;
-			m_L.SliceTo(L11_old, n_order_min, n_order_max, n_order_min, n_order_max, true); // get L11 as well, need to clear the blocks first
+			m_R.SliceTo(L11_old, n_order_min, n_order_max, n_order_min, n_order_max, true); // get L11 as well, need to clear the blocks first
 			// todo - make a ClearBlocks() function to a) delete or b) memset(0) blocks in a rectangular area
 
 			L11_old.Scale_FBS_Parallel<_TyLambdaMatrixBlockSizes>(0);
@@ -1749,7 +1832,7 @@ protected:
 			// note that even if we thrash memory taken by (some) L11 blocks,
 			// it will be recollected once a full update takes place
 
-			if(!m_linear_solver2.Factorize_PosDef_Blocky(m_L, r_L11_new, m_L_row_lookup_table, n_order_min, n_order_min))
+			if(!m_linear_solver2.Factorize_PosDef_Blocky(m_R, r_L11_new, m_L_row_lookup_table, n_order_min, n_order_min))
 				throw std::runtime_error("Factorize_PosDef_Blocky() failed to increment L");
 		}
 	}
@@ -1832,7 +1915,7 @@ protected:
 
 			f_omega_up_calc_end = m_timer.f_Time();
 
-			m_L.SliceTo(L11, n_order_min, n_order_max, n_order_min, n_order_max, true); // row(0 - min) x col(min - max)
+			m_R.SliceTo(L11, n_order_min, n_order_max, n_order_min, n_order_max, true); // row(0 - min) x col(min - max)
 			// calculate the omega matrix (ho, ho, ho) and slice L11
 
 			f_omega_up_slice_end = m_timer.f_Time();
@@ -1875,22 +1958,22 @@ protected:
 			++ m_n_lambda_update_num;
 			// count them
 
-			m_L.SliceTo(L01, 0, n_order_min, n_order_min, n_order_max, true); // row(0 - min) x col(min - max)
+			m_R.SliceTo(L01, 0, n_order_min, n_order_min, n_order_max, true); // row(0 - min) x col(min - max)
 			m_lambda_perm.SliceTo(lambda11, n_order_min, n_order_max, n_order_min, n_order_max, true);
 
 			/*printf("will SliceTo(" PRIsize ", " PRIsize ", " PRIsize ", " PRIsize ")\n", 0, n_order_min, n_order_min, n_order_max);
-			printf("L is " PRIsize " x " PRIsize " (" PRIsize " x " PRIsize ")\n", m_L.n_BlockRow_Num(),
-				m_L.n_BlockColumn_Num(), m_L.n_Row_Num(), m_L.n_Column_Num());*/ // debug
+			printf("L is " PRIsize " x " PRIsize " (" PRIsize " x " PRIsize ")\n", m_R.n_BlockRow_Num(),
+				m_R.n_BlockColumn_Num(), m_R.n_Row_Num(), m_R.n_Column_Num());*/ // debug
 			// get slices of lambda_perm (equal to lambda11) and of L. will carry update on these
 			// note that both L01 and lambda11 are references only, can't be destination for most of the ops!
 
 #ifdef _DEBUG
 /*#ifdef __NONLINEAR_SOLVER_L_DUMP_TIMESTEPS
-			bool b_write_out = false;//m_L.n_BlockRow_Num() == 3;
+			bool b_write_out = false;//m_R.n_BlockRow_Num() == 3;
 			if(b_write_out) {
 				{
 					FILE *p_fw = fopen("RbeforeUpd.txt", "w");
-					CDebug::Print_SparseMatrix_in_MatlabFormat(p_fw, m_L.p_Convert_to_Sparse()); // leaks memory
+					CDebug::Print_SparseMatrix_in_MatlabFormat(p_fw, m_R.p_Convert_to_Sparse()); // leaks memory
 					fclose(p_fw);
 				}
 				{
@@ -2047,18 +2130,18 @@ protected:
 		if(b_write_out) {
 			{
 				FILE *p_fw = fopen("Rnew.txt", "w");
-				CDebug::Print_SparseMatrix_in_MatlabFormat(p_fw, m_L.p_Convert_to_Sparse_UpperTriangular()); // leaks memory
+				CDebug::Print_SparseMatrix_in_MatlabFormat(p_fw, m_R.p_Convert_to_Sparse_UpperTriangular()); // leaks memory
 				fclose(p_fw);
 			}
 			exit(0);
 		}
 #endif // __NONLINEAR_SOLVER_L_DUMP_TIMESTEPS
 
-		m_L.Rasterize("lslam4_L.tga");*/
+		m_R.Rasterize("lslam4_L.tga");*/
 #endif // _DEBUG
 
 #ifdef __NONLINEAR_SOLVER_L_USE_SPARSE_BACKSUBST
-		m_p_L = m_L.p_Convert_to_Sparse_UpperTriangular(m_p_L);
+		m_p_L = m_R.p_Convert_to_Sparse_UpperTriangular(m_p_L);
 #endif // __NONLINEAR_SOLVER_L_USE_SPARSE_BACKSUBST
 
 #ifdef _DEBUG
@@ -2069,7 +2152,7 @@ protected:
 		exit(0);*/
 
 		/*{
-			cs *p_L_ref = m_L.p_Convert_to_Sparse_UpperDiagonal_Debug();
+			cs *p_L_ref = m_R.p_Convert_to_Sparse_UpperDiagonal_Debug();
 			_ASSERTE(m_p_L->m == m_p_L->n); // supposed to be square
 			_ASSERTE(m_p_L->m == p_L_ref->m && m_p_L->n == p_L_ref->n); // supposed to have same dimensions
 			bool b_columns_different = memcmp(p_L_ref->p, m_p_L->p, (m_p_L->n + 1) * sizeof(csi)) != 0;
@@ -2114,7 +2197,7 @@ protected:
 			_ASSERTE(m_p_lambda_elem_ordering);
 			PermuteVector(m_p_lambda_elem_ordering, &m_v_dx(0), &m_v_perm_temp(0), m_v_dx.rows());
 			Eigen::VectorXd vec_copy = m_v_perm_temp;
-			m_L.UpperTriangularTranspose_Solve_FBS<_TyLambdaMatrixBlockSizes>(&vec_copy(0), vec_copy.rows());
+			m_R.UpperTriangularTranspose_Solve_FBS<_TyLambdaMatrixBlockSizes>(&vec_copy(0), vec_copy.rows());
 			cs_utsolve(m_p_L, &m_v_perm_temp(0)); // d = eta = eta/L
 			_ASSERTE((vec_copy - m_v_perm_temp).norm() < 1e-7); // makes sure that the vectors are the same
 			InversePermuteVector(m_p_lambda_elem_ordering, &m_v_perm_temp(0), &m_v_d(0), m_v_dx.rows());
@@ -2136,7 +2219,7 @@ protected:
 			// copy a part of eta into D
 
 			PermuteVector(m_p_lambda_elem_ordering, &d_copy(0), &m_v_perm_temp(0), m_v_dx.rows());
-			m_L.UpperTriangularTranspose_Solve_FBS<_TyLambdaMatrixBlockSizes>(
+			m_R.UpperTriangularTranspose_Solve_FBS<_TyLambdaMatrixBlockSizes>(
 				&m_v_perm_temp(0), m_v_perm_temp.rows(), n_order_min);
 			// d = eta = eta/L
 			InversePermuteVector(m_p_lambda_elem_ordering, &m_v_perm_temp(0), &d_copy(0), m_v_dx.rows());
@@ -2144,7 +2227,7 @@ protected:
 
 			_ASSERTE(m_p_lambda_elem_ordering);
 			PermuteVector(m_p_lambda_elem_ordering, &m_v_dx(0), &m_v_perm_temp(0), m_v_dx.rows());
-			m_L.UpperTriangularTranspose_Solve_FBS<_TyLambdaMatrixBlockSizes>(&m_v_perm_temp(0), m_v_perm_temp.rows());
+			m_R.UpperTriangularTranspose_Solve_FBS<_TyLambdaMatrixBlockSizes>(&m_v_perm_temp(0), m_v_perm_temp.rows());
 			// d = eta = eta/L
 			InversePermuteVector(m_p_lambda_elem_ordering, &m_v_perm_temp(0), &m_v_d(0), m_v_dx.rows());
 
@@ -2163,7 +2246,7 @@ protected:
 				// collect part of b to the lower part of d (this is inside of Collect_RightHandSide_Vector())
 
 				PermuteVector(m_p_lambda_elem_ordering, &m_v_d(0), &m_v_perm_temp(0), m_v_dx.rows());
-				m_L.UpperTriangularTranspose_Solve_FBS<_TyLambdaMatrixBlockSizes>(
+				m_R.UpperTriangularTranspose_Solve_FBS<_TyLambdaMatrixBlockSizes>(
 					&m_v_perm_temp(0), m_v_perm_temp.rows(), n_order_min);
 				// d = eta = eta/L
 				InversePermuteVector(m_p_lambda_elem_ordering, &m_v_perm_temp(0), &m_v_d(0), m_v_dx.rows());
@@ -2180,7 +2263,7 @@ protected:
 
 				_ASSERTE(m_p_lambda_elem_ordering);
 				PermuteVector(m_p_lambda_elem_ordering, &m_v_dx(0), &m_v_perm_temp(0), m_v_dx.rows());
-				m_L.UpperTriangularTranspose_Solve_FBS<_TyLambdaMatrixBlockSizes>(&m_v_perm_temp(0), m_v_perm_temp.rows());
+				m_R.UpperTriangularTranspose_Solve_FBS<_TyLambdaMatrixBlockSizes>(&m_v_perm_temp(0), m_v_perm_temp.rows());
 				// d = eta = eta/L
 				InversePermuteVector(m_p_lambda_elem_ordering, &m_v_perm_temp(0), &m_v_d(0), m_v_dx.rows());
 				// standard forward substitution // todo - figure out how to resume this one
@@ -2210,8 +2293,8 @@ protected:
 		/*if(n_order_max - n_order_min > m_n_big_loop_threshold)
 			fprintf(stderr, "i don't believe what i'm seeing!\n"); // a jewish anecdote reference
 		printf("L block width: " PRIsize ", L block num: " PRIsize " (sparsity %.2f %%); update size: " PRIsize " (took %.2f msec (without d))\n",
-			m_L.n_BlockColumn_Num(), m_L.n_Block_Num(), float(m_L.n_Block_Num() * 9) /
-			(m_L.n_Row_Num() * m_L.n_Column_Num()) * 100,
+			m_R.n_BlockColumn_Num(), m_R.n_Block_Num(), float(m_R.n_Block_Num() * 9) /
+			(m_R.n_Row_Num() * m_R.n_Column_Num()) * 100,
 			n_order_max - n_order_min, (f_sparse_end/ *f_d_end* / - f_refresh_start) * 1000);*/ // debug
 		//printf("building lambda from scratch finished\n"); // debug
 	}
@@ -2244,24 +2327,24 @@ protected:
 		double f_sparse_end = m_timer.f_Time();
 
 		if(b_Is_PoseOnly_SLAM) { // this is known at compile-time, should optimize the unused branch away
-			m_L.Clear();
-			m_r_system.r_Vertex_Pool().For_Each(CAlloc_LBlocks(m_L)); // won't work with VP problems, need to set correct ordering to vertices
+			m_R.Clear();
+			m_r_system.r_Vertex_Pool().For_Each(CAlloc_LBlocks(m_R)); // won't work with VP problems, need to set correct ordering to vertices
 		} else {
-			//m_L.Clear(); // already inside PermuteTo()
+			//m_R.Clear(); // already inside PermuteTo()
 			CUberBlockMatrix t_new_L;
 			m_r_system.r_Vertex_Pool().For_Each(CAlloc_LBlocks(t_new_L));
-			t_new_L.PermuteTo(m_L, m_p_lambda_block_ordering, m_n_lambda_block_ordering_size);
+			t_new_L.PermuteTo(m_R, m_p_lambda_block_ordering, m_n_lambda_block_ordering_size);
 		}
 		// do the right thing and thrash L
 
-		if(!m_linear_solver2.Factorize_PosDef_Blocky(m_L, m_lambda_perm, m_L_row_lookup_table, 0, 0))
+		if(!m_linear_solver2.Factorize_PosDef_Blocky(m_R, m_lambda_perm, m_L_row_lookup_table, 0, 0))
 			throw std::runtime_error("Factorize_PosDef_Blocky() failed to calculate full L");
 		// factorize (uses cached cholesky, saves some time on allocation of workspace memory)
 
 		double f_cholesky_end = m_timer.f_Time();
 
 #ifdef __NONLINEAR_SOLVER_L_USE_SPARSE_BACKSUBST
-		m_p_L = m_L.p_Convert_to_Sparse_UpperTriangular(m_p_L); // !!
+		m_p_L = m_R.p_Convert_to_Sparse_UpperTriangular(m_p_L); // !!
 #endif // __NONLINEAR_SOLVER_L_USE_SPARSE_BACKSUBST
 
 		double f_sparse2_end = m_timer.f_Time();
@@ -2309,7 +2392,7 @@ protected:
 			_ASSERTE(m_p_lambda_elem_ordering);
 			PermuteVector(m_p_lambda_elem_ordering, &m_v_dx(0), &m_v_perm_temp(0), m_v_dx.rows());
 			Eigen::VectorXd vec_copy = m_v_perm_temp;
-			m_L.UpperTriangularTranspose_Solve_FBS<_TyLambdaMatrixBlockSizes>(&vec_copy(0), vec_copy.rows());
+			m_R.UpperTriangularTranspose_Solve_FBS<_TyLambdaMatrixBlockSizes>(&vec_copy(0), vec_copy.rows());
 			cs_utsolve(m_p_L, &m_v_perm_temp(0)); // d = eta = eta/L
 			_ASSERTE((vec_copy - m_v_perm_temp).norm() < 1e-7); // makes sure that the vectors are the same
 			InversePermuteVector(m_p_lambda_elem_ordering, &m_v_perm_temp(0), &m_v_d(0), m_v_dx.rows());
@@ -2318,7 +2401,7 @@ protected:
 
 			_ASSERTE(m_p_lambda_elem_ordering);
 			PermuteVector(m_p_lambda_elem_ordering, &m_v_dx(0), &m_v_perm_temp(0), m_v_dx.rows());
-			m_L.UpperTriangularTranspose_Solve_FBS<_TyLambdaMatrixBlockSizes>(&m_v_perm_temp(0), m_v_perm_temp.rows());
+			m_R.UpperTriangularTranspose_Solve_FBS<_TyLambdaMatrixBlockSizes>(&m_v_perm_temp(0), m_v_perm_temp.rows());
 			// d = eta = eta/L
 			InversePermuteVector(m_p_lambda_elem_ordering, &m_v_perm_temp(0), &m_v_d(0), m_v_dx.rows());
 #endif // 0
@@ -2334,8 +2417,8 @@ protected:
 		m_f_d_time += f_d_end - f_sparse2_end;
 
 		/*printf("L block width: " PRIsize ", L block num: " PRIsize " (sparsity %.2f %%); taking full update (took %.5f sec)\n",
-			m_L.n_BlockColumn_Num(), m_L.n_Block_Num(), float(m_L.n_Block_Num() * 9) /
-			(m_L.n_Row_Num() * m_L.n_Column_Num()) * 100, f_fullL_end - f_omega_end);*/ // debug
+			m_R.n_BlockColumn_Num(), m_R.n_Block_Num(), float(m_R.n_Block_Num() * 9) /
+			(m_R.n_Row_Num() * m_R.n_Column_Num()) * 100, f_fullL_end - f_omega_end);*/ // debug
 	}
 
 	/**
@@ -2391,8 +2474,8 @@ protected:
 			// is just extended with identity permutation and forces full L update if it was large
 
 			if(!b_force_reorder && m_lambda.n_BlockColumn_Num() > m_n_last_full_L_update_size + 10) { // it's always dense at the beginning // hlamfb 10
-				size_t n_nnz = m_L.n_Storage_Size();
-				float f_area = float(m_L.n_Column_Num()) * m_L.n_Column_Num();
+				size_t n_nnz = m_R.n_Storage_Size();
+				float f_area = float(m_R.n_Column_Num()) * m_R.n_Column_Num();
 				float f_density = n_nnz / f_area;
 				if(f_density > 0.02f) {
 					b_force_reorder = true;
@@ -2479,7 +2562,7 @@ protected:
 
 #ifdef _DEBUG
 		/*m_lambda_perm.Rasterize("lslam6_lambdaPermBeforeOpt.tga");
-		m_L.Rasterize("lslam7_LBeforeOpt.tga");
+		m_R.Rasterize("lslam7_LBeforeOpt.tga");
 #ifdef __NONLINEAR_SOLVER_L_DUMP_TIMESTEPS
 		{
 			static bool b_first_iter = true;
@@ -2591,7 +2674,7 @@ protected:
 					"lambda-ata-time;lambda-add-time;omega-up-time;omega-calc-time;"
 					"omega-slice-time;omega-ata-time;omega-add-time\n");
 			}
-			fprintf(p_fw, "" PRIsize ";" PRIsize ";%f;%f;%f;%f;%f", m_L.n_BlockColumn_Num(), n_loop_size, f_full_L_time,
+			fprintf(p_fw, "" PRIsize ";" PRIsize ";%f;%f;%f;%f;%f", m_R.n_BlockColumn_Num(), n_loop_size, f_full_L_time,
 				f_lambda_upd_sum, p_lambda_upd_times[0], p_lambda_upd_times[1], p_lambda_upd_times[2]);
 			if(b_had_omega_upd) {
 				fprintf(p_fw, ";%f;%f;%f;%f;%f\n", f_omega_upd_sum, p_omega_upd_times[0],
@@ -2622,7 +2705,7 @@ protected:
 					"lambda-ata-time;lambda-add-time;omega-up-time;omega-calc-time;"
 					"omega-slice-time;omega-ata-time;omega-add-time\n");
 			}
-			fprintf(p_fw, "" PRIsize ";" PRIsize ";%f;;;;", m_L.n_BlockColumn_Num(), n_loop_size, f_full_L_time); // no lambda upd
+			fprintf(p_fw, "" PRIsize ";" PRIsize ";%f;;;;", m_R.n_BlockColumn_Num(), n_loop_size, f_full_L_time); // no lambda upd
 			fprintf(p_fw, ";;;;;\n"); // no omega upd
 			fclose(p_fw);
 			// print timing to a file
@@ -2634,7 +2717,7 @@ protected:
 #endif // __NONLINEAR_SOLVER_L_DUMP_L_UPDATE_VARIANT_TIMES
 
 #ifdef _DEBUG
-		//m_L.Rasterize("lslam7_LAfterOpt.tga");
+		//m_R.Rasterize("lslam7_LAfterOpt.tga");
 #endif // _DEBUG
 
 		return true;

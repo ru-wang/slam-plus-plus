@@ -20,10 +20,10 @@
 #include "slam/BlockMatrix.h"
 
 /*
- *								=== CUberBlockMatrix ===
+ *								=== CUberBlockMatrix_Base ===
  */
 
-void CUberBlockMatrix::Dump_PerfCounters()
+void CUberBlockMatrix_Base::Dump_PerfCounters()
 {
 #ifdef __UBER_BLOCK_MATRIX_PERFCOUNTERS
 	printf("row-reindex-num: %d\n", m_n_row_reindex_num); // nonzero - rows may be split (this is a problem - row reindex references all the blocks)
@@ -44,7 +44,7 @@ void CUberBlockMatrix::Dump_PerfCounters()
 #endif // __UBER_BLOCK_MATRIX_PERFCOUNTERS
 }
 
-void CUberBlockMatrix::Clear()
+void CUberBlockMatrix_Base::Clear()
 {
 	m_n_row_num = 0;
 	m_n_col_num = 0;
@@ -56,6 +56,111 @@ void CUberBlockMatrix::Clear()
 
 	Reset_Perfcounters();
 }
+
+void CUberBlockMatrix_Base::Swap(CUberBlockMatrix_Base &r_other)
+{
+	r_other.m_block_cols_list.swap(m_block_cols_list);
+	r_other.m_block_rows_list.swap(m_block_rows_list);
+	std::swap(r_other.m_n_col_num, m_n_col_num);
+	std::swap(r_other.m_n_row_num, m_n_row_num);
+	m_data_pool.swap(r_other.m_data_pool);
+	std::swap(m_n_ref_elem_num, r_other.m_n_ref_elem_num);
+#ifdef __UBER_BLOCK_MATRIX_PERFCOUNTERS
+	std::swap(m_n_row_reindex_num, r_other.m_n_row_reindex_num);
+	std::swap(m_n_rows_list_shift_num, r_other.m_n_rows_list_shift_num);
+	std::swap(m_n_cols_list_shift_num, r_other.m_n_cols_list_shift_num);
+	std::swap(m_n_rows_list_realloc_num, r_other.m_n_rows_list_realloc_num);
+	std::swap(m_n_cols_list_realloc_num, r_other.m_n_cols_list_realloc_num);
+	std::swap(m_n_dummy_row_num, r_other.m_n_dummy_row_num);
+	std::swap(m_n_dummy_col_num, r_other.m_n_dummy_col_num);
+	std::swap(m_n_row_reref_num, r_other.m_n_row_reref_num);
+	std::swap(m_n_col_reref_num, r_other.m_n_col_reref_num);
+	std::swap(m_n_row_append_num, r_other.m_n_row_append_num);
+	std::swap(m_n_col_append_num, r_other.m_n_col_append_num);
+	std::swap(m_n_col_block_search_num, r_other.m_n_col_block_search_num);
+	std::swap(m_n_col_block_reref_num, r_other.m_n_col_block_reref_num);
+#endif // __UBER_BLOCK_MATRIX_PERFCOUNTERS
+}
+
+void CUberBlockMatrix_Base::CopyTo(CUberBlockMatrix_Base &r_dest, bool b_share_data) const // throw(std::bad_alloc)
+{
+	_ASSERTE(&r_dest != this); // can't copy to itself (although it would be a no-op)
+
+	CheckIntegrity(true);
+
+#if 0
+	SliceTo(r_dest, 0, n_BlockRow_Num(), 0, n_BlockColumn_Num(), b_share_data);
+	// can be implemented as that
+#else // 0
+	_ASSERTE(&r_dest != this); // can't slice to itself
+
+	r_dest.Clear();
+	// erase dest ...
+
+	r_dest.m_n_row_num = m_n_row_num;
+	r_dest.m_n_col_num = m_n_col_num;
+	// set matrix size
+
+	r_dest.m_block_rows_list = m_block_rows_list;
+	// set block rows (just copy)
+
+	r_dest.m_block_cols_list.resize(m_block_cols_list.size());
+	for(size_t i = 0, n = m_block_cols_list.size(); i < n; ++ i) { // todo - make iterator loop instead
+		TColumn &r_t_dest = r_dest.m_block_cols_list[i];
+		const TColumn &r_t_src = m_block_cols_list[i];
+		// get src / dest columns
+
+		r_t_dest.n_width = r_t_src.n_width;
+		r_t_dest.n_cumulative_width_sum = r_t_src.n_cumulative_width_sum;
+		// copy column dimensions
+
+		_TyBlockConstIter p_block_it = r_t_src.block_list.begin();
+		_TyBlockConstIter p_end_it = r_t_src.block_list.end();
+		r_t_dest.block_list.resize(p_end_it - p_block_it);
+		_TyBlockIter p_dest_it = r_t_dest.block_list.begin();
+		const size_t n_column_width = r_t_src.n_width;
+		if(b_share_data) {
+			size_t n_height_sum = 0;
+			for(; p_block_it != p_end_it; ++ p_block_it, ++ p_dest_it) {
+				const TColumn::TBlockEntry &r_t_block = *p_block_it;
+				// get src block
+
+				*p_dest_it = TColumn::TBlockEntry(r_t_block.first, r_t_block.second);
+				// just recalculate row index
+
+				n_height_sum += m_block_rows_list[r_t_block.first].n_height;
+			}
+			r_dest.m_n_ref_elem_num += r_t_src.n_width * n_height_sum; // !!
+		} else {
+			for(; p_block_it != p_end_it; ++ p_block_it, ++ p_dest_it) {
+				const TColumn::TBlockEntry &r_t_block = *p_block_it;
+				// get src block
+
+				const size_t n_row_height = m_block_rows_list[r_t_block.first].n_height;
+				double *p_data = r_dest.p_Get_DenseStorage(n_row_height * n_column_width);
+				memcpy(p_data, r_t_block.second, n_row_height * n_column_width * sizeof(double));
+				// alloc buffer in dest matrix, copy contents
+
+				*p_dest_it = TColumn::TBlockEntry(r_t_block.first, p_data);
+				// recalculate row index and use the new buffer
+			}
+		}
+		_ASSERTE(p_dest_it == r_t_dest.block_list.end());
+	}
+	// set block columns, copy block data (only blocks in the valid column range)
+
+	//r_dest.CheckIntegrity();
+	// make sure the dest matrix is ok
+#endif // 0
+}
+
+/*
+ *								=== ~CUberBlockMatrix_Base ===
+ */
+
+/*
+ *								=== CUberBlockMatrix ===
+ */
 
 bool CUberBlockMatrix::b_SymmetricLayout() const
 {
@@ -1041,7 +1146,7 @@ void CUberBlockMatrix::PostMultiply_Add_Parallel(double *p_dest_vector, size_t U
 	// note that this loop can be omp parallelized (just have to use signed integer indexing)
 	_ASSERTE(m_block_cols_list.size() <= INT_MAX);
 	int n = int(m_block_cols_list.size());
-#pragma omp parallel for default(shared)
+	#pragma omp parallel for default(shared)
 	for(int i = 0; i < n; ++ i) {
 		const TColumn &r_t_col = m_block_cols_list[i];
 #else // _OPENMP
@@ -4787,31 +4892,6 @@ bool CUberBlockMatrix::MultiplyToWith(CUberBlockMatrix &r_dest,
 	return true;
 }
 
-void CUberBlockMatrix::Swap(CUberBlockMatrix &r_other)
-{
-	r_other.m_block_cols_list.swap(m_block_cols_list);
-	r_other.m_block_rows_list.swap(m_block_rows_list);
-	std::swap(r_other.m_n_col_num, m_n_col_num);
-	std::swap(r_other.m_n_row_num, m_n_row_num);
-	m_data_pool.swap(r_other.m_data_pool);
-	std::swap(m_n_ref_elem_num, r_other.m_n_ref_elem_num);
-#ifdef __UBER_BLOCK_MATRIX_PERFCOUNTERS
-	std::swap(m_n_row_reindex_num, r_other.m_n_row_reindex_num);
-	std::swap(m_n_rows_list_shift_num, r_other.m_n_rows_list_shift_num);
-	std::swap(m_n_cols_list_shift_num, r_other.m_n_cols_list_shift_num);
-	std::swap(m_n_rows_list_realloc_num, r_other.m_n_rows_list_realloc_num);
-	std::swap(m_n_cols_list_realloc_num, r_other.m_n_cols_list_realloc_num);
-	std::swap(m_n_dummy_row_num, r_other.m_n_dummy_row_num);
-	std::swap(m_n_dummy_col_num, r_other.m_n_dummy_col_num);
-	std::swap(m_n_row_reref_num, r_other.m_n_row_reref_num);
-	std::swap(m_n_col_reref_num, r_other.m_n_col_reref_num);
-	std::swap(m_n_row_append_num, r_other.m_n_row_append_num);
-	std::swap(m_n_col_append_num, r_other.m_n_col_append_num);
-	std::swap(m_n_col_block_search_num, r_other.m_n_col_block_search_num);
-	std::swap(m_n_col_block_reref_num, r_other.m_n_col_block_reref_num);
-#endif // __UBER_BLOCK_MATRIX_PERFCOUNTERS
-}
-
 TBmp *CUberBlockMatrix::p_Rasterize(TBmp *p_storage /*= 0*/, int n_scalar_size /*= 5*/) const
 {
 	CheckIntegrity(true);
@@ -5573,78 +5653,6 @@ double *CUberBlockMatrix::p_GetBlockData(size_t n_row_index, size_t n_column_ind
 	// make sure that allocating the block didn't damage matrix integrity
 
 	return p_data;
-}
-
-void CUberBlockMatrix::CopyTo(CUberBlockMatrix &r_dest, bool b_share_data) const // throw(std::bad_alloc)
-{
-	_ASSERTE(&r_dest != this); // can't copy to itself (although it would be a no-op)
-
-	CheckIntegrity(true);
-
-#if 0
-	SliceTo(r_dest, 0, n_BlockRow_Num(), 0, n_BlockColumn_Num(), b_share_data);
-	// can be implemented as that
-#else // 0
-	_ASSERTE(&r_dest != this); // can't slice to itself
-
-	r_dest.Clear();
-	// erase dest ...
-
-	r_dest.m_n_row_num = m_n_row_num;
-	r_dest.m_n_col_num = m_n_col_num;
-	// set matrix size
-
-	r_dest.m_block_rows_list = m_block_rows_list;
-	// set block rows (just copy)
-
-	r_dest.m_block_cols_list.resize(m_block_cols_list.size());
-	for(size_t i = 0, n = m_block_cols_list.size(); i < n; ++ i) { // todo - make iterator loop instead
-		TColumn &r_t_dest = r_dest.m_block_cols_list[i];
-		const TColumn &r_t_src = m_block_cols_list[i];
-		// get src / dest columns
-
-		r_t_dest.n_width = r_t_src.n_width;
-		r_t_dest.n_cumulative_width_sum = r_t_src.n_cumulative_width_sum;
-		// copy column dimensions
-
-		_TyBlockConstIter p_block_it = r_t_src.block_list.begin();
-		_TyBlockConstIter p_end_it = r_t_src.block_list.end();
-		r_t_dest.block_list.resize(p_end_it - p_block_it);
-		_TyBlockIter p_dest_it = r_t_dest.block_list.begin();
-		const size_t n_column_width = r_t_src.n_width;
-		if(b_share_data) {
-			size_t n_height_sum = 0;
-			for(; p_block_it != p_end_it; ++ p_block_it, ++ p_dest_it) {
-				const TColumn::TBlockEntry &r_t_block = *p_block_it;
-				// get src block
-
-				*p_dest_it = TColumn::TBlockEntry(r_t_block.first, r_t_block.second);
-				// just recalculate row index
-
-				n_height_sum += m_block_rows_list[r_t_block.first].n_height;
-			}
-			r_dest.m_n_ref_elem_num += r_t_src.n_width * n_height_sum; // !!
-		} else {
-			for(; p_block_it != p_end_it; ++ p_block_it, ++ p_dest_it) {
-				const TColumn::TBlockEntry &r_t_block = *p_block_it;
-				// get src block
-
-				const size_t n_row_height = m_block_rows_list[r_t_block.first].n_height;
-				double *p_data = r_dest.p_Get_DenseStorage(n_row_height * n_column_width);
-				memcpy(p_data, r_t_block.second, n_row_height * n_column_width * sizeof(double));
-				// alloc buffer in dest matrix, copy contents
-
-				*p_dest_it = TColumn::TBlockEntry(r_t_block.first, p_data);
-				// recalculate row index and use the new buffer
-			}
-		}
-		_ASSERTE(p_dest_it == r_t_dest.block_list.end());
-	}
-	// set block columns, copy block data (only blocks in the valid column range)
-
-	//r_dest.CheckIntegrity();
-	// make sure the dest matrix is ok
-#endif // 0
 }
 
 void CUberBlockMatrix::PasteTo(CUberBlockMatrix &r_dest,
@@ -6791,7 +6799,7 @@ void CUberBlockMatrix::Permute_UpperTriangular_To(CUberBlockMatrix &r_dest,
 	// make sure the dest matrix is ok
 }
 
-bool CUberBlockMatrix::UpperTriangularTranspose_Solve(double *p_x, size_t UNUSED(n_vector_size)) // todo add support for block permutation (2nd function), should be faster than permutating x there and back (measure, measure)
+bool CUberBlockMatrix::UpperTriangularTranspose_Solve(double *p_x, size_t UNUSED(n_vector_size)) const // todo add support for block permutation (2nd function), should be faster than permutating x there and back (measure, measure)
 {
 	CheckIntegrity(true);
 
@@ -6872,7 +6880,7 @@ bool CUberBlockMatrix::UpperTriangularTranspose_Solve(double *p_x, size_t UNUSED
 }
 
 bool CUberBlockMatrix::UpperTriangularTranspose_Solve(double *p_x,
-	size_t UNUSED(n_vector_size), size_t n_skip_columns)
+	size_t UNUSED(n_vector_size), size_t n_skip_columns) const
 {
 	CheckIntegrity(true);
 
@@ -6953,6 +6961,7 @@ bool CUberBlockMatrix::UpperTriangularTranspose_Solve(double *p_x,
 	return true;
 }
 
+#if 0
 bool CUberBlockMatrix::UpperTriangular_Solve(double *p_x, size_t UNUSED(n_vector_size))
 {
 	CheckIntegrity(true);
@@ -6967,6 +6976,95 @@ bool CUberBlockMatrix::UpperTriangular_Solve(double *p_x, size_t UNUSED(n_vector
 	// make sure that the vector's got correct size
 
 	for(_TyColumnConstIter p_col_it = m_block_cols_list.end(),
+	   p_end_it = m_block_cols_list.begin(); p_col_it != p_end_it;) { // back substitution
+		-- p_col_it;
+		// decrement at the beginning of the loop! (but after the comparison)
+
+		const TColumn &r_t_col = *p_col_it;
+		if(r_t_col.block_list.empty())
+			return false; // a 0 on the diagonal - no solution (is it? csparse would divide by zero and produce a NaN)
+		//_ASSERTE(r_t_col.block_list.back().first == n_col); // makes sure that the matrix really is upper diagonal
+
+		const TColumn::TBlockEntry &r_t_diag_block = r_t_col.block_list.back();
+		const TRow &r_t_diag_row = m_block_rows_list[r_t_diag_block.first];
+		if(r_t_col.n_width != r_t_diag_row.n_height ||
+		   r_t_col.n_cumulative_width_sum != r_t_diag_row.n_cumulative_height_sum)
+			return false;
+		const size_t n_width = r_t_col.n_width, n_x = r_t_col.n_cumulative_width_sum;
+		// make sure that the last block is on the diagonal, and is square (that does happen in L)
+
+		_TyVectorXdRef diag_x(p_x + n_x, n_width); // note this is always unaligned
+		_TyMatrixXdRef diag_block(r_t_diag_block.second, n_width, n_width);
+		for(size_t i = n_width; i > 0;) {
+			-- i; // !!
+
+			double f_diag = diag_block(i, i);
+			if(f_diag == 0) // what about negative zero? does it cover it? yes.
+				return false; // note that if diag_x(i) is zero as well, it probably means "infinite number of solutions", and not "no solution". could still produce one of them.
+			double f_new_x = (diag_x(i) /= f_diag); // f_new_x = diag_x(i)
+			for(size_t j = 0; j < i; ++ j) // elements strictly above diagonal
+				diag_x(j) -= diag_block(j, i) * f_new_x;
+			// backsubstitute the diagonal block
+
+#ifdef _DEBUG
+			for(size_t j = i + 1; j < n_width; ++ j) // elements strictly under diagonal
+				_ASSERTE(diag_block(j, i) == 0);
+			// make sure there are only nulls under the diagonal
+#endif // _DEBUG
+		}
+		// resolve values of the diagonal x
+
+		for(_TyBlockConstIter p_block_it =
+		   r_t_col.block_list.begin(), p_block_end_it = r_t_col.block_list.end() - 1;
+		   p_block_it != p_block_end_it; ++ p_block_it) {
+			const TColumn::TBlockEntry &r_t_block = *p_block_it;
+			const TRow &r_t_row = m_block_rows_list[r_t_block.first];
+			const size_t n_height = r_t_row.n_height, n_y = r_t_row.n_cumulative_height_sum;
+
+			_ASSERTE(n_y + n_height <= n_x); // make sure that the diagonal part of the vector is not affected here
+
+			_TyVectorXdRef x_part(p_x + n_y, n_height); // also column vector, also unaligned
+			_TyMatrixXdRef block(r_t_block.second, n_height, n_width); // block
+
+#if 0
+			for(size_t i = n_width; i > 0;) { // even reversing loop direction gives numerical discrepancies (big dynamic range in the matrix / vector)
+				-- i; // !!
+				for(size_t j = 0; j < n_height; ++ j)
+					x_part(j) -= block(j, i) * diag_x(i);
+			}
+#else // 0
+#ifdef __UBER_BLOCK_MATRIX_LAZY_PRODUCT
+			x_part -= block.lazyProduct(diag_x);
+#else // __UBER_BLOCK_MATRIX_LAZY_PRODUCT
+			x_part.noalias() -= block * diag_x; // do the same as the loop above, using matrix multiplication
+#endif // __UBER_BLOCK_MATRIX_LAZY_PRODUCT
+#endif // 0
+			// calculate x -= column(j) * x(j) in parallel for all columns in this block
+		}
+		// for every other block in this column (note no reverse order here)
+		// note that this loop mostly executes once (optimize for that? how?)
+	}
+}
+#endif // 0
+
+bool CUberBlockMatrix::UpperTriangular_Solve(double *p_x,
+	size_t UNUSED(n_vector_size), size_t n_first_column) const
+{
+	CheckIntegrity(true);
+
+	_ASSERTE(b_Square());
+	// triangular is a special case of square
+
+	//_ASSERTE(b_SymmetricLayout()); // note that symmetric layout is not really required, it just must hold that the last block of every column is the diagonal block
+	// make sure that the layout is symmetric (this is an optimization, not a prerequisite given by math)
+
+	_ASSERTE(n_vector_size == m_n_col_num);
+	// make sure that the vector's got correct size
+
+	_ASSERTE(n_first_column < m_block_cols_list.size());
+	// should be a valid block index
+
+	for(_TyColumnConstIter p_col_it = m_block_cols_list.begin() + (n_first_column + 1),
 	   p_end_it = m_block_cols_list.begin(); p_col_it != p_end_it;) { // back substitution
 		-- p_col_it;
 		// decrement at the beginning of the loop! (but after the comparison)
@@ -8966,7 +9064,7 @@ bool CUberBlockMatrix::Save_MatrixMarket(const char *p_s_filename,
 			size_t n_row_base = n_BlockRow_Base(n_row);
 			size_t n_row_height = n_BlockRow_Row_Num(n_row);
 
-			CUberBlockMatrix::_TyMatrixXdRef t_block = t_BlockAt(j, n_col);
+			CUberBlockMatrix::_TyMatrixXdRef t_block = t_Block_AtColumn(n_col, j);
 			_ASSERTE(t_block.rows() == n_row_height && t_block.cols() == n_col_width);
 			// get a block
 

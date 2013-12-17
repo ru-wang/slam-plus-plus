@@ -41,7 +41,6 @@
 #include "slam/NonlinearSolver_A.h"
 #include "slam/NonlinearSolver_Lambda.h"
 #include "slam/NonlinearSolver_Lambda_LM.h"
-//#include "slam/NonlinearSolver_L.h"
 #include "slam/NonlinearSolver_FastL.h"
 // hint - disable or enable solvers at will
 
@@ -126,7 +125,7 @@ enum ENonlinearSolverType {
 	nlsolver_Lambda, /**< @brief nonlinear solver lambda */
 	nlsolver_LambdaLM, /**< @brief nonlinear solver lambda with Levenberg-Marquardt */
 	nlsolver_L, /**< @brief nonlinear solver L */
-	nlsolver_FastL /**< @brief nonlinear progressively reordering solver L */
+	nlsolver_FastL, /**< @brief nonlinear progressively reordering solver L */
 };
 
 /**

@@ -22,6 +22,8 @@
  */
 
 #include "slam/FlatSystem.h"
+#include "slam/LinearSolver_Schur.h"
+#include "slam/OrderingMagic.h"
 
 /**
  *	@def __NONLINEAR_SOLVER_LAMBDA_DUMP_CHI2
@@ -40,8 +42,6 @@
  *	@brief dump RSS 2013 matrix animation data
  */
 //#define __NONLINEAR_SOLVER_LAMBDA_DUMP_RSS2013_PRESENTATION_ANIMATION_DATA
-
-//extern int n_dummy_param; // remove me
 
 /**
  *	@brief nonlinear blocky solver working above the lambda matrix
@@ -67,6 +67,25 @@ public:
 	typedef CLinearSolverWrapper<_TyLinearSolver, _TySolverTag> _TyLinearSolverWrapper; /**< @brief wrapper for linear solvers (shields solver capability to solve blockwise) */
 
 	typedef typename CUniqueTypelist<CAMatrixBlockSizes>::_TyResult _TyAMatrixBlockSizes; /**< @brief possible block matrices, that can be found in A */
+
+	/**
+	 *	@brief solver interface properties, stored as enum (see also CSolverTraits)
+	 */
+	enum {
+		solver_HasDump = true, /**< @brief timing statistics support flag */
+		solver_HasChi2 = true, /**< @brief Chi2 error calculation support flag */
+		solver_HasMarginals = false, /**< @brief marginal covariance support flag */
+		solver_HasGaussNewton = true, /**< @brief Gauss-Newton support flag */
+		solver_HasLevenberg = false, /**< @brief Levenberg-Marquardt support flag */
+		solver_HasGradient = false, /**< @brief gradient-based linear solving support flag */
+		solver_HasSchur = true, /**< @brief Schur complement support flag */
+		solver_HasDelayedOptimization = false, /**< @brief delayed optimization support flag */
+		solver_IsPreferredBatch = true, /**< @brief preferred batch solver flag */
+		solver_IsPreferredIncremental = false, /**< @brief preferred incremental solver flag */
+		solver_ExportsJacobian = false, /**< @brief interface for exporting jacobian system matrix flag */
+		solver_ExportsHessian = true, /**< @brief interface for exporting hessian system matrix flag */
+		solver_ExportsFactor = false /**< @brief interface for exporting factorized system matrix flag */
+	};
 
 protected:
 	CSystem &m_r_system; /**< @brief reference to the system */
@@ -121,9 +140,12 @@ public:
 	 *	@param[in] b_verbose is verbosity flag
 	 *	@param[in] linear_solver is linear solver instance
 	 *	@param[in] b_use_schur is Schur complement trick flag
+	 *
+	 *	@deprecated This is deprecated version of the constructor, use constructor
+	 *		with TIncrementalSolveSetting instead.
 	 */
-	CNonlinearSolver_Lambda(CSystem &r_system, size_t n_linear_solve_threshold = 0,
-		size_t n_nonlinear_solve_threshold = 0, size_t n_nonlinear_solve_max_iteration_num = 5,
+	CNonlinearSolver_Lambda(CSystem &r_system, size_t n_linear_solve_threshold,
+		size_t n_nonlinear_solve_threshold, size_t n_nonlinear_solve_max_iteration_num = 5,
 		double f_nonlinear_solve_error_threshold = .01, bool b_verbose = false,
 		CLinearSolver linear_solver = CLinearSolver(), bool b_use_schur = true)
 		:m_r_system(r_system), m_linear_solver(linear_solver), m_schur_solver(linear_solver),
@@ -142,6 +164,50 @@ public:
 		m_f_chol_time(0), m_f_norm_time(0), m_f_vert_upd_time(0), m_b_had_loop_closure(false)
 	{
 		_ASSERTE(!m_n_nonlinear_solve_threshold || !m_n_linear_solve_threshold); // only one of those
+	}
+
+	/**
+	 *	@brief initializes the nonlinear solver
+	 *
+	 *	@param[in] r_system is the system to be optimized
+	 *		(it is only referenced, not copied - must not be deleted)
+	 *	@param[in] t_incremental_config is incremental solving configuration
+	 *	@param[in] t_marginals_config is marginal covariance calculation configuration
+	 *	@param[in] b_verbose is verbosity flag
+	 *	@param[in] linear_solver is linear solver instance
+	 *	@param[in] b_use_schur is Schur complement trick flag
+	 */
+	CNonlinearSolver_Lambda(CSystem &r_system,
+		TIncrementalSolveSetting t_incremental_config = TIncrementalSolveSetting(),
+		TMarginalsComputationPolicy t_marginals_config = TMarginalsComputationPolicy(),
+		bool b_verbose = false,
+		CLinearSolver linear_solver = CLinearSolver(), bool b_use_schur = false)
+		:m_r_system(r_system), m_linear_solver(linear_solver), m_schur_solver(linear_solver),
+		m_n_verts_in_lambda(0), m_n_edges_in_lambda(0),
+#ifdef __SLAM_COUNT_ITERATIONS_AS_VERTICES
+		m_n_last_optimized_vertex_num(0),
+#else // __SLAM_COUNT_ITERATIONS_AS_VERTICES
+		m_n_step(0),
+#endif // __SLAM_COUNT_ITERATIONS_AS_VERTICES
+		m_n_linear_solve_threshold(t_incremental_config.t_linear_freq.n_period),
+		m_n_nonlinear_solve_threshold(t_incremental_config.t_nonlinear_freq.n_period),
+		m_n_nonlinear_solve_max_iteration_num(t_incremental_config.n_max_nonlinear_iteration_num),
+		m_f_nonlinear_solve_error_threshold(t_incremental_config.f_nonlinear_error_thresh),
+		m_b_verbose(b_verbose), m_b_use_schur(b_use_schur), m_n_real_step(0),
+		m_b_system_dirty(false), m_n_iteration_num(0), m_f_lambda_time(0), m_f_rhs_time(0),
+		m_f_chol_time(0), m_f_norm_time(0), m_f_vert_upd_time(0), m_b_had_loop_closure(false)
+	{
+		_ASSERTE(!m_n_nonlinear_solve_threshold || !m_n_linear_solve_threshold); // only one of those
+		_ASSERTE(!t_marginals_config.b_calculate); // not supported at the moment
+	}
+
+	/**
+	 *	@brief gets the current system matrix (not necessarily up-to-date)
+	 *	@return Returns const reference to the current system matrix.
+	 */
+	inline const CUberBlockMatrix &r_Lambda() const
+	{
+		return m_lambda;
 	}
 
 	/**
@@ -249,7 +315,7 @@ public:
 				size_t n_row_base = m_lambda.n_BlockRow_Base(n_row);
 				size_t n_row_height = m_lambda.n_BlockRow_Row_Num(n_row);
 
-				CUberBlockMatrix::_TyMatrixXdRef t_block = m_lambda.t_BlockAt(j, n_col);
+				CUberBlockMatrix::_TyMatrixXdRef t_block = m_lambda.t_Block_AtColumn(n_col, j);
 				_ASSERTE(t_block.rows() == n_row_height && t_block.cols() == n_col_width);
 				// get a block
 

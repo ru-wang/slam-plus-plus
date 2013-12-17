@@ -22,6 +22,7 @@ ENDIF(SLAM_P_P_GPU_BLAS)
 
 SET(SLAM_BASE_LIBRARY_SOURCES
   BlockMatrix.cpp
+  IncrementalPolicy.cpp
   LinearSolver_CholMod.cpp
   LinearSolver_CSparse.cpp
   LinearSolver_CXSparse.cpp

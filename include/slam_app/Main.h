@@ -103,6 +103,7 @@
  *	--l-slam|-L       uses L-SLAM
  *	--fast-l-slam|-fL uses the new fast L-SLAM solver (preferred incremental solver)
  *	--use-schur|-us   uses Schur complement to accelerate linear solving
+ *	--do-marginals|-dm enables marginal covariance calculation (experimental)
  *	--infile|-i <filename>    specifies input file <filename>; it can cope with
  *					  many file types and conventions
  *	--parse-lines-limit|-pll <N>    sets limit of lines read from the input file
@@ -124,6 +125,10 @@
  *					  matrix benchmarks (benchmark-name is name of a folder with
  *					  UFLSMC benchmark, benchmark-type is one of alloc, factor, all)
  *	--run-matrix-unit-tests|-rmut    runs block matrix unit tests
+ *	--omp-set-num-threads <N> sets number of threads to N (default is to use as many
+ *					  threads as there are CPU cores)
+ *	--omp-set-dynamic <N> enables dynamic adjustment of the number of threads is N is
+ *					  nonzero, disables if zero (disabled by default)
  *	@endcode
  *
  *	This seemed to work on Ubuntu (x64 or x86 alike), and on Mac.
@@ -132,6 +137,12 @@
  *	generate solution for Visual Studio (Graph\@FIT members can also get pre-configured
  *	workspace from Matylda).
  *
+ *	@section next_sec Next Steps
+ *
+ *	Some baasic topics are covered here:
+ *	* \ref simpleexample shows how to use SLAM++ for batch solving
+ *	* \ref onlineexample shows how to implement a simple online solver
+ *
  *	@section adv_sec Advanced
  *
  *	Some advanced topics are covered in the following pages:
@@ -139,7 +150,7 @@
  */
 
 /**
- *	@page ownsolvers Implementing own solvers
+ *	@page ownsolvers Implementing Own Solvers
  *
  *	In order to implement solver for your problem of desired dimensionality and
  *	with appropriate jacobians, one needs to execute the following steps:
@@ -704,6 +715,9 @@ struct TDatasetPeeker : public CParserBase::CParserAdaptor {
 	}
 };
 
+#include "slam/Marginals.h"
+#include "slam/IncrementalPolicy.h"
+
 /**
  *	@brief a helper template for running tests with given type configuration (to avoid repeating the same code)
  *
@@ -722,8 +736,7 @@ class CTester {
 public:
 #ifdef __USE_NATIVE_CHOLESKY
 	typedef typename CSystemType::_TyJacobianMatrixBlockList _TyAMatrixBlockSizes; /** @brief list of jacobian block sizes */
-	typedef typename __fbs_ut::CBlockSizesAfterPreMultiplyWithSelfTranspose<
-		_TyAMatrixBlockSizes>::_TyResult _TyLambdaMatrixBlockSizes; /**< @brief possible block matrices, found in lambda and L */
+	typedef typename CSystemType::_TyHessianMatrixBlockList _TyLambdaMatrixBlockSizes; /**< @brief possible block matrices, found in lambda and L */
 
 	typedef CLinearSolver_UberBlock<_TyLambdaMatrixBlockSizes> CLinearSolverType; /**< @brief linear solver type (native) */
 #elif defined(__USE_CHOLMOD)
@@ -742,18 +755,12 @@ public:
 	 *
 	 *	@param[in] p_s_input_file is the name of input file
 	 *	@param[in] n_max_lines_to_process is limit of parsed lines (0 means unlimited)
-	 *	@param[in] n_linear_solve_each_n_steps is period for calculating
-	 *		linear solution to the system (0 means never)
-	 *	@param[in] n_nonlinear_solve_each_n_steps is period for calculating
-	 *		nonlinear solution to the system (0 means never)
-	 *	@param[in] n_max_nonlinear_solve_iteration_num is maximal number
-	 *		of iterations spent in calculating nonlinear solution to the system
-	 *	@param[in] f_nonlinear_solve_error_threshold is error threshold for early stopping
-	 *		the incremenatl calculation of nonlinear solution to the system
+	 *	@param[in] t_incremental_cfg is incremental solving configuration
 	 *	@param[in] n_max_final_optimization_iteration_num is maximal number of iterations
 	 *		spent in calculating nonlinear solution to the system at the end
 	 *	@param[in] f_final_optimization_threshold is error threshold for early stopping
 	 *		the final calculation of nonlinear solution to the system
+	 *	@param[in] t_marginals_cfg is marginal covariance calculation config
 	 *	@param[in] b_verbose is verbosity flag
 	 *	@param[in] b_use_schur is Schur complement flag
 	 *	@param[in] b_show_detailed_timing is detailed timing flag
@@ -762,10 +769,9 @@ public:
 	 *	@return Returns true on success, false on failure.
 	 */
 	static inline bool Run_and_Shout(const char *p_s_input_file,
-		size_t n_max_lines_to_process, size_t n_linear_solve_each_n_steps,
-		size_t n_nonlinear_solve_each_n_steps, size_t n_max_nonlinear_solve_iteration_num,
-		double f_nonlinear_solve_error_threshold, size_t n_max_final_optimization_iteration_num,
-		double f_final_optimization_threshold, bool b_verbose, bool b_use_schur,
+		size_t n_max_lines_to_process, TIncrementalSolveSetting t_incremental_cfg,
+		size_t n_max_final_optimization_iteration_num, double f_final_optimization_threshold,
+		TMarginalsComputationPolicy t_marginals_cfg, bool b_verbose, bool b_use_schur,
 		bool b_show_detailed_timing, bool b_write_bitmaps)
 	{
 		CSystemType system;
@@ -776,9 +782,9 @@ public:
 		typedef typename CSystemType::_TyJacobianMatrixBlockList CMatrixTypelist; // use the default from the system
 		typedef CNonlinearSolverType<CSystemType, CLinearSolverType, CMatrixTypelist> // have to supply CMatrixTypelist because in CTester template there is no default param for CNonlinearSolverType :(
 			CSpecializedNonlinearSolverType;
-		CSpecializedNonlinearSolverType nonlinear_solver(system, n_linear_solve_each_n_steps,
-			n_nonlinear_solve_each_n_steps, n_max_nonlinear_solve_iteration_num,
-			f_nonlinear_solve_error_threshold, b_verbose, linear_solver, b_use_schur);
+
+		CSpecializedNonlinearSolverType nonlinear_solver(system, t_incremental_cfg,
+			t_marginals_cfg, b_verbose, linear_solver, b_use_schur);
 		// prepare nonlinear solver
 
 		typedef CParseLoopType<CSystemType, CSpecializedNonlinearSolverType,
@@ -788,6 +794,8 @@ public:
 
 		if(b_verbose && b_use_schur)
 			printf("using Schur complement\n");
+		if(b_verbose && t_marginals_cfg.b_calculate)
+			printf("marginals will be calculated\n");
 		// verbose
 
 		CTimer t;
@@ -803,7 +811,7 @@ public:
 		}
 		// run the parser, solver incremental function is called
 
-		if(!n_linear_solve_each_n_steps && !n_nonlinear_solve_each_n_steps) {
+		if(!t_incremental_cfg.t_linear_freq.n_period && !t_incremental_cfg.t_nonlinear_freq.n_period) {
 			if(b_verbose)
 				fprintf(stderr, "warning: running in batch mode. ignoring time spent in parser\n");
 			t.ResetTimer();
@@ -823,8 +831,9 @@ public:
 		}
 		double f_time_initial_save_end = t.f_Time();
 
-		nonlinear_solver.Optimize(n_max_final_optimization_iteration_num, f_final_optimization_threshold);
-		// perform the final optimization
+		if(!t_incremental_cfg.t_linear_freq.n_period && !t_incremental_cfg.t_nonlinear_freq.n_period)
+			nonlinear_solver.Optimize(n_max_final_optimization_iteration_num, f_final_optimization_threshold);
+		// perform the final optimization (only in batch)
 
 		double f_time = t.f_Time() - (f_time_initial_save_end - f_time_initial_save_start); // don't count saving of the initial system state (rasterizing the image takes some time)
 		printf("\ndone. it took " PRItimeprecise " (%f sec)\n", PRItimeparams(f_time), f_time);
@@ -836,6 +845,16 @@ public:
 			double f_error = nonlinear_solver.f_Chi_Squared_Error_Denorm();
 			printf("denormalized chi2 error: %.2f\n", f_error);
 		}
+
+		/*const CUberBlockMatrix &lambda = nonlinear_solver.r_Lambda();
+		// get system matrix
+
+		CUberBlockMatrix R;
+		R.CholeskyOf(lambda);
+		// take Cholesky
+
+		CMarginals::Marginals_Test(R, 3);
+		// test the marginals*/
 
 		if(b_write_bitmaps) {
 			/*if(!nonlinear_solver.Dump_SystemMatrix("g:\\system_matrix.tga", 5) &&
@@ -1001,6 +1020,9 @@ struct TCommandLineArgs {
 	double f_final_optimization_threshold; /**< @brief final optimization threshold */
 	const char *p_s_bench_name; /**< @brief benchmark file name (only if b_run_matrix_benchmarks is set) */
 	const char *p_s_bench_type; /**< @brief benchmark type (only if b_run_matrix_benchmarks is set) */
+	size_t n_omp_threads; /**< @brief OpenMP number of threads override */
+	bool b_omp_dynamic; /**< @brief OpenMP dynamic scheduling override enable flag */
+	bool b_do_marginals; /**< @brief marginal covariance calculation enable flag */
 
 	/**
 	 *	@brief selects default values for commandline args
@@ -1040,6 +1062,11 @@ struct TCommandLineArgs {
 
 		p_s_bench_name = 0;
 		p_s_bench_type = "all";
+
+		n_omp_threads = size_t(-1);
+		b_omp_dynamic = false;
+
+		b_do_marginals = false;
 	}
 
 	/**
@@ -1067,6 +1094,8 @@ struct TCommandLineArgs {
 				b_no_show = true;
 			else if(!strcmp(p_arg_list[i], "--no-commandline") || !strcmp(p_arg_list[i], "-nc"))
 				b_show_commandline = false;
+			else if(!strcmp(p_arg_list[i], "--do-marginals") || !strcmp(p_arg_list[i], "-dm"))
+				b_do_marginals = true;
 			else if(!strcmp(p_arg_list[i], "--lambda") || !strcmp(p_arg_list[i], "-,\\"))
 				n_solver_choice = nlsolver_Lambda;
 			else if(!strcmp(p_arg_list[i], "--no-flags") || !strcmp(p_arg_list[i], "-nf"))
@@ -1107,6 +1136,10 @@ struct TCommandLineArgs {
 				n_max_final_optimization_iteration_num = atol(p_arg_list[++ i]);
 			else if(!strcmp(p_arg_list[i], "--final-nonlinear-solve-error-thresh") || !strcmp(p_arg_list[i], "-fnset"))
 				f_final_optimization_threshold = atof(p_arg_list[++ i]);
+			else if(!strcmp(p_arg_list[i], "--omp-set-num-threads"))
+				n_omp_threads = atol(p_arg_list[++ i]);
+			else if(!strcmp(p_arg_list[i], "--omp-set-dynamic"))
+				b_omp_dynamic = (atol(p_arg_list[++ i]) != 0);
 			else if(!strcmp(p_arg_list[i], "--run-matrix-benchmarks") || !strcmp(p_arg_list[i], "-rmb")) {
 				if(i + 2 >= n_arg_num) {
 					fprintf(stderr, "error: argument \'%s\': missing the second value\n", p_arg_list[i]);
@@ -1149,12 +1182,20 @@ struct TCommandLineArgs {
 		template <class> class vcneedsnamehereaswell> class CParseLoopType>
 	inline bool Run() // throw(std::runtime_error, std::bad_alloc)
 	{
+		TIncrementalSolveSetting t_incremental_cfg(solve::linear, frequency::Every(n_linear_solve_each_n_steps),
+			solve::nonlinear, frequency::Every(n_nonlinear_solve_each_n_steps), n_max_nonlinear_solve_iteration_num,
+			f_nonlinear_solve_error_threshold);
+		// todo - assemble this earlier, simplify Run_and_Shout() arglist
+
+		TMarginalsComputationPolicy t_marginals_cfg((b_do_marginals)?
+			marginals::do_calculate : marginals::do_not_calculate);
+		// enable marginals: todo - control it from commandline
+
 		return CTester<CSystemType, CNonlinearSolverType, CEdgeTraitsType,
 			CVertexTraitsType, CParseLoopType>::Run_and_Shout(
-			p_s_input_file, n_max_lines_to_process, n_linear_solve_each_n_steps,
-			n_nonlinear_solve_each_n_steps, n_max_nonlinear_solve_iteration_num,
-			f_nonlinear_solve_error_threshold, n_max_final_optimization_iteration_num,
-			f_final_optimization_threshold, b_verbose, b_use_schur,
+			p_s_input_file, n_max_lines_to_process, t_incremental_cfg, 
+			n_max_final_optimization_iteration_num,
+			f_final_optimization_threshold, t_marginals_cfg, b_verbose, b_use_schur,
 			b_show_detailed_timing, b_write_bitmaps);
 		// run with parameters
 	}

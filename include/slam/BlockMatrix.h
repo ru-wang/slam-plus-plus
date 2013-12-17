@@ -111,1240 +111,22 @@
  *
  *	Implemented copy-constructor and copy-operator.
  *
+ *	@date 2013-12-05
+ *
+ *	Split this file to multiple files in order to reduce clutter, moved all inline functions
+ *	longer than two lines to slam/BlockMatrix.inl. Moved all *_FBS() functions to
+ *	slam/BlockMatrixFBS.inl.
+ *
+ *	Fixed intellisense (there was greater-than comparison as a template argument, which breaks it).
+ *
  */
+
+#include "slam/BlockMatrixBase.h"
 
 /**
- *	@def __UBER_BLOCK_MATRIX_IO
- *	@brief if defined, Load_MatrixMarket() and Save_MatrixMarket() functions are compiled
+ *	@brief the block matrix class
  */
-#define __UBER_BLOCK_MATRIX_IO
-
-/**
- *	@def __UBER_BLOCK_MATRIX_HAVE_CSPARSE
- *	@brief enables interop with CSparse
- */
-#define __UBER_BLOCK_MATRIX_HAVE_CSPARSE
-
-/**
- *	@def __UBER_BLOCK_MATRIX_PERFCOUNTERS
- *	@brief if defined, the block matrix contains some performance
- *		counters for diagnostic (not recommended for production code)
- *	@note These performance counters operate in block allocation code
- *		only, the arithmetic operations may bypass it.
- */
-//#define __UBER_BLOCK_MATRIX_PERFCOUNTERS
-
-/**
- *	@def __UBER_BLOCK_MATRIX_DISABLE_INTEGRITY_CHECK
- *	@brief disables matrix integrity checks (use when integrity checks
- *		are prohibitive during debugging, do not leave on forever)
- */
-//#define __UBER_BLOCK_MATRIX_DISABLE_INTEGRITY_CHECK
-
-/**
- *	@def __UBER_BLOCK_MATRIX_BUFFER_BOUNDS_CHECK
- *	@brief enables debug checks for matrix block bounds overrun (_DEBUG only)
- *	@note This uses relatively large blocks, can double memory consumption
- *		if using matrices with very small blocks.
- */
-#define __UBER_BLOCK_MATRIX_BUFFER_BOUNDS_CHECK
-
-/**
- *	@def __UBER_BLOCK_MATRIX_MULTIPLICATION_LINEAR
- *	@brief uses block matrix multiplication with constant time block
- *		seeking, making the bookkeeping time lower (there is some constant
- *		overhead, so probably not good for small matrices)
- */
-#define __UBER_BLOCK_MATRIX_MULTIPLICATION_LINEAR
-
-/**
- *	@def __UBER_BLOCK_MATRIX_HYBRID_AT_A
- *	@brief uses hybrid block matrix multiplication for (pre)multiplying
- *		the matrix by its transpose
- *	@note Although the complexity isn't lower than in other versions
- *		of the routine, the memory coherency should be slightly better.
- */
-#define __UBER_BLOCK_MATRIX_HYBRID_AT_A
-
-/**
- *	@def __UBER_BLOCK_MATRIX_MULTIPLICATION_PREALLOCATES_BLOCK_LISTS
- *	@brief keeps track of numbers of blocks produced to avoid
- *		block list reallocations (only has effect if
- *		__UBER_BLOCK_MATRIX_MULTIPLICATION_LINEAR is defined)
- *	@note This doesn't gain any significant speedup and only
- *		uses slightly more memory, probably better to leave disabled.
- */
-//#define __UBER_BLOCK_MATRIX_MULTIPLICATION_PREALLOCATES_BLOCK_LISTS
-
-/**
- *	@def __UBER_BLOCK_MATRIX_ALIGN_BLOCK_MEMORY
- *	@brief aligns block memory to 16-bit boundaries in order to support SSE2
- *	@note This is forced in x64 evnironment.
- */
-//#define __UBER_BLOCK_MATRIX_ALIGN_BLOCK_MEMORY
-
-/**
- *	@def __UBER_BLOCK_MATRIX_FIXED_BLOCK_SIZE_OPS
- *	@brief enables fast fixed block size functions (these with _FBS suffix)
- *	@note The FBS functions give numerically slightly different results
- *		(difference in the one or two least significant bits). Usually not
- *		enough to cause any trouble (e.g. such as two different the BLAS
- *		implementations likely give different results doesn't cause problems).
- */
-#define __UBER_BLOCK_MATRIX_FIXED_BLOCK_SIZE_OPS
-
-/**
- *	@def __UBER_BLOCK_MATRIX_SUPRESS_FBS_IN_DEBUG
- *	@brief disables fast fixed block size functions in debug builds
- *		(the functions are still available, but the non-FBS versions
- *		are called instead)
- *	@note The FBS functions give numerically slightly different results
- *		(difference in the one or two least significant bits), disabling
- *		them for debug may conceal some numerical problems which could
- *		later arise in release mode. Use with caution.
- */
-//#define __UBER_BLOCK_MATRIX_SUPRESS_FBS_IN_DEBUG
-
-/**
- *	@def __UBER_BLOCK_MATRIX_SUPRESS_FBS
- *	@brief disables fast fixed block size functions (the functions
- *		are still available, but the non-FBS versions are called instead)
- *	@note The FBS functions give numerically slightly different results
- *		(difference in the one or two least significant bits), disabling
- *		them for debug may conceal some numerical problems which could
- *		otherwise arise. Use with caution.
- */
-//#define __UBER_BLOCK_MATRIX_SUPRESS_FBS
-
-/**
- *	@def __UBER_BLOCK_MATRIX_LAZY_PRODUCT
- *	@brief enables the use of lazyProduct() in ordinary (non-FBS) functions
- *		instead of .noalias() l-value, where applicable
- */
-#define __UBER_BLOCK_MATRIX_LAZY_PRODUCT
-
-/**
- *	@def __UBER_BLOCK_MATRIX_FBS_LAZY_PRODUCT
- *	@brief enables the use of lazyProduct() in FBS functions instead
- *		of .noalias() l-value, where applicable
- */
-#define __UBER_BLOCK_MATRIX_FBS_LAZY_PRODUCT
-
-/**
- *	@def __UBER_BLOCK_MATRIX_FIXED_BLOCK_SIZE_DEBUGGING
- *	@brief enables debug functions for fixed block size code generating templates
- *	@note This has effect only if the __UBER_BLOCK_MATRIX_FIXED_BLOCK_SIZE_OPS
- *		macro is defined as well.
- */
-//#define __UBER_BLOCK_MATRIX_FIXED_BLOCK_SIZE_DEBUGGING
-
-/**
- *	@def __UBER_BLOCK_MATRIX_FROM_SPARSE_ITERATE_INTEGERS
- *	@brief changes From_Sparse() and its variants to iterate integer indices instead of pointers
- *	@note Seems to be faster with pointers.
- */
-//#define __UBER_BLOCK_MATRIX_FROM_SPARSE_ITERATE_INTEGERS
-
-#if defined(_DEBUG) && defined(__UBER_BLOCK_MATRIX_DISABLE_INTEGRITY_CHECK)
-#pragma message("warning: CUberBlockMatrix integrity checks disabled")
-#endif // _DEBUG && __UBER_BLOCK_MATRIX_DISABLE_INTEGRITY_CHECK
-
-#if !defined(_DEBUG) && defined(__UBER_BLOCK_MATRIX_PERFCOUNTERS)
-#pragma message("warning: __UBER_BLOCK_MATRIX_PERFCOUNTERS defined in release mode")
-#endif // !_DEBUG && __UBER_BLOCK_MATRIX_PERFCOUNTERS
-
-#if defined(_DEBUG) && defined(__UBER_BLOCK_MATRIX_SUPRESS_FBS_IN_DEBUG)
-#ifndef __UBER_BLOCK_MATRIX_SUPRESS_FBS
-#define __UBER_BLOCK_MATRIX_SUPRESS_FBS
-#endif // !__UBER_BLOCK_MATRIX_SUPRESS_FBS
-#endif // __DEBUG && __UBER_BLOCK_MATRIX_SUPRESS_FBS_IN_DEBUG
-
-#ifdef __UBER_BLOCK_MATRIX_SUPRESS_FBS
-#pragma message("warning: CUberBlockMatrix fixed block size operations supressed (results may vary)")
-#endif // __UBER_BLOCK_MATRIX_SUPRESS_FBS
-
-#include "eigen/Eigen/Core"
-#include "eigen/Eigen/Dense" // dense Cholesky
-
-#if !defined(__UBER_BLOCK_MATRIX_ALIGN_BLOCK_MEMORY) && \
-	(defined(EIGEN_VECTORIZE) || defined(_M_X64) || defined(_M_AMD64) || \
-	defined(_M_IA64) || defined(__x86_64) || defined(__amd64) || defined(__ia64))
-#define __UBER_BLOCK_MATRIX_ALIGN_BLOCK_MEMORY
-#endif // !__UBER_BLOCK_MATRIX_ALIGN_BLOCK_MEMORY && (EIGEN_VECTORIZE || _M_X64 || _M_AMD64 || _M_IA64 || __x86_64 || __amd64 || __ia64)
-// force __UBER_BLOCK_MATRIX_ALIGN_BLOCK_MEMORY in x64,
-// also if EIGEN_VECTORIZE (practically if SSE2 is enabled in MSVC compiler settings)
-// this comes *after* eigen is included
-
-#include <vector>
-#include "slam/Segregated.h"
-#include <utility>
-#include <algorithm>
-#include <set>
-#include <stdexcept> // runtime_error
-#ifdef __UBER_BLOCK_MATRIX_HAVE_CSPARSE
-#include "csparse/cs.hpp" // CSparse
-#endif // __UBER_BLOCK_MATRIX_HAVE_CSPARSE
-#include "slam/Tga.h"
-#include "slam/TypeList.h"
-#include "slam/Timer.h" // debugging
-#include "slam/Debug.h" // _ASSERTE
-#ifdef _OPENMP
-#include <omp.h>
-#endif // _OPENMP
-#ifdef __UBER_BLOCK_MATRIX_IO
-#include <stdio.h>
-#endif // __UBER_BLOCK_MATRIX_IO
-
-/**
- *	@def __INLINE_RECURSION_ENABLE_PRAGMA
- *	@brief pragma that enables inline recursion of (seemingly) recursive functions
- *	@note Because it is impossible to put complete pragma inside a macro,
- *		this is just a name of the pragma. Where equivalent pragma not available,
- *		it is replaced by <tt>pack()</tt>, which is considered a no-op pragma for
- *		a function.
- */
-#if defined(_MSC_VER) && !defined(__MWERKS__)
-#define __INLINE_RECURSION_ENABLE_PRAGMA inline_recursion(on)
-#else // _MSC_VER && !__MWERKS__
-#define __INLINE_RECURSION_ENABLE_PRAGMA pack()
-// this is supposedly no-op pragma
-#endif // _MSC_VER && !__MWERKS__
-
-/**
- *	@def __forceinline
- *	@brief replace __forceinline with inline on non-MSVC compilers
- */
-#if !defined(_MSC_VER) || defined(__MWERKS__)
-#define __forceinline inline
-#endif // !_MSC_VER || __MWERKS__
-
-#ifdef __UBER_BLOCK_MATRIX_FIXED_BLOCK_SIZE_OPS
-#include "slam/BlockMatrixFBSUtil.h"
-#endif // __UBER_BLOCK_MATRIX_FIXED_BLOCK_SIZE_OPS
-
-/**
- *	@brief UberLame block matrix implementation
- */
-class CUberBlockMatrix {
-public:
-	/**
-	 *	@brief parameters, stored as enums
-	 */
-	enum {
-#ifdef __UBER_BLOCK_MATRIX_ALIGN_BLOCK_MEMORY
-		pool_MemoryAlignment = 16, /**< @brief data storage memory alignment (in bytes) */
-		map_Alignment = Eigen::Aligned, /**< @brief alignment specification for aligned Eigen::Map */
-#else // __UBER_BLOCK_MATRIX_ALIGN_BLOCK_MEMORY
-		pool_MemoryAlignment = 0, /**< @brief data storage memory alignment (in bytes) */
-		map_Alignment = Eigen::Unaligned, /**< @brief alignment specification for aligned Eigen::Map */
-#endif // __UBER_BLOCK_MATRIX_ALIGN_BLOCK_MEMORY
-		pool_PageSize = 1048576 /**< @brief data storage page size */
-	};
-
-	typedef Eigen::Map<Eigen::VectorXd> _TyVectorXdRef; /**< @brief dynamic-size referencing vector type */
-	typedef Eigen::Map<Eigen::Vector3d> _TyVector3dRef; /**< @brief 3D referencing vector type */
-	typedef Eigen::Map<Eigen::RowVectorXd> _TyRowVectorXdRef; /**< @brief dynamic-size referencing row vector type */
-	typedef Eigen::Map<Eigen::RowVector3d> _TyRowVector3dRef; /**< @brief 3D referencing row vector type */
-	typedef Eigen::Map<Eigen::MatrixXd, map_Alignment> _TyMatrixXdRef; /**< @brief dynamic-size referencing matrix type */
-	typedef Eigen::Map<Eigen::Matrix3d, map_Alignment> _TyMatrix3dRef; /**< @brief 3x3 referencing matrix type */
-
-	/**
-	 *	@brief reference matrix helper
-	 *
-	 *	@tparam n_row_num is number of matrix rows
-	 *	@tparam n_column_num is number of matrix columns
-	 */
-	template <int n_row_num, int n_column_num>
-	class CMakeMatrixRef {
-	public:
-		typedef Eigen::Matrix<double, n_row_num, n_column_num> _TyMatrix; /**< @brief plain matrix type */
-		typedef Eigen::Map<_TyMatrix, map_Alignment> _Ty; /**< @brief referencing matrix type */
-	};
-
-	/**
-	 *	@brief reference (column) vector helper
-	 *
-	 *	@tparam n_row_num is number of vector rows
-	 */
-	template <int n_row_num>
-	class CMakeVectorRef {
-	public:
-		typedef Eigen::Map<Eigen::Matrix<double, n_row_num, 1> > _Ty; /**< @brief referencing vector type */
-	};
-
-	/**
-	 *	@brief reference row vector helper
-	 *
-	 *	@tparam n_column_num is number of vector columns
-	 */
-	template <int n_column_num>
-	class CMakeRowVectorRef {
-	public:
-		typedef Eigen::Map<Eigen::Matrix<double, 1, n_column_num> > _Ty; /**< @brief referencing row vector type */
-	};
-
-	typedef forward_allocated_pool<double, pool_PageSize, pool_MemoryAlignment> _TyPool; /**< @brief data storage type */
-
-	/**
-	 *	@brief row storage
-	 *	@todo - try without storing height, only cummulative
-	 */
-	struct TRow {
-		size_t n_height; /**< @brief height of the row */
-		size_t n_cumulative_height_sum; /**< @brief position of (the first element of) the row in the matrix @todo - make this the position of one past the last element */
-
-		/**
-		 *	@brief block structure comparator
-		 *	@param[in] r_t_other is the other block structure to compare to
-		 *	@return Returns true if the rows are the same, otherwise returns false.
-		 *	@note This compares both cumulative sum and height, it mihgt be wasteful
-		 *		to use for all the rows, as equality in one implies equality in the other.
-		 */
-		inline bool operator ==(const TRow &r_t_other) const
-		{
-			return r_t_other.n_height == n_height &&
-				r_t_other.n_cumulative_height_sum == n_cumulative_height_sum;
-		}
-
-		/**
-		 *	@brief gets height of a row
-		 *	@return Returns height of the supplied row.
-		 */
-		inline size_t n_GetAbsolute() const
-		{
-			return n_height;
-		}
-
-		/**
-		 *	@brief gets cumulative height sum of a row
-		 *	@return Returns cumulative height sum of the supplied row.
-		 */
-		inline size_t n_GetCumulative() const
-		{
-			return n_cumulative_height_sum;
-		}
-
-		/**
-		 *	@brief sets height of a row
-		 *	@param[in] n_value is initialization value
-		 */
-		inline void SetAbsolute(size_t n_value)
-		{
-			n_height = n_value;
-		}
-
-		/**
-		 *	@brief sets cumulative height sum of a row
-		 *	@param[in] n_value is initialization value
-		 */
-		inline void SetCumulative(size_t n_value)
-		{
-			n_cumulative_height_sum = n_value;
-		}
-	};
-
-	/**
-	 *	@brief column storage
-	 *	@note This is essentially collumn-compressed format. The advantage is the ability of adding elements
-	 *		without recalculating all the cumulative sums as in csparse. The disadvantage is the double vector,
-	 *		causing many memory references before actually getting to the matrix data (but the matrix data are
-	 *		laid out in potentionally contiguous memory, with near matrices being near in the memory, increasing
-	 *		cache efficiency in the computational loops).
-	 *	@note In A, we mostly have up to two blocks on every row / column. That would make block_list quite an overkill.
-	 *	t_odo See if Florida matrix collection has any block matrices in it, or think about how to blockify them.
-	 *	@todo We better avoid copying this structure. Make a matrix observer
-	 *		to be able to select just a part of matrix for reading / writing.
-	 *	@todo try without storing width, only cummulative
-	 *	@todo try storing row index, but also row height in each block (saves one ref per block on some ops)
-	 */
-	struct TColumn {
-		typedef std::pair<size_t, double*> TBlockEntry; /**< @brief one block entry @todo - try put row height and position, might dramatically increase locality of reference */
-
-		size_t n_width; /**< @brief width of the column */
-		size_t n_cumulative_width_sum; /**< @brief position of (the first element of) the column in the matrix @todo - make this the position of one past the last element */
-		std::vector<TBlockEntry> block_list; /**< @brief list of blocks (first is row index, second is storage) */
-
-		/**
-		 *	@brief gets width of a column
-		 *	@return Returns width of the supplied column.
-		 */
-		inline size_t n_GetAbsolute() const
-		{
-			return n_width;
-		}
-
-		/**
-		 *	@brief gets cumulative width sum of a column
-		 *	@return Returns cumulative width sum of the supplied column.
-		 */
-		inline size_t n_GetCumulative() const
-		{
-			return n_cumulative_width_sum;
-		}
-
-		/**
-		 *	@brief sets width of a column
-		 *	@param[in] n_value is initialization value
-		 */
-		inline void SetAbsolute(size_t n_value)
-		{
-			n_width = n_value;
-		}
-
-		/**
-		 *	@brief sets cumulative width sum of a column
-		 *	@param[in] n_value is initialization value
-		 */
-		inline void SetCumulative(size_t n_value)
-		{
-			n_cumulative_width_sum = n_value;
-		}
-
-		/**
-		 *	@brief swaps column contents with another column, which is not initialized
-		 *	@param[in,out] r_t_dest is the other column for swapping
-		 *	@note This fuction dammages this column (it is intended as "fast copy"
-		 *		where the source operand is not needed afterwards).
-		 */
-		inline void UninitializedSwap(TColumn &r_t_dest)
-		{
-			r_t_dest.n_width = n_width;
-			r_t_dest.n_cumulative_width_sum = n_cumulative_width_sum;
-			r_t_dest.block_list.swap(block_list);
-		}
-	};
-
-	typedef std::vector<TRow>::iterator _TyRowIter; /**< @brief row vector iterator */
-	typedef std::vector<TRow>::const_iterator _TyRowConstIter; /**< @brief row vector const iterator */
-	typedef std::vector<TColumn>::iterator _TyColumnIter; /**< @brief column vector iterator */
-	typedef std::vector<TColumn>::const_iterator _TyColumnConstIter; /**< @brief column vector const iterator */
-	typedef std::vector<TColumn::TBlockEntry>::iterator _TyBlockIter; /**< @brief block entry vector iterator */
-	typedef std::vector<TColumn::TBlockEntry>::const_iterator _TyBlockConstIter; /**< @brief block entry vector const iterator */
-
-	// @todo - try working with representation for a bit - storing just cumsusm? storing row height in block?
-	// @todo - implement Extend(rows, cols) operation that enables addition of matrices of different shape
-	// @todo - come up with different designs, benchmark what is best for our use (template away? that'd be rather cool)
-	// @todo - look into different sparse matrix representations (jagged diagonal, ...)
-
-	/**
-	 *	@brief comparison between row index in block entry and raw value
-	 *
-	 *	@note This is similar to CFindLowerRow, but operates on block entries
-	 *		TColumn::TBlockEntry instead of row layout TRow.
-	 *	@note This is needed for PermuteTo(), even in linux.
-	 */
-	class CCompareBlockRow {
-	public:
-		/**
-		 *	@brief comparison between row index in block entry and raw value
-		 *
-		 *	@param[in] r_t_block is block entry (only row index is significant)
-		 *	@param[in] n_row_id is (zero-based) row index
-		 *
-		 *	@return Returns true if row index of r_t_block is smaller than n_row_id,
-		 *		otherwise returns false.
-		 */
-		inline bool operator ()(const TColumn::TBlockEntry &r_t_block, size_t n_row_id) const
-		{
-			return r_t_block.first < n_row_id;
-		}
-
-		/**
-		 *	@brief comparison between row index in block entry and raw value
-		 *
-		 *	@param[in] r_t_block0 is block entry (only row index is significant)
-		 *	@param[in] r_t_block1 is block entry (only row index is significant)
-		 *
-		 *	@return Returns true if row index of r_t_block0 is smaller than
-		 *		of r_t_block1, otherwise returns false.
-		 */
-		inline bool operator ()(const TColumn::TBlockEntry &r_t_block0,
-			const TColumn::TBlockEntry &r_t_block1) const
-		{
-			return r_t_block0.first < r_t_block1.first;
-		}
-
-		/**
-		 *	@brief comparison between row index in block entry and raw value
-		 *
-		 *	@param[in] n_row_id is (zero-based) row index
-		 *	@param[in] r_t_block is block entry (only row index is significant)
-		 *
-		 *	@return Returns true if n_row_id is smaller than row index of r_t_block,
-		 *		otherwise returns false.
-		 */
-		inline bool operator ()(size_t n_row_id, const TColumn::TBlockEntry &r_t_block) const
-		{
-			return n_row_id < r_t_block.first;
-		}
-	};
-
-#if defined(_MSC_VER) && !defined(__MWERKS__) && _MSC_VER >= 1400
-	// MSVC 90 and up has predicate debugging;
-	// need to provide all kinds of predicates for that
-
-	/**
-	 *	@brief comparison between row height cumulative sum and raw value
-	 *	@note This is similar to CCompareBlockRow, but operates on row layout TRow
-	 *		instead of block entries TColumn::TBlockEntry.
-	 */
-	class CFindLowerRow {
-	public:
-		/**
-		 *	@brief comparison between row height cumulative sum and raw value
-		 *
-		 *	@param[in] r_t_row is row (only cumulative height sum is significant)
-		 *	@param[in] n_row is raw cumulative height sum value
-		 *
-		 *	@return Returns true if cumulative height sum of r_t_row is smaller than n_row,
-		 *		otherwise returns false.
-		 */
-		inline bool operator ()(const TRow &r_t_row, size_t n_row) const
-		{
-			return r_t_row.n_cumulative_height_sum < n_row;
-		}
-
-		/**
-		 *	@brief comparison between row height cumulative sum and raw value
-		 *
-		 *	@param[in] r_t_row0 is row (only cumulative height sum is significant)
-		 *	@param[in] r_t_row1 is row (only cumulative height sum is significant)
-		 *
-		 *	@return Returns true if cumulative height sum of r_t_row0 is smaller than
-		 *		of r_t_row1, otherwise returns false.
-		 */
-		inline bool operator ()(const TRow &r_t_row0, const TRow &r_t_row1) const
-		{
-			return r_t_row0.n_cumulative_height_sum < r_t_row1.n_cumulative_height_sum;
-		}
-
-		/**
-		 *	@brief comparison between row height cumulative sum and raw value
-		 *
-		 *	@param[in] n_row is raw cumulative height sum value
-		 *	@param[in] r_t_row is row (only cumulative height sum is significant)
-		 *
-		 *	@return Returns true if n_row is smaller than cumulative height sum of r_t_row,
-		 *		otherwise returns false.
-		 */
-		inline bool operator ()(size_t n_row, const TRow &r_t_row) const
-		{
-			return n_row < r_t_row.n_cumulative_height_sum; // t_odo - why not >=? fix this.
-		}
-	};
-
-	/**
-	 *	@brief comparison between column width cumulative sum and raw value
-	 */
-	class CFindLowerColumn {
-	public:
-		/**
-		 *	@brief comparison between column width cumulative sum and raw value
-		 *
-		 *	@param[in] r_t_column is column (only cumulative width sum is significant)
-		 *	@param[in] n_column is raw cumulative width sum value
-		 *
-		 *	@return Returns true if cumulative width sum of r_t_column is smaller than n_column,
-		 *		otherwise returns false.
-		 */
-		inline bool operator ()(const TColumn &r_t_column, size_t n_column) const
-		{
-			return r_t_column.n_cumulative_width_sum < n_column;
-		}
-
-		/**
-		 *	@brief comparison between column width cumulative sum and raw value
-		 *
-		 *	@param[in] r_t_column0 is column (only cumulative width sum is significant)
-		 *	@param[in] r_t_column1 is column (only cumulative width sum is significant)
-		 *
-		 *	@return Returns true if cumulative width sum of r_t_column0 is smaller than
-		 *		of r_t_column1, otherwise returns false.
-		 */
-		inline bool operator ()(const TColumn &r_t_column0, const TColumn &r_t_column1) const
-		{
-			return r_t_column0.n_cumulative_width_sum < r_t_column1.n_cumulative_width_sum;
-		}
-
-		/**
-		 *	@brief comparison between column width cumulative sum and raw value
-		 *
-		 *	@param[in] n_column is raw cumulative width sum value
-		 *	@param[in] r_t_column is column (only cumulative width sum is significant)
-		 *
-		 *	@return Returns true if n_column is smaller than cumulative width sum of r_t_column,
-		 *		otherwise returns false.
-		 */
-		inline bool operator ()(size_t n_column, const TColumn &r_t_column) const
-		{
-			return n_column < r_t_column.n_cumulative_width_sum; // t_odo - why not >=? fix this.
-		}
-	};
-#else // _MSC_VER && !__MWERKS__ && _MSC_VER >= 1400
-	/**
-	 *	@brief comparison between row height cumulative sum and raw value
-	 *
-	 *	@param[in] r_t_row is row (only cumulative height sum is significant)
-	 *	@param[in] n_row is raw cumulative height sum value
-	 *
-	 *	@return Returns true if cumulative height sum of r_t_row is smaller than n_row,
-	 *		otherwise returns false.
-	 */
-	static inline bool FindLowerRow(const TRow &r_t_row, size_t n_row)
-	{
-		return r_t_row.n_cumulative_height_sum < n_row;
-	}
-
-	/**
-	 *	@brief comparison between row height cumulative sum and raw value
-	 *
-	 *	@param[in] n_row is raw cumulative height sum value
-	 *	@param[in] r_t_row is row (only cumulative height sum is significant)
-	 *
-	 *	@return Returns true if cumulative height sum of r_t_row is greater than n_row,
-	 *		otherwise returns false.
-	 */
-	static inline bool _FindLowerRow(size_t n_row, const TRow &r_t_row)
-	{
-		return n_row < r_t_row.n_cumulative_height_sum;
-	}
-
-	/**
-	 *	@brief comparison between column width cumulative sum and raw value
-	 *
-	 *	@param[in] r_t_column is column (only cumulative width sum is significant)
-	 *	@param[in] n_column is raw cumulative width sum value
-	 *
-	 *	@return Returns true if cumulative width sum of r_t_column is smaller than n_column,
-	 *		otherwise returns false.
-	 */
-	static inline bool FindLowerColumn(const TColumn &r_t_column, size_t n_column)
-	{
-		return r_t_column.n_cumulative_width_sum < n_column;
-	}
-
-	/**
-	 *	@brief comparison between column width cumulative sum and raw value
-	 *
-	 *	@param[in] n_column is raw cumulative width sum value
-	 *	@param[in] r_t_column is column (only cumulative width sum is significant)
-	 *
-	 *	@return Returns true if cumulative width sum of r_t_column is greater than n_column,
-	 *		otherwise returns false.
-	 */
-	static inline bool _FindLowerColumn(size_t n_column, const TColumn &r_t_column)
-	{
-		return n_column < r_t_column.n_cumulative_width_sum;
-	}
-
-	/**
-	 *	@brief comparison between row index in block entry and raw value
-	 *
-	 *	@param[in] r_t_block is block entry (only row index is significant)
-	 *	@param[in] n_row_id is (zero-based) row index
-	 *
-	 *	@return Returns true if row index of r_t_block is smaller than n_row_id,
-	 *		otherwise returns false.
-	 */
-	static inline bool CompareBlockRow(const TColumn::TBlockEntry &r_t_block, size_t n_row_id)
-	{
-		return r_t_block.first < n_row_id;
-	}
-
-	/**
-	 *	@brief comparison between row index in block entry and raw value
-	 *
-	 *	@param[in] n_row_id is (zero-based) row index
-	 *	@param[in] r_t_block is block entry (only row index is significant)
-	 *
-	 *	@return Returns true if row index of r_t_block is greater than n_row_id,
-	 *		otherwise returns false.
-	 */
-	static inline bool _CompareBlockRow(size_t n_row_id, const TColumn::TBlockEntry &r_t_block)
-	{
-		return n_row_id < r_t_block.first;
-	}
-#endif // _MSC_VER && !__MWERKS__ && _MSC_VER >= 1400
-
-#if defined(_DEBUG) && defined(__UBER_BLOCK_MATRIX_BUFFER_BOUNDS_CHECK)
-	/**
-	 *	@brief implementation of block bounds checks using preinitialization with magic number
-	 *	@tparam CPoolType is data pool specialization
-	 */
-	template <class CPoolType>
-	class CBlockBoundsDebugInitializer {
-	public:
-		typedef typename CPoolType::_Ty _Ty; /**< @brief data type stored by the pool (double) */
-
-		/**
-		 *	@brief configuration parameters stored as enum
-		 */
-		enum {
-			blockBoundMarker_Element_Num = 8, /**< @brief number of elements in the block bounds marker */
-			memoryAlign_Elements = CPoolType::n_memory_alignment / sizeof(_Ty) /**< @brief pool memory alignment (_Ty elements) */
-		};
-
-		/**
-		 *	@brief union for initialization of pool elements with magic numbers
-		 *	@note This might not be the best idea, although these magic numbers are easy to spot in
-		 *		integer, it is possibly not so easy to spot them in floating point representation.
-		 */
-		union TMagicInitializer {
-			uint64_t n_magic_number; /**< @brief a magic number that denotes uninitialized data or block bound area */
-			_Ty f_value; /**< @brief a magic number value, interpreted as floating-point type */ // will work for both float and double
-		};
-
-		/**
-		 *	@brief initializes a new page with magic numbers
-		 *
-		 *	@param[in] r_pool is the pool with data
-		 *	@param[in] n_block_element_num is number of block elements, including alignment
-		 *
-		 *	@note This function throws std::bad_alloc.
-		 */
-		static void Init_BeforeBlock(CPoolType &r_pool, size_t n_block_element_num) // throw(std::bad_alloc)
-		{
-			_ASSERTE(sizeof(uint64_t) >= sizeof(_Ty)); // we use union to initialize the storage
-
-			TMagicInitializer t_uninitialized, t_block_bounds;
-			t_uninitialized.n_magic_number = 0xdeadbeefU | (uint64_t(0xdeadbeefU) << 32); // -1.1885959257070704e+148
-			t_block_bounds.n_magic_number = 0xbaadf00dU | (uint64_t(0xbaadf00dU) << 32); // -4.8366978272229995e-026
-			// "magic" constants; note these must be small enough to modify numerically by addition, otherwise errors will go unnoticed!!
-
-			size_t n_block_bound_size = blockBoundMarker_Element_Num;
-			// in case memory alignment is used, fill the unused element(s) with block bound marker as well
-
-			_ASSERTE(blockBoundMarker_Element_Num < r_pool.page_size());
-			_ASSERTE(n_block_element_num + 2 * blockBoundMarker_Element_Num <= r_pool.page_size());
-			// make sure the bound markers can fit in a page and still leave enough space for the element
-
-			if(r_pool.empty() || r_pool.size() + n_block_element_num +
-			   blockBoundMarker_Element_Num > r_pool.capacity()) {
-				size_t n_new_page_org = r_pool.capacity();
-				_ASSERTE(!n_new_page_org || !r_pool.empty()); // capacity of the empty pool should be 0
-				r_pool.resize(n_new_page_org + blockBoundMarker_Element_Num);
-				_Ty *p_page = &r_pool[n_new_page_org];
-				for(size_t i = 0; i < blockBoundMarker_Element_Num; ++ i)
-					p_page[i] = t_block_bounds.f_value; // set the first blockBoundMarker_Element_Num elements to block bounds
-				for(size_t i = blockBoundMarker_Element_Num, n = r_pool.page_size(); i < n; ++ i)
-					p_page[i] = t_uninitialized.f_value;
-			}
-			// the new block won't fit on the current page, need to alloc and initialize a new page
-			// also put the block bounds before the first block on that page
-		}
-
-		/**
-		 *	@brief writes block bound magic numbers after a block
-		 *
-		 *	@param[in] r_pool is the pool with data
-		 *	@param[in] n_mem_align_element_num is number of block alignment elements
-		 *		(these are a part of the already allocated block, and are not allocated here)
-		 *
-		 *	@note This function throws std::bad_alloc.
-		 */
-		static void Init_AfterBlock(CPoolType &r_pool, size_t n_mem_align_element_num) // throw(std::bad_alloc)
-		{
-			TMagicInitializer t_block_bounds;
-			t_block_bounds.n_magic_number = 0xbaadf00dU | (uint64_t(0xbaadf00dU) << 32);
-			// "magic" constants
-
-			size_t n_bound_index = r_pool.size();
-			_ASSERTE(n_bound_index + blockBoundMarker_Element_Num <= r_pool.capacity());
-			// the first block should ensure that the block fits on the same page
-
-			r_pool.resize(n_bound_index + blockBoundMarker_Element_Num);
-			_ASSERTE(n_bound_index >= n_mem_align_element_num);
-			_Ty *p_page = &r_pool[n_bound_index - n_mem_align_element_num];
-			for(size_t i = 0; i < blockBoundMarker_Element_Num + n_mem_align_element_num; ++ i)
-				p_page[i] = t_block_bounds.f_value; // set the next blockBoundMarker_Element_Num elements to block bounds
-		}
-
-		/**
-		 *	@brief checks block bounds markers on a particular block
-		 *
-		 *	@param[in] r_pool is the pool with data
-		 *	@param[in] p_block is the pointer to a data block (points to the first block matrix element)
-		 *	@param[in] n_block_size is size of the block, in elements
-		 *
-		 *	@return Returns true if the block is a valid block and the markers are intact, otherwise returns false.
-		 */
-		static bool b_CheckBlockMarkers(const CPoolType &r_pool, const _Ty *p_block, size_t n_block_size)
-		{
-			TMagicInitializer t_block_bounds;
-			t_block_bounds.n_magic_number = 0xbaadf00dU | (uint64_t(0xbaadf00dU) << 32);
-			// "magic" constants
-
-			size_t n_index = r_pool.index_of(p_block); // index of the first block element
-			if(n_index < blockBoundMarker_Element_Num)
-				return false; // there is not enough space for the bounds marker; not a valid block
-			_ASSERTE(n_index != size_t(-1)); // make sure the block is found
-			size_t n_page_org_index = n_index - n_index % r_pool.page_size(); // index of the first page
-			if(n_page_org_index + blockBoundMarker_Element_Num > n_index)
-				return false; // there is not enough space for the bounds marker; not a valid block
-			// check if there is enough space for the bounds marker
-
-			const _Ty *p_before_block = &r_pool[n_index - blockBoundMarker_Element_Num];
-			for(size_t i = 0; i < blockBoundMarker_Element_Num; ++ i) {
-				if(p_before_block[i] != t_block_bounds.f_value) // todo - is it safe to use floating point comparison? shouldn't we use the union instead?
-					return false; // bounds marker overwritten with block contents
-			}
-			// check the "before" block bounds marker (note that it might be actually longer, if some alignment is applied)
-
-			n_index += n_block_size;
-			if(n_index + blockBoundMarker_Element_Num > n_page_org_index + r_pool.page_size() ||
-			   n_index + blockBoundMarker_Element_Num > r_pool.size())
-				return false; // there is not enough space for the bounds marker; not a valid block
-			// make sure there is enough space for the after bounds marker
-
-			const _Ty *p_after_block = &r_pool[n_index];
-			for(size_t i = 0; i < blockBoundMarker_Element_Num; ++ i) {
-				if(p_after_block[i] != t_block_bounds.f_value) // todo - is it safe to use floating point comparison? shouldn't we use the union instead?
-					return false; // bounds marker overwritten with block contents
-			}
-			// check the "after" block bounds marker
-
-			return true;
-		}
-	};
-#endif // _DEBUG && __UBER_BLOCK_MATRIX_BUFFER_BOUNDS_CHECK
-
-	/**
-	 *	@brief pool allocator wrapper class
-	 *	@tparam CPoolType is forward_allocated_pool specialization
-	 */
-	template <class CPoolType>
-	class CDenseAllocator {
-	public:
-		typedef typename CPoolType::_Ty _Ty; /**< @brief data type stored by the pool (double) */
-
-		/**
-		 *	@brief parameters, stored as enums
-		 */
-		enum {
-			n_memory_align = CPoolType::n_memory_alignment, /**< @brief pool memory alignment (bytes) */
-			n_memory_align_elem = n_memory_align / sizeof(_Ty) /**< @brief pool memory alignment (_Ty elements) */
-		};
-
-	protected:
-		CPoolType &m_r_pool; /**< @brief reference to the pool object */
-
-		/**
-		 *	@brief compile-time assertion (CPoolType::n_memory_alignment must
-		 *		be integer multiple of sizeof(_Ty))
-		 *	@tparam b_expression is expression being asserted
-		 */
-		template <class _CPoolType, const bool b_expression>
-		class CMATRIX_POOL_MEMORY_ALIGNMENT_MUST_BE_INTEGER_MULTIPLE_OF_SCALAR_TYPE_SIZE;
-
-		/**
-		 *	@brief compile-time assertion (specialization for assertion passing)
-		 */
-		template <class _CPoolType>
-		class CMATRIX_POOL_MEMORY_ALIGNMENT_MUST_BE_INTEGER_MULTIPLE_OF_SCALAR_TYPE_SIZE<_CPoolType, true> {};
-
-		/**
-		 *	@brief static assertion helper type
-		 *	@tparam n_size is size of object being used as assertion message
-		 *		(if it's a incomplete type, compiler will display object name in error output)
-		 */
-		template <const size_t n_size>
-		class CStaticAssert {};
-
-		typedef CStaticAssert<sizeof(
-			CMATRIX_POOL_MEMORY_ALIGNMENT_MUST_BE_INTEGER_MULTIPLE_OF_SCALAR_TYPE_SIZE<CPoolType,
-			(n_memory_align > 0 && n_memory_align % sizeof(_Ty) == 0)>)> _TyAssert0; /**< @brief makes sure the alignment is correct */
-
-	public:
-		/**
-		 *	@brief default constructor
-		 *	@param[in] r_pool is reference to the pool object the data will be allocated in
-		 */
-		inline CDenseAllocator(CPoolType &r_pool)
-			:m_r_pool(r_pool)
-		{}
-
-		/**
-		 *	@brief gets aligned dense storage
-		 *	@param[in] n_element_num is number of elements to allocate
-		 *	@return Returns pointer (aligned to n_memory_align bytes) to array,
-		 *		containing n_element_num elements. The pointer is owned by the
-		 *		pool and must not be deleted.
-		 *	@note This function throws std::bad_alloc.
-		 */
-		_Ty *p_Get_DenseStorage(size_t n_element_num) // throw(std::bad_alloc)
-		{
-			_ASSERTE(n_element_num <= m_r_pool.page_size());
-			// makes sure the requested number of elements is possible
-			// to be allocated in a contiguous block of memory
-
-#if defined(_DEBUG) && defined(__UBER_BLOCK_MATRIX_BUFFER_BOUNDS_CHECK)
-			size_t n_alignment_size = n_memory_align_elem - 1 - (n_element_num +
-				n_memory_align_elem - 1) % n_memory_align_elem;
-			size_t n_original_size = n_element_num;
-			CBlockBoundsDebugInitializer<CPoolType>::Init_BeforeBlock(m_r_pool, n_element_num + n_alignment_size);
-#endif // _DEBUG && __UBER_BLOCK_MATRIX_BUFFER_BOUNDS_CHECK
-
-			n_element_num += n_memory_align_elem - 1;
-			n_element_num -= n_element_num % n_memory_align_elem;
-			// adjust (increase) element num so that the total size is integer
-			// multiple of n_memory_align (to not disturb page memory alignment)
-
-			_ASSERTE(n_element_num <= m_r_pool.page_size());
-			// makes sure the requested number of elements is possible
-			// to be allocated in a contiguous block of memory even after the adjustment
-
-			size_t n_size;
-			if((n_size = m_r_pool.size()) + n_element_num <= m_r_pool.capacity()) {
-				m_r_pool.resize(n_size + n_element_num);
-				// add the requested number of elements
-			} else {
-				m_r_pool.resize((n_size = m_r_pool.capacity()) + n_element_num);
-				// in case there is not enough space in the last page, fill the page
-				// end with dummy data, then add the requested number of elements
-			}
-
-			double *p_result = &m_r_pool[n_size];
-			// then we can use ordinary unaligned version
-
-#if defined(_DEBUG) && defined(__UBER_BLOCK_MATRIX_BUFFER_BOUNDS_CHECK)
-			_ASSERTE(n_element_num == n_original_size + n_alignment_size);
-			CBlockBoundsDebugInitializer<CPoolType>::Init_AfterBlock(m_r_pool, n_alignment_size);
-			_ASSERTE((m_r_pool.size() % m_r_pool.page_size()) % n_memory_align_elem == 0); // make sure the next block will be aligned
-			_ASSERTE(CBlockBoundsDebugInitializer<CPoolType>::b_CheckBlockMarkers(m_r_pool,
-				p_result, n_original_size)); // make sure the block checks out
-#endif // _DEBUG && __UBER_BLOCK_MATRIX_BUFFER_BOUNDS_CHECK
-
-			_ASSERTE(uintptr_t(&m_r_pool[m_r_pool.capacity() -
-				m_r_pool.page_size()]) % n_memory_align == 0); // make sure the last page is aligned
-			_ASSERTE(uintptr_t(p_result) % n_memory_align == 0); // make sure the result is aligned
-			// debug checks
-
-			return p_result;
-		}
-	};
-
-	/**
-	 *	@brief (specialization for unaligned pools)
-	 */
-	template <class T, const int _n_page_size_elems>
-	class CDenseAllocator<forward_allocated_pool<T, _n_page_size_elems, 0> > {
-	public:
-		typedef forward_allocated_pool<T, _n_page_size_elems, 0> CPoolType; /**< @brief pool data type */
-		typedef typename CPoolType::_Ty _Ty; /**< @brief data type stored by the pool (double) */
-
-	protected:
-		CPoolType &m_r_pool; /**< @brief reference to the pool object */
-
-	public:
-		/**
-		 *	@brief default constructor
-		 *	@param[in] r_pool is reference to the pool object the data will be allocated in
-		 */
-		inline CDenseAllocator(CPoolType &r_pool)
-			:m_r_pool(r_pool)
-		{}
-
-		/**
-		 *	@brief gets unaligned dense storage
-		 *	@param[in] n_element_num is number of elements to allocate
-		 *	@return Returns (unaligned) pointer to array, containing n_element_num elements.
-		 *		The pointer is owned by the pool and must not be deleted.
-		 *	@note This function throws std::bad_alloc.
-		 */
-		_Ty *p_Get_DenseStorage(size_t n_element_num) // throw(std::bad_alloc)
-		{
-			_ASSERTE(n_element_num <= m_r_pool.page_size());
-			// makes sure the requested number of elements is possible
-			// to be allocated in a contiguous block of memory
-
-#if defined(_DEBUG) && defined(__UBER_BLOCK_MATRIX_BUFFER_BOUNDS_CHECK)
-			CBlockBoundsDebugInitializer<CPoolType>::Init_BeforeBlock(m_r_pool, n_element_num);
-#endif // _DEBUG && __UBER_BLOCK_MATRIX_BUFFER_BOUNDS_CHECK
-
-			size_t n_size;
-			if((n_size = m_r_pool.size()) + n_element_num <= m_r_pool.capacity()) {
-				m_r_pool.resize(n_size + n_element_num);
-				// add the requested number of elements
-			} else {
-				m_r_pool.resize((n_size = m_r_pool.capacity()) + n_element_num);
-				// in case there is not enough space in the last page, fill the page
-				// end with dummy data, then add the requested number of elements
-			}
-
-#if defined(_DEBUG) && defined(__UBER_BLOCK_MATRIX_BUFFER_BOUNDS_CHECK)
-			CBlockBoundsDebugInitializer<CPoolType>::Init_AfterBlock(m_r_pool, 0);
-			_ASSERTE(CBlockBoundsDebugInitializer<CPoolType>::b_CheckBlockMarkers(m_r_pool,
-				&m_r_pool[n_size], n_element_num)); // make sure the block checks out
-#endif // _DEBUG && __UBER_BLOCK_MATRIX_BUFFER_BOUNDS_CHECK
-
-			return &m_r_pool[n_size];
-		}
-	};
-
-	typedef CDenseAllocator<_TyPool> _TyDenseAllocator; /**< memory allocator wrapper for the pool */
-#if defined(_DEBUG) && defined(__UBER_BLOCK_MATRIX_BUFFER_BOUNDS_CHECK)
-	typedef CBlockBoundsDebugInitializer<_TyPool> _TyBoundsCheck; /**< block bounds checking object */
-#endif // _DEBUG && __UBER_BLOCK_MATRIX_BUFFER_BOUNDS_CHECK
-
-protected:
-	/**
-	 *	@brief a simple function object used for updating row references after row fragmentation
-	 *	@tparam n_increment is number to increment row indices by (1 or 2)
-	 */
-	template <const int n_increment>
-	class CIncrementRowIndex {
-	protected:
-		const size_t m_n_row; /**< @brief threshold row above (and including) which the indices are incremented */
-
-	public:
-		/**
-		 *	@brief default constructor
-		 *	@param[in] n_row is threshold row above (and including) which the indices should be incremented
-		 */
-		inline CIncrementRowIndex(size_t n_row)
-			:m_n_row(n_row)
-		{}
-
-		/**
-		 *	@brief performs the selective increment
-		 *	@param[in] r_t_block is block where row references are to be updated
-		 */
-		inline void operator ()(TColumn::TBlockEntry &r_t_block) const
-		{
-			if(r_t_block.first >= m_n_row)
-				r_t_block.first += n_increment;
-			// in case the block references a column after
-			// a newly inserted one(s), increment the column index
-		}
-	};
-
-	/**
-	 *	@brief a simple predicate comparing block row to reference value
-	 */
-	class CReferencesRow {
-	protected:
-		const size_t m_n_row; /**< @brief reference value */
-
-	public:
-		/**
-		 *	@brief default constructor
-		 *	@param[in] n_row is reference value
-		 */
-		inline CReferencesRow(size_t n_row)
-			:m_n_row(n_row)
-		{}
-
-		/**
-		 *	@brief compares block row to reference value
-		 *	@param[in] r_t_block is block
-		 *	@return Returns true if block references the selected row, otherwise returns false.
-		 */
-		inline bool operator ()(const TColumn::TBlockEntry &r_t_block) const
-		{
-			return r_t_block.first == m_n_row;
-		}
-	};
-
-	/**
-	 *	@brief a simple function object for converting raw cumulative sum layout to row layout
-	 */
-	class CTransformCumsumToRows {
-	protected:
-		size_t m_n_last_coord; /**< @brief last cumulative sum value */
-
-	public:
-		/**
-		 *	@brief default constructor
-		 */
-		inline CTransformCumsumToRows()
-			:m_n_last_coord(0)
-		{}
-
-		/**
-		 *	@brief consumes one cumulative sum and produces a block-row
-		 *	@param[in] n_cumsum is cumulative sum
-		 *	@return Returns block-row, corresponding to the cumulative sum.
-		 */
-		inline TRow operator ()(size_t n_cumsum)
-		{
-			TRow t_row;
-			t_row.n_height = n_cumsum - m_n_last_coord;
-			t_row.n_cumulative_height_sum = m_n_last_coord;
-			m_n_last_coord = n_cumsum;
-			return t_row;
-		}
-	};
-
-	/**
-	 *	@brief a simple function object for converting raw cumulative sum layout to column layout
-	 */
-	class CTransformCumsumToColumns {
-	protected:
-		size_t m_n_last_coord; /**< @brief last cumulative sum value */
-
-	public:
-		/**
-		 *	@brief default constructor
-		 */
-		inline CTransformCumsumToColumns()
-			:m_n_last_coord(0)
-		{}
-
-		/**
-		 *	@brief consumes one cumulative sum and produces a block-column
-		 *	@param[in] n_cumsum is cumulative sum
-		 *	@return Returns block-column, corresponding to the cumulative sum.
-		 */
-		inline TColumn operator ()(size_t n_cumsum)
-		{
-			TColumn t_col;
-			t_col.n_width = n_cumsum - m_n_last_coord;
-			t_col.n_cumulative_width_sum = m_n_last_coord;
-			m_n_last_coord = n_cumsum;
-			return t_col;
-		}
-	};
-
-	/**
-	 *	@brief a simple function object for elementwise multiplication
-	 *		of matrix elements by a scalar factor
-	 */
-	class CScaleBy {
-	protected:
-		const double m_f_coeff; /**< @brief scalar factor */
-
-	public:
-		/**
-		 *	@brief default constructor
-		 *	@param[in] f_coeff is scalar factor the elements are to be multiplied by
-		 */
-		inline CScaleBy(double f_coeff)
-			:m_f_coeff(f_coeff)
-		{}
-
-		/**
-		 *	@brief performs elementwise multiplication of matrix data
-		 *	@param[in] f_scalar is matrix element
-		 *	@return Returns product of input value and the factor supplied to constructor.
-		 */
-		inline double operator ()(double f_scalar) const
-		{
-			return f_scalar * m_f_coeff;
-		}
-	};
-
-	/**
-	 *	@brief a simple function object for elementwise addition
-	 *		of matrix elements with right-side scalar factor
-	 */
-	class CAddWeighted {
-	protected:
-		const double m_f_factor; /**< @brief right-side scalar factor */
-
-	public:
-		/**
-		 *	@brief default constructor
-		 *	@param[in] f_factor is scalar factor the right-side elements are to be multiplied by
-		 */
-		inline CAddWeighted(double f_factor)
-			:m_f_factor(f_factor)
-		{}
-
-		/**
-		 *	@brief performs elementwise addition of matrix data with right-side scaling
-		 *	@param[in] f_a is left-side matrix element
-		 *	@param[in] f_b is right-side matrix element
-		 *	@return Returns sum of left-side input with product of right-side
-		 *		input and the factor supplied to constructor.
-		 */
-		inline double operator ()(double f_a, double f_b) const
-		{
-			return f_a + f_b * m_f_factor;
-		}
-	};
-
-	/**
-	 *	@brief a simple function object for elementwise addition
-	 *		of matrix elements with scalar factors for either side
-	 */
-	class CWeightedAddWeighted {
-	protected:
-		const double m_f_factor_dest; /**< @brief left-side scalar factor */
-		const double m_f_factor_src; /**< @brief right-side scalar factor */
-
-	public:
-		/**
-		 *	@brief default constructor
-		 *	@param[in] f_factor_dest is scalar factor the left-side elements are to be multiplied by
-		 *	@param[in] f_factor_src is scalar factor the right-side elements are to be multiplied by
-		 */
-		inline CWeightedAddWeighted(double f_factor_dest, double f_factor_src)
-			:m_f_factor_dest(f_factor_dest), m_f_factor_src(f_factor_src)
-		{}
-
-		/**
-		 *	@brief performs elementwise addition of matrix data with scaling
-		 *	@param[in] f_a is left-side matrix element
-		 *	@param[in] f_b is right-side matrix element
-		 *	@return Returns sum of products of inputs with their respective
-		 *		factors supplied to constructor.
-		 */
-		inline double operator ()(double f_a, double f_b) const
-		{
-			return f_a * m_f_factor_dest + f_b * m_f_factor_src;
-		}
-	};
-
-	/**
-	 *	@brief a simple function object for blockwise inversion
-	 */
-	class CInvertBlock {
-	public:
-		/**
-		 *	@brief performs dense matrix block inversion
-		 *	@param[out] r_dest is destination block
-		 *	@param[in] r_src is source block (must not be the same as source)
-		 */
-		template <class _TyMatrix>
-		static inline void Do(_TyMatrix &r_dest, const _TyMatrix &r_src)
-		{
-			_ASSERTE(&r_dest != &r_src); // noalias()
-			r_dest = r_src.inverse();
-		}
-	};
-
-#if defined(__UBER_BLOCK_MATRIX_FIXED_BLOCK_SIZE_OPS) && !defined(__UBER_BLOCK_MATRIX_SUPRESS_FBS)
-#include "BlockMatrixFBS.h"
-#endif // __UBER_BLOCK_MATRIX_FIXED_BLOCK_SIZE_OPS && !__UBER_BLOCK_MATRIX_SUPRESS_FBS
-	// include implementations of the FBS classes; do not put them here ...
-
-protected:
-	size_t m_n_row_num; /**< @brief number of matrix rows */
-	size_t m_n_col_num; /**< @brief number of matrix columns */
-	std::vector<TRow> m_block_rows_list; /**< @brief list of sizes of blocks rows (sum of all the elements equals m_n_row_num) */
-	std::vector<TColumn> m_block_cols_list; /**< @brief list of sizes of columns rows (sum of all the elements equals m_n_col_num) */
-
-	_TyPool m_data_pool; /**< @brief data storage */
-	size_t m_n_ref_elem_num; /**< @brief number of referenced elements */
-
-	//CTimer m_timer; // profiling
-
-#ifdef __UBER_BLOCK_MATRIX_PERFCOUNTERS
-	size_t m_n_row_reindex_num; /**< @brief row reindex performance counter (incremented everytime a row is fragmented) */
-	size_t m_n_rows_list_shift_num; /**< @brief row list shift performance counter (incremented everytime a row is inserted in the middle of the list) */
-	size_t m_n_cols_list_shift_num; /**< @brief column list shift performance counter (incremented everytime a column is inserted in the middle of the list) */
-	size_t m_n_rows_list_realloc_num; /**< @brief row list reallocation performance counter (incremented everytime row list size reaches its capacity) */
-	size_t m_n_cols_list_realloc_num; /**< @brief column list reallocation performance counter (incremented everytime column list size reaches its capacity) */
-	size_t m_n_dummy_row_num; /**< @brief dummy row performance counter (incremented everytime a dummy row is created) */
-	size_t m_n_dummy_col_num; /**< @brief dummy column performance counter (incremented everytime a dummy column is created) */
-	mutable size_t m_n_row_reref_num; /**< @brief row re-reference performance counter (incremented everytime an existing row is referenced) */
-	mutable size_t m_n_col_reref_num; /**< @brief column re-reference performance counter (incremented everytime an existing column is referenced) */
-	size_t m_n_row_append_num; /**< @brief row append performance counter (incremented everytime a row is inserted at the end of the list) */
-	size_t m_n_col_append_num; /**< @brief column append performance counter (incremented everytime a column is inserted at the end of the list) */
-	mutable size_t m_n_col_block_search_num; /**< @brief column block search performance counter (incremented everytime search is performed on the block list inside a column) */
-	mutable size_t m_n_col_block_reref_num; /**< @brief column block re-reference performance counter (incremented everytime column block is re-referenced) */
-#endif // __UBER_BLOCK_MATRIX_PERFCOUNTERS
-
+class CUberBlockMatrix : public CUberBlockMatrix_Base {
 public:
 	/**
 	 *	@brief constructor with structure specification
@@ -1365,26 +147,9 @@ public:
 	template <class CIterator>
 	inline CUberBlockMatrix(CIterator p_rows_cumsum_begin, CIterator p_rows_cumsum_end,
 		CIterator p_columns_cumsum_begin, CIterator p_columns_cumsum_end) // throw(std::bad_alloc)
-		:m_n_row_num(0), m_n_col_num(0), m_n_ref_elem_num(0)
-	{
-		Reset_Perfcounters();
-
-		m_block_rows_list.resize(p_rows_cumsum_end - p_rows_cumsum_begin);
-		std::transform(p_rows_cumsum_begin, p_rows_cumsum_end,
-			m_block_rows_list.begin(), CTransformCumsumToRows());
-		m_block_cols_list.resize(p_columns_cumsum_end - p_columns_cumsum_begin);
-		std::transform(p_columns_cumsum_begin, p_columns_cumsum_end,
-			m_block_cols_list.begin(), CTransformCumsumToColumns());
-		// copy row / col cumsums // t_odo - use std::transform to make this more elegant
-
-		m_n_row_num = (p_rows_cumsum_begin == p_rows_cumsum_end)? 0 : *(-- p_rows_cumsum_end);
-		m_n_col_num = (p_columns_cumsum_begin == p_columns_cumsum_end)?
-			0 : *(-- p_columns_cumsum_end);
-		// set dimensions
-
-		CheckIntegrity();
-		// make sure the matrix is ok
-	}
+		:CUberBlockMatrix_Base(p_rows_cumsum_begin, p_rows_cumsum_end,
+		p_columns_cumsum_begin, p_columns_cumsum_end)
+	{}
 
 	/**
 	 *	@brief constructor with structure specification
@@ -1405,24 +170,8 @@ public:
 	template <class CIterator>
 	inline CUberBlockMatrix(CIterator p_rows_cumsum_begin,
 		CIterator p_rows_cumsum_end, size_t n_column_block_num) // throw(std::bad_alloc)
-		:m_n_row_num(0), m_n_col_num(0), m_n_ref_elem_num(0)
-	{
-		Reset_Perfcounters();
-
-		m_block_rows_list.resize(p_rows_cumsum_end - p_rows_cumsum_begin);
-		std::transform(p_rows_cumsum_begin, p_rows_cumsum_end,
-			m_block_rows_list.begin(), CTransformCumsumToRows());
-		// copy row cumsums
-
-		m_block_cols_list.reserve(n_column_block_num);
-		// prealloc columns
-
-		m_n_row_num = (p_rows_cumsum_begin == p_rows_cumsum_end)? 0 : *(-- p_rows_cumsum_end);
-		// set dimensions
-
-		CheckIntegrity();
-		// make sure the matrix is ok
-	}
+		:CUberBlockMatrix_Base(p_rows_cumsum_begin, p_rows_cumsum_end, n_column_block_num)
+	{}
 
 	/**
 	 *	@brief default constructor
@@ -1436,18 +185,8 @@ public:
 	 */
 	inline CUberBlockMatrix(size_t n_target_row_block_num = 0,
 		size_t n_target_column_block_num = 0) // throw(std::bad_alloc)
-		:m_n_row_num(0), m_n_col_num(0), m_n_ref_elem_num(0)
-	{
-		Reset_Perfcounters();
-
-		if(n_target_row_block_num)
-			m_block_rows_list.reserve(n_target_row_block_num);
-		if(n_target_column_block_num)
-			m_block_cols_list.reserve(n_target_column_block_num);
-		// prealloc rows / columns
-
-		// t_odo - still a sizable portion of time is likely spent in moving the list when adding new items - need to add some perfcounters
-	}
+		:CUberBlockMatrix_Base(n_target_row_block_num, n_target_column_block_num)
+	{}
 
 	/**
 	 *	@brief copy-constructor
@@ -1455,10 +194,8 @@ public:
 	 *	@note This function throws std::bad_alloc.
 	 */
 	inline CUberBlockMatrix(const CUberBlockMatrix &r_matrix)
-		:m_n_row_num(0), m_n_col_num(0), m_n_ref_elem_num(0)
-	{
-		r_matrix.CopyTo(*this);
-	}
+		:CUberBlockMatrix_Base(r_matrix)
+	{}
 
 	/**
 	 *	@brief copy-operator
@@ -1471,36 +208,6 @@ public:
 		r_matrix.CopyTo(*this);
 		return *this;
 	}
-
-#ifdef _DEBUG
-	/**
-	 *	@brief destructor; checks the integrity of the matrix that is being destroyed
-	 */
-	inline ~CUberBlockMatrix()
-	{
-		CheckIntegrity(true);
-		// important - make sure than any malformed matrix goes unnoticed
-	}
-#endif // _DEBUG
-
-	/**
-	 *	@brief prints values of performance counters to stdout
-	 *	@note This only has effect if the __UBER_BLOCK_MATRIX_PERFCOUNTERS macro is defined,
-	 *		otherwise a line saying "performance counters not compiled" is displayed.
-	 */
-	void Dump_PerfCounters();
-
-	/**
-	 *	@brief erases all the data of the matrix
-	 */
-	void Clear();
-
-	/**
-	 *	@brief swaps two matrices
-	 *	@param[in,out] r_other is matrix to swap with
-	 *	@note This doesn't involve any loops / data copies, (amortized) time complexity is O(1).
-	 */
-	void Swap(CUberBlockMatrix &r_other);
 
 	/**
 	 *	@brief debugging functionality; transforms matrix structure to an image
@@ -1644,25 +351,13 @@ public:
 	 *	@brief gets number of matrix rows
 	 *	@return Returns number of matrix rows (in scalar elements!).
 	 */
-	inline size_t n_Row_Num() const
-	{
-		_ASSERTE((!m_n_row_num && m_block_rows_list.empty()) ||
-			(m_n_row_num && m_block_rows_list.back().n_height +
-			m_block_rows_list.back().n_cumulative_height_sum == m_n_row_num));
-		return m_n_row_num;
-	}
+	inline size_t n_Row_Num() const;
 
 	/**
 	 *	@brief gets number of matrix columns
 	 *	@return Returns number of matrix columns (in scalar elements!).
 	 */
-	inline size_t n_Column_Num() const
-	{
-		_ASSERTE((!m_n_col_num && m_block_cols_list.empty()) ||
-			(m_n_col_num && m_block_cols_list.back().n_width +
-			m_block_cols_list.back().n_cumulative_width_sum == m_n_col_num));
-		return m_n_col_num;
-	}
+	inline size_t n_Column_Num() const;
 
 	/**
 	 *	@brief gets number of matrix rows blocks
@@ -1706,41 +401,38 @@ public:
 	}
 
 	/**
+	 *	@brief tries to find a block column by first element offset, fails if it doesn't exist
+	 *
+	 *	@param[in] n_column is (zero-based) index of column (in elements)
+	 *	@param[out] r_n_block_column_num is number of elements in the corresponding block-column
+	 *
+	 *	@return Returns (zero-based) index of block-column that contains
+	 *		the given column on success, or -1 on failure.
+	 */
+	inline size_t n_Find_BlockColumn(size_t n_column, size_t &r_n_block_column_num) const;
+
+	/**
 	 *	@brief gets a matrix block (read-only)
 	 *
-	 *	@param[in] n_block_index is (zero-based) index of a block (in blocks!)
 	 *	@param[in] n_column_index is (zero-based) index of a column (in blocks!)
+	 *	@param[in] n_block_index is (zero-based) index of a block (in blocks!)
 	 *
 	 *	@return Returns an Eigen::Map<> to the block in question.
 	 *
 	 *	@note This *does not* perform row lookup, n_block_index is block index within
 	 *		the column, and it depends on the actual fill of this column.
 	 *	@note This allows write access to matrix elements, would neet a Eigen::ConstMap<>.
-	 *
-	 *	@todo This function is easily misused, make a better name or something.
-	 */
-	inline _TyMatrixXdRef t_BlockAt(size_t n_block_index, size_t n_column_index) const
-	{
-		_ASSERTE(n_column_index < m_block_cols_list.size()); // make sure n_column_index points to a valid column
-		_ASSERTE(n_block_index < m_block_cols_list[n_column_index].block_list.size()); // make sure n_block_index selects a block in this column
-		const TColumn::TBlockEntry &r_block = m_block_cols_list[n_column_index].block_list[n_block_index];
-		size_t n_block_row_num = m_block_rows_list[r_block.first].n_height,
-			n_block_column_num = m_block_cols_list[n_column_index].n_width;
-		return _TyMatrixXdRef(r_block.second, n_block_row_num, n_block_column_num);
-	}
+	 *	@note This function used to be called t_BlockAt() and the unfortunate order of arguments
+	 *		was swapped, to match n_Block_Row() where column is first.
+	 */ // t_odo This function is easily misused, make a better name or something.
+	inline _TyMatrixXdRef t_Block_AtColumn(size_t n_column_index, size_t n_block_index) const;
 
 	/**
 	 *	@brief gets number of allocated blocks
 	 *	@return Returns number of allocated blocks.
 	 *	@note This takes O(cols) time, where cols is number of matrix columns.
 	 */
-	inline size_t n_Block_Num() const
-	{
-		size_t n_num = 0;
-		for(size_t i = 0, n = m_block_cols_list.size(); i < n; ++ i)
-			n_num += m_block_cols_list[i].block_list.size();
-		return n_num;
-	}
+	inline size_t n_Block_Num() const;
 
 	/**
 	 *	@brief gets number of elements, allocated in storage
@@ -1803,15 +495,7 @@ public:
 	 *	@brief determines whether the matrix is empty
 	 *	@return Returns true if the matrix is empty, false otherwise.
 	 */
-	inline bool b_Empty() const
-	{
-		bool b_empty = !m_n_row_num && !m_n_col_num;
-		_ASSERTE(!b_empty || m_block_rows_list.empty()); // if empty, the layouts should also be empty
-		_ASSERTE(!b_empty || m_block_cols_list.empty()); // if empty, the layouts should also be empty
-		_ASSERTE(!b_empty || m_data_pool.empty()); // if empty, the pool should also be empty
-		_ASSERTE(!b_empty || !m_n_ref_elem_num); // if empty, m_n_ref_elem_num should also be null
-		return b_empty;
-	}
+	inline bool b_Empty() const;
 
 	/**
 	 *	@brief determines whether the matrix is square, also counted by blocks
@@ -1921,15 +605,7 @@ public:
 	 */
 	inline _TyMatrixXdRef t_FindBlock(size_t n_row, size_t n_column,
 		size_t n_block_row_num, size_t n_block_column_num, bool b_alloc_if_not_found = true,
-		bool b_mind_uninitialized = true) // throw(std::bad_alloc)
-	{
-		double *p_data = p_FindBlock(n_row, n_column, n_block_row_num,
-			n_block_column_num, b_alloc_if_not_found, b_mind_uninitialized);
-		if(p_data)
-			return _TyMatrixXdRef(p_data, n_block_row_num, n_block_column_num);
-		else
-			return _TyMatrixXdRef(0, 0, 0); // fixme - does this throw an exception or what?
-	}
+		bool b_mind_uninitialized = true); // throw(std::bad_alloc)
 
 	/**
 	 *	@brief finds a matrix block (read-only)
@@ -1942,15 +618,7 @@ public:
 	 *
 	 *	@note This allows write access to matrix elements, would neet a ConstReferencingMatrixXd.
 	 */
-	inline _TyMatrixXdRef t_FindBlock(size_t n_row, size_t n_column) const
-	{
-		size_t n_block_row_num, n_block_column_num;
-		double *p_data = (double*)p_FindBlock_ResolveSize(n_row, n_column, n_block_row_num, n_block_column_num);
-		if(p_data)
-			return _TyMatrixXdRef(p_data, n_block_row_num, n_block_column_num);
-		else
-			return _TyMatrixXdRef(0, 0, 0); // fixme - does this throw an exception or what?
-	}
+	inline _TyMatrixXdRef t_FindBlock(size_t n_row, size_t n_column) const;
 
 	/**
 	 *	@brief finds a matrix block, strictly inside the matrix
@@ -1987,18 +655,7 @@ public:
 	 *
 	 *	@note This allows write access to matrix elements, would neet a ConstReferencingMatrixXd.
 	 */
-	inline _TyMatrixXdRef t_GetBlock_Log(size_t n_row_index, size_t n_column_index) const
-	{
-		_ASSERTE(n_row_index < m_block_rows_list.size());
-		_ASSERTE(n_column_index < m_block_cols_list.size());
-		size_t n_block_row_num = m_block_rows_list[n_row_index].n_height;
-		size_t n_block_column_num = m_block_cols_list[n_column_index].n_width;
-		double *p_data = (double*)p_GetBlockData(n_row_index, n_column_index);
-		if(p_data)
-			return _TyMatrixXdRef(p_data, n_block_row_num, n_block_column_num);
-		else
-			return _TyMatrixXdRef(0, 0, 0); // fixme - does this throw an exception or what?
-	}
+	inline _TyMatrixXdRef t_GetBlock_Log(size_t n_row_index, size_t n_column_index) const;
 
 	/**
 	 *	@brief finds a matrix block (read-only)
@@ -2012,15 +669,7 @@ public:
 	 *		or 0 on failure.
 	 */
 	inline const double *p_GetBlock_Log(size_t n_row_index, size_t n_column_index,
-		size_t n_block_row_num, size_t n_block_column_num) const
-	{
-		_ASSERTE(n_row_index < m_block_rows_list.size());
-		_ASSERTE(n_column_index < m_block_cols_list.size());
-		if(n_block_row_num != m_block_rows_list[n_row_index].n_height ||
-		   n_block_column_num != m_block_cols_list[n_column_index].n_width)
-			return 0; // size mismatch
-		return p_GetBlockData(n_row_index, n_column_index);
-	}
+		size_t n_block_row_num, size_t n_block_column_num) const;
 
 	/**
 	 *	@brief finds a matrix block, strictly inside the matrix
@@ -2148,30 +797,7 @@ public:
 	 *	@note This is slightly slower than calling Append_Block_Log().
 	 */
 	template <class CMatrixType>
-	bool Append_Block(const CMatrixType &r_t_block, size_t n_row, size_t n_column) // throw(std::bad_alloc)
-	{
-		//CheckIntegrity(); // not here
-		// make sure the matrix is ok
-
-		size_t n_row_index, n_column_index;
-		if((n_row_index = n_RowAlloc(n_row, r_t_block.rows())) == size_t(-1) ||
-		   (n_column_index = n_ColumnAlloc(n_column, r_t_block.cols())) == size_t(-1))
-			return false;
-		// find row / column
-
-		double *p_data;
-		bool b_uninitialized; // ignored
-		if(!(p_data = p_AllocBlockData(n_row_index, n_column_index,
-		   r_t_block.rows(), r_t_block.cols(), b_uninitialized)))
-			return false;
-		// allocate a new block / reuse existing one
-
-		Eigen::Map<Eigen::MatrixXd, map_Alignment> dest(p_data, r_t_block.rows(), r_t_block.cols());
-		dest = r_t_block; // can't always use memcpy (matrix expressions, matrices with stride, ...)
-		// copy the dense data
-
-		return true;
-	}
+	bool Append_Block(const CMatrixType &r_t_block, size_t n_row, size_t n_column); // throw(std::bad_alloc)
 
 	/**
 	 *	@brief appends a new block to the matrix, changes matrix dimensions, if required
@@ -2193,29 +819,7 @@ public:
 	 */
 	template <int n_compile_time_row_num, int n_compile_time_col_num, int n_options>
 	bool Append_Block(const Eigen::Matrix<double, n_compile_time_row_num, n_compile_time_col_num,
-		n_options, n_compile_time_row_num, n_compile_time_col_num> &r_t_block, size_t n_row, size_t n_column) // throw(std::bad_alloc)
-	{
-		//CheckIntegrity(); // not here
-		// make sure the matrix is ok
-
-		size_t n_row_index, n_column_index;
-		if((n_row_index = n_RowAlloc(n_row, r_t_block.rows())) == size_t(-1) ||
-		   (n_column_index = n_ColumnAlloc(n_column, r_t_block.cols())) == size_t(-1))
-			return false;
-		// find row / column
-
-		double *p_data;
-		bool b_uninitialized; // ignored
-		if(!(p_data = p_AllocBlockData(n_row_index, n_column_index,
-		   r_t_block.rows(), r_t_block.cols(), b_uninitialized)))
-			return false;
-		// allocate a new block / reuse existing one
-
-		memcpy(p_data, &r_t_block(0, 0), r_t_block.rows() * r_t_block.cols() * sizeof(double));
-		// copy the dense data
-
-		return true;
-	}
+		n_options, n_compile_time_row_num, n_compile_time_col_num> &r_t_block, size_t n_row, size_t n_column); // throw(std::bad_alloc)
 
 	/**
 	 *	@brief appends a new block to the matrix, changes matrix dimensions, if required
@@ -2238,41 +842,7 @@ public:
 	 *	@todo this is practically untested, test it
 	 */
 	template <class CMatrixType>
-	bool Append_Block_Log(const CMatrixType &r_t_block, size_t n_row_index, size_t n_column_index) // throw(std::bad_alloc)
-	{
-		_ASSERTE(n_row_index <= m_block_rows_list.size());
-		_ASSERTE(n_column_index <= m_block_cols_list.size());
-
-		//CheckIntegrity(); // not here
-		// make sure the matrix is ok
-
-		if(n_row_index == m_block_rows_list.size() &&
-		   (n_row_index = n_RowAlloc(m_n_row_num, r_t_block.rows())) == size_t(-1))
-			return false;
-		else if(m_block_rows_list[n_row_index].n_height != r_t_block.rows())
-			return false;
-		if(n_column_index == m_block_cols_list.size() &&
-		   (n_column_index = n_ColumnAlloc(m_n_col_num, r_t_block.cols())) == size_t(-1))
-			return false;
-		else if(m_block_cols_list[n_column_index].n_width != r_t_block.cols())
-			return false;
-		// in case either index points one past the last row / column, creates a new one
-		// note that n_ColumnAlloc() / n_RowAlloc() check dimensions,
-		// if not used, the dimensions must be checked here
-
-		double *p_data;
-		bool b_uninitialized; // ignored
-		if(!(p_data = p_AllocBlockData(n_row_index, n_column_index,
-		   r_t_block.rows(), r_t_block.cols(), b_uninitialized)))
-			return false;
-		// allocate a new block / reuse existing one
-
-		Eigen::Map<Eigen::MatrixXd, map_Alignment> dest(p_data, r_t_block.rows(), r_t_block.cols());
-		dest = r_t_block; // can't always use memcpy (matrix expressions, matrices with stride, ...)
-		// copy the dense data
-
-		return false;
-	}
+	bool Append_Block_Log(const CMatrixType &r_t_block, size_t n_row_index, size_t n_column_index); // throw(std::bad_alloc)
 
 	/**
 	 *	@brief appends a new block to the matrix, changes matrix dimensions, if required
@@ -2299,40 +869,7 @@ public:
 	 */
 	template <int n_compile_time_row_num, int n_compile_time_col_num, int n_options>
 	bool Append_Block_Log(const Eigen::Matrix<double, n_compile_time_row_num, n_compile_time_col_num,
-		n_options, n_compile_time_row_num, n_compile_time_col_num> &r_t_block, size_t n_row_index, size_t n_column_index) // throw(std::bad_alloc)
-	{
-		_ASSERTE(n_row_index <= m_block_rows_list.size());
-		_ASSERTE(n_column_index <= m_block_cols_list.size());
-
-		//CheckIntegrity(); // not here
-		// make sure the matrix is ok
-
-		if(n_row_index == m_block_rows_list.size() &&
-		   (n_row_index = n_RowAlloc(m_n_row_num, r_t_block.rows())) == size_t(-1))
-			return false;
-		else if(m_block_rows_list[n_row_index].n_height != r_t_block.rows())
-			return false;
-		if(n_column_index == m_block_cols_list.size() &&
-		   (n_column_index = n_ColumnAlloc(m_n_col_num, r_t_block.cols())) == size_t(-1))
-			return false;
-		else if(m_block_cols_list[n_column_index].n_width != r_t_block.cols())
-			return false;
-		// in case either index points one past the last row / column, creates a new one
-		// note that n_ColumnAlloc() / n_RowAlloc() check dimensions,
-		// if not used, the dimensions must be checked here
-
-		double *p_data;
-		bool b_uninitialized; // ignored
-		if(!(p_data = p_AllocBlockData(n_row_index, n_column_index,
-		   r_t_block.rows(), r_t_block.cols(), b_uninitialized)))
-			return false;
-		// allocate a new block / reuse existing one
-
-		memcpy(p_data, &r_t_block(0, 0), r_t_block.rows() * r_t_block.cols() * sizeof(double));
-		// copy the dense data
-
-		return false;
-	}
+		n_options, n_compile_time_row_num, n_compile_time_col_num> &r_t_block, size_t n_row_index, size_t n_column_index); // throw(std::bad_alloc)
 
 	/**
 	 *	@brief accumulates multiplication of vector by matrix (the matrix is on the left)
@@ -2343,7 +880,7 @@ public:
 	 *	@param[in] p_src_vector is source vector (must not equal p_dest_vector in this implementation)
 	 *	@param[in] n_src_size is number of elements in p_src_vector (for debugging purposes only; must equal matrix columns)
 	 *
-	 *	@note This calculates p_dest_vector += *this * *p_src_vector. To calculate the product
+	 *	@note This calculates \f$p\_dest\_vector = p\_dest\_vector + this \cdot p\_src\_vector\f$. To calculate the product
 	 *		in reverse order, use PostMultiply_Add().
 	 *	@note Error-checking is enabled in debug only.
 	 *
@@ -2368,7 +905,7 @@ public:
 	 *	@param[in] n_src_size is number of elements in p_src_vector
 	 *		(for debugging purposes only; must equal matrix columns)
 	 *
-	 *	@note This calculates p_dest_vector += *this * *p_src_vector. To calculate the product
+	 *	@note This calculates \f$p\_dest\_vector = p\_dest\_vector + this \cdot p\_src\_vector\f$. To calculate the product
 	 *		in reverse order, use PostMultiply_Add().
 	 *	@note Error-checking is enabled in debug only.
 	 *
@@ -2376,27 +913,7 @@ public:
 	 */
 	template <class CBlockMatrixTypelist>
 	void PreMultiply_Add_FBS(double *p_dest_vector, size_t UNUSED(n_dest_size),
-		const double *p_src_vector, size_t UNUSED(n_src_size)) const
-	{
-		CheckIntegrity(true);
-
-#ifdef __UBER_BLOCK_MATRIX_SUPRESS_FBS
-		PreMultiply_Add(p_dest_vector, n_dest_size, p_src_vector, n_src_size);
-#else // __UBER_BLOCK_MATRIX_SUPRESS_FBS
-		_ASSERTE(p_dest_vector != p_src_vector);
-		_ASSERTE(n_dest_size == m_n_row_num);
-		_ASSERTE(n_src_size == m_n_col_num);
-
-		for(_TyColumnConstIter p_col_it = m_block_cols_list.begin(),
-		   p_col_end_it = m_block_cols_list.end(); p_col_it != p_col_end_it; ++ p_col_it) {
-			const TColumn &r_t_col = *p_col_it;
-
-			CFBS_PreMAD<CBlockMatrixTypelist>::PreMAD_OuterLoop(
-				r_t_col, p_dest_vector, p_src_vector, m_block_rows_list);
-			// execute templated middle loop selector
-		}
-#endif // __UBER_BLOCK_MATRIX_SUPRESS_FBS
-	}
+		const double *p_src_vector, size_t UNUSED(n_src_size)) const;
 
 #endif // __UBER_BLOCK_MATRIX_FIXED_BLOCK_SIZE_OPS
 
@@ -2409,11 +926,11 @@ public:
 	 *	@param[in] p_src_vector is source vector (must not equal p_dest_vector in this implementation)
 	 *	@param[in] n_src_size is number of elements in p_src_vector (for debugging purposes only; must equal matrix rows)
 	 *
-	 *	@note This calculates p_dest_vector += *p_src_vector * *this. To calculate the product
+	 *	@note This calculates \f$p\_dest\_vector = p\_dest\_vector + p\_src\_vector \cdot this\f$. To calculate the product
 	 *		in reverse order, use PreMultiply_Add().
 	 *	@note Error-checking is enabled in debug only.
 	 *	@note This function is easily parallelized using OpenMP (use PostMultiply_Add_Parallel()).
-	 *	@note It is possible to use the following relationship to convert premultiply to postmultiply: M^T * u = (u * M)^T.
+	 *	@note It is possible to use the following relationship to convert premultiply to postmultiply: \f$M^T \cdot u = (u \cdot M)^T\f$.
 	 *
 	 *	@todo - this is largerly untested; test this
 	 */
@@ -2429,11 +946,11 @@ public:
 	 *	@param[in] p_src_vector is source vector (must not equal p_dest_vector in this implementation)
 	 *	@param[in] n_src_size is number of elements in p_src_vector (for debugging purposes only; must equal matrix rows)
 	 *
-	 *	@note This calculates p_dest_vector += *p_src_vector * *this. To calculate the product
+	 *	@note This calculates \f$p\_dest\_vector = p\_dest\_vector + p\_src\_vector \cdot this\f$. To calculate the product
 	 *		in reverse order, use PreMultiply_Add().
 	 *	@note Error-checking is enabled in debug only.
 	 *	@note This function is parallelized using OpenMP (if not available, it runs serially).
-	 *	@note It is possible to use the following relationship to convert premultiply to postmultiply: M^T * u = (u * M)^T.
+	 *	@note It is possible to use the following relationship to convert premultiply to postmultiply: \f$M^T \cdot u = (u \cdot M)^T\f$.
 	 *
 	 *	@todo - this is largerly untested; test this
 	 */
@@ -2456,37 +973,18 @@ public:
 	 *	@param[in] n_src_size is number of elements in p_src_vector
 	 *		(for debugging purposes only; must equal matrix rows)
 	 *
-	 *	@note This calculates p_dest_vector += *p_src_vector * *this. To calculate the product
+	 *	@note This calculates \f$p\_dest\_vector = p\_dest\_vector + p\_src\_vector \cdot this\f$. To calculate the product
 	 *		in reverse order, use PreMultiply_Add().
 	 *	@note Error-checking is enabled in debug only.
 	 *	@note This function is easily parallelized using OpenMP (use PostMultiply_Add_FBS_Parallel()).
 	 *	@note It is possible to use the following relationship to convert premultiply
-	 *		to postmultiply: M^T * u = (u * M)^T.
+	 *		to postmultiply: \f$M^T \cdot u = (u \cdot M)^T\f$.
 	 *
 	 *	@todo - this is largerly untested; test this
 	 */
 	template <class CBlockMatrixTypelist>
 	void PostMultiply_Add_FBS(double *p_dest_vector, size_t UNUSED(n_dest_size),
-		const double *p_src_vector, size_t UNUSED(n_src_size)) const
-	{
-		CheckIntegrity(true);
-
-#ifdef __UBER_BLOCK_MATRIX_SUPRESS_FBS
-		PostMultiply_Add(p_dest_vector, n_dest_size, p_src_vector, n_src_size);
-#else // __UBER_BLOCK_MATRIX_SUPRESS_FBS
-		_ASSERTE(p_dest_vector != p_src_vector);
-		_ASSERTE(n_dest_size == m_n_col_num);
-		_ASSERTE(n_src_size == m_n_row_num);
-
-		for(_TyColumnConstIter p_col_it = m_block_cols_list.begin(),
-		   p_col_end_it = m_block_cols_list.end(); p_col_it != p_col_end_it; ++ p_col_it) {
-			const TColumn &r_t_col = *p_col_it;
-			CFBS_PostMAD<CBlockMatrixTypelist>::PostMAD_OuterLoop(
-				r_t_col, p_dest_vector, p_src_vector, m_block_rows_list);
-			// execute templated middle loop selector
-		}
-#endif // __UBER_BLOCK_MATRIX_SUPRESS_FBS
-	}
+		const double *p_src_vector, size_t UNUSED(n_src_size)) const;
 
 	/**
 	 *	@brief accumulates multiplication of matrix by vector (the matrix is on the right)
@@ -2502,47 +1000,18 @@ public:
 	 *	@param[in] n_src_size is number of elements in p_src_vector
 	 *		(for debugging purposes only; must equal matrix rows)
 	 *
-	 *	@note This calculates p_dest_vector += *p_src_vector * *this. To calculate the product
+	 *	@note This calculates \f$p\_dest\_vector = p\_dest\_vector + p\_src\_vector \cdot this\f$. To calculate the product
 	 *		in reverse order, use PreMultiply_Add().
 	 *	@note Error-checking is enabled in debug only.
 	 *	@note This function is parallelized using OpenMP (if not available, runs in serial).
 	 *	@note It is possible to use the following relationship to convert premultiply
-	 *		to postmultiply: M^T * u = (u * M)^T.
+	 *		to postmultiply: \f$M^T \cdot u = (u \cdot M)^T\f$.
 	 *
 	 *	@todo - this is largerly untested; test this
 	 */
 	template <class CBlockMatrixTypelist>
 	void PostMultiply_Add_FBS_Parallel(double *p_dest_vector, size_t UNUSED(n_dest_size),
-		const double *p_src_vector, size_t UNUSED(n_src_size)) const
-	{
-		CheckIntegrity(true);
-
-#ifdef __UBER_BLOCK_MATRIX_SUPRESS_FBS
-		PostMultiply_Add_Parallel(p_dest_vector, n_dest_size, p_src_vector, n_src_size);
-#else // __UBER_BLOCK_MATRIX_SUPRESS_FBS
-		_ASSERTE(p_dest_vector != p_src_vector);
-		_ASSERTE(n_dest_size == m_n_col_num);
-		_ASSERTE(n_src_size == m_n_row_num);
-
-#ifdef _OPENMP
-		// note that this loop can be omp parallelized (just have to use signed integer indexing)
-		_ASSERTE(m_block_cols_list.size() <= INT_MAX);
-		int n = int(m_block_cols_list.size());
-#pragma omp parallel for default(shared)
-		for(int i = 0; i < n; ++ i) {
-			const TColumn &r_t_col = m_block_cols_list[i];
-#else // _OPENMP
-		for(_TyColumnConstIter p_col_it = m_block_cols_list.begin(),
-		   p_col_end_it = m_block_cols_list.end(); p_col_it != p_col_end_it; ++ p_col_it) {
-			const TColumn &r_t_col = *p_col_it;
-#endif // _OPENMP
-
-			CFBS_PostMAD<CBlockMatrixTypelist>::PostMAD_OuterLoop(
-				r_t_col, p_dest_vector, p_src_vector, m_block_rows_list);
-			// execute templated middle loop selector
-		}
-#endif // __UBER_BLOCK_MATRIX_SUPRESS_FBS
-	}
+		const double *p_src_vector, size_t UNUSED(n_src_size)) const;
 
 #endif // __UBER_BLOCK_MATRIX_FIXED_BLOCK_SIZE_OPS
 
@@ -2834,18 +1303,6 @@ public:
 #endif // __UBER_BLOCK_MATRIX_HAVE_CSPARSE
 
 	/**
-	 *	@brief copies the matrix
-	 *
-	 *	@param[out] r_dest is destination matrix (will be overwritten)
-	 *	@param[in] b_share_data is data sharing flag (if set, block data in the destination
-	 *		matrix will point to this matrix pool; if new blocks are added to the copy
-	 *		or the original(this), these are not mirrored in the other matrix)
-	 *
-	 *	@note This function throws std::bad_alloc.
-	 */
-	void CopyTo(CUberBlockMatrix &r_dest, bool b_share_data = false) const; // throw(std::bad_alloc)
-
-	/**
 	 *	@brief copies the matrix to a part of another matrix
 	 *
 	 *	This function takes one matrix, and puts it on a selected position in another matrix.
@@ -3097,40 +1554,7 @@ public:
 	 *	@note This function throws std::bad_alloc.
 	 */
 	template <class _TyFixedSizeMatrixOrMap>
-	void Convert_to_Dense(_TyFixedSizeMatrixOrMap &r_dest) const // throw(std::bad_alloc)
-	{
-		CheckIntegrity(true);
-
-		//r_dest.resize(m_n_row_num, m_n_col_num); // by the caller, also this is specialization for fixed-size matrices
-		_ASSERTE(r_dest.rows() == m_n_row_num && r_dest.cols() == m_n_col_num);
-		r_dest.setZero();
-		// alloc dest matrix
-
-		for(size_t j = 0, n_col_num = m_block_cols_list.size(); j < n_col_num; ++ j) {
-			const TColumn &t_col = m_block_cols_list[j];
-
-			size_t n_x = t_col.n_cumulative_width_sum;
-			size_t n_width = t_col.n_width;
-			// dimensions of the block
-
-			for(size_t i = 0, n_block_num = t_col.block_list.size(); i < n_block_num; ++ i) {
-				size_t n_row = t_col.block_list[i].first;
-				const double *p_data = t_col.block_list[i].second;
-
-				size_t n_y = m_block_rows_list[n_row].n_cumulative_height_sum;
-				size_t n_height = m_block_rows_list[n_row].n_height;
-				// dimensions of the block
-
-				for(size_t x = 0; x < n_width; ++ x) {
-					for(size_t y = 0; y < n_height; ++ y) {
-						double f_elem = p_data[x * n_height + y]; // t_odo - this is probably the other way around // nope, it's this way
-						r_dest(n_y + y, n_x + x) = f_elem;
-					}
-				}
-				// iterate through data, sparse fill ...
-			}
-		}
-	}
+	void Convert_to_Dense(_TyFixedSizeMatrixOrMap &r_dest) const; // throw(std::bad_alloc)
 
 	/**
 	 *	@brief converts this matrix to Eigen dense matrix
@@ -3142,7 +1566,7 @@ public:
 	/**
 	 *	@brief performs element-wise multiplication of this matrix by a scalar
 	 *
-	 *	@code *this *= f_scalar @endcode
+	 *	\f$this = this \cdot f\_scalar\f$
 	 *
 	 *	@param[in] f_scalar is the multiplication factor
 	 */
@@ -3156,28 +1580,21 @@ public:
 	/**
 	 *	@brief performs element-wise multiplication of this matrix by a scalar
 	 *
-	 *	@code *this *= f_scalar @endcode
+	 *	\f$this = this \cdot f\_scalar\f$
 	 *
 	 *	@tparam CBlockMatrixTypelist is a typelist, containing Eigen matrices,
 	 *		representing the possible block sizes
 	 *	@param[in] f_scalar is the multiplication factor
 	 */
 	template <class CBlockMatrixTypelist>
-	inline void Scale_FBS(double f_scalar)
-	{
-#ifdef __UBER_BLOCK_MATRIX_SUPRESS_FBS
-		ElementwiseUnaryOp_ZeroInvariant(CScaleBy(f_scalar));
-#else // __UBER_BLOCK_MATRIX_SUPRESS_FBS
-		ElementwiseUnaryOp_ZeroInvariant_FBS<CBlockMatrixTypelist>(CScaleBy(f_scalar));
-#endif // __UBER_BLOCK_MATRIX_SUPRESS_FBS
-	}
+	inline void Scale_FBS(double f_scalar);
 
 #endif // __UBER_BLOCK_MATRIX_FIXED_BLOCK_SIZE_OPS
 
 	/**
 	 *	@brief performs element-wise multiplication of this matrix by a scalar
 	 *
-	 *	@code *this *= f_scalar @endcode
+	 *	\f$this = this \cdot f\_scalar\f$
 	 *
 	 *	@param[in] f_scalar is the multiplication factor
 	 *	@note This version is parallelized using OpenMP (where not available,
@@ -3193,7 +1610,7 @@ public:
 	/**
 	 *	@brief performs element-wise multiplication of this matrix by a scalar
 	 *
-	 *	@code *this *= f_scalar @endcode
+	 *	\f$this = this \cdot f\_scalar\f$
 	 *
 	 *	@tparam CBlockMatrixTypelist is a typelist, containing Eigen matrices,
 	 *		representing the possible block sizes
@@ -3202,10 +1619,7 @@ public:
 	 *		the serial version is used).
 	 */
 	template <class CBlockMatrixTypelist>
-	inline void Scale_FBS_Parallel(double f_scalar)
-	{
-		ElementwiseUnaryOp_ZeroInvariant_FBS_Parallel<CBlockMatrixTypelist>(CScaleBy(f_scalar));
-	}
+	inline void Scale_FBS_Parallel(double f_scalar);
 
 #endif // __UBER_BLOCK_MATRIX_FIXED_BLOCK_SIZE_OPS
 
@@ -3218,25 +1632,7 @@ public:
 	 *		(otherwise the structure of the matrix would change to dense matrix).
 	 */
 	template <class COp>
-	void ElementwiseUnaryOp_ZeroInvariant(COp op)
-	{
-		CheckIntegrity(true);
-
-		for(size_t i = 0, n = m_block_cols_list.size(); i < n; ++ i) {
-			const TColumn &r_t_col = m_block_cols_list[i];
-			const size_t n_block_width = r_t_col.n_width;
-			for(size_t j = 0, m = r_t_col.block_list.size(); j < m; ++ j) {
-				size_t n_row_idx = r_t_col.block_list[j].first;
-				double *p_data = r_t_col.block_list[j].second;
-				size_t n_block_height = m_block_rows_list[n_row_idx].n_height;
-				// get block position, size and data
-
-				for(const double *p_end = p_data + n_block_width * n_block_height; p_data != p_end; ++ p_data)
-					*p_data = op(*p_data);
-				// modify the block
-			}
-		}
-	}
+	void ElementwiseUnaryOp_ZeroInvariant(COp op);
 
 	/**
 	 *	@brief unary operation on each block elements
@@ -3252,33 +1648,7 @@ public:
 	 *		the serial version is used).
 	 */
 	template <class COp>
-	void ElementwiseUnaryOp_ZeroInvariant_Parallel(COp op)
-	{
-		CheckIntegrity(true);
-
-#ifdef _OPENMP
-		_ASSERTE(m_block_cols_list.size() <= INT_MAX);
-		int n = int(m_block_cols_list.size());
-		#pragma omp parallel for default(shared)
-		for(int i = 0; i < n; ++ i) {
-			const TColumn &r_t_col = m_block_cols_list[i];
-#else // _OPENMP
-		for(size_t i = 0, n = m_block_cols_list.size(); i < n; ++ i) {
-			const TColumn &r_t_col = m_block_cols_list[i];
-#endif // OPENMP
-			const size_t n_block_width = r_t_col.n_width;
-			for(size_t j = 0, m = r_t_col.block_list.size(); j < m; ++ j) {
-				size_t n_row_idx = r_t_col.block_list[j].first;
-				double *p_data = r_t_col.block_list[j].second;
-				size_t n_block_height = m_block_rows_list[n_row_idx].n_height;
-				// get block position, size and data
-
-				for(const double *p_end = p_data + n_block_width * n_block_height; p_data != p_end; ++ p_data)
-					*p_data = op(*p_data);
-				// modify the block
-			}
-		}
-	}
+	void ElementwiseUnaryOp_ZeroInvariant_Parallel(COp op);
 
 #ifdef __UBER_BLOCK_MATRIX_FIXED_BLOCK_SIZE_OPS
 
@@ -3296,28 +1666,7 @@ public:
 	 *		(otherwise the structure of the matrix would change to dense matrix).
 	 */
 	template <class CBlockMatrixTypelist, class COp>
-	void ElementwiseUnaryOp_ZeroInvariant_FBS(COp op)
-	{
-		CheckIntegrity(true);
-
-#ifdef __UBER_BLOCK_MATRIX_SUPRESS_FBS
-		ElementwiseUnaryOp_ZeroInvariant(op);
-#else // __UBER_BLOCK_MATRIX_SUPRESS_FBS
-		for(size_t i = 0, n = m_block_cols_list.size(); i < n; ++ i) {
-			const TColumn &r_t_col = m_block_cols_list[i];
-			const size_t n_block_width = r_t_col.n_width;
-			for(size_t j = 0, m = r_t_col.block_list.size(); j < m; ++ j) {
-				const TColumn::TBlockEntry &r_t_block = r_t_col.block_list[j];
-				size_t n_block_height = m_block_rows_list[r_t_block.first].n_height;
-				// get block position, size and data
-
-				CFBS_ElementwiseUnaryOp<CBlockMatrixTypelist>::ElementwiseUnary_Loop(
-					r_t_block.second, n_block_width * n_block_height, op);
-				// perform an operation on the block, with fixed block size
-			}
-		}
-#endif // __UBER_BLOCK_MATRIX_SUPRESS_FBS
-	}
+	void ElementwiseUnaryOp_ZeroInvariant_FBS(COp op);
 
 	/**
 	 *	@brief unary operation on each block elements
@@ -3335,43 +1684,14 @@ public:
 	 *		the serial version is used).
 	 */
 	template <class CBlockMatrixTypelist, class COp>
-	void ElementwiseUnaryOp_ZeroInvariant_FBS_Parallel(COp op)
-	{
-		CheckIntegrity(true);
-
-#ifdef __UBER_BLOCK_MATRIX_SUPRESS_FBS
-		ElementwiseUnaryOp_ZeroInvariant_Parallel(op);
-#else // __UBER_BLOCK_MATRIX_SUPRESS_FBS
-#ifdef _OPENMP
-		_ASSERTE(m_block_cols_list.size() <= INT_MAX);
-		int n = int(m_block_cols_list.size());
-		#pragma omp parallel for default(shared)
-		for(int i = 0; i < n; ++ i) {
-			const TColumn &r_t_col = m_block_cols_list[i];
-#else // _OPENMP
-		for(size_t i = 0, n = m_block_cols_list.size(); i < n; ++ i) {
-			const TColumn &r_t_col = m_block_cols_list[i];
-#endif // OPENMP
-			const size_t n_block_width = r_t_col.n_width;
-			for(size_t j = 0, m = r_t_col.block_list.size(); j < m; ++ j) {
-				const TColumn::TBlockEntry &r_t_block = r_t_col.block_list[j];
-				size_t n_block_height = m_block_rows_list[r_t_block.first].n_height;
-				// get block position, size and data
-
-				CFBS_ElementwiseUnaryOp<CBlockMatrixTypelist>::ElementwiseUnary_Loop(
-					r_t_block.second, n_block_width * n_block_height, op);
-				// perform an operation on the block, with fixed block size
-			}
-		}
-#endif // __UBER_BLOCK_MATRIX_SUPRESS_FBS
-	}
+	void ElementwiseUnaryOp_ZeroInvariant_FBS_Parallel(COp op);
 
 #endif // __UBER_BLOCK_MATRIX_FIXED_BLOCK_SIZE_OPS
 
 	/**
 	 *	@brief performs element-wise addition of two matrices
 	 *
-	 *	@code r_dest += *this @endcode
+	 *	\f$r\_dest = r\_dest + this\f$
 	 *
 	 *	@param[out] r_dest is destination matrix (must have the same dimensions and block layout)
 	 *	@return Returns true on success, false on failure (incompatible layout).
@@ -3388,7 +1708,7 @@ public:
 	/**
 	 *	@brief performs element-wise addition of two matrices
 	 *
-	 *	@code r_dest += *this @endcode
+	 *	\f$r\_dest = r\_dest + this\f$
 	 *
 	 *	@tparam CBlockMatrixTypelist is a typelist, containing Eigen matrices,
 	 *		representing the possible block sizes
@@ -3397,22 +1717,14 @@ public:
 	 *	@note This function throws std::bad_alloc.
 	 */
 	template <class _CBlockMatrixTypelist>
-	inline bool AddTo_FBS(CUberBlockMatrix &r_dest) const // throw(std::bad_alloc)
-	{
-#ifdef __UBER_BLOCK_MATRIX_SUPRESS_FBS
-		return ElementwiseBinaryOp_ZeroInvariant(r_dest, f_Add);
-#else // __UBER_BLOCK_MATRIX_SUPRESS_FBS
-		return ElementwiseBinaryOp_ZeroInvariant_FBS<_CBlockMatrixTypelist>(r_dest, f_Add);
-		// t_odo - optimize away / generalize as ElementwiseBinaryOp<COp>
-#endif // __UBER_BLOCK_MATRIX_SUPRESS_FBS
-	}
+	inline bool AddTo_FBS(CUberBlockMatrix &r_dest) const; // throw(std::bad_alloc)
 
 #endif // __UBER_BLOCK_MATRIX_FIXED_BLOCK_SIZE_OPS
 
 	/**
 	 *	@brief performs element-wise addition of two matrices with right-side scalar multiplication
 	 *
-	 *	@code r_dest += *this * f_factor @endcode
+	 *	\f$r\_dest = r\_dest + this \cdot f\_factor\f$
 	 *
 	 *	@param[out] r_dest is destination matrix (must have the same dimensions and block layout)
 	 *	@param[in] f_factor is right-side scalar factor
@@ -3435,7 +1747,7 @@ public:
 	/**
 	 *	@brief performs element-wise addition of two matrices with right-side scalar multiplication
 	 *
-	 *	@code r_dest += *this * f_factor @endcode
+	 *	\f$r\_dest = r\_dest + this \cdot f\_factor\f$
 	 *
 	 *	@tparam CBlockMatrixTypelist is a typelist, containing Eigen matrices,
 	 *		representing the possible block sizes
@@ -3452,22 +1764,14 @@ public:
 	 *		(the changes are detected inside the loop for performance purposes).
 	 */
 	template <class CBlockMatrixTypelist>
-	inline bool AddTo_FBS(CUberBlockMatrix &r_dest, double f_factor) const // throw(std::bad_alloc)
-	{
-#ifdef __UBER_BLOCK_MATRIX_SUPRESS_FBS
-		return ElementwiseBinaryOp_RightSideZeroInvariant(r_dest, CAddWeighted(f_factor));
-#else // __UBER_BLOCK_MATRIX_SUPRESS_FBS
-		return ElementwiseBinaryOp_RightSideZeroInvariant_FBS<CBlockMatrixTypelist>(r_dest,
-			CAddWeighted(f_factor));
-#endif // __UBER_BLOCK_MATRIX_SUPRESS_FBS
-	}
+	inline bool AddTo_FBS(CUberBlockMatrix &r_dest, double f_factor) const; // throw(std::bad_alloc)
 
 #endif // __UBER_BLOCK_MATRIX_FIXED_BLOCK_SIZE_OPS
 
 	/**
 	 *	@brief performs element-wise addition of two matrices with scalar multiplication
 	 *
-	 *	@code r_dest = r_dest * f_factor_dest + *this * f_factor_this @endcode
+	 *	\f$r\_dest = r\_dest \cdot f\_factor\_dest + this \cdot f\_factor\_this\f$
 	 *
 	 *	@param[out] r_dest is destination matrix (must have the same dimensions and block layout)
 	 *	@param[in] f_factor_dest is left-side scalar factor
@@ -3491,7 +1795,7 @@ public:
 	/**
 	 *	@brief performs element-wise addition of two matrices with scalar multiplication
 	 *
-	 *	@code r_dest = r_dest * f_factor_dest + *this * f_factor_this @endcode
+	 *	\f$r\_dest = r\_dest \cdot f\_factor\_dest + this \cdot f\_factor\_this\f$
 	 *
 	 *	@tparam CBlockMatrixTypelist is a typelist, containing Eigen matrices,
 	 *		representing the possible block sizes
@@ -3509,22 +1813,14 @@ public:
 	 *		(the changes are detected inside the loop for performance purposes).
 	 */
 	template <class CBlockMatrixTypelist>
-	inline bool AddTo_FBS(CUberBlockMatrix &r_dest, double f_factor_dest, double f_factor_this) const // throw(std::bad_alloc)
-	{
-#ifdef __UBER_BLOCK_MATRIX_SUPRESS_FBS
-		return ElementwiseBinaryOp(r_dest, CWeightedAddWeighted(f_factor_dest, f_factor_this));
-#else // __UBER_BLOCK_MATRIX_SUPRESS_FBS
-		return ElementwiseBinaryOp_FBS<CBlockMatrixTypelist>(r_dest,
-			CWeightedAddWeighted(f_factor_dest, f_factor_this));
-#endif // __UBER_BLOCK_MATRIX_SUPRESS_FBS
-	}
+	inline bool AddTo_FBS(CUberBlockMatrix &r_dest, double f_factor_dest, double f_factor_this) const; // throw(std::bad_alloc)
 
 #endif // __UBER_BLOCK_MATRIX_FIXED_BLOCK_SIZE_OPS
 
 	/**
 	 *	@brief performs element-wise binary operation on two matrices
 	 *
-	 *	@code r_dest = op(r_dest, *this) @endcode
+	 *	\f$r\_dest = op(r\_dest, this)\f$
 	 *
 	 *	@tparam CBinaryOp is binary function or a binary function object, operating on double.
 	 *
@@ -3540,142 +1836,14 @@ public:
 	 *	@note Functor op is always called as dest = op(dest, src) (parameter order is maintained).
 	 */
 	template <class CBinaryOp>
-	bool ElementwiseBinaryOp_ZeroInvariant(CUberBlockMatrix &r_dest, CBinaryOp op) const // throw(std::bad_alloc)
-	{
-		CheckIntegrity(true);
-		r_dest.CheckIntegrity(true);
-
-		// t_odo - decide whether to optimize for addition of matrices with exactly the same block layout (no need to allocate anything, but will anyone use that?) // no
-		// t_odo - optimize for matrices with no empty blocks / columns (such as in SLAM), that probably need to be another class // can't see what the optimization was anymore
-		// note - this one is a bit hard, as the layout might be completely different in case there are dummy rows / columns,
-		//		it is therefore hard to check the layout, and b_EqualStructure() doesn't help. maybe need something like b_CompatibleStructure()
-
-		if(r_dest.m_n_row_num != m_n_row_num || r_dest.m_n_col_num != m_n_col_num)
-			return false;
-		// the dimensions must be the same
-
-		const std::vector<TRow> &r_row_list_first = m_block_rows_list;
-		const std::vector<TColumn> &r_column_list_first = m_block_cols_list;
-		std::vector<TRow> &r_row_list_second = r_dest.m_block_rows_list;
-		std::vector<TColumn> &r_column_list_second = r_dest.m_block_cols_list;
-
-		std::vector<size_t> row_mapping;
-		std::vector<size_t> column_mapping; // t_odo - pack this code to a function
-		{
-			if(!Build_AdditionLayouts(r_row_list_first, r_column_list_first,
-			   r_row_list_second, r_column_list_second, row_mapping, column_mapping))
-				return false;
-			//r_dest.CheckIntegrity(); // make sure that this operation didn't damage matrix integrity
-		}
-		// reorganize the destination matrix so that the layout is compatible with this (if required)
-		// the (amortized) complexity is linear, about O(row blocks + col blocks)
-
-		for(size_t i = 0, n = r_column_list_first.size(); i < n; ++ i) {
-			const TColumn &r_t_col = r_column_list_first[i];
-			if(r_t_col.block_list.empty())
-				continue;
-			// skip empty columns ...
-
-			size_t n_dest = column_mapping[i];
-			if(n_dest == size_t(-1))
-				return false; // this column was split, the blocks in it are now homeless
-			TColumn &r_t_dest_col = r_column_list_second[n_dest];
-			// find dest column
-
-			_TyBlockIter p_first_it = r_t_dest_col.block_list.begin();
-			// where to begin searching for blocks
-
-			size_t j = 0, m = r_t_col.block_list.size();
-			if(!r_t_dest_col.block_list.empty()) {
-				for(; j < m; ++ j) {
-					const TColumn::TBlockEntry &r_t_block = r_t_col.block_list[j];
-					size_t n_old_row, n_new_row;
-					if((n_new_row = row_mapping[n_old_row = r_t_block.first]) == size_t(-1))
-						return false; // this row was split, the blocks in it are now homeless
-					// get block and its new row
-
-					double *p_value_src = r_t_block.second;
-					size_t n_block_size = r_t_col.n_width * m_block_rows_list[n_old_row].n_height;
-					// get block data
-
-					_TyBlockIter p_block_it =
-#if defined(_MSC_VER) && !defined(__MWERKS__) && _MSC_VER >= 1400
-						std::lower_bound(p_first_it, r_t_dest_col.block_list.end(), n_new_row, CCompareBlockRow());
-#else // _MSC_VER && !__MWERKS__ && _MSC_VER >= 1400
-						std::lower_bound(p_first_it, r_t_dest_col.block_list.end(), n_new_row, CompareBlockRow);
-#endif // _MSC_VER && !__MWERKS__ && _MSC_VER >= 1400
-					// find where to put the block in the column
-
-					bool b_insert_at_end;
-					if((b_insert_at_end = (p_block_it == r_t_dest_col.block_list.end())) ||
-					   (*p_block_it).first != n_new_row) {
-						// a new block
-
-						double *p_value = r_dest.p_Get_DenseStorage(n_block_size);
-						memcpy(p_value, p_value_src, n_block_size * sizeof(double));
-						// create a new block, initialize with values
-
-						p_first_it = r_t_dest_col.block_list.insert(p_block_it, TColumn::TBlockEntry(n_new_row, p_value));
-						// add it to the list, remember iterator
-
-						++ p_first_it;
-						// next time search from here (look out for iterator invalidation)
-
-						if(b_insert_at_end) {
-							_ASSERTE(p_first_it == r_t_dest_col.block_list.end()); // added to the end
-							++ j; // don't forget to count this block as processed
-							break; // blocks are sorted, will be always adding to the end from now on
-						}
-						// in case inserted at end, can continue using the optimized loop below
-					} else {
-						double *p_value_dest = (*p_block_it).second;
-						// get existing block data
-
-						for(double *p_value_end = p_value_dest + n_block_size;
-						   p_value_dest != p_value_end; ++ p_value_src, ++ p_value_dest)
-							*p_value_dest = op(*p_value_dest, *p_value_src); // t_odo - replace by op()
-						// add values to an existing block
-
-						p_first_it = p_block_it + 1;
-						// next time, search from here
-					}
-				}
-			}
-			for(; j < m; ++ j) {
-				const TColumn::TBlockEntry &r_t_block = r_t_col.block_list[j];
-				size_t n_old_row, n_new_row;
-				if((n_new_row = row_mapping[n_old_row = r_t_block.first]) == size_t(-1))
-					return false; // this row was split, the blocks in it are now homeless
-
-				double *p_value_src = r_t_block.second;
-				size_t n_block_size = r_t_col.n_width * m_block_rows_list[n_old_row].n_height;
-				// get block data
-
-				_ASSERTE(r_t_dest_col.block_list.empty() || r_t_dest_col.block_list.back().first < n_new_row);
-				// make sure the new block comes at the end of the row
-
-				double *p_value = r_dest.p_Get_DenseStorage(n_block_size);
-				memcpy(p_value, p_value_src, n_block_size * sizeof(double));
-				// create a new block, initialize with values
-
-				r_t_dest_col.block_list.push_back(TColumn::TBlockEntry(n_new_row, p_value));
-				// add it to the list
-			}
-			// merge blocks
-		}
-
-		//r_dest.CheckIntegrity(true);
-		// make sure that this operation didn't damage matrix integrity
-
-		return true;
-	}
+	bool ElementwiseBinaryOp_ZeroInvariant(CUberBlockMatrix &r_dest, CBinaryOp op) const; // throw(std::bad_alloc)
 
 #ifdef __UBER_BLOCK_MATRIX_FIXED_BLOCK_SIZE_OPS
 
 	/**
 	 *	@brief performs element-wise binary operation on two matrices
 	 *
-	 *	@code r_dest = op(r_dest, *this) @endcode
+	 *	\f$r\_dest = op(r\_dest, this)\f$
 	 *
 	 *	@tparam CBinaryOp is binary function or a binary function object, operating on double.
 	 *	@tparam CBlockMatrixTypelist is a typelist, containing Eigen matrices,
@@ -3693,148 +1861,14 @@ public:
 	 *	@note Functor op is always called as dest = op(dest, src) (parameter order is maintained).
 	 */
 	template <class CBlockMatrixTypelist, class CBinaryOp>
-	bool ElementwiseBinaryOp_ZeroInvariant_FBS(CUberBlockMatrix &r_dest, CBinaryOp op) const // throw(std::bad_alloc)
-	{
-		CheckIntegrity(true);
-		r_dest.CheckIntegrity(true);
-
-#ifdef __UBER_BLOCK_MATRIX_SUPRESS_FBS
-		return ElementwiseBinaryOp_ZeroInvariant(r_dest, op);
-#else // __UBER_BLOCK_MATRIX_SUPRESS_FBS
-		// t_odo - decide whether to optimize for addition of matrices with exactly the same block layout (no need to allocate anything, but will anyone use that?) // no
-		// t_odo - optimize for matrices with no empty blocks / columns (such as in SLAM), that probably need to be another class // can't see what the optimization was anymore
-		// note - this one is a bit hard, as the layout might be completely different in case there are dummy rows / columns,
-		//		it is therefore hard to check the layout, and b_EqualStructure() doesn't help. maybe need something like b_CompatibleStructure()
-
-		if(r_dest.m_n_row_num != m_n_row_num || r_dest.m_n_col_num != m_n_col_num)
-			return false;
-		// the dimensions must be the same
-
-		const std::vector<TRow> &r_row_list_first = m_block_rows_list;
-		const std::vector<TColumn> &r_column_list_first = m_block_cols_list;
-		std::vector<TRow> &r_row_list_second = r_dest.m_block_rows_list;
-		std::vector<TColumn> &r_column_list_second = r_dest.m_block_cols_list;
-
-		std::vector<size_t> row_mapping;
-		std::vector<size_t> column_mapping; // t_odo - pack this code to a function
-		{
-			if(!Build_AdditionLayouts(r_row_list_first, r_column_list_first,
-			   r_row_list_second, r_column_list_second, row_mapping, column_mapping))
-				return false;
-			//r_dest.CheckIntegrity(); // make sure that this operation didn't damage matrix integrity
-		}
-		// reorganize the destination matrix so that the layout is compatible with this (if required)
-		// the (amortized) complexity is linear, about O(row blocks + col blocks)
-
-		for(size_t i = 0, n = r_column_list_first.size(); i < n; ++ i) {
-			const TColumn &r_t_col = r_column_list_first[i];
-			if(r_t_col.block_list.empty())
-				continue;
-			// skip empty columns ...
-
-			size_t n_dest = column_mapping[i];
-			if(n_dest == size_t(-1))
-				return false; // this column was split, the blocks in it are now homeless
-			TColumn &r_t_dest_col = r_column_list_second[n_dest];
-			// find dest column
-
-			_TyBlockIter p_first_it = r_t_dest_col.block_list.begin();
-			// where to begin searching for blocks
-
-			size_t j = 0, m = r_t_col.block_list.size();
-			if(!r_t_dest_col.block_list.empty()) {
-				for(; j < m; ++ j) {
-					const TColumn::TBlockEntry &r_t_block = r_t_col.block_list[j];
-					size_t n_old_row, n_new_row;
-					if((n_new_row = row_mapping[n_old_row = r_t_block.first]) == size_t(-1))
-						return false; // this row was split, the blocks in it are now homeless
-					// get block and its new row
-
-					double *p_value_src = r_t_block.second;
-					size_t n_block_size = r_t_col.n_width * m_block_rows_list[n_old_row].n_height;
-					// get block data
-
-					_TyBlockIter p_block_it =
-#if defined(_MSC_VER) && !defined(__MWERKS__) && _MSC_VER >= 1400
-						std::lower_bound(p_first_it, r_t_dest_col.block_list.end(), n_new_row, CCompareBlockRow());
-#else // _MSC_VER && !__MWERKS__ && _MSC_VER >= 1400
-						std::lower_bound(p_first_it, r_t_dest_col.block_list.end(), n_new_row, CompareBlockRow);
-#endif // _MSC_VER && !__MWERKS__ && _MSC_VER >= 1400
-					// find where to put the block in the column
-
-					bool b_insert_at_end;
-					if((b_insert_at_end = (p_block_it == r_t_dest_col.block_list.end())) ||
-					   (*p_block_it).first != n_new_row) {
-						// a new block
-
-						double *p_value = r_dest.p_Get_DenseStorage(n_block_size);
-						CFBS_ElementwiseBinaryOp<CBlockMatrixTypelist>::ElementwiseBinary_Loop_UninitializedCopy(
-							p_value, p_value_src, n_block_size, op);
-						// create a new block, initialize with values
-
-						p_first_it = r_t_dest_col.block_list.insert(p_block_it,
-							TColumn::TBlockEntry(n_new_row, p_value));
-						// add it to the list, remember iterator
-
-						++ p_first_it;
-						// next time search from here (look out for iterator invalidation)
-
-						if(b_insert_at_end) {
-							_ASSERTE(p_first_it == r_t_dest_col.block_list.end()); // added to the end
-							++ j; // don't forget to count this block as processed
-							break; // blocks are sorted, will be always adding to the end from now on
-						}
-						// in case inserted at end, can continue using the optimized loop below
-					} else {
-						double *p_value_dest = (*p_block_it).second;
-						// get existing block data
-
-						CFBS_ElementwiseBinaryOp<CBlockMatrixTypelist>::ElementwiseBinary_Loop(p_value_dest,
-							p_value_src, n_block_size, op);
-						// add values to an existing block
-
-						p_first_it = p_block_it + 1;
-						// next time, search from here
-					}
-				}
-			}
-			for(; j < m; ++ j) {
-				const TColumn::TBlockEntry &r_t_block = r_t_col.block_list[j];
-				size_t n_old_row, n_new_row;
-				if((n_new_row = row_mapping[n_old_row = r_t_block.first]) == size_t(-1))
-					return false; // this row was split, the blocks in it are now homeless
-
-				double *p_value_src = r_t_block.second;
-				size_t n_block_size = r_t_col.n_width * m_block_rows_list[n_old_row].n_height;
-				// get block data
-
-				_ASSERTE(r_t_dest_col.block_list.empty() || r_t_dest_col.block_list.back().first < n_new_row);
-				// make sure the new block comes at the end of the row
-
-				double *p_value = r_dest.p_Get_DenseStorage(n_block_size);
-				CFBS_ElementwiseBinaryOp<CBlockMatrixTypelist>::ElementwiseBinary_Loop_UninitializedCopy(
-					p_value, p_value_src, n_block_size, op);
-				// create a new block, initialize with values
-
-				r_t_dest_col.block_list.push_back(TColumn::TBlockEntry(n_new_row, p_value));
-				// add it to the list
-			}
-			// merge blocks
-		}
-
-		//r_dest.CheckIntegrity(true);
-		// make sure that this operation didn't damage matrix integrity
-
-		return true;
-#endif // __UBER_BLOCK_MATRIX_SUPRESS_FBS
-	}
+	bool ElementwiseBinaryOp_ZeroInvariant_FBS(CUberBlockMatrix &r_dest, CBinaryOp op) const; // throw(std::bad_alloc)
 
 #endif // __UBER_BLOCK_MATRIX_FIXED_BLOCK_SIZE_OPS
 
 	/**
 	 *	@brief performs element-wise binary operation on two matrices
 	 *
-	 *	@code r_dest = op(r_dest, *this) @endcode
+	 *	\f$r\_dest = op(r\_dest, this)\f$
 	 *
 	 *	@tparam CBinaryOp is binary function or a binary function object, operating on double.
 	 *
@@ -3850,143 +1884,14 @@ public:
 	 *	@note Functor op is always called as dest = op(dest, src) (parameter order is maintained).
 	 */
 	template <class CBinaryOp>
-	bool ElementwiseBinaryOp_RightSideZeroInvariant(CUberBlockMatrix &r_dest, CBinaryOp op) const // throw(std::bad_alloc)
-	{
-		CheckIntegrity(true);
-		r_dest.CheckIntegrity(true);
-
-		if(r_dest.m_n_row_num != m_n_row_num || r_dest.m_n_col_num != m_n_col_num)
-			return false;
-		// the dimensions must be the same
-
-		const std::vector<TRow> &r_row_list_first = m_block_rows_list;
-		const std::vector<TColumn> &r_column_list_first = m_block_cols_list;
-		std::vector<TRow> &r_row_list_second = r_dest.m_block_rows_list;
-		std::vector<TColumn> &r_column_list_second = r_dest.m_block_cols_list;
-
-		std::vector<size_t> row_mapping;
-		std::vector<size_t> column_mapping; // t_odo - pack this code to a function
-		{
-			if(!Build_AdditionLayouts(r_row_list_first, r_column_list_first,
-			   r_row_list_second, r_column_list_second, row_mapping, column_mapping))
-				return false;
-			//r_dest.CheckIntegrity(); // make sure that this operation didn't damage matrix integrity
-		}
-		// reorganize the destination matrix so that the layout is compatible with this (if required)
-		// the (amortized) complexity is linear, about O(row blocks + col blocks)
-
-		for(size_t i = 0, n = r_column_list_first.size(); i < n; ++ i) {
-			const TColumn &r_t_col = r_column_list_first[i];
-			if(r_t_col.block_list.empty())
-				continue;
-			// skip empty columns ...
-
-			size_t n_dest = column_mapping[i];
-			if(n_dest == size_t(-1))
-				return false; // this column was split, the blocks in it are now homeless
-			TColumn &r_t_dest_col = r_column_list_second[n_dest];
-			// find dest column
-
-			_TyBlockIter p_first_it = r_t_dest_col.block_list.begin();
-			// where to begin searching for blocks
-
-			size_t j = 0, m = r_t_col.block_list.size();
-			if(!r_t_dest_col.block_list.empty()) {
-				for(; j < m; ++ j) {
-					const TColumn::TBlockEntry &r_t_block = r_t_col.block_list[j];
-					size_t n_old_row, n_new_row;
-					if((n_new_row = row_mapping[n_old_row = r_t_block.first]) == size_t(-1))
-						return false; // this row was split, the blocks in it are now homeless
-					// get block and its new row
-
-					double *p_value_src = r_t_block.second;
-					size_t n_block_size = r_t_col.n_width * m_block_rows_list[n_old_row].n_height;
-					// get block data
-
-					_TyBlockIter p_block_it =
-#if defined(_MSC_VER) && !defined(__MWERKS__) && _MSC_VER >= 1400
-						std::lower_bound(p_first_it, r_t_dest_col.block_list.end(), n_new_row, CCompareBlockRow());
-#else // _MSC_VER && !__MWERKS__ && _MSC_VER >= 1400
-						std::lower_bound(p_first_it, r_t_dest_col.block_list.end(), n_new_row, CompareBlockRow);
-#endif // _MSC_VER && !__MWERKS__ && _MSC_VER >= 1400
-					// find where to put the block in the column
-
-					bool b_insert_at_end;
-					if((b_insert_at_end = (p_block_it == r_t_dest_col.block_list.end())) ||
-					   (*p_block_it).first != n_new_row) {
-						// a new block
-
-						double *p_value = r_dest.p_Get_DenseStorage(n_block_size);
-						double *p_value_dest = p_value;
-						for(double *p_value_end = p_value_dest + n_block_size;
-						   p_value_dest != p_value_end; ++ p_value_src, ++ p_value_dest)
-							*p_value_dest = op(0, *p_value_src); // t_odo - replace by op() // note op needs to be zero-invariant (blocks of the second matrix that are missed by blocks of the first matrix are also untouched)
-						// create a new block, initialize with values
-
-						p_first_it = r_t_dest_col.block_list.insert(p_block_it, TColumn::TBlockEntry(n_new_row, p_value));
-						// add it to the list, remember iterator
-
-						++ p_first_it;
-						// next time search from here (look out for iterator invalidation)
-
-						if(b_insert_at_end) {
-							_ASSERTE(p_first_it == r_t_dest_col.block_list.end()); // added to the end
-							++ j; // don't forget to count this block as processed
-							break; // blocks are sorted, will be always adding to the end from now on
-						}
-						// in case inserted at end, can continue using the optimized loop below
-					} else {
-						double *p_value_dest = (*p_block_it).second;
-						// get existing block data
-
-						for(double *p_value_end = p_value_dest + n_block_size;
-						   p_value_dest != p_value_end; ++ p_value_src, ++ p_value_dest)
-							*p_value_dest = op(*p_value_dest, *p_value_src); // t_odo - replace by op()
-						// add values to an existing block
-
-						p_first_it = p_block_it + 1;
-						// next time, search from here
-					}
-				}
-			}
-			for(; j < m; ++ j) {
-				const TColumn::TBlockEntry &r_t_block = r_t_col.block_list[j];
-				size_t n_old_row, n_new_row;
-				if((n_new_row = row_mapping[n_old_row = r_t_block.first]) == size_t(-1))
-					return false; // this row was split, the blocks in it are now homeless
-
-				double *p_value_src = r_t_block.second;
-				size_t n_block_size = r_t_col.n_width * m_block_rows_list[n_old_row].n_height;
-				// get block data
-
-				_ASSERTE(r_t_dest_col.block_list.empty() || r_t_dest_col.block_list.back().first < n_new_row);
-				// make sure the new block comes at the end of the row
-
-				double *p_value = r_dest.p_Get_DenseStorage(n_block_size);
-				double *p_value_dest = p_value;
-				for(double *p_value_end = p_value_dest + n_block_size;
-				   p_value_dest != p_value_end; ++ p_value_src, ++ p_value_dest)
-					*p_value_dest = op(0, *p_value_src);  // t_odo - replace by op() // note that op needs to be zero-invariant (blocks of the second matrix that are missed by blocks of the first matrix are also untouched)
-				// create a new block, initialize with values
-
-				r_t_dest_col.block_list.push_back(TColumn::TBlockEntry(n_new_row, p_value));
-				// add it to the list
-			}
-			// merge blocks
-		}
-
-		//r_dest.CheckIntegrity(true);
-		// make sure that this operation didn't damage matrix integrity
-
-		return true;
-	}
+	bool ElementwiseBinaryOp_RightSideZeroInvariant(CUberBlockMatrix &r_dest, CBinaryOp op) const; // throw(std::bad_alloc)
 
 #ifdef __UBER_BLOCK_MATRIX_FIXED_BLOCK_SIZE_OPS
 
 	/**
 	 *	@brief performs element-wise binary operation on two matrices
 	 *
-	 *	@code r_dest = op(r_dest, *this) @endcode
+	 *	\f$r\_dest = op(r\_dest, this)\f$
 	 *
 	 *	@tparam CBinaryOp is binary function or a binary function object, operating on double.
 	 *	@tparam CBlockMatrixTypelist is a typelist, containing Eigen matrices,
@@ -4004,142 +1909,14 @@ public:
 	 *	@note Functor op is always called as dest = op(dest, src) (parameter order is maintained).
 	 */
 	template <class CBlockMatrixTypelist, class CBinaryOp>
-	bool ElementwiseBinaryOp_RightSideZeroInvariant_FBS(CUberBlockMatrix &r_dest, CBinaryOp op) const // throw(std::bad_alloc)
-	{
-		CheckIntegrity(true);
-		r_dest.CheckIntegrity(true);
-
-#ifdef __UBER_BLOCK_MATRIX_SUPRESS_FBS
-		return ElementwiseBinaryOp_RightSideZeroInvariant(r_dest, op);
-#else // __UBER_BLOCK_MATRIX_SUPRESS_FBS
-		if(r_dest.m_n_row_num != m_n_row_num || r_dest.m_n_col_num != m_n_col_num)
-			return false;
-		// the dimensions must be the same
-
-		const std::vector<TRow> &r_row_list_first = m_block_rows_list;
-		const std::vector<TColumn> &r_column_list_first = m_block_cols_list;
-		std::vector<TRow> &r_row_list_second = r_dest.m_block_rows_list;
-		std::vector<TColumn> &r_column_list_second = r_dest.m_block_cols_list;
-
-		std::vector<size_t> row_mapping;
-		std::vector<size_t> column_mapping; // t_odo - pack this code to a function
-		{
-			if(!Build_AdditionLayouts(r_row_list_first, r_column_list_first,
-			   r_row_list_second, r_column_list_second, row_mapping, column_mapping))
-				return false;
-			//r_dest.CheckIntegrity(); // make sure that this operation didn't damage matrix integrity
-		}
-		// reorganize the destination matrix so that the layout is compatible with this (if required)
-		// the (amortized) complexity is linear, about O(row blocks + col blocks)
-
-		for(size_t i = 0, n = r_column_list_first.size(); i < n; ++ i) {
-			const TColumn &r_t_col = r_column_list_first[i];
-			if(r_t_col.block_list.empty())
-				continue;
-			// skip empty columns ...
-
-			size_t n_dest = column_mapping[i];
-			if(n_dest == size_t(-1))
-				return false; // this column was split, the blocks in it are now homeless
-			TColumn &r_t_dest_col = r_column_list_second[n_dest];
-			// find dest column
-
-			_TyBlockIter p_first_it = r_t_dest_col.block_list.begin();
-			// where to begin searching for blocks
-
-			size_t j = 0, m = r_t_col.block_list.size();
-			if(!r_t_dest_col.block_list.empty()) {
-				for(; j < m; ++ j) {
-					const TColumn::TBlockEntry &r_t_block = r_t_col.block_list[j];
-					size_t n_old_row, n_new_row;
-					if((n_new_row = row_mapping[n_old_row = r_t_block.first]) == size_t(-1))
-						return false; // this row was split, the blocks in it are now homeless
-					// get block and its new row
-
-					double *p_value_src = r_t_block.second;
-					size_t n_block_size = r_t_col.n_width * m_block_rows_list[n_old_row].n_height;
-					// get block data
-
-					_TyBlockIter p_block_it =
-#if defined(_MSC_VER) && !defined(__MWERKS__) && _MSC_VER >= 1400
-						std::lower_bound(p_first_it, r_t_dest_col.block_list.end(), n_new_row, CCompareBlockRow());
-#else // _MSC_VER && !__MWERKS__ && _MSC_VER >= 1400
-						std::lower_bound(p_first_it, r_t_dest_col.block_list.end(), n_new_row, CompareBlockRow);
-#endif // _MSC_VER && !__MWERKS__ && _MSC_VER >= 1400
-					// find where to put the block in the column
-
-					bool b_insert_at_end;
-					if((b_insert_at_end = (p_block_it == r_t_dest_col.block_list.end())) ||
-					   (*p_block_it).first != n_new_row) {
-						// a new block
-
-						double *p_value = r_dest.p_Get_DenseStorage(n_block_size);
-						CFBS_ElementwiseBinaryOp<CBlockMatrixTypelist>::ElementwiseBinary_Loop_UninitLeftSide(p_value,
-							p_value_src, n_block_size, op);
-						// create a new block, initialize with values
-
-						p_first_it = r_t_dest_col.block_list.insert(p_block_it, TColumn::TBlockEntry(n_new_row, p_value));
-						// add it to the list, remember iterator
-
-						++ p_first_it;
-						// next time search from here (look out for iterator invalidation)
-
-						if(b_insert_at_end) {
-							_ASSERTE(p_first_it == r_t_dest_col.block_list.end()); // added to the end
-							++ j; // don't forget to count this block as processed
-							break; // blocks are sorted, will be always adding to the end from now on
-						}
-						// in case inserted at end, can continue using the optimized loop below
-					} else {
-						double *p_value_dest = (*p_block_it).second;
-						// get existing block data
-
-						CFBS_ElementwiseBinaryOp<CBlockMatrixTypelist>::ElementwiseBinary_Loop(p_value_dest,
-							p_value_src, n_block_size, op);
-						// add values to an existing block
-
-						p_first_it = p_block_it + 1;
-						// next time, search from here
-					}
-				}
-			}
-			for(; j < m; ++ j) {
-				const TColumn::TBlockEntry &r_t_block = r_t_col.block_list[j];
-				size_t n_old_row, n_new_row;
-				if((n_new_row = row_mapping[n_old_row = r_t_block.first]) == size_t(-1))
-					return false; // this row was split, the blocks in it are now homeless
-
-				double *p_value_src = r_t_block.second;
-				size_t n_block_size = r_t_col.n_width * m_block_rows_list[n_old_row].n_height;
-				// get block data
-
-				_ASSERTE(r_t_dest_col.block_list.empty() || r_t_dest_col.block_list.back().first < n_new_row);
-				// make sure the new block comes at the end of the row
-
-				double *p_value = r_dest.p_Get_DenseStorage(n_block_size);
-				CFBS_ElementwiseBinaryOp<CBlockMatrixTypelist>::ElementwiseBinary_Loop_UninitLeftSide(
-					p_value, p_value_src, n_block_size, op);
-				// create a new block, initialize with values
-
-				r_t_dest_col.block_list.push_back(TColumn::TBlockEntry(n_new_row, p_value));
-				// add it to the list
-			}
-			// merge blocks
-		}
-
-		//r_dest.CheckIntegrity(true);
-		// make sure that this operation didn't damage matrix integrity
-
-		return true;
-#endif // __UBER_BLOCK_MATRIX_SUPRESS_FBS
-	}
+	bool ElementwiseBinaryOp_RightSideZeroInvariant_FBS(CUberBlockMatrix &r_dest, CBinaryOp op) const; // throw(std::bad_alloc)
 
 #endif // __UBER_BLOCK_MATRIX_FIXED_BLOCK_SIZE_OPS
 
 	/**
 	 *	@brief performs element-wise binary operation on two matrices
 	 *
-	 *	@code r_dest = op(r_dest, *this) @endcode
+	 *	\f$r\_dest = op(r\_dest, this)\f$
 	 *
 	 *	@tparam CBinaryOp is binary function or a binary function object, operating on double.
 	 *
@@ -4152,202 +1929,14 @@ public:
 	 *	@note Functor op is always called as dest = op(dest, src) (parameter order is maintained).
 	 */
 	template <class CBinaryOp>
-	bool ElementwiseBinaryOp(CUberBlockMatrix &r_dest, CBinaryOp op) const // throw(std::bad_alloc)
-	{
-		CheckIntegrity(true);
-		r_dest.CheckIntegrity(true);
-
-		if(r_dest.m_n_row_num != m_n_row_num || r_dest.m_n_col_num != m_n_col_num)
-			return false;
-		// the dimensions must be the same
-
-		const std::vector<TRow> &r_row_list_first = m_block_rows_list;
-		const std::vector<TColumn> &r_column_list_first = m_block_cols_list;
-		std::vector<TRow> &r_row_list_second = r_dest.m_block_rows_list;
-		std::vector<TColumn> &r_column_list_second = r_dest.m_block_cols_list;
-
-		std::vector<size_t> row_mapping;
-		std::vector<size_t> column_mapping; // t_odo - pack this code to a function
-		{
-			if(!Build_AdditionLayouts(r_row_list_first, r_column_list_first,
-			   r_row_list_second, r_column_list_second, row_mapping, column_mapping))
-				return false;
-			//r_dest.CheckIntegrity(); // make sure that this operation didn't damage matrix integrity
-		}
-		// reorganize the destination matrix so that the layout is compatible with this (if required)
-		// the (amortized) complexity is linear, about O(row blocks + col blocks)
-
-		size_t n_last_dest_col = 0;
-		for(size_t i = 0, n = r_column_list_first.size(); i < n; ++ i) {
-			const TColumn &r_t_col = r_column_list_first[i];
-			if(r_t_col.block_list.empty())
-				continue;
-			// skip empty columns ...
-
-			size_t n_dest = column_mapping[i];
-			if(n_dest == size_t(-1))
-				return false; // this column was split, the blocks in it are now homeless
-			TColumn &r_t_dest_col = r_column_list_second[n_dest];
-			// find dest column
-
-			for(; n_last_dest_col != n_dest; ++ n_last_dest_col) {
-				TColumn &r_t_dest_col = r_column_list_second[n_last_dest_col];
-				for(size_t j = 0, m = r_t_dest_col.block_list.size(); j < m; ++ j) {
-					const TColumn::TBlockEntry &r_t_block = r_t_dest_col.block_list[j];
-
-					double *p_value_dest = r_t_block.second;
-					size_t n_block_size_dest = r_t_dest_col.n_width * r_row_list_second[r_t_block.first].n_height;
-					// get block data
-
-					for(double *p_value_end = p_value_dest + n_block_size_dest;
-					   p_value_dest != p_value_end; ++ p_value_dest)
-						*p_value_dest = op(*p_value_dest, 0);
-				}
-			}
-			// don't forget to modify all of the previous columns we skipped in dest
-
-			_ASSERTE(n_last_dest_col == n_dest);
-			++ n_last_dest_col;
-			// and don't modify this column either
-
-			_TyBlockIter p_first_it = r_t_dest_col.block_list.begin();
-			// where to begin searching for blocks
-
-			size_t j = 0, m = r_t_col.block_list.size();
-			if(!r_t_dest_col.block_list.empty()) {
-				for(; j < m; ++ j) {
-					const TColumn::TBlockEntry &r_t_block = r_t_col.block_list[j];
-					size_t n_old_row, n_new_row;
-					if((n_new_row = row_mapping[n_old_row = r_t_block.first]) == size_t(-1))
-						return false; // this row was split, the blocks in it are now homeless
-					// get block and its new row
-
-					double *p_value_src = r_t_block.second;
-					size_t n_block_size = r_t_col.n_width * m_block_rows_list[n_old_row].n_height;
-					// get block data
-
-					_TyBlockIter p_block_it =
-#if defined(_MSC_VER) && !defined(__MWERKS__) && _MSC_VER >= 1400
-						std::lower_bound(p_first_it, r_t_dest_col.block_list.end(), n_new_row, CCompareBlockRow());
-#else // _MSC_VER && !__MWERKS__ && _MSC_VER >= 1400
-						std::lower_bound(p_first_it, r_t_dest_col.block_list.end(), n_new_row, CompareBlockRow);
-#endif // _MSC_VER && !__MWERKS__ && _MSC_VER >= 1400
-					// find where to put the block in the column
-
-					for(; p_first_it != p_block_it; ++ p_first_it) {
-						size_t n_dest_row = (*p_first_it).first;
-						size_t n_block_size_dest = r_t_col.n_width * r_row_list_second[n_dest_row].n_height;
-						double *p_value_dest = (*p_first_it).second;
-						for(double *p_value_end = p_value_dest + n_block_size_dest;
-						   p_value_dest != p_value_end; ++ p_value_dest)
-							*p_value_dest = op(*p_value_dest, 0);
-					}
-					// don't forget to modify all the blocks in dest between last one and the one being added to
-
-					bool b_insert_at_end;
-					if((b_insert_at_end = (p_block_it == r_t_dest_col.block_list.end())) ||
-					   (*p_block_it).first != n_new_row) {
-						// a new block
-
-						double *p_value = r_dest.p_Get_DenseStorage(n_block_size);
-						double *p_value_dest = p_value;
-						for(double *p_value_end = p_value_dest + n_block_size;
-						   p_value_dest != p_value_end; ++ p_value_src, ++ p_value_dest)
-							*p_value_dest = op(0, *p_value_src); // t_odo - replace by op()
-						// create a new block, initialize with values
-
-						p_first_it = r_t_dest_col.block_list.insert(p_block_it, TColumn::TBlockEntry(n_new_row, p_value));
-						// add it to the list, remember iterator
-
-						++ p_first_it;
-						// next time search from here (look out for iterator invalidation)
-
-						if(b_insert_at_end) {
-							_ASSERTE(p_first_it == r_t_dest_col.block_list.end()); // added to the end
-							++ j; // don't forget to count this block as processed
-							break; // blocks are sorted, will be always adding to the end from now on
-						}
-						// in case inserted at end, can continue using the optimized loop below
-					} else {
-						double *p_value_dest = (*p_block_it).second;
-						// get existing block data
-
-						for(double *p_value_end = p_value_dest + n_block_size;
-						   p_value_dest != p_value_end; ++ p_value_src, ++ p_value_dest)
-							*p_value_dest = op(*p_value_dest, *p_value_src); // t_odo - replace by op()
-						// add values to an existing block
-
-						p_first_it = p_block_it + 1;
-						// next time, search from here
-					}
-				}
-			}
-			{
-				_TyBlockIter p_end_it = r_t_dest_col.block_list.end();
-				for(; p_first_it != p_end_it; ++ p_first_it) {
-					size_t n_dest_row = (*p_first_it).first;
-					size_t n_block_size_dest = r_t_col.n_width * r_row_list_second[n_dest_row].n_height;
-					double *p_value_dest = (*p_first_it).second;
-					for(double *p_value_end = p_value_dest + n_block_size_dest;
-					   p_value_dest != p_value_end; ++ p_value_dest)
-						*p_value_dest = op(*p_value_dest, 0);
-				}
-				// don't forget to modify all the blocks in dest between last added and the end of the list
-			}
-			for(; j < m; ++ j) {
-				const TColumn::TBlockEntry &r_t_block = r_t_col.block_list[j];
-				size_t n_old_row, n_new_row;
-				if((n_new_row = row_mapping[n_old_row = r_t_block.first]) == size_t(-1))
-					return false; // this row was split, the blocks in it are now homeless
-
-				double *p_value_src = r_t_block.second;
-				size_t n_block_size = r_t_col.n_width * m_block_rows_list[n_old_row].n_height;
-				// get block data
-
-				_ASSERTE(r_t_dest_col.block_list.empty() || r_t_dest_col.block_list.back().first < n_new_row);
-				// make sure the new block comes at the end of the row
-
-				double *p_value = r_dest.p_Get_DenseStorage(n_block_size);
-				double *p_value_dest = p_value;
-				for(double *p_value_end = p_value_dest + n_block_size;
-				   p_value_dest != p_value_end; ++ p_value_src, ++ p_value_dest)
-					*p_value_dest = op(0, *p_value_src);  // t_odo - replace by op()
-				// create a new block, initialize with values
-
-				r_t_dest_col.block_list.push_back(TColumn::TBlockEntry(n_new_row, p_value));
-				// add it to the list
-			}
-			// merge blocks
-		}
-
-		for(size_t n = r_column_list_second.size(); n_last_dest_col != n; ++ n_last_dest_col) {
-			TColumn &r_t_dest_col = r_column_list_second[n_last_dest_col];
-			for(size_t j = 0, m = r_t_dest_col.block_list.size(); j < m; ++ j) {
-				const TColumn::TBlockEntry &r_t_block = r_t_dest_col.block_list[j];
-
-				double *p_value_dest = r_t_block.second;
-				size_t n_block_size_dest = r_t_dest_col.n_width * r_row_list_second[r_t_block.first].n_height;
-				// get block data
-
-				for(double *p_value_end = p_value_dest + n_block_size_dest;
-				   p_value_dest != p_value_end; ++ p_value_dest)
-					*p_value_dest = op(*p_value_dest, 0);
-			}
-		}
-		// don't forget to modify all of the columns after the last modified one
-
-		//r_dest.CheckIntegrity(true);
-		// make sure that this operation didn't damage matrix integrity
-
-		return true;
-	}
+	bool ElementwiseBinaryOp(CUberBlockMatrix &r_dest, CBinaryOp op) const; // throw(std::bad_alloc)
 
 #ifdef __UBER_BLOCK_MATRIX_FIXED_BLOCK_SIZE_OPS
 
 	/**
 	 *	@brief performs element-wise binary operation on two matrices
 	 *
-	 *	@code r_dest = op(r_dest, *this) @endcode
+	 *	\f$r\_dest = op(r\_dest, this)\f$
 	 *
 	 *	@tparam CBinaryOp is binary function or a binary function object, operating on double.
 	 *	@tparam CBlockMatrixTypelist is a typelist, containing Eigen matrices,
@@ -4362,200 +1951,14 @@ public:
 	 *	@note Functor op is always called as dest = op(dest, src) (parameter order is maintained).
 	 */
 	template <class CBlockMatrixTypelist, class CBinaryOp>
-	bool ElementwiseBinaryOp_FBS(CUberBlockMatrix &r_dest, CBinaryOp op) const // throw(std::bad_alloc)
-	{
-		CheckIntegrity(true);
-		r_dest.CheckIntegrity(true);
-
-#ifdef __UBER_BLOCK_MATRIX_SUPRESS_FBS
-		return ElementwiseBinaryOp(r_dest, op);
-#else // __UBER_BLOCK_MATRIX_SUPRESS_FBS
-		if(r_dest.m_n_row_num != m_n_row_num || r_dest.m_n_col_num != m_n_col_num)
-			return false;
-		// the dimensions must be the same
-
-		const std::vector<TRow> &r_row_list_first = m_block_rows_list;
-		const std::vector<TColumn> &r_column_list_first = m_block_cols_list;
-		std::vector<TRow> &r_row_list_second = r_dest.m_block_rows_list;
-		std::vector<TColumn> &r_column_list_second = r_dest.m_block_cols_list;
-
-		std::vector<size_t> row_mapping;
-		std::vector<size_t> column_mapping; // t_odo - pack this code to a function
-		{
-			if(!Build_AdditionLayouts(r_row_list_first, r_column_list_first,
-			   r_row_list_second, r_column_list_second, row_mapping, column_mapping))
-				return false;
-			//r_dest.CheckIntegrity(); // make sure that this operation didn't damage matrix integrity
-		}
-		// reorganize the destination matrix so that the layout is compatible with this (if required)
-		// the (amortized) complexity is linear, about O(row blocks + col blocks)
-
-		size_t n_last_dest_col = 0;
-		for(size_t i = 0, n = r_column_list_first.size(); i < n; ++ i) {
-			const TColumn &r_t_col = r_column_list_first[i];
-			if(r_t_col.block_list.empty())
-				continue;
-			// skip empty columns ...
-
-			size_t n_dest = column_mapping[i];
-			if(n_dest == size_t(-1))
-				return false; // this column was split, the blocks in it are now homeless
-			TColumn &r_t_dest_col = r_column_list_second[n_dest];
-			// find dest column
-
-			for(; n_last_dest_col != n_dest; ++ n_last_dest_col) {
-				TColumn &r_t_dest_col = r_column_list_second[n_last_dest_col];
-				for(size_t j = 0, m = r_t_dest_col.block_list.size(); j < m; ++ j) {
-					const TColumn::TBlockEntry &r_t_block = r_t_dest_col.block_list[j];
-
-					double *p_value_dest = r_t_block.second;
-					size_t n_block_size_dest = r_t_dest_col.n_width * r_row_list_second[r_t_block.first].n_height;
-					// get block data
-
-					CFBS_ElementwiseBinaryOp<CBlockMatrixTypelist>::ElementwiseBinary_Loop_NullRightSide(
-						p_value_dest, n_block_size_dest, op);
-				}
-			}
-			// don't forget to modify all of the previous columns we skipped in dest
-
-			_ASSERTE(n_last_dest_col == n_dest);
-			++ n_last_dest_col;
-			// and don't modify this column either
-
-			_TyBlockIter p_first_it = r_t_dest_col.block_list.begin();
-			// where to begin searching for blocks
-
-			size_t j = 0, m = r_t_col.block_list.size();
-			if(!r_t_dest_col.block_list.empty()) {
-				for(; j < m; ++ j) {
-					const TColumn::TBlockEntry &r_t_block = r_t_col.block_list[j];
-					size_t n_old_row, n_new_row;
-					if((n_new_row = row_mapping[n_old_row = r_t_block.first]) == size_t(-1))
-						return false; // this row was split, the blocks in it are now homeless
-					// get block and its new row
-
-					double *p_value_src = r_t_block.second;
-					size_t n_block_size = r_t_col.n_width * m_block_rows_list[n_old_row].n_height;
-					// get block data
-
-					_TyBlockIter p_block_it =
-#if defined(_MSC_VER) && !defined(__MWERKS__) && _MSC_VER >= 1400
-						std::lower_bound(p_first_it, r_t_dest_col.block_list.end(), n_new_row, CCompareBlockRow());
-#else // _MSC_VER && !__MWERKS__ && _MSC_VER >= 1400
-						std::lower_bound(p_first_it, r_t_dest_col.block_list.end(), n_new_row, CompareBlockRow);
-#endif // _MSC_VER && !__MWERKS__ && _MSC_VER >= 1400
-					// find where to put the block in the column
-
-					for(; p_first_it != p_block_it; ++ p_first_it) {
-						size_t n_dest_row = (*p_first_it).first;
-						size_t n_block_size_dest = r_t_col.n_width * r_row_list_second[n_dest_row].n_height;
-						double *p_value_dest = (*p_first_it).second;
-
-						CFBS_ElementwiseBinaryOp<CBlockMatrixTypelist>::ElementwiseBinary_Loop_NullRightSide(
-							p_value_dest, n_block_size_dest, op);
-					}
-					// don't forget to modify all the blocks in dest between last one and the one being added to
-
-					bool b_insert_at_end;
-					if((b_insert_at_end = (p_block_it == r_t_dest_col.block_list.end())) ||
-					   (*p_block_it).first != n_new_row) {
-						// a new block
-
-						double *p_value = r_dest.p_Get_DenseStorage(n_block_size);
-						double *p_value_dest = p_value;
-						CFBS_ElementwiseBinaryOp<CBlockMatrixTypelist>::ElementwiseBinary_Loop_UninitLeftSide(
-							p_value_dest, p_value_src, n_block_size, op);
-						// create a new block, initialize with values
-
-						p_first_it = r_t_dest_col.block_list.insert(p_block_it, TColumn::TBlockEntry(n_new_row, p_value));
-						// add it to the list, remember iterator
-
-						++ p_first_it;
-						// next time search from here (look out for iterator invalidation)
-
-						if(b_insert_at_end) {
-							_ASSERTE(p_first_it == r_t_dest_col.block_list.end()); // added to the end
-							++ j; // don't forget to count this block as processed
-							break; // blocks are sorted, will be always adding to the end from now on
-						}
-						// in case inserted at end, can continue using the optimized loop below
-					} else {
-						double *p_value_dest = (*p_block_it).second;
-						// get existing block data
-
-						CFBS_ElementwiseBinaryOp<CBlockMatrixTypelist>::ElementwiseBinary_Loop(p_value_dest,
-							p_value_src, n_block_size, op);
-						// add values to an existing block
-
-						p_first_it = p_block_it + 1;
-						// next time, search from here
-					}
-				}
-			}
-			{
-				_TyBlockIter p_end_it = r_t_dest_col.block_list.end();
-				for(; p_first_it != p_end_it; ++ p_first_it) {
-					size_t n_dest_row = (*p_first_it).first;
-					size_t n_block_size_dest = r_t_col.n_width * r_row_list_second[n_dest_row].n_height;
-					double *p_value_dest = (*p_first_it).second;
-					CFBS_ElementwiseBinaryOp<CBlockMatrixTypelist>::ElementwiseBinary_Loop_NullRightSide(
-						p_value_dest, n_block_size_dest, op);
-				}
-				// don't forget to modify all the blocks in dest between last added and the end of the list
-			}
-			for(; j < m; ++ j) {
-				const TColumn::TBlockEntry &r_t_block = r_t_col.block_list[j];
-				size_t n_old_row, n_new_row;
-				if((n_new_row = row_mapping[n_old_row = r_t_block.first]) == size_t(-1))
-					return false; // this row was split, the blocks in it are now homeless
-
-				double *p_value_src = r_t_block.second;
-				size_t n_block_size = r_t_col.n_width * m_block_rows_list[n_old_row].n_height;
-				// get block data
-
-				_ASSERTE(r_t_dest_col.block_list.empty() || r_t_dest_col.block_list.back().first < n_new_row);
-				// make sure the new block comes at the end of the row
-
-				double *p_value = r_dest.p_Get_DenseStorage(n_block_size);
-				double *p_value_dest = p_value;
-				CFBS_ElementwiseBinaryOp<CBlockMatrixTypelist>::ElementwiseBinary_Loop_UninitLeftSide(
-					p_value_dest, p_value_src, n_block_size, op);
-				// create a new block, initialize with values
-
-				r_t_dest_col.block_list.push_back(TColumn::TBlockEntry(n_new_row, p_value));
-				// add it to the list
-			}
-			// merge blocks
-		}
-
-		for(size_t n = r_column_list_second.size(); n_last_dest_col != n; ++ n_last_dest_col) {
-			TColumn &r_t_dest_col = r_column_list_second[n_last_dest_col];
-			for(size_t j = 0, m = r_t_dest_col.block_list.size(); j < m; ++ j) {
-				const TColumn::TBlockEntry &r_t_block = r_t_dest_col.block_list[j];
-
-				double *p_value_dest = r_t_block.second;
-				size_t n_block_size_dest = r_t_dest_col.n_width * r_row_list_second[r_t_block.first].n_height;
-				// get block data
-
-				CFBS_ElementwiseBinaryOp<CBlockMatrixTypelist>::ElementwiseBinary_Loop_NullRightSide(
-					p_value_dest, n_block_size_dest, op);
-			}
-		}
-		// don't forget to modify all of the columns after the last modified one
-
-		//r_dest.CheckIntegrity(true);
-		// make sure that this operation didn't damage matrix integrity
-
-		return true;
-#endif // __UBER_BLOCK_MATRIX_SUPRESS_FBS
-	}
+	bool ElementwiseBinaryOp_FBS(CUberBlockMatrix &r_dest, CBinaryOp op) const; // throw(std::bad_alloc)
 
 #endif // __UBER_BLOCK_MATRIX_FIXED_BLOCK_SIZE_OPS
 
 	/**
 	 *	@brief performs matrix multiplication
 	 *
-	 *	@code *this = r_A * r_B @endcode
+	 *	\f$this = r\_A \cdot r\_B\f$
 	 *
 	 *	@param[in] r_A is the left-side matrix
 	 *	@param[in] r_B is the right-side matrix
@@ -4574,7 +1977,7 @@ public:
 	/**
 	 *	@brief performs matrix multiplication, this version uses fixed block size
 	 *
-	 *	@code *this = r_A * r_B @endcode
+	 *	\f$this = r\_A \cdot r\_B\f$
 	 *
 	 *	@tparam CBlockMatrixTypelistA is list of Eigen::Matrix block sizes found in r_A
 	 *	@tparam CBlockMatrixTypelistB is list of Eigen::Matrix block sizes found in r_B
@@ -4587,21 +1990,14 @@ public:
 	 *	@note This function throws std::bad_alloc.
 	 */
 	template <class CBlockMatrixTypelistA, class CBlockMatrixTypelistB>
-	inline bool ProductOf_FBS(const CUberBlockMatrix &r_A, const CUberBlockMatrix &r_B) // throw(std::bad_alloc)
-	{
-#ifdef __UBER_BLOCK_MATRIX_SUPRESS_FBS
-		return r_A.MultiplyToWith(*this, r_B);
-#else // __UBER_BLOCK_MATRIX_SUPRESS_FBS
-		return r_A.MultiplyToWith_FBS<CBlockMatrixTypelistA, CBlockMatrixTypelistB>(*this, r_B);
-#endif // __UBER_BLOCK_MATRIX_SUPRESS_FBS
-	}
+	inline bool ProductOf_FBS(const CUberBlockMatrix &r_A, const CUberBlockMatrix &r_B); // throw(std::bad_alloc)
 
 #endif // __UBER_BLOCK_MATRIX_FIXED_BLOCK_SIZE_OPS
 
 	/**
 	 *	@brief performs multiplication of matrix transpose and the matrix
 	 *
-	 *	@code r_dest = *this^T * *this @endcode
+	 *	\f$r\_dest = this^T \cdot this\f$
 	 *
 	 *	@param[out] r_dest is destination matrix (will be overwritten)
 	 *	@param[in] b_upper_diagonal_only is upper diagonal flag (the lower diagonal
@@ -4624,7 +2020,7 @@ public:
 	 *	@brief performs multiplication of matrix transpose and the matrix,
 	 *		this version uses fixed block size
 	 *
-	 *	@code r_dest = *this^T * *this @endcode
+	 *	\f$r\_dest = this^T \cdot this\f$
 	 *
 	 *	@tparam CBlockMatrixTypelist is list of Eigen::Matrix block sizes
 	 *
@@ -4642,161 +2038,13 @@ public:
 	 */
 	template <class CBlockMatrixTypelist>
 	void PreMultiplyWithSelfTransposeTo_FBS(CUberBlockMatrix &r_dest,
-		bool b_upper_diagonal_only = false) // throw(std::bad_alloc)
-	{
-		CheckIntegrity(true);
-
-#ifdef __UBER_BLOCK_MATRIX_SUPRESS_FBS
-		PreMultiplyWithSelfTransposeTo(r_dest, b_upper_diagonal_only);
-#else // __UBER_BLOCK_MATRIX_SUPRESS_FBS
-		// if the original multiplication operation was r_dest = A * B, B = this and A = *this^T
-
-		const std::vector<TColumn> &r_row_list_A = m_block_cols_list;
-		std::vector<TColumn> col_list_A; // columns of *this^T
-		const std::vector<TRow> &r_row_list_B = m_block_rows_list;
-		const std::vector<TColumn> &r_col_list_B = m_block_cols_list;
-		std::vector<TRow> &r_row_list_dest = r_dest.m_block_rows_list;
-		std::vector<TColumn> &r_col_list_dest = r_dest.m_block_cols_list; // t_odo - these do not conform to naming conventions; rename them
-		// name the cumsums for easier access
-
-		{
-			col_list_A.resize(r_row_list_B.size());
-			//std::for_each(col_list_A.begin(), col_list_A.end(), CRowCumsumToColumnCumsum(r_row_list_B.begin()));
-			std::transform(r_row_list_B.begin(), r_row_list_B.end(), col_list_A.begin(), t_RowCumsumToColumnCumsum);
-			for(size_t i = 0, n = r_col_list_B.size(); i < n; ++ i) {
-				const TColumn &r_t_col = r_col_list_B[i];
-				for(_TyBlockConstIter p_block_it = r_t_col.block_list.begin(),
-				   p_end_it = r_t_col.block_list.end(); p_block_it != p_end_it; ++ p_block_it) {
-					const TColumn::TBlockEntry &r_t_block = *p_block_it;
-					col_list_A[r_t_block.first].block_list.push_back(TColumn::TBlockEntry(i, r_t_block.second));
-				}
-			}
-		}
-		// calculate fast transpose of this (no rows alloc, no matrix structure,
-		// no block transpose, no extra storage, O(n) in number of blocks)
-
-		size_t n_dest_col_num = m_n_col_num; //B.m_n_col_num; // t_odo - these and some others do not follow the naming conventions; take care of that
-		size_t n_dest_row_num = m_n_col_num; //A.m_n_row_num; // A = B^T
-		// these are the dimensions of the new matrix
-
-		{
-			r_dest.Clear();
-			r_row_list_dest.resize(r_col_list_B.size()); // copy row layout from this
-			r_col_list_dest.resize(r_col_list_B.size()); // column layout is the same, except for the blocks
-			//std::for_each(r_row_list_dest.begin(), r_row_list_dest.end(), CColumnCumsumToRowCumsum(r_col_list_B.begin()));
-			std::transform(r_col_list_B.begin(), r_col_list_B.end(), r_row_list_dest.begin(), t_ColumnCumsumToRowCumsum);
-			//std::for_each(r_col_list_dest.begin(), r_col_list_dest.end(), CColumnCumsumCopy(r_col_list_B.begin())); // copy column layout but not the blocks
-			std::transform(r_col_list_B.begin(), r_col_list_B.end(), r_col_list_dest.begin(), t_ColumnCumsumCopy);
-			r_dest.m_n_col_num = n_dest_col_num;
-			r_dest.m_n_row_num = n_dest_row_num;
-			// create layout for the destination matrix (linear time)
-
-			//r_dest.CheckIntegrity();
-			// makes sure the dest layout is ok
-		}
-		// create dest structure
-
-		// no need to reindex / merge, all the indices match and exist
-
-		_TyDenseAllocator alloc(r_dest.m_data_pool);
-		// make the allocator object for the templates to use
-
-		{
-			for(_TyColumnConstIter p_col_A_it = col_list_A.begin(), p_col_A_end_it = col_list_A.end();
-			   p_col_A_it != p_col_A_end_it; ++ p_col_A_it) {
-				const TColumn &r_t_column_A = *p_col_A_it;
-				// for each column in A
-
-				CFBS_PreATA<CBlockMatrixTypelist>::PreATA_UpperTriangle_OuterLoop(
-					r_t_column_A, r_row_list_A, r_col_list_dest, alloc);
-				// wrap the outer loop in a column size decission tree
-			}
-			// perform the multiplication of the blocks above diagonal, need to use log(n) lookup
-
-			//r_dest.CheckIntegrity();
-			// makes sure the dest matrix is ok
-
-			// t_odo test and convert the first loop as well.
-
-			// note that this can run in parallel easily without conflicts, except for the block allocator
-			size_t n_column_id_B = 0;
-			for(_TyColumnConstIter p_col_B_it = r_col_list_B.begin(), p_col_B_end_it = r_col_list_B.end();
-			   p_col_B_it != p_col_B_end_it; ++ p_col_B_it, ++ n_column_id_B) {
-				const TColumn &r_t_column_B = *p_col_B_it;
-				// for each column in B (index is n_column_id_B)
-
-				if(r_t_column_B.block_list.empty())
-					continue;
-				// only process non-empty columns
-
-				double *p_block_data =
-					CFBS_PreATA<CBlockMatrixTypelist>::p_PreATA_Diagonal_OuterLoop(
-					r_t_column_B, alloc, r_row_list_B);
-				// produce the column dot product, each block with itself
-
-				_ASSERTE(r_col_list_dest[n_column_id_B].block_list.empty() ||
-					r_col_list_dest[n_column_id_B].block_list.back().first < n_column_id_B);
-				// makes sure that inserting block at diagonal doesn't violate block ordering
-
-				r_col_list_dest[n_column_id_B].block_list.push_back(TColumn::TBlockEntry(n_column_id_B, p_block_data));
-				// add the block at the end of the list
-			}
-			// generate the blocks at diagonal (const time lookup, fast multiplication)
-
-			//r_dest.CheckIntegrity();
-			// makes sure the dest matrix is ok
-		}
-
-		if(!b_upper_diagonal_only) {
-			for(size_t i = 0, n = r_col_list_dest.size(); i < n; ++ i) {
-				const TColumn &r_t_col = r_col_list_dest[i];
-				const size_t n_col = i;
-				for(_TyBlockConstIter p_block_it = r_t_col.block_list.begin(),
-				   p_end_it = r_t_col.block_list.end(); p_block_it != p_end_it; ++ p_block_it) {
-					const TColumn::TBlockEntry &r_t_block = *p_block_it;
-					const size_t n_row = r_t_block.first;
-					_ASSERTE(n_row <= n_col); // make sure the block is above or at the diagonal
-					if(n_row < n_col) {
-						// it is guaranteed (by the condition above) that this will not alter block i or any of the
-						// blocks to be processed next
-
-						_ASSERTE(r_col_list_dest[n_row].block_list.empty() || r_col_list_dest[n_row].block_list.back().first < n_col);
-						// make sure that this won't violate block ordering (since i = n_col is monotonically increasing)
-
-						const size_t n_block_width = r_row_list_dest[n_row].n_height, n_block_height = r_t_col.n_width; // these are dims of the dest block
-						double *p_block_data = r_dest.p_Get_DenseStorage(n_block_width * n_block_height);
-						r_col_list_dest[n_row].block_list.push_back(TColumn::TBlockEntry(n_col, p_block_data));
-						// this block is above the diagonal, at (n_row, n_col), create transpose block at (n_col, n_row)
-
-						const double *p_src_data = r_t_block.second;
-						/*for(size_t x = 0; x < n_block_width; ++ x)
-							for(size_t y = 0; y < n_block_height; ++ y)
-								p_block_data[y + n_block_height * x] = p_src_data[x + n_block_width * y];*/ // f_ixme - does the src / dest ordering matter? is it interchangable? // t_odo - test transposing a matrix // this seems to be correct
-						_TyMatrixXdRef src((double*)p_src_data, n_block_width, n_block_height),
-							dest(p_block_data, n_block_height, n_block_width);
-						dest.noalias() = src.transpose();
-						// copy/transpose the block
-					} else {
-						_ASSERTE(p_block_it + 1 == p_end_it); // diagonal, gotta be the last block
-						break; // still can save the comparison
-					}
-				}
-			}
-			// transpose the blocks from the triangle above diagonal to the triangle below diagonal
-			// this takes O(n) time in number of blocks above the diagonal, or O(n/2) in number of all blocks
-		}
-		// no need to optimize this, it is not used in slam, but optimize it later, might transpose blocks using SSE (or at least ommit the two innermost loops)
-
-		//r_dest.CheckIntegrity();
-		// makes sure the dest matrix is ok
-#endif // __UBER_BLOCK_MATRIX_SUPRESS_FBS
-	}
+		bool b_upper_diagonal_only = false); // throw(std::bad_alloc)
 
 	/**
 	 *	@brief performs multiplication of matrix transpose and the matrix,
 	 *		this version uses fixed block size
 	 *
-	 *	@code r_dest = *this^T * *this @endcode
+	 *	\f$r\_dest = this^T \cdot this\f$
 	 *
 	 *	@tparam CBlockMatrixTypelist is list of Eigen::Matrix block sizes
 	 *
@@ -4815,301 +2063,14 @@ public:
 	 */
 	template <class CBlockMatrixTypelist>
 	void PreMultiplyWithSelfTransposeTo_FBS_Parallel(CUberBlockMatrix &r_dest,
-		bool b_upper_diagonal_only = false) // throw(std::bad_alloc)
-	{
-		CheckIntegrity(true);
-
-#ifdef __UBER_BLOCK_MATRIX_SUPRESS_FBS
-		PreMultiplyWithSelfTransposeTo/*_Parallel*/(r_dest, b_upper_diagonal_only); // non-fbs parallel version not written (todo?)
-#else // __UBER_BLOCK_MATRIX_SUPRESS_FBS
-#ifdef _OPENMP
-		// if the original multiplication operation was r_dest = A * B, B = this and A = *this^T
-
-		const std::vector<TColumn> &r_row_list_A = m_block_cols_list;
-		std::vector<TColumn> col_list_A; // columns of *this^T
-		const std::vector<TRow> &r_row_list_B = m_block_rows_list;
-		const std::vector<TColumn> &r_col_list_B = m_block_cols_list;
-		std::vector<TRow> &r_row_list_dest = r_dest.m_block_rows_list;
-		std::vector<TColumn> &r_col_list_dest = r_dest.m_block_cols_list; // t_odo - these do not conform to naming conventions; rename them
-		// name the cumsums for easier access
-
-		{
-			col_list_A.resize(r_row_list_B.size());
-			//std::for_each(col_list_A.begin(), col_list_A.end(), CRowCumsumToColumnCumsum(r_row_list_B.begin()));
-			std::transform(r_row_list_B.begin(), r_row_list_B.end(), col_list_A.begin(), t_RowCumsumToColumnCumsum);
-			for(size_t i = 0, n = r_col_list_B.size(); i < n; ++ i) {
-				const TColumn &r_t_col = r_col_list_B[i];
-				for(_TyBlockConstIter p_block_it = r_t_col.block_list.begin(),
-				   p_end_it = r_t_col.block_list.end(); p_block_it != p_end_it; ++ p_block_it) {
-					const TColumn::TBlockEntry &r_t_block = *p_block_it;
-					col_list_A[r_t_block.first].block_list.push_back(TColumn::TBlockEntry(i, r_t_block.second));
-				}
-			}
-		}
-		// calculate fast transpose of this (no rows alloc, no matrix structure,
-
-		size_t n_dest_col_num = m_n_col_num; //B.m_n_col_num; // t_odo - these and some others do not follow the naming conventions; take care of that
-		size_t n_dest_row_num = m_n_col_num; //A.m_n_row_num; // A = B^T
-		// these are the dimensions of the new matrix
-
-		{
-			r_dest.Clear();
-			r_row_list_dest.resize(r_col_list_B.size()); // copy row layout from this
-			r_col_list_dest.resize(r_col_list_B.size()); // column layout is the same, except for the blocks
-			//std::for_each(r_row_list_dest.begin(), r_row_list_dest.end(), CColumnCumsumToRowCumsum(r_col_list_B.begin()));
-			std::transform(r_col_list_B.begin(), r_col_list_B.end(), r_row_list_dest.begin(), t_ColumnCumsumToRowCumsum);
-			//std::for_each(r_col_list_dest.begin(), r_col_list_dest.end(), CColumnCumsumCopy(r_col_list_B.begin())); // copy column layout but not the blocks
-			std::transform(r_col_list_B.begin(), r_col_list_B.end(), r_col_list_dest.begin(), t_ColumnCumsumCopy);
-			r_dest.m_n_col_num = n_dest_col_num;
-			r_dest.m_n_row_num = n_dest_row_num;
-			// create layout for the destination matrix (linear time)
-
-			//r_dest.CheckIntegrity();
-			// makes sure the dest layout is ok
-		}
-		// create dest structure
-
-		// no need to reindex / merge, all the indices match and exist
-
-		_TyDenseAllocator alloc(r_dest.m_data_pool);
-		// make the allocator object for the templates to use
-
-		/*double f_muinit = m_timer.f_Time();
-		printf("_muinit\n");*/
-		{
-#if 1
-			/*double f_loop1 = m_timer.f_Time();
-			double f_anal = f_loop1; // ...
-			printf("there is 100 %% conflicting columns (assume)\n");
-			printf("_loop1\n");*/
-
-			for(_TyColumnConstIter p_col_A_it = col_list_A.begin(), p_col_A_end_it = col_list_A.end();
-			   p_col_A_it != p_col_A_end_it; ++ p_col_A_it) {
-				const TColumn &r_t_column_A = *p_col_A_it;
-				// for each column in A
-
-				CFBS_PreATA<CBlockMatrixTypelist>::PreATA_UpperTriangle_OuterLoop(
-					r_t_column_A, r_row_list_A, r_col_list_dest, alloc);
-				// wrap the outer loop in a column size decission tree
-			}
-			// perform the multiplication of the blocks above diagonal, need to use log(n) lookup
-#else
-			/*std::vector<CMutexWrap> mutex_list, no_synchronize;
-			mutex_list.resize(r_col_list_dest.size() + 1); // one more for allocator lock
-			no_synchronize.resize(1);*/
-
-			omp_lock_t t_mutex;
-			omp_init_lock(&t_mutex);
-			// initialize mutexes
-
-			/*double f_anal = m_timer.f_Time();
-			printf("_anal\n");*/
-
-			std::vector<int> refcount_list;
-			refcount_list.resize(r_col_list_dest.size(), 0); // initialize to all nulls
-			for(_TyColumnConstIter p_col_A_it = col_list_A.begin(), p_col_A_end_it = col_list_A.end();
-			   p_col_A_it != p_col_A_end_it; ++ p_col_A_it) {
-				const TColumn &r_t_col = *p_col_A_it;
-				// for each column in A
-
-				if(r_t_col.block_list.size() < 2)
-					continue;
-				for(_TyBlockConstIter p_block_it = r_t_col.block_list.begin() + 1,
-				   p_end_it = r_t_col.block_list.end(); p_block_it != p_end_it; ++ p_block_it)
-					++ refcount_list[(*p_block_it).first];
-			}
-			// count write-references for columns
-
-			size_t n_conflict_num = 0;
-			std::vector<char> conflicting_column_list;
-			conflicting_column_list.resize(col_list_A.size(), false);
-			{
-			_ASSERTE(col_list_A.size() <= INT_MAX);
-			int n = int(col_list_A.size());
-			#pragma omp parallel for default(shared) reduction(+:n_conflict_num)
-			for(int n_column_id_A = 0; n_column_id_A < n; ++ n_column_id_A) {
-				const TColumn &r_t_col = col_list_A[n_column_id_A];
-				if(r_t_col.block_list.size() < 2)
-					continue;
-				for(_TyBlockConstIter p_block_it = r_t_col.block_list.begin() + 1,
-				   p_end_it = r_t_col.block_list.end(); p_block_it != p_end_it; ++ p_block_it) {
-					if(refcount_list[(*p_block_it).first] > 1) {
-						conflicting_column_list[n_column_id_A] = true;
-						++ n_conflict_num;
-						break;
-					}
-				}
-			}}
-			// see about columns that write to the same dest-columns (there shouldn't be many)
-
-			printf("there is %lf %% conflicting columns\n", double(n_conflict_num) / col_list_A.size() * 100);
-			/*double f_loop1 = m_timer.f_Time();
-			printf("_loop1\n");*/
-
-			{
-			_ASSERTE(col_list_A.size() <= INT_MAX);
-			int n = int(col_list_A.size());
-			#pragma omp parallel for default(shared)
-			for(int n_column_id_A = 0; n_column_id_A < n; ++ n_column_id_A) {
-				const TColumn &r_t_column_A = col_list_A[n_column_id_A];
-				// for each column in A
-
-				if(r_t_column_A.block_list.size() < 2 || conflicting_column_list[n_column_id_A])
-					continue;
-				// only columns with > 1 blocks can produce results
-
-				CFBS_PreATA<CBlockMatrixTypelist>::PreATA_UpperTriangle_Parallel_OuterLoop(
-					r_t_column_A, r_row_list_A, r_col_list_dest, t_mutex, alloc);
-				// wrap the outer loop in a column size decission tree
-			}}
-			// perform the multiplication of the blocks above diagonal, need to use log(n) lookup
-
-			size_t n_column_id_A = 0;
-			for(_TyColumnConstIter p_col_A_it = col_list_A.begin(), p_col_A_end_it = col_list_A.end();
-			   p_col_A_it != p_col_A_end_it; ++ p_col_A_it, ++ n_column_id_A) {
-				const TColumn &r_t_column_A = *p_col_A_it;
-				// for each column in A
-
-				if(r_t_column_A.block_list.size() < 2 || !conflicting_column_list[n_column_id_A])
-					continue;
-
-				CFBS_PreATA<CBlockMatrixTypelist>::PreATA_UpperTriangle_OuterLoop(
-					r_t_column_A, r_row_list_A, r_col_list_dest, alloc);
-				// wrap the outer loop in a column size decission tree
-			}
-			// perform the multiplication of the blocks above diagonal, need to use log(n) lookup
-#endif
-
-			//r_dest.CheckIntegrity();
-			// makes sure the dest matrix is ok
-
-			// t_odo test and convert the first loop as well.
-
-			/*double f_loop2 = m_timer.f_Time();
-			printf("_loop2\n");*/
-			// note that this can run in parallel easily without conflicts, except for the block allocator
-
-			{
-			_ASSERTE(r_col_list_B.size() <= INT_MAX);
-			int n = int(r_col_list_B.size());
-
-#if 1
-			std::vector<double*> block_alloc_list(n);
-			for(int n_column_id_B = 0; n_column_id_B < n; ++ n_column_id_B) {
-				const TColumn &r_t_column_B = r_col_list_B[n_column_id_B];
-				// for each column in B (index is n_column_id_B)
-
-				if(r_t_column_B.block_list.empty())
-					continue;
-				// only process non-empty columns
-
-				block_alloc_list[n_column_id_B] = r_dest.p_Get_DenseStorage(
-					r_t_column_B.n_width * r_t_column_B.n_width);
-			}
-			// prealloc blocks sequentially
-#endif // 1
-
-			#pragma omp parallel for default(shared)
-			for(int n_column_id_B = 0; n_column_id_B < n; ++ n_column_id_B) {
-				const TColumn &r_t_column_B = r_col_list_B[n_column_id_B];
-				// for each column in B (index is n_column_id_B)
-
-				if(r_t_column_B.block_list.empty())
-					continue;
-				// only process non-empty columns
-
-				double *p_block_data;
-				{
-#if 1
-					p_block_data = block_alloc_list[n_column_id_B];
-#else // 1
-					omp_set_lock(&t_mutex);
-					p_block_data = r_dest.p_Get_DenseStorage(r_t_column_B.n_width * r_t_column_B.n_width);
-					omp_unset_lock(&t_mutex); // note this can be moved in front of the loop
-#endif // 1
-				}
-				CFBS_PreATA<CBlockMatrixTypelist>::PreATA_Parallel_Diagonal_OuterLoop(
-					r_t_column_B, p_block_data, r_row_list_B);
-				// produce the column dot product, each block with itself
-
-				_ASSERTE(r_col_list_dest[n_column_id_B].block_list.empty() ||
-					r_col_list_dest[n_column_id_B].block_list.back().first < size_t(n_column_id_B));
-				// makes sure that inserting block at diagonal doesn't violate block ordering
-
-				r_col_list_dest[n_column_id_B].block_list.push_back(TColumn::TBlockEntry(n_column_id_B, p_block_data));
-				// add the block at the end of the list
-			}}
-			// generate the blocks at diagonal (const time lookup, fast multiplication)
-			// note this is about 30% of work of this function
-
-			/*double f_mudest = m_timer.f_Time();
-			printf("_mudestroy\n");
-			omp_destroy_lock(&t_mutex);
-
-			double f_end = m_timer.f_Time();
-			printf("times:\nmuinit: %lf\nanal: %lf\nloop1: %lf\nloop2: %lf\nmudestroy: %lf\n",
-				f_anal - f_muinit, f_loop1 - f_anal, f_loop2 - f_loop1,
-				f_mudest - f_loop2, f_end - f_mudest);*/
-
-			//r_dest.CheckIntegrity();
-			// makes sure the dest matrix is ok
-		}
-
-		if(!b_upper_diagonal_only) {
-			for(size_t i = 0, n = r_col_list_dest.size(); i < n; ++ i) {
-				const TColumn &r_t_col = r_col_list_dest[i];
-				const size_t n_col = i;
-				for(_TyBlockConstIter p_block_it = r_t_col.block_list.begin(),
-				   p_end_it = r_t_col.block_list.end(); p_block_it != p_end_it; ++ p_block_it) {
-					const TColumn::TBlockEntry &r_t_block = *p_block_it;
-					const size_t n_row = r_t_block.first;
-					_ASSERTE(n_row <= n_col); // make sure the block is above or at the diagonal
-					if(n_row < n_col) {
-						// it is guaranteed (by the condition above) that this will not alter block i or any of the
-						// blocks to be processed next
-
-						_ASSERTE(r_col_list_dest[n_row].block_list.empty() || r_col_list_dest[n_row].block_list.back().first < n_col);
-						// make sure that this won't violate block ordering (since i = n_col is monotonically increasing)
-
-						const size_t n_block_width = r_row_list_dest[n_row].n_height, n_block_height = r_t_col.n_width; // these are dims of the dest block
-						double *p_block_data = r_dest.p_Get_DenseStorage(n_block_width * n_block_height);
-						r_col_list_dest[n_row].block_list.push_back(TColumn::TBlockEntry(n_col, p_block_data));
-						// this block is above the diagonal, at (n_row, n_col), create transpose block at (n_col, n_row)
-
-						const double *p_src_data = r_t_block.second;
-						/*for(size_t x = 0; x < n_block_width; ++ x)
-							for(size_t y = 0; y < n_block_height; ++ y)
-								p_block_data[y + n_block_height * x] = p_src_data[x + n_block_width * y];*/ // f_ixme - does the src / dest ordering matter? is it interchangable? // t_odo - test transposing a matrix // this seems to be correct
-						_TyMatrixXdRef src((double*)p_src_data, n_block_width, n_block_height),
-							dest(p_block_data, n_block_height, n_block_width);
-						dest.noalias() = src.transpose();
-						// copy/transpose the block
-					} else {
-						_ASSERTE(p_block_it + 1 == p_end_it); // diagonal, gotta be the last block
-						break; // still can save the comparison
-					}
-				}
-			}
-			// transpose the blocks from the triangle above diagonal to the triangle below diagonal
-			// this takes O(n) time in number of blocks above the diagonal, or O(n/2) in number of all blocks
-		}
-		// no need to optimize this, it is not used in slam, but optimize it later, might transpose blocks using SSE (or at least ommit the two innermost loops)
-
-		//r_dest.CheckIntegrity();
-		// makes sure the dest matrix is ok
-#else // _OPENMP
-		PreMultiplyWithSelfTransposeTo_FBS<CBlockMatrixTypelist>(r_dest, b_upper_diagonal_only);
-		// just call serial version (uses less memory than the parallel version)
-#endif // _OPENMP
-#endif // __UBER_BLOCK_MATRIX_SUPRESS_FBS
-	}
+		bool b_upper_diagonal_only = false); // throw(std::bad_alloc)
 
 #endif // __UBER_BLOCK_MATRIX_FIXED_BLOCK_SIZE_OPS
 
 	/**
 	 *	@brief performs matrix multiplication
 	 *
-	 *	@code r_dest = *this * r_other @endcode
+	 *	\f$r\_dest = this \cdot r\_other\f$
 	 *
 	 *	@param[in] r_dest is the destination matrix (will be overwritten)
 	 *	@param[in] r_other is the right-side matrix
@@ -5123,7 +2084,7 @@ public:
 	/**
 	 *	@brief performs matrix multiplication
 	 *
-	 *	@code r_dest = *this * r_other @endcode
+	 *	\f$r\_dest = this \cdot r\_other\f$
 	 *
 	 *	@param[in] r_dest is the destination matrix (will be overwritten)
 	 *	@param[in] r_other is the right-side matrix
@@ -5143,7 +2104,7 @@ public:
 	/**
 	 *	@brief performs matrix multiplication
 	 *
-	 *	@code r_dest = *this * r_other @endcode
+	 *	\f$r\_dest = this \cdot r\_other\f$
 	 *
 	 *	@param[in] r_dest is the destination matrix (will be overwritten)
 	 *	@param[in] r_other is the right-side matrix
@@ -5153,234 +2114,12 @@ public:
 	 *	@note This function throws std::bad_alloc.
 	 */
 	template <class CBlockMatrixTypelistThis, class CBlockMatrixTypelistOther>
-	bool MultiplyToWith_FBS(CUberBlockMatrix &r_dest, const CUberBlockMatrix &r_other) const // throw(std::bad_alloc)
-	{
-		CheckIntegrity(true);
-		r_other.CheckIntegrity(true);
-
-#ifdef __UBER_BLOCK_MATRIX_SUPRESS_FBS
-		return MultiplyToWith(r_dest, r_other);
-#else // __UBER_BLOCK_MATRIX_SUPRESS_FBS
-		typedef CBlockMatrixTypelistThis tlA;
-		typedef CBlockMatrixTypelistOther tlB;
-
-		if(m_n_col_num != r_other.m_n_row_num)
-			return false;
-		// check common dimension
-
-		const CUberBlockMatrix &A = *this;
-		const CUberBlockMatrix &B = r_other;
-		// name the matrices; the operation is r_dest = A * B
-
-		const std::vector<TRow> &r_row_list_A = A.m_block_rows_list;
-		const std::vector<TRow> &r_row_list_B = B.m_block_rows_list;
-		std::vector<TRow> &r_row_list_dest = r_dest.m_block_rows_list;
-		const std::vector<TColumn> &r_col_list_A = A.m_block_cols_list;
-		const std::vector<TColumn> &r_col_list_B = B.m_block_cols_list;
-		std::vector<TColumn> &r_col_list_dest = r_dest.m_block_cols_list;
-		// name the cumsums for easier access
-
-		size_t n_dest_col_num = B.m_n_col_num; // t_odo - these and some others do not follow the naming conventions; take care of that
-		size_t n_dest_row_num = A.m_n_row_num;
-		// these are the dimensions of the new matrix
-
-		r_dest.Clear();
-		r_row_list_dest = r_row_list_A; // copy row layout from this
-		r_col_list_dest.resize(r_col_list_B.size());
-		//std::for_each(r_col_list_dest.begin(), r_col_list_dest.end(), CColumnCumsumCopy(r_col_list_B.begin())); // copy column layout but not the blocks
-		std::transform(r_col_list_B.begin(), r_col_list_B.end(), r_col_list_dest.begin(), t_ColumnCumsumCopy);
-		r_dest.m_n_col_num = n_dest_col_num;
-		r_dest.m_n_row_num = n_dest_row_num;
-		// create layout for the destination matrix (linear time)
-
-		//r_dest.CheckIntegrity();
-		// makes sure the dest layout is ok
-
-		std::vector<size_t> reindex_rows_B_to_cols_A;
-		{
-			std::vector<size_t> reindex_cols_A;
-			size_t n_common_size = n_MergeLayout(r_col_list_A, r_row_list_B, reindex_cols_A, reindex_rows_B_to_cols_A);
-			// merge matrix layouts (linear time in max(A column blocks, B row blocks) or something like that)
-
-			std::vector<size_t> common(n_common_size, size_t(-2)); // helper array (note the use of -2 !!)
-			for(size_t i = 0, n = reindex_cols_A.size(); i < n; ++ i) {
-				size_t n_common_A;
-				if((n_common_A = reindex_cols_A[i]) == size_t(-1))
-					continue;
-				_ASSERTE(n_common_A < common.size());
-				common[n_common_A] = i;
-			}
-			// create inverse mapping for columns of A (linear time in number of column blocks of A)
-
-			if(reindex_cols_A.capacity() < reindex_rows_B_to_cols_A.size())
-				reindex_cols_A.clear(); // to prevent resize() on the next line from copying the data (that are going to be overwritten anyway)
-			reindex_cols_A.resize(reindex_rows_B_to_cols_A.size()); // reuse this array as output (may not actually resize in most cases)
-			for(size_t i = 0, n = reindex_rows_B_to_cols_A.size(); i < n; ++ i) {
-				size_t n_common_B;
-				if((n_common_B = reindex_rows_B_to_cols_A[i]) == size_t(-1)) {
-					reindex_cols_A[i] = -1; // !!
-					continue;
-				}
-				_ASSERTE(n_common_B < common.size());
-				reindex_cols_A[i] = common[n_common_B];
-			}
-			reindex_cols_A.swap(reindex_rows_B_to_cols_A); // swap with the array we want output in
-			// map inverse mapping of A to B (linear time in number of row blocks of B)
-		}
-		// merge the common dimension layout (linear time)
-		// -1 means the row did not map/exist in B, -2 meants it did not map/exist in A
-
-		// this version have output to transpose matrix, then transpose that to dest, block lookup is not needed
-
-#ifdef __UBER_BLOCK_MATRIX_MULTIPLICATION_PREALLOCATES_BLOCK_LISTS
-		std::vector<size_t> cols_load_list(r_col_list_dest.size(), 0);
-#endif // __UBER_BLOCK_MATRIX_MULTIPLICATION_PREALLOCATES_BLOCK_LISTS
-		std::vector<std::vector<TColumn::TBlockEntry> > transpose_cols_list(r_row_list_dest.size());
-		// list for storing transpose columns (note that the sizes and cumsums are not initialized and are invalid)
-
-		_TyDenseAllocator alloc(r_dest.m_data_pool);
-		// get allocator in dest
-
-		size_t n_column_id_B = 0;
-		for(_TyColumnConstIter p_col_B_it = r_col_list_B.begin(), p_col_B_end_it = r_col_list_B.end();
-		   p_col_B_it != p_col_B_end_it; ++ p_col_B_it, ++ n_column_id_B) {
-			const TColumn &r_t_column_B = *p_col_B_it;
-			// for each column in B (index is n_column_id_B)
-
-			//if(r_t_column_B.block_list.empty()) // better enter decission tree; empty columns are rare in realworld applications
-			//	continue;
-			// otherwise width mismatch occurs
-
-			if(!CFBS_MatrixMultiply<tlA, tlB>::MatrixMultiply_OuterLoop(
-			   r_t_column_B, n_column_id_B, r_row_list_B, r_col_list_A, r_row_list_A,
-			   transpose_cols_list, reindex_rows_B_to_cols_A, alloc))
-				return false;
-			// the first decision tree for r_t_column_B.n_width (decides all block widths)
-#if 0
-			for(_TyBlockConstIter p_block_B_it = r_t_column_B.block_list.begin(),
-			   p_block_B_end_it = r_t_column_B.block_list.end(); p_block_B_it != p_block_B_end_it; ++ p_block_B_it) {
-				const TColumn::TBlockEntry &r_t_block_B = *p_block_B_it;
-				size_t n_row_id_B = r_t_block_B.first; // get row of the block
-				// for each block in the current column in B
-
-				// the second decision tree for r_row_list_B[n_row_id_B].n_height (decides block B heights, given constant block B width)
-				// note that this is the common dimension
-
-				size_t n_bmB_cols;
-				_TyMatrixXdRef blockB(r_t_block_B.second, r_row_list_B[n_row_id_B].n_height,
-					n_bmB_cols = r_t_column_B.n_width);
-				// create map to block B data
-
-				size_t n_column_id_A = reindex_rows_B_to_cols_A[n_row_id_B];
-				_ASSERTE(size_t(-1) > size_t(-2)); // just to make sure the next line is correct
-				if(n_column_id_A >= size_t(-2)) {
-					if(n_column_id_A == -1)
-						return false; // didn't map from B to common and we know it was not empty (we have a block here)
-					continue; // do not fail, it might also mean that there are no blocks in that column in A and hence the result of multiplication is zero
-				}
-				_ASSERTE(n_column_id_A < r_col_list_A.size());
-				const TColumn &r_t_column_A = r_col_list_A[n_column_id_A];
-				_ASSERTE(r_t_column_A.n_width == r_row_list_B[n_row_id_B].n_height);
-				// lookup which column in A corresponds with current block row in B
-
-				for(_TyBlockConstIter p_block_A_it = r_t_column_A.block_list.begin(),
-				   p_block_A_end_it = r_t_column_A.block_list.end(); p_block_A_it != p_block_A_end_it; ++ p_block_A_it) {
-					const TColumn::TBlockEntry &r_t_block_A = *p_block_A_it;
-					size_t n_row_id_A = r_t_block_A.first; // get row of the block
-					// for each block in the current column in A
-
-					// the third decision tree for r_row_list_A[n_row_id_A].n_height (decides block A heights, given block A width == block B height)
-					// note that r_t_column_A.n_width must equal r_row_list_B[n_row_id_B].n_height (the second decision tree)
-
-					size_t n_bmA_rows;
-					_TyMatrixXdRef blockA(r_t_block_A.second,
-						n_bmA_rows = r_row_list_A[n_row_id_A].n_height, r_t_column_A.n_width);
-					// create map to block A data
-
-					// multiplication of blockA * blockB yields block at (n_row_id_A, n_column_id_B)
-
-					_ASSERTE(n_row_id_A < r_row_list_dest.size());
-					_ASSERTE(n_column_id_B < r_col_list_dest.size());
-					//size_t n_prod_rows = r_row_list_dest[n_row_id_A].n_height;
-					//size_t n_prod_cols = r_col_list_dest[n_column_id_B].n_width; // unused
-					_ASSERTE(r_row_list_dest[n_row_id_A].n_height == blockA.rows());
-					_ASSERTE(r_col_list_dest[n_column_id_B].n_width == blockB.cols());
-					if(blockA.cols() != blockB.rows())
-						return false; // make sure the blocks are multiplicable (not able to verify by just merging the layout)
-					// basic checks about matrix dimensions
-
-					_ASSERTE(n_row_id_A < transpose_cols_list.size());
-					std::vector<TColumn::TBlockEntry> &r_transpose_column = transpose_cols_list[n_row_id_A];
-					if(r_transpose_column.empty() || r_transpose_column.back().first < n_column_id_B) {
-						double *p_new_block_data = alloc.p_Get_DenseStorage(n_bmA_rows * n_bmB_cols);
-						// get storage
-
-						_TyMatrixXdRef block_dest(p_new_block_data, n_bmA_rows, n_bmB_cols);
-						block_dest = blockA * blockB;
-						// initialize a new block
-
-						r_transpose_column.push_back(TColumn::TBlockEntry(n_column_id_B, p_new_block_data));
-						// add it to the list
-
-#ifdef __UBER_BLOCK_MATRIX_MULTIPLICATION_PREALLOCATES_BLOCK_LISTS
-						_ASSERTE(n_column_id_B < cols_load_list.size());
-						++ cols_load_list[n_column_id_B];
-						// we have a list of numbers of entries per row, that can be done in linear time and it might help speeding up the final matrix transpose later
-#endif // __UBER_BLOCK_MATRIX_MULTIPLICATION_PREALLOCATES_BLOCK_LISTS
-					} else {
-						_ASSERTE(r_transpose_column.back().first == n_column_id_B); // n_column_id_B is monotonically increasing, no matter what, don't have to do log(N) lookup here ;)
-						double *p_block_data = r_transpose_column.back().second;
-						_TyMatrixXdRef block_dest(p_block_data, n_bmA_rows, n_bmB_cols);
-						block_dest.noalias() += blockA * blockB;
-						// add to the existing block (run the dot sum)
-					}
-					// perform the dense multiplication using reference matrices and eigen
-				}
-			}
-#endif // 0
-		}
-		// performs sparse matrix multiplication (linear time in number of blocks * constant time to insert the blocks)
-
-#ifdef __UBER_BLOCK_MATRIX_MULTIPLICATION_PREALLOCATES_BLOCK_LISTS
-		_ASSERTE(cols_load_list.size() == r_col_list_dest.size());
-		for(size_t i = 0, n = cols_load_list.size(); i < n; ++ i)
-			r_col_list_dest[i].block_list.reserve(cols_load_list[i]);
-		// allocate block lists
-#endif // __UBER_BLOCK_MATRIX_MULTIPLICATION_PREALLOCATES_BLOCK_LISTS
-
-		for(size_t i = 0, n = transpose_cols_list.size(); i < n; ++ i) {
-			const std::vector<TColumn::TBlockEntry> &r_col = transpose_cols_list[i];
-			for(size_t j = 0, m = r_col.size(); j < m; ++ j) {
-				const TColumn::TBlockEntry &r_block = r_col[j];
-				_ASSERTE(r_block.first < r_col_list_dest.size());
-#ifdef __UBER_BLOCK_MATRIX_MULTIPLICATION_PREALLOCATES_BLOCK_LISTS
-				_ASSERTE(r_col_list_dest[r_block.first].block_list.capacity() > r_col_list_dest[r_block.first].block_list.size()); // since it was preallocated
-#endif // __UBER_BLOCK_MATRIX_MULTIPLICATION_PREALLOCATES_BLOCK_LISTS
-				r_col_list_dest[r_block.first].block_list.push_back(TColumn::TBlockEntry(i, r_block.second));
-			}
-		}
-		// performs the final transpose (linear time in number of blocks)
-
-		//r_dest.CheckIntegrity(true);
-		// makes sure the dest matrix is ok
-
-		// note it might be beneficial (and possibly quite easy) to implement Strassen's algorithm here.
-		// would be a nice work for a paper, too.
-
-		// no need to implement more cunning algorithms, though (Wiki):
-		// The Coppersmith–Winograd algorithm is frequently used as a building block in other algorithms to
-		// prove theoretical time bounds. However, unlike the Strassen algorithm, it is not used in practice
-		// because it only provides an advantage for matrices so large that they cannot be processed by modern
-		// hardware.
-
-		return true;
-#endif // __UBER_BLOCK_MATRIX_SUPRESS_FBS
-	}
+	bool MultiplyToWith_FBS(CUberBlockMatrix &r_dest, const CUberBlockMatrix &r_other) const; // throw(std::bad_alloc)
 
 	/**
 	 *	@brief performs matrix multiplication
 	 *
-	 *	@code r_dest = *this * r_other @endcode
+	 *	\f$r\_dest = this \cdot r\_other\f$
 	 *
 	 *	@param[in] r_dest is the destination matrix (will be overwritten)
 	 *	@param[in] r_other is the right-side matrix
@@ -5394,153 +2133,7 @@ public:
 	 */
 	template <class CBlockMatrixTypelistThis, class CBlockMatrixTypelistOther>
 	bool MultiplyToWith_FBS(CUberBlockMatrix &r_dest,
-		const CUberBlockMatrix &r_other, bool b_upper_diag_only) const // throw(std::bad_alloc)
-	{
-		CheckIntegrity(true);
-		r_other.CheckIntegrity(true);
-
-#ifdef __UBER_BLOCK_MATRIX_SUPRESS_FBS
-		return MultiplyToWith(r_dest, r_other);
-#else // __UBER_BLOCK_MATRIX_SUPRESS_FBS
-		typedef CBlockMatrixTypelistThis tlA;
-		typedef CBlockMatrixTypelistOther tlB;
-
-		if(m_n_col_num != r_other.m_n_row_num)
-			return false;
-		// check common dimension
-
-		const CUberBlockMatrix &A = *this;
-		const CUberBlockMatrix &B = r_other;
-		// name the matrices; the operation is r_dest = A * B
-
-		const std::vector<TRow> &r_row_list_A = A.m_block_rows_list;
-		const std::vector<TRow> &r_row_list_B = B.m_block_rows_list;
-		std::vector<TRow> &r_row_list_dest = r_dest.m_block_rows_list;
-		const std::vector<TColumn> &r_col_list_A = A.m_block_cols_list;
-		const std::vector<TColumn> &r_col_list_B = B.m_block_cols_list;
-		std::vector<TColumn> &r_col_list_dest = r_dest.m_block_cols_list;
-		// name the cumsums for easier access
-
-		size_t n_dest_col_num = B.m_n_col_num; // t_odo - these and some others do not follow the naming conventions; take care of that
-		size_t n_dest_row_num = A.m_n_row_num;
-		// these are the dimensions of the new matrix
-
-		r_dest.Clear();
-		r_row_list_dest = r_row_list_A; // copy row layout from this
-		r_col_list_dest.resize(r_col_list_B.size());
-		//std::for_each(r_col_list_dest.begin(), r_col_list_dest.end(), CColumnCumsumCopy(r_col_list_B.begin())); // copy column layout but not the blocks
-		std::transform(r_col_list_B.begin(), r_col_list_B.end(), r_col_list_dest.begin(), t_ColumnCumsumCopy);
-		r_dest.m_n_col_num = n_dest_col_num;
-		r_dest.m_n_row_num = n_dest_row_num;
-		// create layout for the destination matrix (linear time)
-
-		//r_dest.CheckIntegrity();
-		// makes sure the dest layout is ok
-
-		std::vector<size_t> reindex_rows_B_to_cols_A;
-		{
-			std::vector<size_t> reindex_cols_A;
-			size_t n_common_size = n_MergeLayout(r_col_list_A, r_row_list_B, reindex_cols_A, reindex_rows_B_to_cols_A);
-			// merge matrix layouts (linear time in max(A column blocks, B row blocks) or something like that)
-
-			std::vector<size_t> common(n_common_size, size_t(-2)); // helper array (note the use of -2 !!)
-			for(size_t i = 0, n = reindex_cols_A.size(); i < n; ++ i) {
-				size_t n_common_A;
-				if((n_common_A = reindex_cols_A[i]) == size_t(-1))
-					continue;
-				_ASSERTE(n_common_A < common.size());
-				common[n_common_A] = i;
-			}
-			// create inverse mapping for columns of A (linear time in number of column blocks of A)
-
-			if(reindex_cols_A.capacity() < reindex_rows_B_to_cols_A.size())
-				reindex_cols_A.clear(); // to prevent resize() on the next line from copying the data (that are going to be overwritten anyway)
-			reindex_cols_A.resize(reindex_rows_B_to_cols_A.size()); // reuse this array as output (may not actually resize in most cases)
-			for(size_t i = 0, n = reindex_rows_B_to_cols_A.size(); i < n; ++ i) {
-				size_t n_common_B;
-				if((n_common_B = reindex_rows_B_to_cols_A[i]) == size_t(-1)) {
-					reindex_cols_A[i] = -1; // !!
-					continue;
-				}
-				_ASSERTE(n_common_B < common.size());
-				reindex_cols_A[i] = common[n_common_B];
-			}
-			reindex_cols_A.swap(reindex_rows_B_to_cols_A); // swap with the array we want output in
-			// map inverse mapping of A to B (linear time in number of row blocks of B)
-		}
-		// merge the common dimension layout (linear time)
-		// -1 means the row did not map/exist in B, -2 meants it did not map/exist in A
-
-		// this version have output to transpose matrix, then transpose that to dest, block lookup is not needed
-
-#ifdef __UBER_BLOCK_MATRIX_MULTIPLICATION_PREALLOCATES_BLOCK_LISTS
-		std::vector<size_t> cols_load_list(r_col_list_dest.size(), 0);
-#endif // __UBER_BLOCK_MATRIX_MULTIPLICATION_PREALLOCATES_BLOCK_LISTS
-		std::vector<std::vector<TColumn::TBlockEntry> > transpose_cols_list(r_row_list_dest.size());
-		// list for storing transpose columns (note that the sizes and cumsums are not initialized and are invalid)
-
-		_TyDenseAllocator alloc(r_dest.m_data_pool);
-		// get allocator in dest
-
-		size_t n_column_id_B = 0;
-		if(b_upper_diag_only) {
-			for(_TyColumnConstIter p_col_B_it = r_col_list_B.begin(), p_col_B_end_it = r_col_list_B.end();
-			   p_col_B_it != p_col_B_end_it; ++ p_col_B_it, ++ n_column_id_B) {
-				const TColumn &r_t_column_B = *p_col_B_it;
-				// for each column in B (index is n_column_id_B)
-
-				//if(r_t_column_B.block_list.empty()) // better enter decission tree; empty columns are rare in realworld applications
-				//	continue;
-				// otherwise width mismatch occurs
-
-				if(!CFBS_MatrixMultiply<tlA, tlB>::MatrixMultiply_OuterLoop_UpperTriag(
-				   r_t_column_B, n_column_id_B, r_row_list_B, r_col_list_A, r_row_list_A,
-				   transpose_cols_list, reindex_rows_B_to_cols_A, alloc))
-					return false;
-				// the first decision tree for r_t_column_B.n_width (decides all block widths)
-			}
-			// performs sparse matrix multiplication (linear time in number of blocks * constant time to insert the blocks)
-		} else {
-			for(_TyColumnConstIter p_col_B_it = r_col_list_B.begin(), p_col_B_end_it = r_col_list_B.end();
-			   p_col_B_it != p_col_B_end_it; ++ p_col_B_it, ++ n_column_id_B) {
-				const TColumn &r_t_column_B = *p_col_B_it;
-				// for each column in B (index is n_column_id_B)
-
-				//if(r_t_column_B.block_list.empty()) // better enter decission tree; empty columns are rare in realworld applications
-				//	continue;
-				// otherwise width mismatch occurs
-
-				if(!CFBS_MatrixMultiply<tlA, tlB>::MatrixMultiply_OuterLoop(
-				   r_t_column_B, n_column_id_B, r_row_list_B, r_col_list_A, r_row_list_A,
-				   transpose_cols_list, reindex_rows_B_to_cols_A, alloc))
-					return false;
-			}
-			// performs sparse matrix multiplication (linear time in number of blocks * constant time to insert the blocks)
-		}
-
-#ifdef __UBER_BLOCK_MATRIX_MULTIPLICATION_PREALLOCATES_BLOCK_LISTS
-		_ASSERTE(cols_load_list.size() == r_col_list_dest.size());
-		for(size_t i = 0, n = cols_load_list.size(); i < n; ++ i)
-			r_col_list_dest[i].block_list.reserve(cols_load_list[i]);
-		// allocate block lists
-#endif // __UBER_BLOCK_MATRIX_MULTIPLICATION_PREALLOCATES_BLOCK_LISTS
-
-		for(size_t i = 0, n = transpose_cols_list.size(); i < n; ++ i) {
-			const std::vector<TColumn::TBlockEntry> &r_col = transpose_cols_list[i];
-			for(size_t j = 0, m = r_col.size(); j < m; ++ j) {
-				const TColumn::TBlockEntry &r_block = r_col[j];
-				_ASSERTE(r_block.first < r_col_list_dest.size());
-#ifdef __UBER_BLOCK_MATRIX_MULTIPLICATION_PREALLOCATES_BLOCK_LISTS
-				_ASSERTE(r_col_list_dest[r_block.first].block_list.capacity() > r_col_list_dest[r_block.first].block_list.size()); // since it was preallocated
-#endif // __UBER_BLOCK_MATRIX_MULTIPLICATION_PREALLOCATES_BLOCK_LISTS
-				r_col_list_dest[r_block.first].block_list.push_back(TColumn::TBlockEntry(i, r_block.second));
-			}
-		}
-		// performs the final transpose (linear time in number of blocks)
-
-		return true;
-#endif // __UBER_BLOCK_MATRIX_SUPRESS_FBS
-	}
+		const CUberBlockMatrix &r_other, bool b_upper_diag_only) const; // throw(std::bad_alloc)
 
 #endif // __UBER_BLOCK_MATRIX_FIXED_BLOCK_SIZE_OPS
 
@@ -5576,7 +2169,7 @@ public:
 	 *	// subtract product from identity
 	 *
 	 *	double f_error = identity.f_Norm();
-	 *	// calculate error as <tt>||I - A * A^-1||</tt>.
+	 *	// calculate error as ||I - A * A^-1||.
 	 *	@endcode
 	 *
 	 *	@param[in] r_A is the input matrix (must be invertible and full rank)
@@ -5629,7 +2222,7 @@ public:
 	 *	// subtract product from identity
 	 *
 	 *	double f_error = identity.f_Norm();
-	 *	// calculate error as <tt>||I - A * A^-1||</tt>.
+	 *	// calculate error as ||I - A * A^-1||.
 	 *	@endcode
 	 *
 	 *	@tparam CBlockMatrixTypelist is list of Eigen::Matrix block sizes
@@ -5649,259 +2242,7 @@ public:
 	 *		need to add parameter to mirror the blocks below the diagonal as well.
 	 */
 	template <class CBlockMatrixTypelist>
-	void InverseOf_Symmteric_FBS(const CUberBlockMatrix &r_A) // throw(std::bad_alloc)
-	{
-#ifdef __UBER_BLOCK_MATRIX_SUPRESS_FBS
-		InverseOf_Symmteric(r_A); // use the regular version
-#else // __UBER_BLOCK_MATRIX_SUPRESS_FBS
-		// note that we could catch some simple cases where the inverse is not correct,
-		// but handling all the cases would be difficult, therefore this function gives
-		// absolutely no guarantees about the inverse, and will not fail even when it is
-		// evident that the given matrix does not have an inverse. this is intentional.
-
-		r_A.CheckIntegrity(true);
-
-		_ASSERTE(r_A.b_SymmetricLayout()); // actually doesn't need to be symmetric to be invertible
-		// makes sure that A is symmetric
-
-		//Clear(); // CopyLayoutTo() does that
-		r_A.CopyLayoutTo(*this);
-		// assume the inverse will have the same layout
-
-		const size_t n = m_block_cols_list.size();
-		// number of block columns (and rows) in both src and dest matrix
-
-		// here, a notion of supernodes is used, where a supernode
-		// means a contiguous dense block in the resulting inverse matrix
-
-		std::vector<std::pair<size_t, size_t> > forward_super, backward_super;
-		for(size_t i = 0; i < n; ++ i) {
-			size_t n_start = i;
-			size_t n_end = i;
-			// start and end of the supernode
-
-			const TColumn &r_t_col = r_A.m_block_cols_list[i];
-			if(!r_t_col.block_list.empty())
-				n_end = std::max(n_end, r_t_col.block_list.back().first);
-			for(; i < n_end;) {
-				++ i;
-				const TColumn &r_t_col = r_A.m_block_cols_list[i];
-				if(!r_t_col.block_list.empty())
-					n_end = std::max(n_end, r_t_col.block_list.back().first);
-				// the maximum referenced column
-			}
-			_ASSERTE(i == n_end);
-			// find the maximum referenced column, in all columns between n_start and n_end
-
-			forward_super.push_back(std::make_pair(n_start, n_end));
-			// have a new forward supernode
-		}
-		for(size_t i = n; i > 0;) {
-			-- i;
-			// here
-
-			size_t n_start = i;
-			size_t n_end = i;
-			// start and end of the supernode
-
-			const TColumn &r_t_col = r_A.m_block_cols_list[i];
-			if(!r_t_col.block_list.empty())
-				n_start = std::min(n_start, r_t_col.block_list.front().first);
-			for(; i > n_start;) {
-				-- i;
-				const TColumn &r_t_col = r_A.m_block_cols_list[i];
-				if(!r_t_col.block_list.empty())
-					n_start = std::min(n_start, r_t_col.block_list.front().first);
-				// the minimum referenced column
-			}
-			_ASSERTE(i == n_start);
-			// find the minimum referenced column, in all columns between n_start and n_end
-
-			backward_super.push_back(std::make_pair(n_start, n_end));
-			// have a new backward supernode
-		}
-		// these are always exactly O(n) each, and use up to O(2 * sizeof(size_t) * n) = O(16n) storage each
-		// the result is two (sorted) lists of ranges which possibly overlap
-
-		Eigen::MatrixXd dense; // reuse storage; need to expand slices of A to a potentially large dense matrix
-		for(size_t i = 0, j = backward_super.size(), n_max_i = forward_super.size(); i < n_max_i;) {
-			size_t n_begin = forward_super[i].first;
-			size_t n_end = forward_super[i].second;
-			// lets begin with a forward-determined supernode
-
-			++ i;
-			// skip it, we will process it
-
-			for(;;) {
-				//   bb------be
-				//               fb------fe
-				//	fb > be
-
-				//               bb------be
-				//   fb------fe
-				//  bb > fe
-
-				bool b_extend = false;
-
-				for(;;) {
-					if(j > 0 && !(backward_super[j - 1].first > n_end ||
-					   n_begin > backward_super[j - 1].second)) {
-						-- j;
-						n_begin = std::min(n_begin, backward_super[j].first);
-						//_ASSERTE(n_end >= backward_super[j].second); // note that backward probably always extends only the begin // not true
-						n_end = std::max(n_end, backward_super[j].second);
-						b_extend = true;
-						// extend the range
-					} else
-						break; // range not extended
-				}
-				// detect overlapping ranges (it is easier to negate disjunct ranges condition)
-				// note that the ranges are inclusive
-
-				// maybe it is guaranteed that i < n_max_i, would have to think about it
-				for(;;) {
-					if(i < n_max_i && !(forward_super[i].first > n_end ||
-					   n_begin > forward_super[i].second)) {
-						n_begin = std::min(n_begin, forward_super[i].first);
-						//_ASSERTE(n_begin <= forward_super[i].first); // note that forward probably always extends only the end // not true
-						n_end = std::max(n_end, forward_super[i].second);
-						++ i;
-						b_extend = true;
-						// extend the range
-					} else
-						break; // range not extended
-				}
-				// detect overlapping ranges
-
-				if(!b_extend)
-					break;
-			}
-			// merge the sorted ranges in ping-pong fashion (first one extends, then the other extends)
-
-			_ASSERTE((i == n_max_i) == !j);
-			// make sure that both of the counter run out at the same time
-
-			// now we know that the supernode is n_start to n_end, we need to grab the blocks from A,
-			// put them in a dense matrix, invert it and put it back to this
-
-			if(n_begin == n_end) {
-				// a simple case - just a single block gets inverted
-
-				const TColumn &r_t_col = r_A.m_block_cols_list[n_begin];
-				if(r_t_col.block_list.empty())
-					continue; // structural rank deficient
-				_ASSERTE(r_t_col.block_list.size() == 1);
-				// contains just a single block (independent from the rest of the matrix)
-
-				const TColumn::TBlockEntry &r_src_block = r_t_col.block_list.front();
-				size_t n_row_id = r_src_block.first;
-				const double *p_data = r_src_block.second;
-				size_t n_row_height = r_A.m_block_cols_list[n_row_id].n_width;
-				// make a map of the source block
-
-				TColumn &r_t_dest_col = m_block_cols_list[n_begin];
-				_ASSERTE(r_t_dest_col.block_list.empty()); // should be initially empty
-				r_t_dest_col.block_list.reserve(1);
-				TColumn::TBlockEntry t_block(n_row_id,
-					p_Get_DenseStorage(n_row_height * r_t_col.n_width));
-				r_t_dest_col.block_list.push_back(t_block);
-				// alloc a new (destination) block in this matrix
-
-				_ASSERTE(n_row_height == r_t_col.n_width);
-				if(n_row_height == r_t_col.n_width) {
-					CFBS_BlockwiseUnaryOp<CBlockMatrixTypelist>::template
-						BlockwiseUnary_Static_Op_Square<CInvertBlock>(t_block.second,
-						p_data, n_row_height);
-				}
-				// calculate inverse of a single block
-				// note that in case that there is a rectangular independent (off-diagonal) block,
-				// the inverse will fail (inverse is only defined for square matrices)
-			} else {
-				size_t n_first_col = m_block_cols_list[n_begin].n_cumulative_width_sum;
-				size_t n_last_col = m_block_cols_list[n_end].n_cumulative_width_sum +
-					m_block_cols_list[n_end].n_width; // not inclusive
-				// determine elementwise column range
-
-				{
-					dense.resize(n_last_col - n_first_col, n_last_col - n_first_col); // no need for conservative
-					dense.setZero();
-					// allocate and clear a dense matrix
-
-					for(size_t k = n_begin; k <= n_end; ++ k) {
-						const TColumn &r_t_col = r_A.m_block_cols_list[k];
-						size_t n_dest_column_org = r_t_col.n_cumulative_width_sum - n_first_col; // in elements
-						for(size_t j = 0, m = r_t_col.block_list.size(); j < m; ++ j) {
-							const TColumn::TBlockEntry &r_block = r_t_col.block_list[j];
-							size_t n_row_id = r_block.first;
-							const double *p_data = r_block.second;
-							// get a block
-
-							_ASSERTE(n_row_id >= n_begin && n_row_id <= n_end);
-							// make sure we are inside (otherwise the supernode is not valid and should have been bigger)
-
-							size_t n_row_org = r_A.m_block_cols_list[n_row_id].n_cumulative_width_sum;
-							size_t n_row_height = r_A.m_block_cols_list[n_row_id].n_width;
-							// is symmetric
-
-							_TyMatrixXdRef fill_block((double*)p_data, n_row_height, r_t_col.n_width);
-							// make a map
-
-							dense.block(n_row_org - n_first_col, n_dest_column_org,
-								n_row_height, r_t_col.n_width) = fill_block;
-							// copy the data inside the dense matrix
-						}
-					}
-					// go through all the columns in A and put them in the dense matrix
-
-					dense = dense.inverse();
-					// invert the matrix, making it most likely rather dense
-				}
-				// todo - it would be better to slice the matrix and make a blockwise sparse LU decomposition,
-				// and use that to calculate the inverse (now we are calculating a rather expensive inverse
-				// of a dense (although containing many zeroes) matrix, using dense LU decomposition inside Eigen)
-
-				for(size_t k = n_begin; k <= n_end; ++ k) {
-					TColumn &r_t_col = m_block_cols_list[k];
-					_ASSERTE(r_t_col.block_list.empty()); // should be initially empty
-					r_t_col.block_list.resize(n_end + 1 - n_begin);
-					// get column, allocate the blocks
-
-					size_t n_dest_column_org = r_t_col.n_cumulative_width_sum - n_first_col; // in elements
-
-					std::vector<TColumn::TBlockEntry>::iterator p_dest_it = r_t_col.block_list.begin();
-					for(size_t j = n_begin; j <= n_end; ++ j, ++ p_dest_it) {
-						size_t n_row_org = r_A.m_block_cols_list[j].n_cumulative_width_sum;
-						size_t n_row_height = m_block_cols_list[j].n_width;
-						// is symmetric
-
-						TColumn::TBlockEntry &r_block = *p_dest_it;
-						r_block.first = j;
-						try {
-							r_block.second = p_Get_DenseStorage(n_row_height * r_t_col.n_width);
-						} catch(std::bad_alloc &r_exc) {
-							r_t_col.block_list.erase(p_dest_it, r_t_col.block_list.end());
-							// erase unitialized ones
-
-							throw r_exc; // rethrow
-						}
-						// fill a block
-
-						_TyMatrixXdRef fill_block(r_block.second, n_row_height, r_t_col.n_width);
-						// make a map
-
-						fill_block = dense.block(n_row_org - n_first_col, n_dest_column_org,
-							n_row_height, r_t_col.n_width);
-						// copy the data back from the dense matrix
-					}
-				}
-				// go through all the columns in the inverse and fill them with inverse data
-			}
-		}
-		// up to O(2n) loops
-		// note that this loop could probably be merged with one of the above loops,
-		// and only half of the storage would be required (in exchange for slightly messier code)
-#endif // __UBER_BLOCK_MATRIX_SUPRESS_FBS
-	}
+	void InverseOf_Symmteric_FBS(const CUberBlockMatrix &r_A); // throw(std::bad_alloc)
 
 #endif // __UBER_BLOCK_MATRIX_FIXED_BLOCK_SIZE_OPS
 
@@ -5987,8 +2328,8 @@ public:
 	/**
 	 *	@brief solves a system given by transpose of upper triangular matrix and a right-hand side vector
 	 *
-	 *	Solves <tt>b = this^T * x</tt> (this matrix is just upper triangular, the transpose is calculated
-	 *	inside the function). This is in fact forward substitution.
+	 *	Solves \f$this^T \cdot x = b\f$ (this matrix is just upper triangular, the transpose is calculated
+	 *	inside the function), where p_x is \f$b\f$ on input, \f$x\f$ on output. This is in fact forward substitution.
 	 *
 	 *	@tparam CBlockMatrixTypelist is typelist, containing Eigen
 	 *		matrices with known compile-time sizes
@@ -6003,44 +2344,17 @@ public:
 	 *		and to be upper triangular (all the blocks on the diagonal must be square).
 	 *	@note The transpose is not really being calculated, it is carried out using the indexing.
 	 *
-	 *	@todo Add support for block permutation (2nd function), should be faster than permutating
+	 *	@todo Add support for block permutation (2nd function), should be faster than permuting
 	 *		p_x there and back again (measure, measure).
 	 */
 	template <class CBlockMatrixTypelist>
-	bool UpperTriangularTranspose_Solve_FBS(double *p_x, size_t UNUSED(n_vector_size))
-	{
-		CheckIntegrity(true);
-
-		//Check_Block_Alignment();
-#ifdef __UBER_BLOCK_MATRIX_SUPRESS_FBS
-		return UpperTriangularTranspose_Solve(p_x, n_vector_size);
-#else // __UBER_BLOCK_MATRIX_SUPRESS_FBS
-		_ASSERTE(b_Square());
-		// triangular is a special case of square
-
-		_ASSERTE(n_vector_size == m_n_col_num);
-		// make sure that the vector's got correct size
-
-		for(_TyColumnConstIter p_col_it = m_block_cols_list.begin(),
-		   p_end_it = m_block_cols_list.end(); p_col_it != p_end_it; ++ p_col_it) { // forward substitution
-			const TColumn &r_t_col = *p_col_it;
-			if(r_t_col.block_list.empty())
-				return false; // a 0 on the diagonal - no solution (is it? csparse would divide by zero and produce a NaN)
-
-			if(!CFBS_TriangularSolve<CBlockMatrixTypelist>::TriangularSolve_Forward_OuterLoop(r_t_col,
-			   p_x, m_block_rows_list))
-				return false;
-		}
-
-		return true;
-#endif // __UBER_BLOCK_MATRIX_SUPRESS_FBS
-	}
+	bool UpperTriangularTranspose_Solve_FBS(double *p_x, size_t UNUSED(n_vector_size)) const;
 
 	/**
 	 *	@brief solves a system given by transpose of upper triangular matrix and a right-hand side vector
 	 *
-	 *	Solves <tt>b = this^T * x</tt> (this matrix is just upper triangular, the transpose is calculated
-	 *	inside the function). This is in fact forward substitution.
+	 *	Solves \f$this^T \cdot x = b\f$ (this matrix is just upper triangular, the transpose is calculated
+	 *	inside the function), where p_x is \f$b\f$ on input, \f$x\f$ on output. This is in fact forward substitution.
 	 *
 	 *	This version allows for "resumed forward" substitution. In that case, n_skip_columns is greater
 	 *	than zero, and p_x contains the solution from the last step in elements 0 to
@@ -6063,44 +2377,16 @@ public:
 	 *		and to be upper triangular (all the blocks on the diagonal must be square).
 	 *	@note The transpose is not really being calculated, it is carried out using the indexing.
 	 *
-	 *	@todo Add support for block permutation (2nd function), should be faster than permutating
+	 *	@todo Add support for block permutation (2nd function), should be faster than permuting
 	 *		p_x there and back again (measure, measure).
 	 */
 	template <class CBlockMatrixTypelist>
-	bool UpperTriangularTranspose_Solve_FBS(double *p_x, size_t UNUSED(n_vector_size), size_t n_skip_columns)
-	{
-		CheckIntegrity(true);
-
-		//Check_Block_Alignment();
-#ifdef __UBER_BLOCK_MATRIX_SUPRESS_FBS
-		return UpperTriangularTranspose_Solve(p_x, n_vector_size, n_skip_columns);
-#else // __UBER_BLOCK_MATRIX_SUPRESS_FBS
-		_ASSERTE(b_Square());
-		// triangular is a special case of square
-
-		_ASSERTE(n_vector_size == m_n_col_num);
-		// make sure that the vector's got correct size
-
-		_ASSERTE(n_skip_columns <= m_block_cols_list.size());
-		for(_TyColumnConstIter p_col_it = m_block_cols_list.begin() + n_skip_columns,
-		   p_end_it = m_block_cols_list.end(); p_col_it != p_end_it; ++ p_col_it) { // forward substitution
-			const TColumn &r_t_col = *p_col_it;
-			if(r_t_col.block_list.empty())
-				return false; // a 0 on the diagonal - no solution (is it? csparse would divide by zero and produce a NaN)
-
-			if(!CFBS_TriangularSolve<CBlockMatrixTypelist>::TriangularSolve_Forward_OuterLoop(r_t_col,
-			   p_x, m_block_rows_list))
-				return false;
-		}
-
-		return true;
-#endif // __UBER_BLOCK_MATRIX_SUPRESS_FBS
-	}
+	bool UpperTriangularTranspose_Solve_FBS(double *p_x, size_t UNUSED(n_vector_size), size_t n_skip_columns) const;
 
 	/**
 	 *	@brief solves a system given by upper triangular matrix and a right-hand side vector
 	 *
-	 *	Solves <tt>b = this^T * x</tt>. This is in fact back substitution.
+	 *	Solves \f$this^T \cdot x = b\f$, where p_x is \f$b\f$ on input, \f$x\f$ on output. This is in fact back substitution.
 	 *
 	 *	@tparam CBlockMatrixTypelist is typelist, containing Eigen
 	 *		matrices with known compile-time sizes
@@ -6114,53 +2400,19 @@ public:
 	 *	@note This function requires the matrix to be square, have symmetric layout
 	 *		and to be upper triangular (all the blocks on the diagonal must be square).
 	 *
-	 *	@todo Add support for block permutation (2nd function), should be faster than permutating
+	 *	@todo Add support for block permutation (2nd function), should be faster than permuting
 	 *		p_x there and back again (measure, measure).
 	 */
 	template <class CBlockMatrixTypelist>
-	bool UpperTriangular_Solve_FBS(double *p_x, size_t UNUSED(n_vector_size))
-	{
-		CheckIntegrity(true);
-
-		//Check_Block_Alignment();
-#ifdef __UBER_BLOCK_MATRIX_SUPRESS_FBS
-		return UpperTriangular_Solve(p_x, n_vector_size);
-#else // __UBER_BLOCK_MATRIX_SUPRESS_FBS
-		_ASSERTE(b_Square());
-		// triangular is a special case of square
-
-		//_ASSERTE(b_SymmetricLayout()); // note that symmetric layout is not really required, it just must hold that the last block of every column is the diagonal block
-		// make sure that the layout is symmetric (this is an optimization, not a prerequisite given by math)
-
-		_ASSERTE(n_vector_size == m_n_col_num);
-		// make sure that the vector's got correct size
-
-		for(_TyColumnConstIter p_col_it = m_block_cols_list.end(),
-		   p_end_it = m_block_cols_list.begin(); p_col_it != p_end_it;) { // back substitution
-			-- p_col_it;
-			// decrement at the beginning of the loop! (but after the comparison)
-
-			const TColumn &r_t_col = *p_col_it;
-			if(r_t_col.block_list.empty())
-				return false; // a 0 on the diagonal - no solution (is it? csparse would divide by zero and produce a NaN)
-			//_ASSERTE(r_t_col.block_list.back().first == n_col); // makes sure that the matrix really is upper diagonal
-
-			if(!CFBS_TriangularSolve<CBlockMatrixTypelist>::TriangularSolve_Back_OuterLoop(r_t_col,
-			   p_x, m_block_rows_list))
-				return false;
-		}
-
-		return true;
-#endif // __UBER_BLOCK_MATRIX_SUPRESS_FBS
-	}
+	bool UpperTriangular_Solve_FBS(double *p_x, size_t UNUSED(n_vector_size)) const;
 
 #endif // __UBER_BLOCK_MATRIX_FIXED_BLOCK_SIZE_OPS
 
 	/**
 	 *	@brief solves a system given by transpose of upper triangular matrix and a right-hand side vector
 	 *
-	 *	Solves <tt>b = this^T * x</tt> (this matrix is just upper triangular, the transpose is calculated
-	 *	inside the function). This is in fact forward substitution.
+	 *	Solves \f$this^T \cdot x = b\f$ (this matrix is just upper triangular, the transpose is calculated
+	 *	inside the function), where p_x is \f$b\f$ on input, \f$x\f$ on output. This is in fact forward substitution.
 	 *
 	 *	@param[in,out] p_x is the right-hand side vector (gets overwritten by the solution)
 	 *	@param[in] n_vector_size is the size of the right-hand side vector, in elements
@@ -6172,16 +2424,16 @@ public:
 	 *		and to be upper triangular (all the blocks on the diagonal must be square).
 	 *	@note The transpose is not really being calculated, it is carried out using the indexing.
 	 *
-	 *	@todo Add support for block permutation (2nd function), should be faster than permutating
+	 *	@todo Add support for block permutation (2nd function), should be faster than permuting
 	 *		p_x there and back again (measure, measure).
 	 */
-	bool UpperTriangularTranspose_Solve(double *p_x, size_t UNUSED(n_vector_size));
+	bool UpperTriangularTranspose_Solve(double *p_x, size_t UNUSED(n_vector_size)) const;
 
 	/**
 	 *	@brief solves a system given by transpose of upper triangular matrix and a right-hand side vector
 	 *
-	 *	Solves <tt>b = this^T * x</tt> (this matrix is just upper triangular, the transpose is calculated
-	 *	inside the function). This is in fact forward substitution.
+	 *	Solves \f$this^T \cdot x = b\f$ (this matrix is just upper triangular, the transpose is calculated
+	 *	inside the function), where p_x is \f$b\f$ on input, \f$x\f$ on output. This is in fact forward substitution.
 	 *
 	 *	This version allows for "resumed forward" substitution. In that case, n_skip_columns is greater
 	 *	than zero, and p_x contains the solution from the last step in elements 0 to
@@ -6201,15 +2453,15 @@ public:
 	 *		and to be upper triangular (all the blocks on the diagonal must be square).
 	 *	@note The transpose is not really being calculated, it is carried out using the indexing.
 	 *
-	 *	@todo Add support for block permutation (2nd function), should be faster than permutating
+	 *	@todo Add support for block permutation (2nd function), should be faster than permuting
 	 *		p_x there and back again (measure, measure).
 	 */
-	bool UpperTriangularTranspose_Solve(double *p_x, size_t UNUSED(n_vector_size), size_t n_skip_columns);
+	bool UpperTriangularTranspose_Solve(double *p_x, size_t UNUSED(n_vector_size), size_t n_skip_columns) const;
 
 	/**
 	 *	@brief solves a system given by upper triangular matrix and a right-hand side vector
 	 *
-	 *	Solves <tt>b = this^T * x</tt>. This is in fact back substitution.
+	 *	Solves \f$this \cdot x = b\f$, where p_x is \f$b\f$ on input, \f$x\f$ on output. This is in fact back substitution.
 	 *
 	 *	@param[in,out] p_x is the right-hand side vector (gets overwritten by the solution)
 	 *	@param[in] n_vector_size is the size of the right-hand side vector, in elements
@@ -6220,10 +2472,35 @@ public:
 	 *	@note This function requires the matrix to be square, have symmetric layout
 	 *		and to be upper triangular (all the blocks on the diagonal must be square).
 	 *
-	 *	@todo Add support for block permutation (2nd function), should be faster than permutating
+	 *	@todo Add support for block permutation (2nd function), should be faster than permuting
 	 *		p_x there and back again (measure, measure).
 	 */
-	bool UpperTriangular_Solve(double *p_x, size_t UNUSED(n_vector_size));
+	inline bool UpperTriangular_Solve(double *p_x, size_t UNUSED(n_vector_size)) const
+	{
+		return UpperTriangular_Solve(p_x, n_vector_size, m_block_cols_list.size() - 1);
+		// no performance penalty involved here
+	}
+
+	/**
+	 *	@brief solves a system given by upper triangular matrix and a right-hand side vector
+	 *
+	 *	Solves \f$this \cdot x = b\f$, where p_x is \f$b\f$ on input, \f$x\f$ on output. This is in fact back substitution.
+	 *
+	 *	@param[in,out] p_x is the right-hand side vector (gets overwritten by the solution)
+	 *	@param[in] n_vector_size is the size of the right-hand side vector, in elements
+	 *		(must match size of this matrix)
+	 *	@param[in] n_first_column is zero-based index of the first block column to start
+	 *		backsubstitution at (the corresponding tail of p_x is supposed to be zero)
+	 *
+	 *	@return Returns true on success, false on failure (no solution or infinite number of solutions).
+	 *
+	 *	@note This function requires the matrix to be square, have symmetric layout
+	 *		and to be upper triangular (all the blocks on the diagonal must be square).
+	 *
+	 *	@todo Add support for block permutation (2nd function), should be faster than permuting
+	 *		p_x there and back again (measure, measure).
+	 */
+	bool UpperTriangular_Solve(double *p_x, size_t UNUSED(n_vector_size), size_t n_first_column) const;
 
 #ifdef __UBER_BLOCK_MATRIX_FIXED_BLOCK_SIZE_OPS
 
@@ -6241,27 +2518,7 @@ public:
 	 *	@note This function throws std::bad_alloc.
 	 */
 	template <class CMatrixBlockSizeList, const int n_max_matrix_size>
-	bool Cholesky_Dense_FBS() // throw(std::bad_alloc)
-	{
-		CheckIntegrity(true);
-
-#ifdef __UBER_BLOCK_MATRIX_SUPRESS_FBS
-		return Cholesky_Dense<Eigen::Dynamic>(); // use dynamic-sized matrices (slow)
-#else // __UBER_BLOCK_MATRIX_SUPRESS_FBS
-		_ASSERTE(b_SymmetricLayout());
-		// makes sure it has symmetric layout
-
-		if(m_n_col_num <= n_max_matrix_size) {
-			typedef ref_pair<CUberBlockMatrix&, bool&> _TyContext;
-			bool b_result;
-			_TyContext context(*this, b_result);
-			__fbs_ut::CMakeSquareMatrixSizeDecisionTree<CMatrixBlockSizeList,
-				n_max_matrix_size>::template Do<CCallDenseCholesky>(m_n_col_num, context); // oh, it's the weird syntax again
-			return context.second;
-		} else
-			return Cholesky_Dense<Eigen::Dynamic>(); // use dynamic-sized matrices (slow)
-#endif // __UBER_BLOCK_MATRIX_SUPRESS_FBS
-	}
+	bool Cholesky_Dense_FBS(); // throw(std::bad_alloc)
 
 #endif // __UBER_BLOCK_MATRIX_FIXED_BLOCK_SIZE_OPS
 
@@ -6279,137 +2536,7 @@ public:
 	 *	@note To calculate sparse cholesky, use e.g. CholeskyOf().
 	 */
 	template <const int MatrixRowsAtCompileTime>
-	bool Cholesky_Dense() // throw(std::bad_alloc)
-	{
-		CheckIntegrity(true);
-
-		//Check_Block_Alignment();
-
-		_ASSERTE(b_SymmetricLayout());
-		// makes sure it has symmetric layout
-
-		_ASSERTE(MatrixRowsAtCompileTime == Eigen::Dynamic || n_Row_Num() == MatrixRowsAtCompileTime);
-		_ASSERTE(MatrixRowsAtCompileTime == Eigen::Dynamic || n_Column_Num() == MatrixRowsAtCompileTime);
-		typedef Eigen::Matrix<double, MatrixRowsAtCompileTime, MatrixRowsAtCompileTime> TMatrixType;
-
-		TMatrixType t_factor(n_Row_Num(), n_Column_Num()); // see what happens here with fixed-size matrices
-		t_factor.setZero();
-		// alloc dense matrix and clear it
-
-		std::vector<size_t> frontline;
-		frontline.resize(n_BlockColumn_Num());
-		// alloc vector for frontline blocks (we can observe that cholesky leaves nonzero
-		// values in columns above diagonal and under the top-most block of the original matrix)
-
-		for(size_t i = 0, n = m_block_cols_list.size(); i < n; ++ i) {
-			const TColumn &r_t_col = m_block_cols_list[i];
-			if(r_t_col.block_list.empty()) {
-				frontline[i] = i; // no block - frontline touches diagonal here
-				continue;
-			} else
-				frontline[i] = r_t_col.block_list.front().first; // use the smallest row id as fronline
-			// get frontline
-
-			size_t n_x = r_t_col.n_cumulative_width_sum;
-			size_t n_width = r_t_col.n_width;
-			// dimensions of the block
-
-			for(size_t i = 0, n_block_num = r_t_col.block_list.size(); i < n_block_num; ++ i) {
-				size_t n_row = r_t_col.block_list[i].first;
-				const double *p_data = r_t_col.block_list[i].second;
-
-				size_t n_y = m_block_rows_list[n_row].n_cumulative_height_sum;
-				size_t n_height = m_block_rows_list[n_row].n_height;
-				// dimensions of the block
-
-				for(size_t x = 0; x < n_width; ++ x) {
-					for(size_t y = 0; y < n_height; ++ y) {
-						double f_elem = p_data[x * n_height + y]; // t_odo - this is probably the other way around // nope, it's this way
-						t_factor(n_y + y, n_x + x) = f_elem;
-					}
-				}
-				// iterate through data, sparse fill ...
-			}
-		}
-		// collect the frontline, convert the matrix to dense
-
-		Eigen::LLT<TMatrixType, Eigen::Upper> cholesky(t_factor);
-		if(cholesky.info() != Eigen::Success)
-			return false; // probably Eigen::NumericalIssue - not pos def
-		t_factor = cholesky.matrixU();
-		// calculate upper cholesky by eigen
-
-		m_data_pool.clear();
-		// clears data pool, invalidates all the existing blocks (faster than
-		// sorting the blocks - we already know the correct order)
-
-		for(size_t i = 0, n = m_block_cols_list.size(); i < n; ++ i) {
-			TColumn &r_t_col = m_block_cols_list[i];
-
-			size_t n_x = r_t_col.n_cumulative_width_sum;
-			size_t n_width = r_t_col.n_width;
-			// dimensions of the block
-
-			size_t n_min_row = frontline[i];
-			size_t n_max_row = i + 1; // one past the last one
-			// calculates min / max rows that will be nonzero
-
-			if(r_t_col.block_list.capacity() < n_max_row - n_min_row)
-				r_t_col.block_list.clear(); // avoid copying data in case it will be reallocated
-			r_t_col.block_list.resize(n_max_row - n_min_row);
-			// resize the list of blocks
-
-			_TyBlockIter p_block_it = r_t_col.block_list.begin();
-			for(size_t n_row = n_min_row; n_row < n_max_row; ++ n_row, ++ p_block_it) {
-				TColumn::TBlockEntry &r_t_block = *p_block_it;
-				// get block iterator
-
-				size_t n_y = m_block_rows_list[n_row].n_cumulative_height_sum;
-				size_t n_height = m_block_rows_list[n_row].n_height;
-				// dimensions of the block
-
-				r_t_block.first = n_row;
-				double *p_data = r_t_block.second = p_Get_DenseStorage(n_width * n_height);
-				// alloc the block
-
-				for(size_t x = 0; x < n_width; ++ x) {
-					for(size_t y = 0; y < n_height; ++ y)
-						p_data[x * n_height + y] = t_factor(n_y + y, n_x + x); // note this could be faster through FBS and Eigen::Map
-				}
-				// get cholesky data back
-			}
-			// fill all the blocks with the data
-
-#ifdef _DEBUG
-			for(size_t n_row = 0; n_row < n_min_row; ++ n_row) {
-				size_t n_y = m_block_rows_list[n_row].n_cumulative_height_sum;
-				size_t n_height = m_block_rows_list[n_row].n_height;
-				// dimensions of the block
-
-				for(size_t x = 0; x < n_width; ++ x) {
-					for(size_t y = 0; y < n_height; ++ y)
-						_ASSERTE(fabs(t_factor(n_y + y, n_x + x)) < 1e-5f); // or directly == 0?
-				}
-			}
-			for(size_t n_row = n_max_row, n_end = m_block_rows_list.size(); n_row < n_end; ++ n_row) {
-				size_t n_y = m_block_rows_list[n_row].n_cumulative_height_sum;
-				size_t n_height = m_block_rows_list[n_row].n_height;
-				// dimensions of the block
-
-				for(size_t x = 0; x < n_width; ++ x) {
-					for(size_t y = 0; y < n_height; ++ y)
-						_ASSERTE(fabs(t_factor(n_y + y, n_x + x)) < 1e-5f); // or directly == 0?
-				}
-			}
-			// makes sure that all the other entries are really zero
-#endif // _DEBUG
-		}
-		// gets data back from the dense matrix to this matrix
-
-		//CheckIntegrity(true);
-
-		return true;
-	}
+	bool Cholesky_Dense(); // throw(std::bad_alloc)
 
 	/**
 	 *	@brief builds an elimination tree for Cholesky decomposition
@@ -6455,23 +2582,7 @@ public:
 	 *		use the CholeskyOf(const CUberBlockMatrix&, const std::vector<size_t>&,
 	 *		std::vector<size_t>&, std::vector<size_t>&) variant of this function.
 	 */
-	bool CholeskyOf(const CUberBlockMatrix &r_lambda) // throw(std::bad_alloc)
-	{
-		//r_lambda.CheckIntegrity(true); // inside Build_EliminationTree()
-		//r_lambda.Check_Block_Alignment();
-
-		const size_t n = r_lambda.m_block_cols_list.size();
-		// get number of block columns
-
-		std::vector<size_t> etree, ereach_stack, bitfield;
-		bitfield.resize(n, 0);
-
-		r_lambda.Build_EliminationTree(etree, ereach_stack); // use ereach stack as workspace
-		_ASSERTE(ereach_stack.size() == n);
-		// build an elimination tree
-
-		return CholeskyOf(r_lambda, etree, ereach_stack, bitfield);
-	}
+	inline bool CholeskyOf(const CUberBlockMatrix &r_lambda); // throw(std::bad_alloc)
 
 	/**
 	 *	@brief calculates resumed (upper) Cholesky factorization of a given sparse block matrix
@@ -6499,23 +2610,7 @@ public:
 	 *		use the CholeskyOf(const CUberBlockMatrix&, const std::vector<size_t>&,
 	 *		std::vector<size_t>&, std::vector<size_t>&, size_t) variant of this function.
 	 */
-	bool CholeskyOf(const CUberBlockMatrix &r_lambda, size_t n_start_on_column)
-	{
-		//r_lambda.CheckIntegrity(true); // inside Build_EliminationTree()
-		//r_lambda.Check_Block_Alignment();
-
-		const size_t n = r_lambda.m_block_cols_list.size();
-		// get number of block columns
-
-		std::vector<size_t> etree, ereach_stack, bitfield;
-		bitfield.resize(n, 0);
-
-		r_lambda.Build_EliminationTree(etree, ereach_stack); // use ereach stack as workspace
-		_ASSERTE(ereach_stack.size() == n);
-		// build an elimination tree
-
-		return CholeskyOf(r_lambda, etree, ereach_stack, bitfield, n_start_on_column);
-	}
+	inline bool CholeskyOf(const CUberBlockMatrix &r_lambda, size_t n_start_on_column); // throw(std::bad_alloc)
 
 	/**
 	 *	@brief calculates (upper) Cholesky factorization of a given sparse block matrix
@@ -6565,56 +2660,21 @@ public:
 	bool CholeskyOf(const CUberBlockMatrix &r_lambda, const std::vector<size_t> &r_elim_tree,
 		std::vector<size_t> &r_workspace, std::vector<size_t> &r_zero_workspace, size_t n_start_on_column); // throw(std::bad_alloc)
 
+#ifdef __UBER_BLOCK_MATRIX_FIXED_BLOCK_SIZE_OPS
+
 	/**
 	 *	@copydoc CholeskyOf(const CUberBlockMatrix&)
 	 *	@tparam CBlockMatrixTypelist is list of Eigen::Matrix block sizes
 	 */
 	template <class CBlockMatrixTypelist>
-	bool CholeskyOf_FBS(const CUberBlockMatrix &r_lambda)
-	{
-		//r_lambda.Check_Block_Alignment();
-#ifdef __UBER_BLOCK_MATRIX_SUPRESS_FBS
-		return CholeskyOf(r_lambda);
-#else // __UBER_BLOCK_MATRIX_SUPRESS_FBS
-		const size_t n = r_lambda.m_block_cols_list.size();
-		// get number of block columns
-
-		std::vector<size_t> etree, ereach_stack, bitfield;
-		bitfield.resize(n, 0);
-
-		r_lambda.Build_EliminationTree(etree, ereach_stack); // use ereach stack as workspace
-		_ASSERTE(ereach_stack.size() == n);
-		// build an elimination tree
-
-		return CholeskyOf_FBS<CBlockMatrixTypelist>(r_lambda, etree, ereach_stack, bitfield);
-#endif // __UBER_BLOCK_MATRIX_SUPRESS_FBS
-	}
+	bool CholeskyOf_FBS(const CUberBlockMatrix &r_lambda); // throw(std::bad_alloc)
 
 	/**
 	 *	@copydoc CholeskyOf(const CUberBlockMatrix&, size_t)
 	 *	@tparam CBlockMatrixTypelist is list of Eigen::Matrix block sizes
 	 */
 	template <class CBlockMatrixTypelist>
-	bool CholeskyOf_FBS(const CUberBlockMatrix &r_lambda, size_t n_start_on_column)
-	{
-		//r_lambda.Check_Block_Alignment();
-#ifdef __UBER_BLOCK_MATRIX_SUPRESS_FBS
-		return CholeskyOf(r_lambda, n_start_on_column);
-#else // __UBER_BLOCK_MATRIX_SUPRESS_FBS
-		const size_t n = r_lambda.m_block_cols_list.size();
-		// get number of block columns
-
-		std::vector<size_t> etree, ereach_stack, bitfield;
-		bitfield.resize(n, 0);
-
-		r_lambda.Build_EliminationTree(etree, ereach_stack); // use ereach stack as workspace
-		_ASSERTE(ereach_stack.size() == n);
-		// build an elimination tree
-
-		return CholeskyOf_FBS<CBlockMatrixTypelist>(r_lambda,
-			etree, ereach_stack, bitfield, n_start_on_column);
-#endif // __UBER_BLOCK_MATRIX_SUPRESS_FBS
-	}
+	bool CholeskyOf_FBS(const CUberBlockMatrix &r_lambda, size_t n_start_on_column); // throw(std::bad_alloc)
 
 	/**
 	 *	@copydoc CholeskyOf(const CUberBlockMatrix&, const std::vector<size_t>&, std::vector<size_t>&, std::vector<size_t>&)
@@ -6622,196 +2682,7 @@ public:
 	 */
 	template <class CBlockMatrixTypelist>
 	bool CholeskyOf_FBS(const CUberBlockMatrix &r_lambda, const std::vector<size_t> &r_elim_tree,
-		std::vector<size_t> &r_workspace, std::vector<size_t> &r_zero_workspace) // throw(std::bad_alloc)
-	{
-		//r_lambda.Check_Block_Alignment();
-#ifdef __UBER_BLOCK_MATRIX_SUPRESS_FBS
-		return CholeskyOf(r_lambda, r_elim_tree, r_workspace, r_zero_workspace);
-#else // __UBER_BLOCK_MATRIX_SUPRESS_FBS
-		Clear();
-
-		_ASSERTE(r_lambda.b_SymmetricLayout());
-		// makes sure that lambda is symmetric
-
-		_ASSERTE(r_lambda.m_n_row_num == r_lambda.m_n_col_num);
-		m_n_row_num = m_n_col_num = r_lambda.m_n_col_num;
-		m_block_rows_list = r_lambda.m_block_rows_list;
-		m_block_cols_list.resize(r_lambda.m_block_cols_list.size());
-		// copy the layout
-
-		const size_t n = m_block_cols_list.size();
-		// get number of block columns
-
-		std::vector<size_t> &ereach_stack = r_workspace, &bitfield = r_zero_workspace; // alias
-		_ASSERTE(ereach_stack.size() >= n);
-		_ASSERTE(bitfield.size() >= n);
-		// alloc all the whatnots ...
-
-		_TyDenseAllocator alloc(m_data_pool);
-
-		for(size_t j = 0; j < n; ++ j) { // for every column (no sparsity here, L should be full-rank)
-#if 1
-			const TColumn &r_col_A_j = r_lambda.m_block_cols_list[j];
-			if(!CFBS_Cholesky<CBlockMatrixTypelist>::b_Column_Loop(r_col_A_j.n_width, j, n,
-			   m_block_cols_list, r_col_A_j, r_lambda, r_elim_tree, ereach_stack, bitfield, alloc)) {
-				//printf("error: not pos def\n"); // not pos def
-				Clear(); // otherwise leaving uninit columns behind, CheckIntegrity() will yell
-				return false;
-			}
-#else // 1
-			TColumn &r_col_L_j = m_block_cols_list[j];
-			const TColumn &r_col_A_j = r_lambda.m_block_cols_list[j];
-			const size_t n_col_j_width = r_col_L_j.n_width = r_col_A_j.n_width;
-			r_col_L_j.n_cumulative_width_sum = r_col_A_j.n_cumulative_width_sum;
-			// get columns
-
-			_ASSERTE(!r_col_A_j.block_list.empty()); // otherwise rank deficient (make it a runtime check?)
-			_TyBlockConstIter p_A_block_it =
-				r_col_A_j.block_list.begin(), p_A_block_end_it = r_col_A_j.block_list.end();
-			// get iterator to blocks of the original matrix
-
-#if 0
-			size_t n_ereach_size = r_lambda.n_Build_EReach(j, r_elim_tree, ereach_stack, bitfield);//cs_ereach(p_block_struct, j, p_etree, &s[0], &w[0]);
-#else
-			size_t n_ereach_first = r_lambda.n_Build_EReach(j, r_elim_tree, ereach_stack, bitfield);//cs_ereach(p_block_struct, j, p_etree, &s[0], &w[0]);
-#endif
-			// use ereach to compute nonzero pattern
-
-			r_col_L_j.block_list.reserve(n - n_ereach_first/*n_ereach_size*/ + 1); // + 1 amounts for the diagonal
-			// reserve space for blocks to avoid reallocation later
-
-			for(size_t u = n_ereach_first, n_highest_k = 0; u < n; ++ u) { // seems to work rather nicely (strange because not every A_up[k, j] is not accessed then - it is likely null) // todo - verify this
-				const size_t k = ereach_stack[u]; // use ereach to predict which columns will have nonzero products
-				// k generally rises, but it doesn't have to (can be non-monotonic)
-
-				_ASSERTE(k != n_highest_k || u == n_ereach_first); // there should be no column repeated (except for zero, in the first iteration)
-				bool b_ereach_mono;
-				if((b_ereach_mono = (k >= n_highest_k)))
-					n_highest_k = k; // don't remember previous k unless it increased
-				// see if the ereach is (locally) increasing
-
-				const TColumn &r_col_L_k = m_block_cols_list[k];
-				const size_t n_col_k_width = r_col_L_k.n_width;
-				// get column k
-
-				_TyBlockConstIter p_jk_block_it;
-				double *p_k_block_data = p_Get_DenseStorage(n_col_k_width * n_col_j_width);
-				//_TyMatrixXdRef L_block_kj(p_k_block_data, n_col_k_width, n_col_j_width); // only accessed in FBS section
-				if(b_ereach_mono) { // most of the time
-					_ASSERTE(r_col_L_j.block_list.empty() || r_col_L_j.block_list.back().first < k); // this is generally not true - ereach doesn't have to be monotonic, might need to insert the block in a middle
-					// makes sure that the column doesn't contain the k-th block yet
-
-					r_col_L_j.block_list.push_back(TColumn::TBlockEntry(k, p_k_block_data));
-					p_jk_block_it = r_col_L_j.block_list.end() - 1; // it is here
-				} else {
-					//printf("ereach not mono\n"); // debug
-					_ASSERTE(!r_col_L_j.block_list.empty() && r_col_L_j.block_list.back().first > k); // r_col_L_j.block_list.back().first = n_highest_k and n_highest_k > k
-					// make sure we're not going to search for the correct position in vain
-
-					_TyBlockIter p_dest_block_it =
-#if defined(_MSC_VER) && !defined(__MWERKS__) && _MSC_VER >= 1400
-						std::lower_bound(r_col_L_j.block_list.begin(), r_col_L_j.block_list.end(), k, CCompareBlockRow());
-#else // _MSC_VER && !__MWERKS__ && _MSC_VER >= 1400
-						std::lower_bound(r_col_L_j.block_list.begin(), r_col_L_j.block_list.end(), k, CompareBlockRow);
-#endif // _MSC_VER && !__MWERKS__ && _MSC_VER >= 1400
-					// have to search for the insertion position to keep the column sorted
-
-					p_jk_block_it = r_col_L_j.block_list.insert(p_dest_block_it,
-						TColumn::TBlockEntry(k, p_k_block_data));
-					// insert and remember where it is
-				}
-				// add a new off-diagonal block to L
-
-				{
-					_ASSERTE(p_A_block_it != p_A_block_end_it);
-					size_t n_block_row_id;
-					if((n_block_row_id = (*p_A_block_it).first) < k) {
-						p_A_block_it =
-#if defined(_MSC_VER) && !defined(__MWERKS__) && _MSC_VER >= 1400
-							std::lower_bound(p_A_block_it, p_A_block_end_it, k, CCompareBlockRow());
-#else // _MSC_VER && !__MWERKS__ && _MSC_VER >= 1400
-							std::lower_bound(p_A_block_it, p_A_block_end_it, k, CompareBlockRow);
-#endif // _MSC_VER && !__MWERKS__ && _MSC_VER >= 1400
-					} else if(n_block_row_id > k) {
-						p_A_block_it =
-#if defined(_MSC_VER) && !defined(__MWERKS__) && _MSC_VER >= 1400
-							std::lower_bound(r_col_A_j.block_list.begin(), p_A_block_end_it, k, CCompareBlockRow());
-#else // _MSC_VER && !__MWERKS__ && _MSC_VER >= 1400
-							std::lower_bound(r_col_A_j.block_list.begin(), p_A_block_end_it, k, CompareBlockRow);
-#endif // _MSC_VER && !__MWERKS__ && _MSC_VER >= 1400
-						// a rare case where ereach is not monotonically increasing
-					}
-					_ASSERTE(p_A_block_it != p_A_block_end_it);
-				}
-				// look up the block in the source matrix
-
-				_ASSERTE(!r_col_L_j.block_list.empty() && (!b_ereach_mono || r_col_L_j.block_list.back().first == k)); // this is generally not true; it might not be the last
-				_ASSERTE((*p_jk_block_it).first == k); // this should be always true
-				// column j now contains the k-th block
-
-				_TyBlockConstIter
-					p_j_block_it = r_col_L_j.block_list.begin(),
-					p_j_block_end_it = p_jk_block_it/*r_col_L_j.block_list.end() - 1*/, // this is not end() - 1, might have to look for the block before k
-					p_k_block_it = r_col_L_k.block_list.begin(),
-					p_k_block_end_it = r_col_L_k.block_list.end();
-				// have to loop through both lists and merge the blocks to find the ones, referencing the same rows
-
-				CFBS_Cholesky<CBlockMatrixTypelist>::OffDiagonal_Loop(p_k_block_data,
-					n_col_j_width, n_col_k_width, p_j_block_it, p_j_block_end_it,
-					p_k_block_it, p_k_block_end_it, *p_A_block_it, k, m_block_cols_list);
-				// execute cmod and solve by diagonals using FBS
-
-				if((*p_A_block_it).first == k)
-					++ p_A_block_it;
-				// skip to the next one for the next iteration / for the diagonal
-			}
-			// complex data dependencies in here, not sure if i like it
-
-			{
-				_ASSERTE(p_A_block_it != p_A_block_end_it && (*p_A_block_it).first <= j);
-				// it is pointing before or at the diagonal already
-				if((*p_A_block_it).first != j) {
-					p_A_block_it =
-#if defined(_MSC_VER) && !defined(__MWERKS__) && _MSC_VER >= 1400
-						std::lower_bound(p_A_block_it, p_A_block_end_it, j, CCompareBlockRow());
-#else // _MSC_VER && !__MWERKS__ && _MSC_VER >= 1400
-						std::lower_bound(p_A_block_it, p_A_block_end_it, j, CompareBlockRow);
-#endif // _MSC_VER && !__MWERKS__ && _MSC_VER >= 1400
-				}
-				_ASSERTE(p_A_block_it != p_A_block_end_it && (*p_A_block_it).first == j); // should always be nonzero
-				// find the diagonal block (note that if A is upper diagonal, it is the
-				// last block and we can optimize for that)
-
-				_ASSERTE(r_col_L_j.block_list.empty() || r_col_L_j.block_list.back().first < j);
-				// makes sure that the column doesn't contain the diagonal block yet
-
-				double *p_diag_data = p_Get_DenseStorage(n_col_j_width * n_col_j_width);
-				r_col_L_j.block_list.push_back(TColumn::TBlockEntry(j, p_diag_data));
-				// allocates a new block in this column
-
-				if(!CFBS_Cholesky<CBlockMatrixTypelist>::b_Diagonal_Loop(p_diag_data,
-				   n_col_j_width, r_col_L_j.block_list.begin(), r_col_L_j.block_list.end() - 1,
-				   (*p_A_block_it).second, m_block_cols_list)) {
-					//printf("error: not pos def\n"); // not pos def
-					Clear(); // otherwise leaving uninit columns behind, CheckIntegrity() will yell
-					return false;
-				}
-				// execute cdiv using FBS
-			}
-			// cdiv; reads an entire column and produces diagonal
-
-			_ASSERTE(r_col_L_j.block_list.size() == n - n_ereach_first/*n_ereach_size*/ + 1);
-			// make sure we preallocated it correclty
-#endif // 1
-		}
-		// note that Pigglet could probably write it better
-
-		//CheckIntegrity();
-		// makes sure the factor matrix (this) is ok
-
-		return true;
-#endif // __UBER_BLOCK_MATRIX_SUPRESS_FBS
-	}
+		std::vector<size_t> &r_workspace, std::vector<size_t> &r_zero_workspace); // throw(std::bad_alloc)
 
 	/**
 	 *	@copydoc CholeskyOf(const CUberBlockMatrix&, const std::vector<size_t>&, std::vector<size_t>&, std::vector<size_t>&, size_t)
@@ -6820,209 +2691,9 @@ public:
 	template <class CBlockMatrixTypelist>
 	bool CholeskyOf_FBS(const CUberBlockMatrix &r_lambda, const std::vector<size_t> &r_elim_tree,
 		std::vector<size_t> &r_workspace, std::vector<size_t> &r_zero_workspace,
-		size_t n_start_on_column) // throw(std::bad_alloc)
-	{
-		//Check_Block_Alignment(); // resumed, check itself as well ...
-		//r_lambda.Check_Block_Alignment();
-#ifdef __UBER_BLOCK_MATRIX_SUPRESS_FBS
-		return CholeskyOf(r_lambda, r_elim_tree, r_workspace, r_zero_workspace, n_start_on_column);
-#else // __UBER_BLOCK_MATRIX_SUPRESS_FBS
-		//Clear();
+		size_t n_start_on_column); // throw(std::bad_alloc)
 
-		_ASSERTE(r_lambda.b_SymmetricLayout());
-		// makes sure that lambda is symmetric
-
-		_ASSERTE(r_lambda.m_n_row_num == r_lambda.m_n_col_num);
-		m_n_row_num = m_n_col_num = r_lambda.m_n_col_num;
-		m_block_rows_list = r_lambda.m_block_rows_list;
-		m_block_cols_list.resize(r_lambda.m_block_cols_list.size()); // todo - make sure that prefix of the layout till n_start_on_column is the same
-		// copy the layout
-
-		const size_t n = m_block_cols_list.size();
-		// get number of block columns
-
-		std::vector<size_t> &ereach_stack = r_workspace, &bitfield = r_zero_workspace; // alias
-		_ASSERTE(ereach_stack.size() >= n);
-		_ASSERTE(bitfield.size() >= n);
-		// alloc all the whatnots ...
-
-		_ASSERTE(n_start_on_column <= n);
-
-#ifdef _DEBUG
-		for(size_t j = 0; j < n_start_on_column; ++ j) {
-			TColumn &r_col_L_j = m_block_cols_list[j];
-			const TColumn &r_col_A_j = r_lambda.m_block_cols_list[j];
-			_ASSERTE(r_col_L_j.n_width == r_col_A_j.n_width);
-			_ASSERTE(r_col_L_j.n_cumulative_width_sum == r_col_A_j.n_cumulative_width_sum);
-			// just copy column layouts
-		}
-#endif // _DEBUG
-		// makes sure that prefix of the layout till n_start_on_column is the same
-
-		_TyDenseAllocator alloc(m_data_pool);
-
-		for(size_t j = n_start_on_column; j < n; ++ j) { // for every column (no sparsity here, L should be full-rank)
-#if 1
-			const TColumn &r_col_A_j = r_lambda.m_block_cols_list[j];
-			if(!CFBS_Cholesky<CBlockMatrixTypelist>::b_Column_Loop(r_col_A_j.n_width, j, n,
-			   m_block_cols_list, r_col_A_j, r_lambda, r_elim_tree, ereach_stack, bitfield, alloc)) {
-				//printf("error: not pos def\n"); // not pos def
-				Clear(); // otherwise leaving uninit columns behind, CheckIntegrity() will yell
-				return false;
-			}
-#else // 1
-			TColumn &r_col_L_j = m_block_cols_list[j];
-			const TColumn &r_col_A_j = r_lambda.m_block_cols_list[j];
-			const size_t n_col_j_width = r_col_L_j.n_width = r_col_A_j.n_width;
-			r_col_L_j.n_cumulative_width_sum = r_col_A_j.n_cumulative_width_sum;
-			// get columns
-
-			_ASSERTE(!r_col_A_j.block_list.empty()); // otherwise rank deficient (make it a runtime check?)
-			_TyBlockConstIter p_A_block_it =
-				r_col_A_j.block_list.begin(), p_A_block_end_it = r_col_A_j.block_list.end();
-			// get iterator to blocks of the original matrix
-
-#if 0
-			size_t n_ereach_size = r_lambda.n_Build_EReach(j, r_elim_tree, ereach_stack, bitfield);//cs_ereach(p_block_struct, j, p_etree, &s[0], &w[0]);
-#else
-			size_t n_ereach_first = r_lambda.n_Build_EReach(j, r_elim_tree, ereach_stack, bitfield);//cs_ereach(p_block_struct, j, p_etree, &s[0], &w[0]);
-#endif
-			// use ereach to compute nonzero pattern
-
-			r_col_L_j.block_list.reserve(n - n_ereach_first/*n_ereach_size*/ + 1); // + 1 amounts for the diagonal
-			// reserve space for blocks to avoid reallocation later
-
-			for(size_t u = n_ereach_first, n_highest_k = 0; u < n; ++ u) { // seems to work rather nicely (strange because not every A_up[k, j] is not accessed then - it is likely null) // todo - verify this
-				const size_t k = ereach_stack[u]; // use ereach to predict which columns will have nonzero products
-				// k generally rises, but it doesn't have to (can be non-monotonic)
-
-				_ASSERTE(k != n_highest_k || u == n_ereach_first); // there should be no column repeated (except for zero, in the first iteration)
-				bool b_ereach_mono;
-				if((b_ereach_mono = (k >= n_highest_k)))
-					n_highest_k = k; // don't remember previous k unless it increased
-				// see if the ereach is (locally) increasing
-
-				const TColumn &r_col_L_k = m_block_cols_list[k];
-				const size_t n_col_k_width = r_col_L_k.n_width;
-				// get column k
-
-				_TyBlockConstIter p_jk_block_it;
-				double *p_k_block_data = p_Get_DenseStorage(n_col_k_width * n_col_j_width);
-				//_TyMatrixXdRef L_block_kj(p_k_block_data, n_col_k_width, n_col_j_width); // only accessed in FBS section
-				if(b_ereach_mono) { // most of the time
-					_ASSERTE(r_col_L_j.block_list.empty() || r_col_L_j.block_list.back().first < k); // this is generally not true - ereach doesn't have to be monotonic, might need to insert the block in a middle
-					// makes sure that the column doesn't contain the k-th block yet
-
-					r_col_L_j.block_list.push_back(TColumn::TBlockEntry(k, p_k_block_data));
-					p_jk_block_it = r_col_L_j.block_list.end() - 1; // it is here
-				} else {
-					//printf("ereach not mono\n"); // debug
-					_ASSERTE(!r_col_L_j.block_list.empty() && r_col_L_j.block_list.back().first > k); // r_col_L_j.block_list.back().first = n_highest_k and n_highest_k > k
-					// make sure we're not going to search for the correct position in vain
-
-					_TyBlockIter p_dest_block_it =
-#if defined(_MSC_VER) && !defined(__MWERKS__) && _MSC_VER >= 1400
-						std::lower_bound(r_col_L_j.block_list.begin(), r_col_L_j.block_list.end(), k, CCompareBlockRow());
-#else // _MSC_VER && !__MWERKS__ && _MSC_VER >= 1400
-						std::lower_bound(r_col_L_j.block_list.begin(), r_col_L_j.block_list.end(), k, CompareBlockRow);
-#endif // _MSC_VER && !__MWERKS__ && _MSC_VER >= 1400
-					// have to search for the insertion position to keep the column sorted
-
-					p_jk_block_it = r_col_L_j.block_list.insert(p_dest_block_it,
-						TColumn::TBlockEntry(k, p_k_block_data));
-					// insert and remember where it is
-				}
-				// add a new off-diagonal block to L
-
-				{
-					_ASSERTE(p_A_block_it != p_A_block_end_it);
-					size_t n_block_row_id;
-					if((n_block_row_id = (*p_A_block_it).first) < k) {
-						p_A_block_it =
-#if defined(_MSC_VER) && !defined(__MWERKS__) && _MSC_VER >= 1400
-							std::lower_bound(p_A_block_it, p_A_block_end_it, k, CCompareBlockRow());
-#else // _MSC_VER && !__MWERKS__ && _MSC_VER >= 1400
-							std::lower_bound(p_A_block_it, p_A_block_end_it, k, CompareBlockRow);
-#endif // _MSC_VER && !__MWERKS__ && _MSC_VER >= 1400
-					} else if(n_block_row_id > k) {
-						p_A_block_it =
-#if defined(_MSC_VER) && !defined(__MWERKS__) && _MSC_VER >= 1400
-							std::lower_bound(r_col_A_j.block_list.begin(), p_A_block_end_it, k, CCompareBlockRow());
-#else // _MSC_VER && !__MWERKS__ && _MSC_VER >= 1400
-							std::lower_bound(r_col_A_j.block_list.begin(), p_A_block_end_it, k, CompareBlockRow);
-#endif // _MSC_VER && !__MWERKS__ && _MSC_VER >= 1400
-						// a rare case where ereach is not monotonically increasing
-					}
-					_ASSERTE(p_A_block_it != p_A_block_end_it);
-				}
-				// look up the block in the source matrix
-
-				_ASSERTE(!r_col_L_j.block_list.empty() && (!b_ereach_mono || r_col_L_j.block_list.back().first == k)); // this is generally not true; it might not be the last
-				_ASSERTE((*p_jk_block_it).first == k); // this should be always true
-				// column j now contains the k-th block
-
-				_TyBlockConstIter
-					p_j_block_it = r_col_L_j.block_list.begin(),
-					p_j_block_end_it = p_jk_block_it/*r_col_L_j.block_list.end() - 1*/, // this is not end() - 1, might have to look for the block before k
-					p_k_block_it = r_col_L_k.block_list.begin(),
-					p_k_block_end_it = r_col_L_k.block_list.end();
-				// have to loop through both lists and merge the blocks to find the ones, referencing the same rows
-
-				CFBS_Cholesky<CBlockMatrixTypelist>::OffDiagonal_Loop(p_k_block_data,
-					n_col_j_width, n_col_k_width, p_j_block_it, p_j_block_end_it,
-					p_k_block_it, p_k_block_end_it, *p_A_block_it, k, m_block_cols_list);
-				// execute cmod and solve by diagonals using FBS
-
-				if((*p_A_block_it).first == k)
-					++ p_A_block_it;
-				// skip to the next one for the next iteration / for the diagonal
-			}
-			// complex data dependencies in here, not sure if i like it
-
-			{
-				_ASSERTE(p_A_block_it != p_A_block_end_it && (*p_A_block_it).first <= j);
-				// it is pointing before or at the diagonal already
-				if((*p_A_block_it).first != j) {
-					p_A_block_it =
-#if defined(_MSC_VER) && !defined(__MWERKS__) && _MSC_VER >= 1400
-						std::lower_bound(p_A_block_it, p_A_block_end_it, j, CCompareBlockRow());
-#else // _MSC_VER && !__MWERKS__ && _MSC_VER >= 1400
-						std::lower_bound(p_A_block_it, p_A_block_end_it, j, CompareBlockRow);
-#endif // _MSC_VER && !__MWERKS__ && _MSC_VER >= 1400
-				}
-				_ASSERTE(p_A_block_it != p_A_block_end_it && (*p_A_block_it).first == j); // should always be nonzero
-				// find the diagonal block (note that if A is upper diagonal, it is the
-				// last block and we can optimize for that)
-
-				_ASSERTE(r_col_L_j.block_list.empty() || r_col_L_j.block_list.back().first < j);
-				// makes sure that the column doesn't contain the diagonal block yet
-
-				double *p_diag_data = p_Get_DenseStorage(n_col_j_width * n_col_j_width);
-				r_col_L_j.block_list.push_back(TColumn::TBlockEntry(j, p_diag_data));
-				// allocates a new block in this column
-
-				if(!CFBS_Cholesky<CBlockMatrixTypelist>::b_Diagonal_Loop(p_diag_data,
-				   n_col_j_width, r_col_L_j.block_list.begin(), r_col_L_j.block_list.end() - 1,
-				   (*p_A_block_it).second, m_block_cols_list)) {
-					//printf("error: not pos def\n"); // not pos def
-					return false;
-				}
-				// execute cdiv using FBS
-			}
-			// cdiv; reads an entire column and produces diagonal
-
-			_ASSERTE(r_col_L_j.block_list.size() == n - n_ereach_first/*n_ereach_size*/ + 1);
-			// make sure we preallocated it correclty
-#endif // 1
-		}
-		// note that Pigglet could probably write it better
-
-		//CheckIntegrity();
-		// makes sure the factor matrix (this) is ok
-
-		return true;
-#endif // __UBER_BLOCK_MATRIX_SUPRESS_FBS
-	}
+#endif // __UBER_BLOCK_MATRIX_FIXED_BLOCK_SIZE_OPS
 
 #ifdef __UBER_BLOCK_MATRIX_IO
 
@@ -7050,17 +2721,7 @@ public:
 	 *	@note This function throws std::bad_alloc.
 	 */
 	inline bool Load_MatrixMarket(const char *p_s_filename,
-		const char *p_s_layout_filename) // throw(std::bad_alloc)
-	{
-		_ASSERTE(p_s_filename);
-		_ASSERTE(p_s_layout_filename); // must always be specified in this version
-
-		if(!Load_BlockLayout(p_s_layout_filename))
-			return false;
-		// load layout first
-
-		return Load_MatrixMarket_Layout(p_s_filename);
-	}
+		const char *p_s_layout_filename); // throw(std::bad_alloc)
 
 	/**
 	 *	@brief loads a matrix from a file
@@ -7115,143 +2776,27 @@ public:
 
 #endif // __UBER_BLOCK_MATRIX_IO
 
-	/**
-	 *	@brief checks matrix integrity
-	 *	@param[in] b_full_check is full check flag (if set, performs also checks that
-	 *		require more than O(n) time, otherwise skips them)
-	 *	@note This only takes effect in debug builds, otherwise it's an empty function.
-	 */
-	inline void CheckIntegrity(bool UNUSED(b_full_check) = false) const
-	{
-#if defined(_DEBUG) && !defined(__UBER_BLOCK_MATRIX_DISABLE_INTEGRITY_CHECK)
-		_ASSERTE(m_block_cols_list.empty() || m_block_cols_list.front().n_cumulative_width_sum == 0);
-		for(size_t i = 0, n = m_block_cols_list.size(), n_cum_sum = 0; i < n; ++ i) {
-			const TColumn &r_t_col = m_block_cols_list[i];
-			_ASSERTE(r_t_col.n_cumulative_width_sum == n_cum_sum);
-			_ASSERTE(r_t_col.n_width > 0);
-			n_cum_sum += r_t_col.n_width;
-		}
-		_ASSERTE((m_block_cols_list.empty() && !m_n_col_num) || (!m_block_cols_list.empty() &&
-			m_n_col_num == m_block_cols_list.back().n_cumulative_width_sum + m_block_cols_list.back().n_width));
-		// check column cumulative sum integrity
-
-		for(size_t i = 0, n = m_block_cols_list.size(); i < n; ++ i) {
-			const TColumn &r_t_col = m_block_cols_list[i];
-
-			//std::set<size_t> row_ref_set;
-			size_t n_prev_row;
-			for(size_t j = 0, m = r_t_col.block_list.size(); j < m; ++ j) {
-				_ASSERTE(r_t_col.block_list[j].second); // memory is allocated
-				size_t n_row = r_t_col.block_list[j].first;
-				_ASSERTE(n_row < m_block_rows_list.size()); // make sure row index is valid
-				//_ASSERTE(row_ref_set.find(n_row) == row_ref_set.end()); // make sure a single row is only referenced up to once in a single column
-				//row_ref_set.insert(n_row);
-				_ASSERTE(!j || n_row > n_prev_row); // make sure the blocks come in increasing order // f_ixme - in case blocks are forced to come in strictly increasing order, do i still need the row reference set? // no!
-				n_prev_row = n_row;
-			}
-		}
-		// check column row references
-
-		_ASSERTE(m_block_rows_list.empty() || m_block_rows_list.front().n_cumulative_height_sum == 0);
-		for(size_t i = 0, n = m_block_rows_list.size(), n_cum_sum = 0; i < n; ++ i) {
-			const TRow &r_t_row = m_block_rows_list[i];
-			_ASSERTE(r_t_row.n_cumulative_height_sum == n_cum_sum);
-			_ASSERTE(r_t_row.n_height > 0);
-			n_cum_sum += r_t_row.n_height;
-		}
-		_ASSERTE((m_block_rows_list.empty() && !m_n_row_num) || (!m_block_rows_list.empty() &&
-			m_n_row_num == m_block_rows_list.back().n_cumulative_height_sum + m_block_rows_list.back().n_height));
-		// check row cumulative sum integrity
-
-		if(b_full_check) {
-#if defined(_DEBUG) && defined(__UBER_BLOCK_MATRIX_BUFFER_BOUNDS_CHECK)
-			for(size_t i = 0, n = m_block_cols_list.size(); i < n; ++ i) {
-				const TColumn &r_t_col = m_block_cols_list[i];
-				size_t n_width = r_t_col.n_width;
-				for(size_t j = 0, m = r_t_col.block_list.size(); j < m; ++ j) {
-					const double *p_block = r_t_col.block_list[j].second;
-					size_t n_row = r_t_col.block_list[j].first;
-					size_t n_height = m_block_rows_list[n_row].n_height;
-					if(m_n_ref_elem_num > 0 && m_data_pool.index_of(p_block) == size_t(-1))
-						continue; // cannot check referenced blocks (would have to keep track of references); the original matrix can still be checked thouhg (and it will detect errors if any)
-					_ASSERTE(_TyBoundsCheck::b_CheckBlockMarkers(m_data_pool, p_block, n_width * n_height)); // make sure noone overwritten block bound markers
-				}
-			}
-			// check column row references
-#endif // _DEBUG && __UBER_BLOCK_MATRIX_BUFFER_BOUNDS_CHECK
-
-			Check_Block_Alignment();
-			// that too
-		}
-#endif // _DEBUG && !__UBER_BLOCK_MATRIX_DISABLE_INTEGRITY_CHECK
-	}
-
-	/**
-	 *	@brief checks matrix block alignment; available in release buildsas well
-	 */
-	inline void Check_Block_Alignment() const
-	{
-		// need ifdef, otherwise getting "potential mod by 0" warning
-#ifdef __UBER_BLOCK_MATRIX_ALIGN_BLOCK_MEMORY
-		if(!pool_MemoryAlignment)
-			return; // unaligned addresses allowed
-		for(size_t i = 0, n = m_block_cols_list.size(); i < n; ++ i) {
-			for(size_t j = 0, m = m_block_cols_list[i].block_list.size(); j < m; ++ j) {
-				double *p_block = m_block_cols_list[i].block_list[j].second;
-				if(ptrdiff_t(p_block) % pool_MemoryAlignment != 0) {
-					fprintf(stderr, "error: have a misaligned block at: 0x%08x\n",
-						(unsigned int)(ptrdiff_t(p_block) & 0xffffffffU));
-					//exit(-2);
-				}
-			}
-		}
-#else // __UBER_BLOCK_MATRIX_ALIGN_BLOCK_MEMORY
-		_ASSERTE(!pool_MemoryAlignment);
-#endif // __UBER_BLOCK_MATRIX_ALIGN_BLOCK_MEMORY
-	}
-
 protected:
 	/**
 	 *	@brief copies column layout structure without copying the blocks
 	 *	@param[in] r_t_src is column layout structure
 	 *	@return Returns column layout structure with the blocks ommited.
 	 */
-	static inline TColumn t_ColumnCumsumCopy(const TColumn &r_t_src)
-	{
-		TColumn t_dest;
-		t_dest.n_width = r_t_src.n_width; // copy dimensions
-		t_dest.n_cumulative_width_sum = r_t_src.n_cumulative_width_sum; // copy cumsums
-		_ASSERTE(t_dest.block_list.empty()); // no blocks
-		return t_dest;
-	}
+	static inline TColumn t_ColumnCumsumCopy(const TColumn &r_t_src);
 
 	/**
 	 *	@brief converts column layout structure to row
 	 *	@param[in] r_t_src is column layout structure
 	 *	@return Returns row layout structure (transpose of input).
 	 */
-	static inline TRow t_ColumnCumsumToRowCumsum(const TColumn &r_t_src)
-	{
-		TRow t_dest;
-		t_dest.n_height = r_t_src.n_width; // copy dimensions
-		t_dest.n_cumulative_height_sum = r_t_src.n_cumulative_width_sum; // copy cumsums
-		// no blocks in dest
-		return t_dest;
-	}
+	static inline TRow t_ColumnCumsumToRowCumsum(const TColumn &r_t_src);
 
 	/**
 	 *	@brief converts row layout structure to column
 	 *	@param[in] r_t_src is row layout structure
 	 *	@return Returns column layout structure (transpose of input).
 	 */
-	static inline TColumn t_RowCumsumToColumnCumsum(const TRow &r_t_src)
-	{
-		TColumn t_dest;
-		t_dest.n_width = r_t_src.n_height; // copy dimensions
-		t_dest.n_cumulative_width_sum = r_t_src.n_cumulative_height_sum; // copy cumsums
-		_ASSERTE(t_dest.block_list.empty()); // no blocks in src
-		return t_dest;
-	}
+	static inline TColumn t_RowCumsumToColumnCumsum(const TRow &r_t_src);
 
 	/**
 	 *	@brief a simple function object used to recalculate block row cumsums after row permutation
@@ -7306,27 +2851,6 @@ protected:
 		return f_a + f_b;
 	}
 
-public:
-	/**
-	 *	@brief gets (aligned) dense storage
-	 *
-	 *	@param[in] n_element_num is number of elements to allocate
-	 *
-	 *	@return Returns (aligned) pointer to array, containing n_element_num elements.
-	 *		The pointer is owned by m_data_pool, and must not be deleted.
-	 *
-	 *	@note This function throws std::bad_alloc.
-	 *	@note The memory alignment is given by pool_MemoryAlignment, and the returned
-	 *		pointers are, in fact, unaligned in case it equals to zero.
-	 */
-	inline double *p_Get_DenseStorage(size_t n_element_num) // throw(std::bad_alloc)
-	{
-		_TyDenseAllocator alloc(m_data_pool);
-		return alloc.p_Get_DenseStorage(n_element_num);
-		// use the allocator class, but only instantiate it as needed so it is possible to swap matrices
-	}
-
-protected:
 	/**
 	 *	@brief determines whether a row is referenced by columns
 	 *	@param[in] n_row_index is (zero-based) row index
@@ -7376,53 +2900,7 @@ protected:
 	template <class _TyDest, class _TyFirst, class _TySecond>
 	static void MergeLayout(std::vector<_TyDest> &r_merged_layout, const std::vector<_TyFirst> &r_layout_0,
 		const std::vector<_TySecond> &r_layout_1, std::vector<size_t> &r_reindexing_table_0,
-		std::vector<size_t> &r_reindexing_table_1) // throw(std::bad_alloc)
-	{
-		r_reindexing_table_0.resize(r_layout_0.size());
-		r_reindexing_table_1.resize(r_layout_1.size());
-		r_merged_layout.clear(); // note this is always called from inside function where the layout is created, clearing is useless then
-		r_merged_layout.reserve(std::max(r_layout_0.size(), r_layout_1.size()));
-		// alloc in / out lists
-
-		_ASSERTE(r_layout_0.empty() == r_layout_1.empty()); // both empty or both not
-		_ASSERTE(r_layout_0.empty() || r_layout_1.empty() ||
-			r_layout_0.back().n_GetCumulative() + r_layout_0.back().n_GetAbsolute() ==
-			r_layout_1.back().n_GetCumulative() + r_layout_1.back().n_GetAbsolute()); // same last dimension
-		// make sure matrix size is the same
-
-		size_t n_last_cum = 0, i = 0, j = 0, m = r_layout_0.size(), n = r_layout_1.size();
-		size_t n_last_first = 0;
-		size_t n_last_second = 0;
-		while(i < m && j < n) {
-			size_t n_cum0 = r_layout_0[i].n_GetCumulative() + r_layout_0[i].n_GetAbsolute();
-			size_t n_cum1 = r_layout_1[j].n_GetCumulative() + r_layout_1[j].n_GetAbsolute(); // want the end of the row/col
-			size_t n_cum_next = std::min(n_cum0, n_cum1);
-			// get cumsums, decide which to advance first
-
-			size_t n_index = r_merged_layout.size();
-			if(n_cum0 == n_cum_next) {
-				r_reindexing_table_0[i] = (n_last_first == n_last_cum)? n_index : size_t(-1);
-				n_last_first = n_cum_next;
-				++ i;
-			}
-			if(n_cum1 == n_cum_next) {
-				r_reindexing_table_1[j] = (n_last_second == n_last_cum)? n_index : size_t(-1);
-				n_last_second = n_cum_next;
-				++ j;
-			}
-			// build reindexing tables
-
-			_TyDest t_row_or_column;
-			t_row_or_column.SetAbsolute(n_cum_next - n_last_cum);
-			t_row_or_column.SetCumulative(n_last_cum); // !!
-			n_last_cum = n_cum_next;
-			// make a new row (or a column, depending on _TyDest)
-
-			r_merged_layout.push_back(t_row_or_column);
-			// add it to the list
-		}
-		_ASSERTE(i == m && j == n); // in case the matrices have the same size, they both end at the same time
-	}
+		std::vector<size_t> &r_reindexing_table_1); // throw(std::bad_alloc)
 
 	/**
 	 *	@brief merges matrix layouts in one dimension (either of them, can combine)
@@ -7446,49 +2924,7 @@ protected:
 	template <class _TyFirst, class _TySecond>
 	static size_t n_MergeLayout(const std::vector<_TyFirst> &r_layout_0,
 		const std::vector<_TySecond> &r_layout_1, std::vector<size_t> &r_reindexing_table_0,
-		std::vector<size_t> &r_reindexing_table_1) // throw(std::bad_alloc)
-	{
-		r_reindexing_table_0.resize(r_layout_0.size());
-		r_reindexing_table_1.resize(r_layout_1.size());
-		// alloc out lists
-
-		_ASSERTE(r_layout_0.empty() == r_layout_1.empty()); // both empty or both not
-		_ASSERTE(r_layout_0.empty() || r_layout_1.empty() ||
-			r_layout_0.back().n_GetCumulative() + r_layout_0.back().n_GetAbsolute() ==
-			r_layout_1.back().n_GetCumulative() + r_layout_1.back().n_GetAbsolute()); // same last dimension
-		// make sure matrix size is the same
-
-		size_t n_layout_size = 0;
-		size_t n_last_cum = 0, i = 0, j = 0, m = r_layout_0.size(), n = r_layout_1.size();
-		size_t n_last_first = 0;
-		size_t n_last_second = 0;
-		while(i < m && j < n) {
-			size_t n_cum0 = r_layout_0[i].n_GetCumulative() + r_layout_0[i].n_GetAbsolute();
-			size_t n_cum1 = r_layout_1[j].n_GetCumulative() + r_layout_1[j].n_GetAbsolute(); // want the end of the row/col
-			size_t n_cum_next = std::min(n_cum0, n_cum1);
-			// get cumsums, decide which to advance first
-
-			size_t n_index = n_layout_size;
-			if(n_cum0 == n_cum_next) {
-				r_reindexing_table_0[i] = (n_last_first == n_last_cum)? n_index : size_t(-1);
-				n_last_first = n_cum_next;
-				++ i;
-			}
-			if(n_cum1 == n_cum_next) {
-				r_reindexing_table_1[j] = (n_last_second == n_last_cum)? n_index : size_t(-1);
-				n_last_second = n_cum_next;
-				++ j;
-			}
-			n_last_cum = n_cum_next;
-			// build reindexing tables
-
-			++ n_layout_size;
-			// calculate the size of the resulting layout
-		}
-		_ASSERTE(i == m && j == n); // in case the matrices have the same size, they both end at the same time
-
-		return n_layout_size;
-	}
+		std::vector<size_t> &r_reindexing_table_1); // throw(std::bad_alloc)
 
 	/**
 	 *	@brief tries to find a row by first element offset
@@ -7524,50 +2960,7 @@ protected:
 	 *
 	 *	@return Returns (zero-based) block-row index on success, or -1 on failure.
 	 */
-	inline size_t n_RowGet(size_t n_row, size_t &r_n_block_row_num) const
-	{
-		size_t n_row_index;
-		if(n_row >= m_n_row_num)
-			return -1;
-		else {
-#if defined(_MSC_VER) && !defined(__MWERKS__) && _MSC_VER >= 1400
-			_TyRowConstIter p_row_it = std::upper_bound(m_block_rows_list.begin(),
-				m_block_rows_list.end(), n_row, CFindLowerRow()); // t_odo
-#else // _MSC_VER && !__MWERKS__ && _MSC_VER >= 1400
-			_TyRowConstIter p_row_it = std::upper_bound(m_block_rows_list.begin(),
-				m_block_rows_list.end(), n_row, _FindLowerRow); // t_odo
-#endif // _MSC_VER && !__MWERKS__ && _MSC_VER >= 1400
-			//_ASSERTE(p_row_it != m_block_rows_list.end());
-			if(p_row_it == m_block_rows_list.begin())
-				return -1;
-			-- p_row_it;
-			const TRow &r_t_row = *p_row_it;
-
-			if(r_t_row.n_cumulative_height_sum == n_row) {
-				r_n_block_row_num = r_t_row.n_height;
-				n_row_index = p_row_it - m_block_rows_list.begin();
-				// just find the index, the row in question does exist, and has the right size (ideal case)
-
-#ifdef __UBER_BLOCK_MATRIX_PERFCOUNTERS
-				++ m_n_row_reref_num;
-#endif // __UBER_BLOCK_MATRIX_PERFCOUNTERS
-			} else {
-				return -1;
-				// the current row would need to be fragmented
-			}
-		}
-		// resolve row reference
-
-		_ASSERTE(n_row_index < m_block_rows_list.size());
-		_ASSERTE(m_block_rows_list[n_row_index].n_height == r_n_block_row_num);
-		_ASSERTE(m_block_rows_list[n_row_index].n_cumulative_height_sum == n_row);
-		// make sure that the row reference is really resolved
-
-		//_ASSERTE(b_last_row == (n_row_index == m_block_rows_list.size() - 1));
-		// makes sure the b_last_row flag is filled correctly
-
-		return n_row_index;
-	}
+	inline size_t n_RowGet(size_t n_row, size_t &r_n_block_row_num) const;
 
 	/**
 	 *	@brief tries to find a column by first element offset, fails if it doesn't exist
@@ -7577,53 +2970,7 @@ protected:
 	 *
 	 *	@return Returns (zero-based) block-column index on success, or -1 on failure.
 	 */
-	inline size_t n_ColumnGet(size_t n_column, size_t &r_n_block_column_num) const
-	{
-		size_t n_column_index;
-		if(n_column >= m_n_col_num)
-			return -1;
-		else {
-			_TyColumnConstIter p_col_it;
-			_ASSERTE(!m_block_cols_list.empty());
-			/*if(m_block_cols_list.back().n_cumulative_width_sum == n_column) // saves almost 10% of the time if filling by columns
-				p_col_it = m_block_cols_list.end() - 1;
-			else*/ {
-#if defined(_MSC_VER) && !defined(__MWERKS__) && _MSC_VER >= 1400
-				p_col_it = std::upper_bound(m_block_cols_list.begin(),
-					m_block_cols_list.end(), n_column, CFindLowerColumn()); // t_odo
-#else // _MSC_VER && !__MWERKS__ && _MSC_VER >= 1400
-				p_col_it = std::upper_bound(m_block_cols_list.begin(),
-					m_block_cols_list.end(), n_column, _FindLowerColumn); // t_odo
-#endif // _MSC_VER && !__MWERKS__ && _MSC_VER >= 1400
-				//_ASSERTE(p_col_it != m_block_cols_list.end()); // t_odo - handle this as proper runtime error // done (the line below)
-				if(p_col_it == m_block_cols_list.begin())
-					return -1;
-				-- p_col_it;
-			}
-			const TColumn &r_t_col = *p_col_it;
-
-			if(r_t_col.n_cumulative_width_sum == n_column) {
-				r_n_block_column_num = r_t_col.n_width;
-				n_column_index = p_col_it - m_block_cols_list.begin();
-				// just find the index, the column in question does exist, and has the right size (ideal case)
-
-#ifdef __UBER_BLOCK_MATRIX_PERFCOUNTERS
-				++ m_n_col_reref_num;
-#endif // __UBER_BLOCK_MATRIX_PERFCOUNTERS
-			} else {
-				return -1;
-				// handle the subdivision cases
-			}
-		}
-		// resolve column reference (essentially the same code as for the row reference)
-
-		_ASSERTE(n_column_index < m_block_cols_list.size());
-		_ASSERTE(m_block_cols_list[n_column_index].n_width == r_n_block_column_num);
-		_ASSERTE(m_block_cols_list[n_column_index].n_cumulative_width_sum == n_column);
-		// make sure that the column reference is really resolved
-
-		return n_column_index;
-	}
+	inline size_t n_ColumnGet(size_t n_column, size_t &r_n_block_column_num) const;
 
 	/**
 	 *	@brief tries to find a block by block position and size, allocates a new one if not found
@@ -7657,13 +3004,7 @@ protected:
 	 *	@note This function throws std::bad_alloc.
 	 */
 	inline double *p_AllocBlockData(size_t n_row_index, size_t n_column_index,
-		size_t n_block_row_num, size_t n_block_column_num, bool &r_b_was_a_new_block) // throw(std::bad_alloc)
-	{
-		_ASSERTE(n_column_index < m_block_cols_list.size());
-		TColumn &r_t_col = m_block_cols_list[n_column_index];
-		return p_AllocBlockData(n_row_index, r_t_col, n_block_row_num,
-			n_block_column_num, r_b_was_a_new_block);
-	}
+		size_t n_block_row_num, size_t n_block_column_num, bool &r_b_was_a_new_block); // throw(std::bad_alloc)
 
 	/**
 	 *	@brief tries to find a block by block position, fails if not found
@@ -7705,30 +3046,6 @@ protected:
 		const std::vector<TColumn> &r_column_list_first, std::vector<TRow> &r_row_list_second,
 		std::vector<TColumn> &r_column_list_second, std::vector<size_t> &r_reindex_rows_first,
 		std::vector<size_t> &r_reindex_columns_first); // throw(std::bad_alloc)
-
-	/**
-	 *	@brief resets all performance counters to zero
-	 *	@note This only has effect if the __UBER_BLOCK_MATRIX_PERFCOUNTERS
-	 *		macro is defined, otherwise it's an empty function.
-	 */
-	inline void Reset_Perfcounters()
-	{
-#ifdef __UBER_BLOCK_MATRIX_PERFCOUNTERS
-		m_n_row_reindex_num = 0;
-		m_n_rows_list_shift_num = 0;
-		m_n_cols_list_shift_num = 0;
-		m_n_rows_list_realloc_num = 0;
-		m_n_cols_list_realloc_num = 0;
-		m_n_dummy_row_num = 0;
-		m_n_dummy_col_num = 0;
-		m_n_row_reref_num = 0;
-		m_n_col_reref_num = 0;
-		m_n_row_append_num = 0;
-		m_n_col_append_num = 0;
-		m_n_col_block_search_num = 0;
-		m_n_col_block_reref_num = 0;
-#endif // __UBER_BLOCK_MATRIX_PERFCOUNTERS
-	}
 
 #ifdef __UBER_BLOCK_MATRIX_HAVE_CSPARSE
 	/**
@@ -7797,5 +3114,21 @@ protected:
 #endif // _OPENMP
 #endif // __UBER_BLOCK_MATRIX_HAVE_CSPARSE
 };
+
+#include "BlockMatrix.inl"
+
+#ifdef __UBER_BLOCK_MATRIX_FIXED_BLOCK_SIZE_OPS
+
+#include "slam/BlockMatrixFBSUtil.h"
+
+#ifndef __UBER_BLOCK_MATRIX_SUPRESS_FBS
+#include "slam/BlockMatrixFBS.h"
+#endif // !__UBER_BLOCK_MATRIX_SUPRESS_FBS
+// include implementations of the FBS classes; do not put them here ...
+
+#include "slam/BlockMatrixFBS.inl"
+// implementation of CUberBlockMatrix::*_FBS() functions
+
+#endif // __UBER_BLOCK_MATRIX_FIXED_BLOCK_SIZE_OPS
 
 #endif // __UBER_BLOCK_MATRIX_INCLUDED

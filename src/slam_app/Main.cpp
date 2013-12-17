@@ -70,6 +70,13 @@ int main(int n_arg_num, const char **p_arg_list)
 		return -1;
 	// parse commandline
 
+#ifdef _OPENMP
+	if(t_cmd_args.n_omp_threads != size_t(-1))
+		omp_set_num_threads(t_cmd_args.n_omp_threads); // can use this to set no. of threads
+	if(t_cmd_args.b_omp_dynamic)
+		omp_set_dynamic(true); // dynamically allocate threads
+#endif // _OPENMP
+
 	if(t_cmd_args.b_run_matrix_unit_tests) {
 #ifdef __UBER_BLOCK_MATRIX_UNIT_TESTS_INCLUDED
 		CBlockMatrixUnitTests::RunAll();
@@ -425,6 +432,7 @@ void PrintHelp()
 		"--l-slam|-L       uses L-SLAM\n"
 		"--fast-l-slam|-fL uses the new fast L-SLAM solver (preferred incremental solver)\n"
 		"--use-schur|-us   uses Schur complement to accelerate linear solving\n"
+		"--do-marginals|-dm enables marginal covariance calculation (experimental)\n"
 		"--infile|-i <filename>    specifies input file <filename>; it can cope with\n"
 		"                  many file types and conventions\n"
 		"--parse-lines-limit|-pll <N>    sets limit of lines read from the input file\n"
@@ -445,7 +453,11 @@ void PrintHelp()
 		"--run-matrix-benchmarks|-rmb <benchmark-name> <benchmark-type>    runs block\n"
 		"                  matrix benchmarks (benchmark-name is name of a folder with\n"
 		"                  UFLSMC benchmark, benchmark-type is one of alloc, factor, all)\n"
-		"--run-matrix-unit-tests|-rmut    runs block matrix unit tests\n");
+		"--run-matrix-unit-tests|-rmut    runs block matrix unit tests\n"
+		"--omp-set-num-threads <N> sets number of threads to N (default is to use as many\n"
+		"                  threads as there are CPU cores)\n"
+		"--omp-set-dynamic <N> enables dynamic adjustment of the number of threads is N is\n"
+		"                  nonzero, disables if zero (disabled by default)\n");
 }
 
 #ifdef __COMPILE_LIBRARY_TESTS

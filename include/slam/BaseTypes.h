@@ -173,6 +173,15 @@ public:
 #ifdef __SE_TYPES_SUPPORT_LAMBDA_SOLVERS // --- ~lambda-SLAM specific functions ---
 
 	/**
+	 *	@brief notifies an edge of a conflict (duplicate edge)
+	 *	@return Returns true if this is the original owner of the block.
+	 */
+	inline bool Notify_HessianBlock_Conflict(double *p_block, CUberBlockMatrix &r_lambda)
+	{
+		return Notify_HessianBlock_Conflict_Derived(p_block, r_lambda);
+	}
+
+	/**
 	 *	@brief allocates hessian block matrices
 	 *	@param[out] r_lambda is the target matrix where the blocks are stored
 	 *	@note This function is required for CNonlinearSolver_Lambda.
@@ -282,6 +291,11 @@ protected:
 	virtual void Alloc_HessianBlocks_Derived(CUberBlockMatrix &r_lambda) = 0;
 
 	/**
+	 *	@copydoc Notify_HessianBlock_Conflict_Derived()
+	 */
+	virtual bool Notify_HessianBlock_Conflict_Derived(double *p_block, CUberBlockMatrix &r_lambda) = 0;
+
+	/**
 	 *	@copydoc Calculate_Hessians()
 	 */
 	virtual void Calculate_Hessians_Derived() = 0;
@@ -316,6 +330,9 @@ protected:
  *	@brief base vertex for SE types
  */
 class CSEBaseVertex {
+public:
+	typedef CSEBaseEdge _TyBaseEdge; /**< @brief base edge type, assumed for this vertex */ 
+
 protected:
 #ifdef __BASE_TYPES_USE_ID_ADDRESSING
 	size_t m_n_id; /**< @brief vertex id (block column in a matrix where the vertex block is inseted) */
@@ -324,7 +341,7 @@ protected:
 
 #ifdef __SE_TYPES_SUPPORT_LAMBDA_SOLVERS // --- ~lambda-SLAM specific members ---
 
-	std::vector<CSEBaseEdge*> m_edge_list; /**< @brief a list of edges, referencing this vertex (only used by Lambda solver) */
+	std::vector<_TyBaseEdge*> m_edge_list; /**< @brief a list of edges, referencing this vertex (only used by Lambda solver) */
 
 #endif // __SE_TYPES_SUPPORT_LAMBDA_SOLVERS // --- ~lambda-SLAM specific members ---
 
@@ -450,7 +467,7 @@ public:
 	 *	@note This function throws std::bad_alloc.
 	 *	@note This function is required for CNonlinearSolver_Lambda.
 	 */
-	inline void Add_ReferencingEdge(CSEBaseEdge *p_edge) // throw(std::bad_alloc)
+	inline void Add_ReferencingEdge(_TyBaseEdge *p_edge) // throw(std::bad_alloc)
 	{
 		_ASSERTE(!b_IsReferencingEdge(p_edge));
 		m_edge_list.push_back(p_edge);
@@ -463,9 +480,19 @@ public:
 	 *		of referencing edges, otherwise returns false.
 	 *	@note This function is required for CNonlinearSolver_Lambda.
 	 */
-	inline bool b_IsReferencingEdge(const CSEBaseEdge *p_edge)
+	inline bool b_IsReferencingEdge(const _TyBaseEdge *p_edge)
 	{
 		return std::find(m_edge_list.begin(), m_edge_list.end(), p_edge) != m_edge_list.end();
+	}
+
+	/**
+	 *	@brief gets list of referencing edges
+	 *	@return Returns const reference to the list of referencing edges.
+	 *	@note This function is required for CNonlinearSolver_Lambda.
+	 */
+	inline const std::vector<_TyBaseEdge*> &r_ReferencingEdge_List() const
+	{
+		return m_edge_list;
 	}
 
 	/**
@@ -901,6 +928,7 @@ protected:
 
 	double *m_p_HtSiH; /**< @brief block of memory where Ht * inv(Sigma) * H matrix is stored (the one above diagonal) */
 	double *m_p_HtSiH_reduce; /**< @brief block of memory where Ht * inv(Sigma) * H matrix is stored in the matrix (should there be conflicts between duplicate edges, this is the target of reduction) */
+	bool m_b_first_reductor; /**< @brief reduction flag */
 	typename _TyVertex0::_TyMatrixAlign m_t_HtSiH_vertex0; /**< @brief block of memory where Ht * inv(Sigma) * H matrix is stored (the vertex contribution) */
 	typename _TyVertex1::_TyMatrixAlign m_t_HtSiH_vertex1; /**< @brief block of memory where Ht * inv(Sigma) * H matrix is stored (the vertex contribution) */
 	typename _TyVertex0::_TyVectorAlign m_t_right_hand_vertex0; /**< @brief block of memory where right-hand side vector is stored (the vertex contribution) */
@@ -1033,6 +1061,26 @@ public:
 
 #ifdef __SE_TYPES_SUPPORT_LAMBDA_SOLVERS // --- lambda-SLAM specific functions ---
 
+	virtual inline bool Notify_HessianBlock_Conflict(double *p_block, CUberBlockMatrix &r_lambda)
+	{
+		if(m_p_HtSiH == p_block) {
+			if(!m_p_HtSiH_reduce) {
+				m_p_HtSiH = r_lambda.p_Get_DenseStorage(n_vertex0_dimension * n_vertex1_dimension);
+				// get a temporary block
+
+				memcpy(m_p_HtSiH, p_block, n_vertex0_dimension * n_vertex1_dimension * sizeof(double));
+				// this edge's hessian might already have significant value, need to store it
+			}
+			// first time arround this is called, alloc a different block to store this edge's hessian
+
+			m_p_HtSiH_reduce = p_block;
+			m_b_first_reductor = true; // i was the first
+
+			return true; // acknowledge notify
+		}
+		return false; // not me
+	}
+
 	inline void Alloc_HessianBlocks(CUberBlockMatrix &r_lambda)
 	{
 		m_p_vertex0->Add_ReferencingEdge(this);
@@ -1093,6 +1141,16 @@ public:
 
 		bool b_duplicate_block = !b_uninit_block; // was it there already?
 		if(b_duplicate_block) {
+			const std::vector<typename _TyVertex1::_TyBaseEdge*> &r_list =
+				m_p_vertex1->r_ReferencingEdge_List(); // the second vertex has presumably less references, making the search faster; could select the smaller one manually
+			for(size_t i = 0, n = r_list.size(); i < n; ++ i) {
+				if(r_list[i]->Notify_HessianBlock_Conflict(m_p_HtSiH, r_lambda))
+					break;
+				_ASSERTE(i + 1 != n); // make sure we found it
+			}
+			// find the first reductor!
+
+			m_b_first_reductor = false; // this is duplicate, there already was another
 			m_p_HtSiH_reduce = m_p_HtSiH; // where to reduce
 			m_p_HtSiH = r_lambda.p_Get_DenseStorage(n_dimension0 * n_dimension1); // a temporary
 			// this edge is a duplicate edge; reduction of diagonal blocks is taken care of in the vertices.
@@ -1115,8 +1173,10 @@ public:
 			// as those lists would be normally empty
 
 			// what will happen in N-ary edges?
-		} else
+		} else {
+			//m_b_first_reductor = false; // leave uninitialized, don't care
 			m_p_HtSiH_reduce = 0; // do not reduce
+		}
 	}
 
 	inline void Calculate_Hessians()
@@ -1204,15 +1264,22 @@ public:
 	inline std::pair<const double*, const double*> t_Get_LambdaEta_Contribution(const CSEBaseVertex *p_which)
 	{
 		if(m_p_HtSiH_reduce) {
+			if(m_b_first_reductor) {
+				Eigen::Map<Eigen::Matrix<double, n_vertex0_dimension, n_vertex1_dimension>,
+					CUberBlockMatrix::map_Alignment> t_HtSiH_reduce(m_p_HtSiH_reduce);
+				t_HtSiH_reduce.setZero();
+			}
+			// !!
+
 			size_t n_id_0 = m_p_vertex_id[0], n_id_1 = m_p_vertex_id[1];
 			const CSEBaseVertex *p_max_vert = (n_id_0 > n_id_1)?
 				(const CSEBaseVertex*)m_p_vertex0 : (const CSEBaseVertex*)m_p_vertex1;
 			if(p_max_vert == p_which) {
-				if(n_id_0 > n_id_1) {
+				/*if(n_id_0 > n_id_1) { // note that it does not matter, it is just elementwise add
 					Eigen::Map<Eigen::Matrix<double, n_vertex1_dimension, n_vertex0_dimension>,
 						CUberBlockMatrix::map_Alignment> t_HtSiH(m_p_HtSiH), t_HtSiH_reduce(m_p_HtSiH_reduce);
 					t_HtSiH_reduce.noalias() += t_HtSiH;
-				} else {
+				} else*/ {
 					Eigen::Map<Eigen::Matrix<double, n_vertex0_dimension, n_vertex1_dimension>,
 						CUberBlockMatrix::map_Alignment> t_HtSiH(m_p_HtSiH), t_HtSiH_reduce(m_p_HtSiH_reduce);
 					t_HtSiH_reduce.noalias() += t_HtSiH;
@@ -1437,6 +1504,11 @@ protected:
 #endif // __SE_TYPES_SUPPORT_A_SOLVERS // --- ~A-SLAM specific functions ---
 
 #ifdef __SE_TYPES_SUPPORT_LAMBDA_SOLVERS // --- ~lambda-SLAM specific functions ---
+
+	virtual bool Notify_HessianBlock_Conflict_Derived(double *p_block, CUberBlockMatrix &r_lambda)
+	{
+		return Notify_HessianBlock_Conflict(p_block, r_lambda);
+	}
 
 	virtual void Alloc_HessianBlocks_Derived(CUberBlockMatrix &r_lambda)
 	{

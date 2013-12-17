@@ -22,6 +22,35 @@
  */
 
 /**
+ *	@brief solver trait class
+ *	@tparam CSolver is solver type
+ */
+template <class CSolver>
+class CSolverTraits {
+public:
+	typedef CSolver _TySolver; /**< @brief solver type */
+
+	/**
+	 *	@brief solver interface properties, stored as enum
+	 */
+	enum {
+		solver_HasDump = CSolver::solver_HasDump, /**< @brief timing statistics support flag; solvers that support it have <tt>void Dump(float f_total_time)</tt> */
+		solver_HasChi2 = CSolver::solver_HasChi2, /**< @brief Chi2 error calculation support flag; solvers that support it have <tt>double f_Chi_Squared_Error() const</tt> and <tt>double f_Chi_Squared_Error_Denorm()</tt> */
+		solver_HasMarginals = CSolver::solver_HasMarginals, /**< @brief marginal covariance support flag; solvers that support it have <tt>CMarginalCovariance &r_MarginalCovariance()</tt> */
+		solver_HasGaussNewton = CSolver::solver_HasGaussNewton, /**< @brief Gauss-Newton support flag; no additional interface required, but use of Gauss-Newton in nonlinear solving is expected */
+		solver_HasLevenberg = CSolver::solver_HasLevenberg, /**< @brief Levenberg-Marquardt support flag; no additional interface required, but use of Levenberg-Marquardt in nonlinear solving is expected */
+		solver_HasGradient = CSolver::solver_HasGradient, /**< @brief gradient-based linear solving support flag; no additional interface required, but use of gradient methods in nonlinear solving is expected */
+		solver_HasSchur = CSolver::solver_HasSchur, /**< @brief Schur complement support flag; no additional interface required, but solver must support accelerating linear solving using Schur complement */
+		solver_HasDelayedOptimization = CSolver::solver_HasDelayedOptimization, /**< @brief delayed optimization support flag; solvers that support it have <tt>void Delay_Optimization()</tt> and <tt>void Enable_Optimization()</tt> */
+		solver_IsPreferredBatch = CSolver::solver_IsPreferredBatch, /**< @brief preferred batch solver flag; no additional interface required, the solver is supposed to be good at batch solving */
+		solver_IsPreferredIncremental = CSolver::solver_IsPreferredIncremental, /**< @brief preferred incremental solver flag; no additional interface required, the solver is supposed to be good at incremental solving */
+		solver_ExportsJacobian = CSolver::solver_ExportsJacobian, /**< @brief interface for exporting jacobian system matrix flag; solvers that support it have <tt>const CUberBlockMatrix &r_A() const</tt> */
+		solver_ExportsHessian = CSolver::solver_ExportsHessian, /**< @brief interface for exporting hessian system matrix flag; solvers that support it have <tt>const CUberBlockMatrix &r_Lambda() const</tt> */
+		solver_ExportsFactor = CSolver::solver_ExportsFactor /**< @brief interface for exporting factorized system matrix flag; solvers that support it have <tt>const CUberBlockMatrix &r_R() const</tt> */
+	};
+};
+
+/**
  *	@brief token, used as a placeholder for solver templates,
  *		that were not included in the build
  *

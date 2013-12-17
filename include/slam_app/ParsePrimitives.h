@@ -758,12 +758,10 @@ public:
 	}
 };
 
-typedef CConcatTypelist<
-	MakeTypelist_Safe((CEdge2DParsePrimitive, CLandmark2DParsePrimitive,
+typedef MakeTypelist_Safe((CEdge2DParsePrimitive, CLandmark2DParsePrimitive,
 	CEdge3DParsePrimitive, CVertex2DParsePrimitive, CVertex3DParsePrimitive,
-	CIgnoreParsePrimitive)),
-	MakeTypelist_Safe((CVertexXYZParsePrimitive,
-	CEdgeP2C3DParsePrimitive, CVertexCam3DParsePrimitive))>::_TyResult CStandardParsedPrimitives; /**< @brief a list of standard parsed primitives @note If you are going to modify this, you will have to modify CParserBase::CParserAdaptor and CDatasetPeeker which implements it. */
+	CIgnoreParsePrimitive, CVertexXYZParsePrimitive, CEdgeP2C3DParsePrimitive,
+	CVertexCam3DParsePrimitive)) CStandardParsedPrimitives; /**< @brief a list of standard parsed primitives @note If you are going to modify this, you will have to modify CParserBase::CParserAdaptor and CDatasetPeeker which implements it. */
 
 typedef CParserTemplate<CParserBase::CParserAdaptor, CStandardParsedPrimitives> CStandardParser; /**< @brief standard parser */
 

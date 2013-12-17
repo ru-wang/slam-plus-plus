@@ -59,6 +59,12 @@
  *	be determined on initialization, changing to fixed / not fixed later on is not supported at the
  *	moment).
  *
+ *	@date 2013-12-05
+ *
+ *	Added __FLAT_SYSTEM_USE_SIZE2D_FOR_BLOCK_SIZE which speeds compilation up, and improves
+ *	Intellisense support by making types easier to resolve (Intellisense in VC 2008 cannot
+ *	resolve Eigen matrices).
+ *
  */
 
 #include "eigen/Eigen/Dense"
@@ -73,6 +79,15 @@
  *	@note This must be defined here as the CFlatSystem depends on it.
  */
 //#define __BASE_TYPES_USE_ID_ADDRESSING
+
+/**
+ *	@def __FLAT_SYSTEM_USE_SIZE2D_FOR_BLOCK_SIZE
+ *	@brief if defined, CFlatSystem::_TyJacobianMatrixBlockList and
+ *		CFlatSystem::_TyHessianMatrixBlockList will contain lists of __fbs_ut::CCTSize2D
+ *		instead of Eigen::Matrix specializazions
+ *	@note This speeds up compilation as __fbs_ut::CCTSize2D is easier to resolve.
+ */
+#define __FLAT_SYSTEM_USE_SIZE2D_FOR_BLOCK_SIZE
 
 /*#if !defined(_WIN32) && !defined(_WIN64)
 #define __USE_ALIGNED_MULTIPOOL
@@ -649,7 +664,8 @@ protected:
 	template <class CEdgeType>
 	class CEdgeTypeToFirstAJacobianType {
 	public:
-		typedef typename CEdgeType::_TyMatrix0 _TyResult; /**< @brief Eigen dense matrix block type */
+		typedef __fbs_ut::CCTSize2D<CEdgeType::n_measurement_dimension,
+			CEdgeType::n_vertex0_dimension> _TyResult; /**< @brief matrix block size */
 	};
 
 	/**
@@ -659,7 +675,8 @@ protected:
 	template <class CEdgeType>
 	class CEdgeTypeToSecondAJacobianType {
 	public:
-		typedef typename CEdgeType::_TyMatrix1 _TyResult; /**< @brief Eigen dense matrix block type */
+		typedef __fbs_ut::CCTSize2D<CEdgeType::n_measurement_dimension,
+			CEdgeType::n_vertex1_dimension> _TyResult; /**< @brief matrix block size */
 	};
 
 	/**
@@ -669,8 +686,8 @@ protected:
 	template <class CEdgeType>
 	class CEdgeTypeToFirstUnaryFactorType { // needed if the measurement dimension is different from either vertex dimensions
 	public:
-		typedef Eigen::Matrix<double, CEdgeType::n_vertex0_dimension,
-			CEdgeType::n_vertex0_dimension> _TyResult; /**< @brief Eigen dense matrix block type */
+		typedef __fbs_ut::CCTSize2D<CEdgeType::n_vertex0_dimension,
+			CEdgeType::n_vertex0_dimension> _TyResult; /**< @brief matrix block size */
 	};
 
 	/**
@@ -680,8 +697,8 @@ protected:
 	template <class CEdgeType>
 	class CEdgeTypeToSecondUnaryFactorType { // needed if the measurement dimension is different from either vertex dimensions
 	public:
-		typedef Eigen::Matrix<double, CEdgeType::n_vertex1_dimension,
-			CEdgeType::n_vertex1_dimension> _TyResult; /**< @brief Eigen dense matrix block type */
+		typedef __fbs_ut::CCTSize2D<CEdgeType::n_vertex1_dimension,
+			CEdgeType::n_vertex1_dimension> _TyResult; /**< @brief matrix block size */
 	};
 
 	typedef typename CTransformTypelist<CEdgeTypelist,
@@ -692,6 +709,13 @@ protected:
 		CEdgeTypeToFirstUnaryFactorType>::_TyResult TFirstAUnaryFactorList; /**< @brief list of unary factor matrix block types per all the first vertices in all edges (some of the blocks in A) */
 	typedef typename CTransformTypelist<CEdgeTypelist,
 		CEdgeTypeToSecondUnaryFactorType>::_TyResult TSecondAUnaryFactorList; /**< @brief list of unary factor matrix block types per all the second vertices in all edges (some of the blocks in A) */
+
+	typedef typename CUniqueTypelist<typename CConcatTypelist<typename
+		CConcatTypelist<TFirstAJacobianList, TFirstAUnaryFactorList>::_TyResult,
+		typename CConcatTypelist<TSecondAJacobianList,
+		TSecondAUnaryFactorList>::_TyResult>::_TyResult>::_TyResult TJacobianMatrixBlockList; /**< @brief list of jacobian and UF matrix block sizes as __fbs_ut::CCTSize2D (blocks in A) */
+	typedef typename __fbs_ut::CBlockSizesAfterPreMultiplyWithSelfTranspose<
+		TJacobianMatrixBlockList>::_TyResult THessianMatrixBlockList; /**< @brief list of hessian matrix block sizes as __fbs_ut::CCTSize2D (blocks in Lambda and L) */
 
 	/**
 	 *	@brief void pool type
@@ -735,12 +759,16 @@ public:
 	typedef CBaseEdge _TyBaseEdge; /**< @brief the data type for storing measurements */
 	typedef CEdgeTypelist _TyEdgeTypelist; /**< @brief list of edge types */
 
-	typedef typename CUniqueTypelist<typename CConcatTypelist<typename
-		CConcatTypelist<TFirstAJacobianList, TSecondAJacobianList>::_TyResult, typename
-		CConcatTypelist<TFirstAUnaryFactorList, TSecondAUnaryFactorList>::_TyResult>::_TyResult>::_TyResult
-		_TyJacobianMatrixBlockList; /**< @brief list of jacobian and UF matrix block types (blocks in A) */
-	typedef typename __fbs_ut::CBlockSizesAfterPreMultiplyWithSelfTranspose<
-		_TyJacobianMatrixBlockList>::_TyResult _TyHessianMatrixBlockList; /**< @brief list of hessian and UF matrix block types (blocks in lambda and L) */
+#ifdef __FLAT_SYSTEM_USE_SIZE2D_FOR_BLOCK_SIZE
+	typedef TJacobianMatrixBlockList _TyJacobianMatrixBlockList; /**< @brief list of jacobian and UF matrix block sizes (blocks in A) */
+	typedef THessianMatrixBlockList _TyHessianMatrixBlockList; /**< @brief list of hessian block sizes (blocks in Lambda and L) */
+	// note that these are not Eigen matrix types, but rather __fbs_ut::CCTsize2D, which are easier to resolve for the compiler
+#else // __FLAT_SYSTEM_USE_SIZE2D_FOR_BLOCK_SIZE
+	typedef typename CTransformTypelist<TJacobianMatrixBlockList,
+		__fbs_ut::CDimensionToEigen>::_TyResult _TyJacobianMatrixBlockList; /**< @brief list of jacobian and UF matrix block types (blocks in A) */
+	typedef typename CTransformTypelist<THessianMatrixBlockList,
+		__fbs_ut::CDimensionToEigen>::_TyResult _TyHessianMatrixBlockList; /**< @brief list of hessian block types (blocks in Lambda and L) */
+#endif // __FLAT_SYSTEM_USE_SIZE2D_FOR_BLOCK_SIZE
 
 	typedef __multipool::CMultiPool<_TyBaseVertex, _TyVertexTypelist, pool_PageSize> _TyVertexMultiPool; /**< @brief vertex multipool type */
 	typedef typename CTypelistItemAt<CTypelist<TVoidPool<_TyBaseVertex>, CTypelist<_TyVertexMultiPool,
@@ -815,10 +843,17 @@ protected:
 	 *	@brief code for vertex insertion, based on whether the fixed vertices are allowed
 	 *		(specialization for the case when the fixed vertices are allowed)
 	 */
+#if defined(_MSC_VER) && !defined(__MWERKS__)
+	template <> // avoid partial specialization as that is unnecessary and breaks Intellisense
+	class CGetVertexImpl<CBaseVertex, CVertexTypelist, CBaseEdge,
+		CEdgeTypelist, CUnaryFactorFactory, true, n_pool_page_size> {
+#else // _MSC_VER) && !__MWERKS__
 	template <class _CBaseVertex, class _CVertexTypelist, class _CBaseEdge,
-		class _CEdgeTypelist, class _CUnaryFactorFactory, const int _n_pool_page_size>
+		class _CEdgeTypelist, class _CUnaryFactorFactory,
+		const int _n_pool_page_size>
 	class CGetVertexImpl<_CBaseVertex, _CVertexTypelist, _CBaseEdge,
 		_CEdgeTypelist, _CUnaryFactorFactory, true, _n_pool_page_size> {
+#endif // _MSC_VER) && !__MWERKS__
 	public:
 		/**
 		 *	@brief finds vertex by id, or create a new one in case there is no vertex with such id
