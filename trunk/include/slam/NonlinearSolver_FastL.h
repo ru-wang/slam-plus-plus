@@ -2111,7 +2111,7 @@ protected:
 				timer.Accum_DiffSample(m_f_ordering_fold_time);
 
 				m_lambda.Permute_UpperTriangular_To(m_lambda_perm, m_p_lambda_block_ordering,
-					m_lambda.n_BlockColumn_Num(), true, n_order_min, false);
+					m_lambda.n_BlockColumn_Num(), true, n_order_min, true);
 				// note that this does leave allocated blocks, but in the next round, lambda will reperm and free those
 
 #ifdef __NONLINEAR_SOLVER_FAST_L_VERIFY_PERM_FOLDING
