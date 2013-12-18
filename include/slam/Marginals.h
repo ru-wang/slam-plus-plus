@@ -109,7 +109,7 @@ public:
 		size_t n_block_col = -1, n_col_remains = 1;
 		_ASSERTE(n <= INT_MAX);
 		int _n = int(n);
-		#pragma omp parallel for
+		//#pragma omp parallel for // todo: need to redo the indexing logic
 		for(int i = 0; i < _n; ++ i) {
 			if(!(-- n_col_remains)) // triggers in the first iteration, loads up column width
 				n_col_remains = r_R.n_BlockColumn_Column_Num(++ n_block_col);
