@@ -17,28 +17,32 @@
  *	@date 2013-06-14
  */
 
-#include "slam_app/Main.h"
-#include "slam/ConfigSolvers.h" // only included in files that actually need the solvers (slow to compile)
-#include "slam/SE3_Types.h"
-
 /**
  *	@def __SE3_ENABLED
  *	@brief if defined, the solver specializations for SE(3) are compiled
  */
 #define __SE3_ENABLED
 
+#include "slam_app/Main.h"
+#ifdef __SE3_ENABLED
+#include "slam/ConfigSolvers.h" // only included in files that actually need the solvers (slow to compile)
+#include "slam/SE3_Types.h"
+#endif // __SE3_ENABLED
+
 int n_Run_SE3_Solver(TCommandLineArgs t_args) // throw(std::runtime_error, std::bad_alloc)
 {
 #ifdef __SE3_ENABLED
-	typedef MakeTypelist_Safe((CVertexPose3D)) TVertexTypelist_SE3;
-	typedef MakeTypelist_Safe((CEdgePose3D)) TEdgeTypelist_SE3;
+	_ASSERTE(!t_args.b_pose_only);
+
+	typedef MakeTypelist_Safe((CVertexPose3D, CVertexLandmark3D)) TVertexTypelist_SE3;
+	typedef MakeTypelist_Safe((CEdgePose3D, CEdgePoseLandmark3D/*, CEdgePose3D_Ternary*/)) TEdgeTypelist_SE3; // testing hyperedges
 	// define types of vertices, edges
 
-	typedef CFlatSystem<CVertexPose3D/*CSEBaseVertex*/, TVertexTypelist_SE3,
-		CEdgePose3D/*CSEBaseEdge*/, TEdgeTypelist_SE3> CSystemType;
+	typedef CFlatSystem<CBaseVertex, TVertexTypelist_SE3,
+		CBaseEdge, TEdgeTypelist_SE3> CSystemType;
 	// make a system permitting SE(3) vertex and edge types
 
-	typedef CSolverCaller<CSystemType, CSE3OnlyPoseEdgeTraits,
+	typedef CSolverCaller<CSystemType, CSE3LandmarkPoseEdgeTraits,
 		CIgnoreAllVertexTraits, CParseLoop> CSpecializedSolverCaller;
 	// specify how the nonlinear solver should be called
 

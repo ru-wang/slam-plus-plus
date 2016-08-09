@@ -26,10 +26,278 @@
 #include "slam/IncrementalPolicy.h"
 
 /**
+ *	@brief utilities for A solvers
+ */
+namespace A_utils {
+
+/**
+ *	@brief cless with function objects for Jacobian calculations
+ */
+// *	@tparam CBlockSizes is list of A matrix block sizes, as fbs_ut::CCTSize2D
+//template <class CBlockSizes>
+class CJacobianOps : public base_iface::CSolverOps_Base {
+//public:
+	//typedef CBlockSizes _TyAMatrixBlockSizes; /**< @brief possible block matrices, that can be found in A */
+
+public:
+	/**
+	 *	@brief function object that calls hessian block allocation for all edges
+	 */
+	class CAlloc_JacobianBlocks {
+	protected:
+		CUberBlockMatrix &m_r_A; /**< @brief reference to the A matrix (out) */
+
+	public:
+		/**
+		 *	@brief default constructor
+		 *	@param[in] r_A is reference to the A matrix
+		 */
+		inline CAlloc_JacobianBlocks(CUberBlockMatrix &r_A)
+			:m_r_A(r_A)
+		{}
+
+		/**
+		 *	@brief function operator
+		 *	@tparam _TyEdge is edge type
+		 *	@param[in,out] r_t_edge is edge to have hessian blocks allocated in A
+		 *	@note This function throws std::bad_alloc.
+		 */
+		template <class _TyEdge>
+		inline void operator ()(_TyEdge &r_t_edge) // throw(std::bad_alloc)
+		{
+			r_t_edge.Alloc_JacobianBlocks(m_r_A);
+		}
+	};
+
+	/**
+	 *	@brief function object that copies ordering from the edges
+	 */
+	class CGetCumsums {
+	protected:
+		std::vector<size_t>::iterator m_p_cumsum_it; /**< @brief cumsum iterator (out) */
+
+	public:
+		/**
+		 *	@brief default constructor
+		 *	@param[in] r_row_cumsum_list is cumsum iterator
+		 */
+		inline CGetCumsums(std::vector<size_t> &r_row_cumsum_list)
+			:m_p_cumsum_it(r_row_cumsum_list.begin())
+		{}
+
+		/**
+		 *	@brief function operator
+		 *	@tparam _TyEdge is edge type
+		 *	@param[in,out] r_t_edge is edge to output its cumsum
+		 */
+		template <class _TyEdge>
+		inline void operator ()(const _TyEdge &r_t_edge)
+		{
+			size_t n_order = r_t_edge.n_Order();
+			_ASSERTE(n_order > 0); // don't want 0, but that is assigned to the unary factor
+			*m_p_cumsum_it = n_order;
+			++ m_p_cumsum_it;
+		}
+
+		/**
+		 *	@brief conversion back to cumsum iterator
+		 *	@return Returns the value of cumsum iterator.
+		 */
+		inline operator std::vector<size_t>::iterator() const
+		{
+			return m_p_cumsum_it;
+		}
+	};
+
+	/**
+	 *	@brief function object that calculates hessians in all the edges
+	 */
+	class CCalculate_Jacobians {
+	public:
+		/**
+		 *	@brief function operator
+		 *	@tparam _TyEdge is edge type
+		 *	@param[in] r_t_edge is edge to update it's hessians
+		 */
+		template <class _TyEdge>
+		inline void operator ()(_TyEdge &r_t_edge) const
+		{
+			r_t_edge.Calculate_Jacobians();
+		}
+	};
+
+	/**
+	 *	@brief function object that calls error vector calculation for all edges
+	 */
+	class CCollect_R_Errors {
+	protected:
+		Eigen::VectorXd &m_r_R_errors; /**< @brief reference to the R error vector (out) */
+
+	public:
+		/**
+		 *	@brief default constructor
+		 *	@param[in] r_R_errors is reference to the R error vector
+		 */
+		inline CCollect_R_Errors(Eigen::VectorXd &r_R_errors)
+			:m_r_R_errors(r_R_errors)
+		{}
+
+		/**
+		 *	@brief function operator
+		 *	@tparam _TyEdge is edge type
+		 *	@param[in,out] r_t_edge is edge to output its part R error vector
+		 */
+		template <class _TyEdge>
+		inline void operator ()(_TyEdge &r_t_edge)
+		{
+			r_t_edge.Get_R_Error(m_r_R_errors);
+		}
+	};
+
+public:
+	/**
+	 *	@brief incrementally updates the A matrix structure (can be empty)
+	 *
+	 *	@tparam CSystem is system type
+	 *
+	 *	@param[in,out] r_system is reference to the system
+	 *	@param[in,out] r_A is reference to the A matrix
+	 *	@param[in] n_edges_already_in_A is number of edges, already in the system
+	 *
+	 *	@note This function throws std::bad_alloc.
+	 */
+	template <class CSystem>
+	static inline void Extend_A(CSystem &r_system, CUberBlockMatrix &r_A, size_t n_edges_already_in_A) // throw(std::bad_alloc)
+	{
+		if(!n_edges_already_in_A)
+			AddEntriesInSparseSystem(r_system, r_A);
+		else
+			UpdateSparseSystem(r_system, r_A, n_edges_already_in_A);
+		// create block matrix A
+	}
+
+	/**
+	 *	@brief refreshes the A matrix by recalculating edge hessians
+	 *
+	 *	@tparam CSystem is system type
+	 *
+	 *	@param[in,out] r_system is reference to the system
+	 *	@param[in] n_refresh_from_edge is zero-based index of the first edge to be refreshed
+	 */
+	template <class CSystem>
+	static inline void Refresh_A(CSystem &r_system, size_t n_refresh_from_edge = 0)
+	{
+		if(n_refresh_from_edge) {
+			r_system.r_Edge_Pool().For_Each_Parallel(n_refresh_from_edge,
+				r_system.r_Edge_Pool().n_Size(), CCalculate_Jacobians());
+		} else
+			r_system.r_Edge_Pool().For_Each_Parallel(CCalculate_Jacobians());
+		// can do this in parallel
+	}
+
+	/**
+	 *	@brief calculates the error vector
+	 *
+	 *	@tparam CSystem is system type
+	 *
+	 *	@param[in] r_system is reference to the system
+	 *	@param[out] r_v_R_error is reference to the R times error vector
+	 */
+	template <class CSystem>
+	static inline void Collect_R_Errors(const CSystem &r_system, Eigen::VectorXd &r_v_R_error)
+	{
+		if(!CSystem::null_UnaryFactor) {
+			const Eigen::VectorXd &r_v_err = r_system.r_v_Unary_Error();
+			r_v_R_error.segment(0, r_v_err.rows()) = r_v_err;
+		} else {
+			if(!r_system.r_Vertex_Pool().b_Empty()) // otherwise r_v_R_error is empty
+				r_v_R_error.segment(0, r_system.r_Vertex_Pool()[0].n_Dimension()).setZero();
+		}
+		// add the first error
+
+		r_system.r_Edge_Pool().For_Each_Parallel(CCollect_R_Errors(r_v_R_error)); // can do this in parallel
+		// collect errors
+	}
+
+protected:
+	/**
+	 *	@brief creates the A matrix from scratch
+	 *
+	 *	@tparam CSystem is system type
+	 *
+	 *	@param[in,out] r_system is reference to the system
+	 *	@param[out] r_A is reference to the A matrix
+	 *
+	 *	@note This function throws std::bad_alloc.
+	 */
+	template <class CSystem>
+	static inline void AddEntriesInSparseSystem(CSystem &r_system, CUberBlockMatrix &r_A) // throw(std::bad_alloc)
+	{
+		if(r_system.r_Edge_Pool().n_Size() > 1000) { // wins 2.42237 - 2.48938 = .06701 seconds on 10k.graph, likely more on larger graphs
+			//printf("building large matrix from scratch ...\n"); // debug
+			std::vector<size_t> row_cumsum_list(r_system.r_Edge_Pool().n_Size());
+			/*std::vector<size_t>::iterator p_end_it =*/
+				r_system.r_Edge_Pool().For_Each(CGetCumsums(row_cumsum_list));
+			//_ASSERTE(p_end_it == row_cumsum_list.end());
+			// collect cumsums
+
+			CUberBlockMatrix tmp(row_cumsum_list.begin(),
+				row_cumsum_list.end(), r_system.r_Vertex_Pool().n_Size());
+			r_A.Swap(tmp);
+			// use this one instead
+
+			// todo - see if there are some row_reindex on 100k, fix it by collecting
+			// cumsums and building matrix with that (proven to be faster before)
+		} else {
+			//printf("building small matrix from scratch ...\n"); // debug
+			r_A.Clear();
+			// ...
+		}
+
+		if(!CSystem::null_UnaryFactor) {
+			const Eigen::MatrixXd &r_t_uf = r_system.r_t_Unary_Factor();
+			_ASSERTE(!r_system.r_Edge_Pool().b_Empty());
+			size_t n_gauge_vertex = r_system.r_Edge_Pool()[0].n_Vertex_Id(0);
+			size_t n_gauge_order = r_system.r_Vertex_Pool()[n_gauge_vertex].n_Order();
+			if(!r_A.Append_Block(r_t_uf, 0, n_gauge_order)) // put the UF at the right spot
+				throw std::bad_alloc();
+			// add unary factor
+		}
+
+		r_system.r_Edge_Pool().For_Each(CAlloc_JacobianBlocks(r_A));
+		// add all the hessian blocks
+
+		//printf("building A from scratch finished\n"); // debug
+	}
+
+	/**
+	 *	@brief incrementally updates the A matrix structure (must not be empty)
+	 *
+	 *	@tparam CSystem is system type
+	 *
+	 *	@param[in,out] r_system is reference to the system
+	 *	@param[in,out] r_A is reference to the A matrix
+	 *	@param[in] n_skip_edges is number of edges, already in the system
+	 *
+	 *	@note This function throws std::bad_alloc.
+	 */
+	template <class CSystem>
+	static inline void UpdateSparseSystem(CSystem &r_system, CUberBlockMatrix &r_A, size_t n_skip_edges) // throw(std::bad_alloc)
+	{
+		_ASSERTE(r_A.n_Row_Num() > 0 && r_A.n_Column_Num() > 0); // make sure A is not empty
+		r_system.r_Edge_Pool().For_Each(n_skip_edges, r_system.r_Edge_Pool().n_Size(), CAlloc_JacobianBlocks(r_A));
+		// add the hessian blocks of the new edges
+	}
+};
+
+} // ~A_utils
+
+/**
  *	@brief nonlinear blocky solver working above the A matrix
  *
- *	@tparam CSystem is the system type
- *	@tparam CLinearSolver is a linear solver
+ *	@tparam CSystem is optimization system type
+ *	@tparam CLinearSolver is linear solver type
+ *	@tparam CAMatrixBlockSizes is list of block sizes in the Jacobian matrix
  */
 template <class CSystem, class CLinearSolver, class CAMatrixBlockSizes = typename CSystem::_TyJacobianMatrixBlockList>
 class CNonlinearSolver_A {
@@ -48,7 +316,9 @@ public:
 	typedef typename CLinearSolver::_Tag _TySolverTag; /**< @brief linear solver tag */
 	typedef CLinearSolverWrapper<_TyLinearSolver, _TySolverTag> _TyLinearSolverWrapper; /**< @brief wrapper for linear solvers (shields solver capability to solve blockwise) */
 
-	typedef typename CUniqueTypelist<CAMatrixBlockSizes>::_TyResult _TyAMatrixBlockSizes; /**< @brief possible block matrices, that can be found in A */
+	typedef /*typename CUniqueTypelist<*/CAMatrixBlockSizes/*>::_TyResult*/ _TyAMatrixBlockSizes; /**< @brief possible block matrices, that can be found in A */
+
+	typedef A_utils::CJacobianOps/*<_TyAMatrixBlockSizes>*/ _TyJacOps; /**< @brief utility class for filling the A matrix */
 
 	/**
 	 *	@brief solver interface properties, stored as enum (see also CSolverTraits)
@@ -64,7 +334,7 @@ public:
 		solver_HasDelayedOptimization = false, /**< @brief delayed optimization support flag */
 		solver_IsPreferredBatch = true, /**< @brief preferred batch solver flag */
 		solver_IsPreferredIncremental = false, /**< @brief preferred incremental solver flag */
-		solver_ExportsJacobian = false, /**< @brief interface for exporting jacobian system matrix flag */
+		solver_ExportsJacobian = true, /**< @brief interface for exporting jacobian system matrix flag */
 		solver_ExportsHessian = false, /**< @brief interface for exporting hessian system matrix flag */
 		solver_ExportsFactor = false /**< @brief interface for exporting factorized system matrix flag */
 	};
@@ -72,7 +342,7 @@ public:
 protected:
 	CSystem &m_r_system; /**< @brief reference to the system */
 	CLinearSolver m_linear_solver; /**< @brief linear solver */
-	CLinearSolver_Schur<CLinearSolver, _TyAMatrixBlockSizes> m_schur_solver; /**< @brief linear solver with Schur trick */
+	CLinearSolver_Schur<CLinearSolver, _TyAMatrixBlockSizes, CSystem> m_schur_solver; /**< @brief linear solver with Schur trick */
 
 	CUberBlockMatrix m_A; /**< @brief the A matrix (built incrementally) */
 	Eigen::VectorXd m_v_error; /**< @brief error vector */
@@ -180,7 +450,8 @@ public:
 		m_f_premul_time(0), m_f_chol_time(0), m_f_norm_time(0), m_b_had_loop_closure(false)
 	{
 		_ASSERTE(!m_n_nonlinear_solve_threshold || !m_n_linear_solve_threshold); // only one of those
-		_ASSERTE(!t_marginals_config.b_calculate); // not supported at the moment
+		if(t_marginals_config.b_calculate) // not supported at the moment
+			throw std::runtime_error("CNonlinearSolver_A does not support marginals calculation");
 	}
 
 	/**
@@ -207,12 +478,9 @@ public:
 	 *	@note This only works with systems with edges of one degree of freedom
 	 *		(won't work for e.g. systems with both poses and landmarks).
 	 */
-	inline double f_Chi_Squared_Error() const
+	double f_Chi_Squared_Error() const
 	{
-		if(m_r_system.r_Edge_Pool().b_Empty())
-			return 0;
-		return m_r_system.r_Edge_Pool().For_Each(CSum_ChiSquareError()) /
-			(m_r_system.r_Edge_Pool().n_Size() - m_r_system.r_Edge_Pool()[0].n_Dimension());
+		return _TyJacOps::f_Chi_Squared_Error(m_r_system);
 	}
 
 	/**
@@ -220,11 +488,9 @@ public:
 	 *	@return Returns denormalized chi-squared error.
 	 *	@note This doesn't perform the final division by (number of edges - degree of freedoms).
 	 */
-	inline double f_Chi_Squared_Error_Denorm() const
+	double f_Chi_Squared_Error_Denorm() const
 	{
-		if(m_r_system.r_Edge_Pool().b_Empty())
-			return 0;
-		return m_r_system.r_Edge_Pool().For_Each(CSum_ChiSquareError());
+		return _TyJacOps::f_Chi_Squared_Error_Denorm(m_r_system);
 	}
 
 	/**
@@ -238,18 +504,18 @@ public:
 	bool Dump_SystemMatrix(const char *p_s_filename, int n_scalar_size = 5)
 	{
 		try {
-			Extend_A(m_n_edges_in_A); // recalculated all the jacobians inside Extend_A()
+			_TyJacOps::Extend_A(m_r_system, m_A, m_n_edges_in_A); // recalculated all the jacobians inside Extend_A()
 			if(!m_b_system_dirty)
-				Refresh_A(m_n_edges_in_A); // calculate only for new edges
+				_TyJacOps::Refresh_A(m_r_system, m_n_edges_in_A); // calculate only for new edges
 			else
-				Refresh_A(); // calculate for entire system
+				_TyJacOps::Refresh_A(m_r_system); // calculate for entire system
 			m_b_system_dirty = false;
 			m_n_edges_in_A = m_r_system.r_Edge_Pool().n_Size(); // right? // yes.
 			_ASSERTE(m_A.n_Row_Num() >= m_A.n_Column_Num()); // no, A is *not* square, but size of measurements >= vertices
-			// need to have A
 		} catch(std::bad_alloc&) {
 			return false;
 		}
+		// need to have A
 
 		return m_A.Rasterize(p_s_filename, n_scalar_size);
 	}
@@ -261,69 +527,42 @@ public:
 	 *
 	 *	@return Returns true on success, false on failure.
 	 */
-	bool Save_SystemMatrix_MM(const char *p_s_filename)
+	bool Save_SystemMatrix_MM(const char *p_s_filename) const
 	{
-		size_t n_rows = m_A.n_Row_Num();
-		size_t n_columns = m_A.n_Column_Num();
-		size_t n_nonzeros = m_A.n_NonZero_Num();
-		FILE *p_fw;
-		if(!(p_fw = fopen(p_s_filename, "w")))
-			return false;
-		fprintf(p_fw, "%%%%MatrixMarket matrix coordinate real general\n");
-		fprintf(p_fw, "%%-------------------------------------------------------------------------------\n");
-		fprintf(p_fw, "%% SLAM_plus_plus matrix dump\n");
-		fprintf(p_fw, "%% kind: A matrix for SLAM problem\n");
-		fprintf(p_fw, "%%-------------------------------------------------------------------------------\n");
-		fprintf(p_fw, "" PRIsize " " PRIsize " " PRIsize "\n", n_rows, n_columns, n_nonzeros);
-		for(size_t n_col = 0, n_column_blocks = m_A.n_BlockColumn_Num();
-		   n_col < n_column_blocks; ++ n_col) {
-			size_t n_col_base = m_A.n_BlockColumn_Base(n_col);
-			size_t n_col_width = m_A.n_BlockColumn_Column_Num(n_col);
-			size_t n_block_num = m_A.n_BlockColumn_Block_Num(n_col);
-			for(size_t j = 0; j < n_block_num; ++ j) {
-				size_t n_row = m_A.n_Block_Row(n_col, j);
-				size_t n_row_base = m_A.n_BlockRow_Base(n_row);
-				size_t n_row_height = m_A.n_BlockRow_Row_Num(n_row);
+		char p_s_layout_file[256];
+		strcpy(p_s_layout_file, p_s_filename);
+		if(strrchr(p_s_layout_file, '.'))
+			*(char*)strrchr(p_s_layout_file, '.') = 0;
+		strcat(p_s_layout_file, ".bla");
+		// only really required for landmark datasets
 
-				CUberBlockMatrix::_TyMatrixXdRef t_block = m_A.t_Block_AtColumn(n_col, j);
-				_ASSERTE(t_block.rows() == n_row_height && t_block.cols() == n_col_width);
-				// get a block
-
-				for(size_t k = 0; k < n_row_height; ++ k) {
-					for(size_t l = 0; l < n_col_width; ++ l) {
-						fprintf(p_fw, "" PRIsize " " PRIsize " %lf\n", n_row_base + 1 + k,
-							n_col_base + 1 + l, t_block(k, l));
-					}
-				}
-				// print a block (includes the nulls, but so does n_NonZero_Num())
-			}
-			// for all blocks in a column
-		}
-		// for all columns
-
-		if(ferror(p_fw)) {
-			fclose(p_fw);
-			return false;
-		}
-		fclose(p_fw);
-
-		return true;
+		return m_A.Save_MatrixMarket(p_s_filename, p_s_layout_file, "A matrix for SLAM problem");
 	}
 
 	/**
 	 *	@brief incremental optimization function
 	 *	@param[in] r_last_edge is the last edge that was added to the system
 	 */
-	void Incremental_Step(_TyBaseEdge &r_last_edge) // throw(std::bad_alloc)
+	void Incremental_Step(_TyBaseEdge &UNUSED(r_last_edge)) // throw(std::bad_alloc)
 	{
 		size_t n_vertex_num = m_r_system.r_Vertex_Pool().n_Size();
 		if(!m_b_had_loop_closure) {
-			_ASSERTE(r_last_edge.n_Vertex_Id(0) != r_last_edge.n_Vertex_Id(1));
-			size_t n_first_vertex = std::min(r_last_edge.n_Vertex_Id(0), r_last_edge.n_Vertex_Id(1));
-			//size_t n_vertex_num = m_r_system.r_Vertex_Pool().n_Size();
-			m_b_had_loop_closure = !(n_first_vertex == n_vertex_num - 2);
-			_ASSERTE(m_b_had_loop_closure || std::max(r_last_edge.n_Vertex_Id(0),
-				r_last_edge.n_Vertex_Id(1)) == n_vertex_num - 1);
+			_ASSERTE(!m_r_system.r_Edge_Pool().b_Empty());
+			typename _TyEdgeMultiPool::_TyConstBaseRef r_edge =
+				m_r_system.r_Edge_Pool()[m_r_system.r_Edge_Pool().n_Size() - 1];
+			// get a reference to the last edge interface
+
+			if(r_edge.n_Vertex_Num() > 1) { // unary factors do not cause classical loop closures
+				_ASSERTE(r_edge.n_Vertex_Id(0) != r_edge.n_Vertex_Id(1));
+				size_t n_first_vertex = std::min(r_edge.n_Vertex_Id(0), r_edge.n_Vertex_Id(1));
+				m_b_had_loop_closure = (n_first_vertex < n_vertex_num - 2);
+				_ASSERTE(m_b_had_loop_closure || std::max(r_edge.n_Vertex_Id(0),
+					r_edge.n_Vertex_Id(1)) == n_vertex_num - 1);
+			} else {
+				size_t n_first_vertex = r_edge.n_Vertex_Id(0);
+				m_b_had_loop_closure = (n_first_vertex < n_vertex_num - 1);
+			}
+			// todo - encapsulate this code, write code to support hyperedges as well, use it
 		}
 		// detect loop closures (otherwise the edges are initialized based on measurement and error would be zero)
 
@@ -386,21 +625,24 @@ public:
 		const size_t n_variables_size = m_r_system.n_VertexElement_Num();
 		const size_t n_measurements_size = m_r_system.n_EdgeElement_Num();
 		if(n_variables_size > n_measurements_size) {
-			fprintf(stderr, "warning: the system is underspecified\n");
+			if(n_measurements_size)
+				fprintf(stderr, "warning: the system is underspecified\n");
+			else
+				fprintf(stderr, "warning: the system contains no edges at all: nothing to optimize\n");
 			return;
 		}
 		if(!n_measurements_size)
 			return; // nothing to solve (but no results need to be generated so it's ok)
 		// can't solve in such conditions
 
-		Extend_A(m_n_edges_in_A); // recalculated all the jacobians inside Extend_A()
+		_TyJacOps::Extend_A(m_r_system, m_A, m_n_edges_in_A); // recalculated all the jacobians inside Extend_A()
 		if(!m_b_system_dirty)
-			Refresh_A(m_n_edges_in_A); // calculate only for new edges
+			_TyJacOps::Refresh_A(m_r_system, m_n_edges_in_A); // calculate only for new edges
 		else
-			Refresh_A(); // calculate for entire system
+			_TyJacOps::Refresh_A(m_r_system); // calculate for entire system
 		m_b_system_dirty = false;
 		m_n_edges_in_A = m_r_system.r_Edge_Pool().n_Size(); // right? // yes.
-		_ASSERTE(m_A.n_Row_Num() >= m_A.n_Column_Num()); // no, A is *not* square, but size of measurements >= vertices
+		//_ASSERTE(m_A.n_Row_Num() >= m_A.n_Column_Num()); // no, A is *not* square, but size of measurements >= vertices // this is lifted with solving of underspecified systems
 		// need to have A
 
 		//Dump_SystemMatrix("A_system.tga");
@@ -421,35 +663,20 @@ public:
 			// verbose
 
 			if(n_iteration && m_b_system_dirty) {
-				Refresh_A();
+				_TyJacOps::Refresh_A(m_r_system);
 				m_b_system_dirty = false;
 			}
 			// no need to rebuild A, just refresh the values that are being referenced
 
 			_ASSERTE(m_A.n_Row_Num() == n_measurements_size); // should be the same
-			Collect_R_Errors(m_v_error);
+			_TyJacOps::Collect_R_Errors(m_r_system, m_v_error);
 			// collect errors (in parallel)
 
 			double f_serial_start = m_timer.f_Time();
 
-			//MakeTypelist_Safe((Eigen::Matrix3d, Eigen::Matrix2d, Eigen::Matrix<double, 2, 3>)) pose_landmark_2d_mats; // yes, instance
-
 			{
 				CUberBlockMatrix lambda;
-#ifdef _OPENMP
-				/*CUberBlockMatrix At, lambdat;
-				m_A.TransposeTo(At);
-				At.PreMultiplyWithSelfTransposeTo_FBS_Parallel(lambdat, _TyAMatrixBlockSizes(), true);
-				lambdat.TransposeTo(lambda);*/
-				// does not work, the matrix doesn't have correct size. need to modify the multiplication itself (would have to have PostMultiplyWith() ...) // todo - implement that in free time
-
-				//if(m_A.n_Column_Block_Num() >= 50)
-					m_A.PreMultiplyWithSelfTransposeTo_FBS_Parallel<_TyAMatrixBlockSizes>(lambda, true);
-				//else
-				//	m_A.PreMultiplyWithSelfTransposeTo_FBS(lambda, _TyAMatrixBlockSizes(), true);
-#else // _OPENMP
-				m_A.PreMultiplyWithSelfTransposeTo_FBS<_TyAMatrixBlockSizes>(lambda, true);
-#endif // _OPENMP
+				m_A.PreMultiplyWithSelfTransposeTo_FBS_Parallel<_TyAMatrixBlockSizes>(lambda, true);
 				// calculate lambda without calculating At (and only upper diagonal thereof)
 
 				double f_ata_end = m_timer.f_Time();
@@ -460,15 +687,6 @@ public:
 					Eigen::VectorXd &v_b = m_v_error; // b = Rz * p_errors
 					_ASSERTE(v_eta.rows() == n_variables_size);
 					_ASSERTE(v_b.rows() == n_measurements_size);
-
-					//m_A.PostMultiply_Add(&v_eta(0), n_variables_size, &v_b(0), n_measurements_size); // eta^T += b^T * A
-					// works (default)
-
-					/*CUberBlockMatrix At;
-					m_A.TransposeTo(At);
-					At.PreMultiply_Add_FBS(&v_eta(0), n_variables_size, &v_b(0),
-						n_measurements_size, transpose_pose_landmark_2d_mats);*/ // eta = A^T * b
-					// works (slow pre-multiply with transpose) // t_odo - test it // works
 
 					m_A.PostMultiply_Add_FBS_Parallel<_TyAMatrixBlockSizes>(&v_eta(0), n_variables_size, &v_b(0),
 						n_measurements_size); // works (fast parallel post-multiply)
@@ -489,7 +707,7 @@ public:
 									b_cholesky_result = false;
 									break;
 								}
-								// prepare symbolic decomposition, structure of lambda won't change in the next steps
+								// prepare symbolic factorization, structure of lambda won't change in the next steps
 
 								b_cholesky_result = _TyLinearSolverWrapper::Solve(m_linear_solver, lambda, v_eta);
 								// p_dx = eta = lambda / eta
@@ -511,14 +729,6 @@ public:
 				// calculate cholesky, reuse block ordering if the linear solver supports it
 
 				double f_chol_end = m_timer.f_Time();
-
-#ifdef _DEBUG
-				for(size_t i = 0; i < n_variables_size; ++ i) {
-					if(_isnan(m_v_dx(i)))
-						fprintf(stderr, "warning: p_dx[" PRIsize "] = NaN (file \'%s\', line " PRIsize ")\n", i, __FILE__, __LINE__);
-				}
-				// detect the NaNs, if any (warn, but don't modify)
-#endif // _DEBUG
 
 				double f_residual_norm = 0;
 				if(b_cholesky_result) {
@@ -542,7 +752,7 @@ public:
 				// in case the error is low enough, quit (saves us recalculating the hessians)
 
 				if(b_cholesky_result) {
-					PushValuesInGraphSystem(m_v_dx);
+					_TyJacOps::PushValuesInGraphSystem(m_r_system, m_v_dx);
 					m_b_system_dirty = true;
 
 					// t_odo - create more efficient system; use FAP to keep vertices and edges (doesn't change addresses, can quickly iterate)
@@ -566,284 +776,8 @@ public:
 	}
 
 protected:
-	/**
-	 *	@brief function object that calls hessian block allocation for all edges
-	 */
-	class CAlloc_JacobianBlocks {
-	protected:
-		CUberBlockMatrix &m_r_A; /**< @brief reference to the A matrix (out) */
-
-	public:
-		/**
-		 *	@brief default constructor
-		 *	@param[in] r_A is reference to the A matrix
-		 */
-		inline CAlloc_JacobianBlocks(CUberBlockMatrix &r_A)
-			:m_r_A(r_A)
-		{}
-
-		/**
-		 *	@brief function operator
-		 *	@tparam _TyEdge is edge type
-		 *	@param[in,out] r_t_edge is edge to have hessian blocks allocated in A
-		 *	@note This function throws std::bad_alloc.
-		 */
-		template <class _TyEdge>
-		inline void operator ()(_TyEdge &r_t_edge) // throw(std::bad_alloc)
-		{
-			r_t_edge.Alloc_JacobianBlocks(m_r_A);
-		}
-	};
-
-	/**
-	 *	@brief function object that calls error vector calculation for all edges
-	 */
-	class CCollect_R_Errors {
-	protected:
-		Eigen::VectorXd &m_r_R_errors; /**< @brief reference to the R error vector (out) */
-
-	public:
-		/**
-		 *	@brief default constructor
-		 *	@param[in] r_R_errors is reference to the R error vector
-		 */
-		inline CCollect_R_Errors(Eigen::VectorXd &r_R_errors)
-			:m_r_R_errors(r_R_errors)
-		{}
-
-		/**
-		 *	@brief function operator
-		 *	@tparam _TyEdge is edge type
-		 *	@param[in,out] r_t_edge is edge to output its part R error vector
-		 */
-		template <class _TyEdge>
-		inline void operator ()(_TyEdge &r_t_edge)
-		{
-			r_t_edge.Get_R_Error(m_r_R_errors);
-		}
-	};
-
-	/**
-	 *	@brief calculates the error vector
-	 */
-	inline void Collect_R_Errors(Eigen::VectorXd &r_v_R_error)
-	{
-		const Eigen::VectorXd &r_v_err = m_r_system.r_v_Unary_Error();
-		r_v_R_error.segment(0, r_v_err.rows()) = r_v_err;
-		// add the first error
-
-		m_r_system.r_Edge_Pool().For_Each_Parallel(CCollect_R_Errors(r_v_R_error)); // can do this in parallel
-		// collect errors
-	}
-
-	/**
-	 *	@brief function object that copies ordering from the edges
-	 */
-	class CGetCumsums {
-	protected:
-		std::vector<size_t>::iterator m_p_cumsum_it; /**< @brief cumsum iterator (out) */
-
-	public:
-		/**
-		 *	@brief default constructor
-		 *	@param[in] r_row_cumsum_list is cumsum iterator
-		 */
-		inline CGetCumsums(std::vector<size_t> &r_row_cumsum_list)
-			:m_p_cumsum_it(r_row_cumsum_list.begin())
-		{}
-
-		/**
-		 *	@brief function operator
-		 *	@tparam _TyEdge is edge type
-		 *	@param[in,out] r_t_edge is edge to output its cumsum
-		 */
-		template <class _TyEdge>
-		inline void operator ()(const _TyEdge &r_t_edge)
-		{
-			size_t n_order = r_t_edge.n_Order();
-			_ASSERTE(n_order > 0); // don't want 0, but that is assigned to the unary factor
-			*m_p_cumsum_it = n_order;
-			++ m_p_cumsum_it;
-		}
-
-		/**
-		 *	@brief conversion back to cumsum iterator
-		 *	@return Returns the value of cumsum iterator.
-		 */
-		inline operator std::vector<size_t>::iterator() const
-		{
-			return m_p_cumsum_it;
-		}
-	};
-
-	/**
-	 *	@brief creates the A matrix from scratch
-	 */
-	inline void AddEntriesInSparseSystem() // throw(std::bad_alloc)
-	{
-		if(m_r_system.r_Edge_Pool().n_Size() > 1000) { // wins 2.42237 - 2.48938 = .06701 seconds on 10k.graph, likely more on larger graphs
-			//printf("building large matrix from scratch ...\n"); // debug
-			std::vector<size_t> row_cumsum_list(m_r_system.r_Edge_Pool().n_Size());
-			/*std::vector<size_t>::iterator p_end_it =*/
-				m_r_system.r_Edge_Pool().For_Each(CGetCumsums(row_cumsum_list));
-			//_ASSERTE(p_end_it == row_cumsum_list.end());
-			// collect cumsums
-
-			CUberBlockMatrix tmp(row_cumsum_list.begin(),
-				row_cumsum_list.end(), m_r_system.r_Vertex_Pool().n_Size());
-			m_A.Swap(tmp);
-			// use this one instead
-
-			// todo - see if there are some row_reindex on 100k, fix it by collecting
-			// cumsums and building matrix with that (proven to be faster before)
-		} else {
-			//printf("building small matrix from scratch ...\n"); // debug
-			m_A.Clear();
-			// ...
-		}
-
-		const Eigen::MatrixXd &r_t_uf = m_r_system.r_t_Unary_Factor();
-		if(!m_A.Append_Block(r_t_uf, 0, 0))
-			throw std::bad_alloc();
-		// add unary factor
-
-		m_r_system.r_Edge_Pool().For_Each(CAlloc_JacobianBlocks(m_A));
-		// add all the hessian blocks
-
-		//printf("building A from scratch finished\n"); // debug
-	}
-
-	/**
-	 *	@brief incrementally updates the A matrix structure (must not be empty)
-	 *	@param[in] n_skip_edges is number of edges, already in the system
-	 *	@note This function throws std::bad_alloc.
-	 */
-	inline void UpdateSparseSystem(size_t n_skip_edges) // throw(std::bad_alloc)
-	{
-		_ASSERTE(m_A.n_Row_Num() > 0 && m_A.n_Column_Num() > 0); // make sure A is not empty
-		m_r_system.r_Edge_Pool().For_Each(n_skip_edges, m_r_system.r_Edge_Pool().n_Size(), CAlloc_JacobianBlocks(m_A));
-		// add the hessian blocks of the new edges
-	}
-
-	/**
-	 *	@brief incrementally updates the A matrix structure (can be empty)
-	 *	@param[in] n_edges_already_in_A is number of edges, already in the system
-	 *	@note This function throws std::bad_alloc.
-	 */
-	inline void Extend_A(size_t n_edges_already_in_A) // throw(std::bad_alloc)
-	{
-		if(!n_edges_already_in_A)
-			AddEntriesInSparseSystem();
-		else
-			UpdateSparseSystem(n_edges_already_in_A);
-		// create block matrix A
-	}
-
-	/**
-	 *	@brief refreshes the A matrix by recalculating edge hessians
-	 *	@param[in] n_refresh_from_edge is zero-based index of the first edge to be refreshed
-	 */
-	inline void Refresh_A(size_t n_refresh_from_edge = 0)
-	{
-		if(n_refresh_from_edge) {
-			m_r_system.r_Edge_Pool().For_Each_Parallel(n_refresh_from_edge,
-				m_r_system.r_Edge_Pool().n_Size(), CCalculate_Jacobians());
-		} else
-			m_r_system.r_Edge_Pool().For_Each_Parallel(CCalculate_Jacobians());
-		// can do this in parallel
-	}
-
-	/**
-	 *	@brief function object that calculates and accumulates chi^2 from all the edges
-	 */
-	class CSum_ChiSquareError {
-	protected:
-		double m_f_sum; /**< @brief a running sum of chi-square errors */
-
-	public:
-		/**
-		 *	@brief default constructor
-		 */
-		inline CSum_ChiSquareError()
-			:m_f_sum(0)
-		{}
-
-		/**
-		 *	@brief function operator
-		 *	@tparam _TyEdge is edge type
-		 *	@param[in] r_t_edge is edge to output its part R error vector
-		 */
-		template <class _TyEdge>
-		inline void operator ()(const _TyEdge &r_t_edge)
-		{
-			m_f_sum += r_t_edge.f_Chi_Squared_Error();
-		}
-
-		/**
-		 *	@brief gets the current value of the accumulator
-		 *	@return Returns the current value of the accumulator.
-		 */
-		inline operator double() const
-		{
-			return m_f_sum;
-		}
-	};
-
-	/**
-	 *	@brief function object that updates states of all the vertices
-	 */
-	class CUpdateEstimates {
-	protected:
-		const Eigen::VectorXd &m_r_dx; /**< @brief vector of differences */
-
-	public:
-		/**
-		 *	@brief default constructor
-		 *	@param[in] r_dx is reference to the vector of differences
-		 */
-		inline CUpdateEstimates(const Eigen::VectorXd &r_dx)
-			:m_r_dx(r_dx)
-		{}
-
-		/**
-		 *	@brief updates vertex state
-		 *	@tparam _TyVertex is type of vertex
-		 *	@param[in,out] r_t_vertex is reference to vertex, being updated
-		 */
-		template <class _TyVertex>
-		inline void operator ()(_TyVertex &r_t_vertex) const
-		{
-			r_t_vertex.Operator_Plus(m_r_dx);
-		}
-	};
-
-	/**
-	 *	@brief updates states of all the vertices with the error vector
-	 */
-	inline void PushValuesInGraphSystem(const Eigen::VectorXd &r_v_dx)
-	{
-		m_r_system.r_Vertex_Pool().For_Each_Parallel(CUpdateEstimates(r_v_dx)); // can do this in parallel
-	}
-
-	/**
-	 *	@brief function object that calculates hessians in all the edges
-	 */
-	class CCalculate_Jacobians {
-	public:
-		/**
-		 *	@brief function operator
-		 *	@tparam _TyEdge is edge type
-		 *	@param[in] r_t_edge is edge to update it's hessians
-		 */
-		template <class _TyEdge>
-		inline void operator ()(_TyEdge &r_t_edge) const
-		{
-			r_t_edge.Calculate_Jacobians();
-		}
-	};
-
 	CNonlinearSolver_A(const CNonlinearSolver_A &UNUSED(r_solver)); /**< @brief the object is not copyable */
 	CNonlinearSolver_A &operator =(const CNonlinearSolver_A &UNUSED(r_solver)) { return *this; } /**< @brief the object is not copyable */
 };
 
-#endif // __NONLINEAR_BLOCKY_SOLVER_A_INCLUDED
+#endif // !__NONLINEAR_BLOCKY_SOLVER_A_INCLUDED

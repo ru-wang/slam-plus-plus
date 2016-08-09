@@ -72,34 +72,30 @@
 #include "Unused.h"
 #include "slam/Debug.h" // _ASSERTE
 #include <vector>
+#include <stdlib.h> // posix_memalign()
 
 /**
  *	@brief contains static assertion template for page size check (g++ compatible, unused)
  */
-namespace __fap_static_check {
+namespace fap_static_check {
 
 /**
  *	@brief compile-time assertion helper
- *	@tparam b_value is assertion value (false)
+ *	@tparam b_expression is assertion value
  */
-template <const bool b_value>
-class page_size_check_failed;
+template <const bool b_expression>
+class CStaticAssert {
+public:
+	typedef void PAGE_SIZE_MISMATCH; /**< @brief assertion tag (used in fap_base::Swap() when pools of different page size are swapped) */
+};
 
 /**
- *	@brief compile-time assertion helper (specialization for assertion pass)
+ *	@brief compile-time assertion helper (specialization for assertion failed)
  */
 template <>
-class page_size_check_failed<true> {};
+class CStaticAssert<false> {};
 
-/**
- *	@brief compile-time assertion for page size compatibility
- *	@tparam n_has_size is sizeof(page_size_check_failed<bool>) for a given check
- */
-template<const size_t n_has_size>
-class page_size_check {};
-// debugging functionality
-
-} // ~__fap_static_check
+} // ~fap_static_check
 
 /**
  *	@brief simple segregated storage class
@@ -137,6 +133,27 @@ public:
 		n_compile_time_page_size_elems = _n_page_size_elems, /**< @brief number of elements in a single page at compile-time (or 0 for dynamic) */
 		n_memory_alignment = _n_memory_align /**< @brief memory alignment, in bytes */
 	};
+
+	/**
+	 *	@brief allocates a buffer with the same memory alignment as the pool
+	 *	@param[in] n_size is size of the buffer in bytes
+	 *	@return Returns pointer to the newly allocated buffer;
+	 *		the caller is responsible for deleting it.
+	 *	@note This function throws std::bad_alloc.
+	 */
+	static void *aligned_alloc(size_t n_size) // throw(std::bad_alloc)
+	{
+		return CAllocNewPage<uint8_t, size_t, 0, n_memory_alignment>(n_size)();
+	}
+
+	/**
+	 *	@brief deletes a buffer previously allocated using aligned_alloc()
+	 *	@param[in] p_ptr is pointer to the buffer to be deleted
+	 */
+	static void aligned_free(void *p_ptr)
+	{
+		CAllocNewPage<uint8_t, size_t, 0, n_memory_alignment>::DeletePage((uint8_t*)p_ptr);
+	}
 
 protected:
 	/**
@@ -199,9 +216,13 @@ protected:
 
 	/**
 	 *	@brief a simple functor, designed for allocating new pages
+	 *
+	 *	@tparam _T is data type being allocated
+	 *	@tparam _TyPageSize is page size data type
+	 *	@tparam n_compile_time_page_size_elems is page size at compile time
 	 *	@tparam n_mem_align is memory alignment (in bytes)
 	 */
-	template <class _Ty, class _TyPageSize, const int n_compile_time_page_size_elems, const int n_mem_align>
+	template <class _T, class _TyPageSize, const int n_compile_time_page_size_elems, const int n_mem_align>
 	class CAllocNewPage {
 	protected:
 		_TyPageSize m_t_page_size; /**< @brief required page size, in elements */
@@ -220,39 +241,48 @@ protected:
 		 *	@return Returns pointer to the new page.
 		 *	@note This function throws std::bad_alloc.
 		 */
-		inline _Ty *operator ()() // throw(std::bad_alloc)
+		inline _T *operator ()() // throw(std::bad_alloc)
 		{
 			void *p_result;
-#if defined(_MSC_VER)
-			p_result = _aligned_malloc(m_t_page_size * sizeof(_Ty), n_mem_align);
-#else // _MSC_VER
-			p_result = _mm_malloc(m_t_page_size * sizeof(_Ty), n_mem_align);
-#endif // _MSC_VER
-			if(!p_result && m_t_page_size * sizeof(_Ty) != 0)
+#if defined(_MSC_VER) && !defined(__MWERKS__)
+			p_result = _aligned_malloc(m_t_page_size * sizeof(_T), n_mem_align);
+#elif (defined(_POSIX_C_SOURCE) && _POSIX_C_SOURCE >= 200112L) || (defined(_XOPEN_SOURCE) && _XOPEN_SOURCE >= 600)
+			if(posix_memalign(&p_result, n_mem_align, m_t_page_size * sizeof(_T)))
+				p_result = 0; // to mark error
+#else // _MSC_VER && !__MWERKS__
+			p_result = _mm_malloc(m_t_page_size * sizeof(_T), n_mem_align);
+#endif // _MSC_VER && !__MWERKS__
+			if(!p_result && m_t_page_size * sizeof(_T) != 0)
 				throw std::bad_alloc();
-			return (_Ty*)p_result;
+			return (_T*)p_result;
 		}
 
 		/**
 		 *	@brief deletes a page from memory
 		 *	@param[in] p_page is the pointer to the page to be deleted
 		 */
-		static inline void DeletePage(_Ty *p_page)
+		static inline void DeletePage(_T *p_page)
 		{
-#if defined(_MSC_VER)
+#if defined(_MSC_VER) && !defined(__MWERKS__)
 			_aligned_free(p_page);
-#else // _MSC_VER
+#elif (defined(_POSIX_C_SOURCE) && _POSIX_C_SOURCE >= 200112L) || (defined(_XOPEN_SOURCE) && _XOPEN_SOURCE >= 600)
+			free(p_page); // posix_memalign() is compatible with free()
+#else // _MSC_VER && !__MWERKS__
 			_mm_free(p_page);
-#endif // _MSC_VER
+#endif // _MSC_VER && !__MWERKS__
 		}
 	};
 
 	/**
 	 *	@brief a simple functor, designed for allocating new pages
 	 *		(specialization for page size, set at runtime)
+	 *
+	 *	@tparam _T is data type being allocated
+	 *	@tparam _TyPageSize is page size data type
+	 *	@tparam n_compile_time_page_size_elems is page size at compile time
 	 */
-	template <class _Ty, class _TyPageSize, const int n_compile_time_page_size_elems>
-	class CAllocNewPage<_Ty, _TyPageSize, n_compile_time_page_size_elems, 0> {
+	template <class _T, class _TyPageSize, const int n_compile_time_page_size_elems>
+	class CAllocNewPage<_T, _TyPageSize, n_compile_time_page_size_elems, 0> {
 	protected:
 		_TyPageSize m_t_page_size; /**< @brief required page size, in elements */
 
@@ -270,16 +300,16 @@ protected:
 		 *	@return Returns pointer to the new page.
 		 *	@note This function throws std::bad_alloc.
 		 */
-		inline _Ty *operator ()() // throw(std::bad_alloc)
+		inline _T *operator ()() // throw(std::bad_alloc)
 		{
-			return new _Ty[m_t_page_size];
+			return new _T[m_t_page_size];
 		}
 
 		/**
 		 *	@brief deletes a page from memory
 		 *	@param[in] p_page is the pointer to the page to be deleted
 		 */
-		static inline void DeletePage(_Ty *p_page)
+		static inline void DeletePage(_T *p_page)
 		{
 			delete[] p_page;
 		}
@@ -306,7 +336,9 @@ public:
 		typedef const _Ty *pointer; /**< @brief pointer to the payload type */
 		typedef const _Ty &reference; /**< @brief reference to the payload type */
 
-#if defined(_MSC_VER) && !defined(__MWERKS__) && _MSC_VER >= 1400
+#if defined(__APPLE__)
+		typedef std::random_access_iterator_tag iterator_category; /**< @brief iterator category (MAC) */
+#elif defined(_MSC_VER) && !defined(__MWERKS__) && _MSC_VER >= 1400
 		typedef std::random_access_iterator_tag iterator_category; /**< @brief iterator category (MSVC) */
 #if defined(__SEGREGATED_MAKE_CHECKED_ITERATORS) && _SECURE_SCL && _MSC_VER < 1700 // not sure if the max _MSC_VER is low enough; if you get errors on the line below, decrement it
 		typedef std::_Range_checked_iterator_tag _Checked_iterator_category; /**< @brief checked iterator category (MSVC 90) */
@@ -903,8 +935,8 @@ public:
 	void swap(fap_base<_Ty, n_ctpse> &r_t_other) // throw(std::runtime_error)
 	{
 		{
-			typedef __fap_static_check::page_size_check<sizeof(page_size_check_failed<!n_ctpse ||
-				!n_compile_time_page_size_elems || n_ctpse == n_compile_time_page_size_elems>)> t;
+			typedef typename fap_static_check::CStaticAssert<!n_ctpse || !n_compile_time_page_size_elems ||
+				n_ctpse == n_compile_time_page_size_elems>::PAGE_SIZE_MISMATCH CAssert0;
 		}
 		// compile-time check on page size (if available; note it will fail on static page size
 		// in both operands (if it was equal, the other version of swap() would be called))
@@ -2066,4 +2098,4 @@ protected:
 
 #endif // __SEGREGATED_COMPILE_FAP_TESTS
 
-#endif // __SEGREGATED_STORAGE_TEMPLATES_INCLUDED
+#endif // !__SEGREGATED_STORAGE_TEMPLATES_INCLUDED

@@ -503,7 +503,8 @@ time_t gk_str2time(char *str)
 
   memset(&time, '\0', sizeof(time));
   
-  if (strptime(str, "%m/%d/%Y %H:%M:%S", &time) == NULL)
+  //if (strptime(str, "%m/%d/%Y %H:%M:%S", &time) == NULL)
+  if (!strptime(str, "%m/%d/%Y %H:%M:%S", &time)) // otherwise get "GKlib/string.c:506: warning: comparison between pointer and integer"
     return -1;
 
   rtime = mktime(&time);

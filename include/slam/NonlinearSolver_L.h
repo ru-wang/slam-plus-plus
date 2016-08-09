@@ -107,13 +107,18 @@
 
 //extern int n_dummy_param; // remove me
 
+#error "fatal error: this solver is deprecated (was not updated to use the new reduction plan), use FastL instead"
+
 /**
  *	@brief nonlinear blocky solver working above the L factor matrix
  *
- *	@tparam CSystem is the system type
- *	@tparam CLinearSolver is a linear solver
+ *	@tparam CSystem is optimization system type
+ *	@tparam CLinearSolver is linear solver type
+ *	@tparam CAMatrixBlockSizes is list of block sizes in the Jacobian matrix
+ *	@tparam CLambdaMatrixBlockSizes is list of block sizes in the information (Hessian) matrix
  */
-template <class CSystem, class CLinearSolver, class CAMatrixBlockSizes = typename CSystem::_TyJacobianMatrixBlockList>
+template <class CSystem, class CLinearSolver, class CAMatrixBlockSizes = typename CSystem::_TyJacobianMatrixBlockList,
+	class CLambdaMatrixBlockSizes = typename CSystem::_TyHessianMatrixBlockList>
 class CNonlinearSolver_L {
 public:
 	typedef CSystem _TySystem; /**< @brief system type */
@@ -130,9 +135,9 @@ public:
 	typedef typename CLinearSolver::_Tag _TySolverTag; /**< @brief linear solver tag */
 	typedef CLinearSolverWrapper<_TyLinearSolver, _TySolverTag> _TyLinearSolverWrapper; /**< @brief wrapper for linear solvers (shields solver capability to solve blockwise) */
 
-	typedef typename CUniqueTypelist<CAMatrixBlockSizes>::_TyResult _TyAMatrixBlockSizes; /**< @brief possible block matrices, that can be found in A */
-	typedef typename __fbs_ut::CBlockSizesAfterPreMultiplyWithSelfTranspose<
-		_TyAMatrixBlockSizes>::_TyResult _TyLambdaMatrixBlockSizes; /**< @brief possible block matrices, found in lambda and L */
+	typedef /*typename CUniqueTypelist<*/CAMatrixBlockSizes/*>::_TyResult*/ _TyAMatrixBlockSizes; /**< @brief possible block matrices, that can be found in A */
+	typedef /*typename*/ CLambdaMatrixBlockSizes /*fbs_ut::CBlockSizesAfterPreMultiplyWithSelfTranspose<
+		_TyAMatrixBlockSizes>::_TyResult*/ _TyLambdaMatrixBlockSizes; /**< @brief possible block matrices, found in lambda and L */
 
 	/**
 	 *	@brief some run-time constants, stored as enum
@@ -327,9 +332,9 @@ public:
 		_ASSERTE(!m_n_nonlinear_solve_threshold || !m_n_linear_solve_threshold); // only one of those
 
 		/*printf("hardcoded: ");
-		__fbs_ut::CDumpBlockMatrixTypelist<_TyAMatrixBlockSizes>::Print();
+		fbs_ut::CDumpBlockMatrixTypelist<_TyAMatrixBlockSizes>::Print();
 		printf("from system: ");
-		__fbs_ut::CDumpBlockMatrixTypelist<typename _TySystem::_TyJacobianMatrixBlockList>::Print();*/
+		fbs_ut::CDumpBlockMatrixTypelist<typename _TySystem::_TyJacobianMatrixBlockList>::Print();*/
 		// debug (now these are the same)
 
 #ifdef __NONLINEAR_SOLVER_L_DUMP_TIMESTEPS
@@ -386,12 +391,13 @@ public:
 		m_f_toupper2_time(0)
 	{
 		_ASSERTE(!m_n_nonlinear_solve_threshold || !m_n_linear_solve_threshold); // only one of those
-		_ASSERTE(!t_marginals_config.b_calculate); // not supported at the moment
+		if(t_marginals_config.b_calculate) // not supported at the moment
+			throw std::runtime_error("CNonlinearSolver_L does not support marginals calculation");
 
 		/*printf("hardcoded: ");
-		__fbs_ut::CDumpBlockMatrixTypelist<_TyAMatrixBlockSizes>::Print();
+		fbs_ut::CDumpBlockMatrixTypelist<_TyAMatrixBlockSizes>::Print();
 		printf("from system: ");
-		__fbs_ut::CDumpBlockMatrixTypelist<typename _TySystem::_TyJacobianMatrixBlockList>::Print();*/
+		fbs_ut::CDumpBlockMatrixTypelist<typename _TySystem::_TyJacobianMatrixBlockList>::Print();*/
 		// debug (now these are the same)
 
 #ifdef __NONLINEAR_SOLVER_L_DUMP_TIMESTEPS
@@ -498,7 +504,7 @@ public:
 			return 0;
 		if(m_b_linearization_dirty) {
 			typedef CNonlinearSolver_L<CSystem, CLinearSolver, CAMatrixBlockSizes> TThisType;
-			TThisType *p_this = const_cast<TThisType*>(this); // don't want to put 'mutable' arround everything
+			TThisType *p_this = const_cast<TThisType*>(this); // don't want to put 'mutable' around everything
 			if(!p_this->CalculateOneTimeDx())
 				return -1;
 			p_this->PushValuesInGraphSystem(m_v_dx);
@@ -514,19 +520,29 @@ public:
 	 *	@param[in] r_last_edge is the last edge that was added to the system
 	 *	@note This function throws std::bad_alloc and std::runtime_error (when L is not-pos-def).
 	 */
-	void Incremental_Step(_TyBaseEdge &r_last_edge) // throw(std::bad_alloc, std::runtime_error)
+	void Incremental_Step(_TyBaseEdge &UNUSED(r_last_edge)) // throw(std::bad_alloc, std::runtime_error)
 	{
+		_ASSERTE(!m_r_system.r_Edge_Pool().b_Empty());
+		typename _TyEdgeMultiPool::_TyConstBaseRef r_edge =
+			m_r_system.r_Edge_Pool()[m_r_system.r_Edge_Pool().n_Size() - 1];
+		// get a reference to the last edge interface
+
 		size_t n_vertex_num = m_r_system.r_Vertex_Pool().n_Size();
 		if(!m_b_had_loop_closure) {
-			_ASSERTE(r_last_edge.n_Vertex_Id(0) != r_last_edge.n_Vertex_Id(1));
-			size_t n_first_vertex = std::min(r_last_edge.n_Vertex_Id(0), r_last_edge.n_Vertex_Id(1));
-			//size_t n_vertex_num = m_r_system.r_Vertex_Pool().n_Size();
-			m_b_had_loop_closure = (n_first_vertex < n_vertex_num - 2);
-			_ASSERTE(m_b_had_loop_closure || std::max(r_last_edge.n_Vertex_Id(0),
-				r_last_edge.n_Vertex_Id(1)) == n_vertex_num - 1);
+			if(r_edge.n_Vertex_Num() > 1) { // unary factors do not cause classical loop closures
+				_ASSERTE(r_edge.n_Vertex_Id(0) != r_edge.n_Vertex_Id(1));
+				size_t n_first_vertex = std::min(r_edge.n_Vertex_Id(0), r_edge.n_Vertex_Id(1));
+				m_b_had_loop_closure = (n_first_vertex < n_vertex_num - 2);
+				_ASSERTE(m_b_had_loop_closure || std::max(r_edge.n_Vertex_Id(0),
+					r_edge.n_Vertex_Id(1)) == n_vertex_num - 1);
+			} else {
+				size_t n_first_vertex = r_edge.n_Vertex_Id(0);
+				m_b_had_loop_closure = (n_first_vertex < n_vertex_num - 1);
+			}
+			// todo - encapsulate this code, write code to support hyperedges as well, use it
 			/*if(m_b_had_loop_closure) {
 				printf("" PRIsize ", " PRIsize " (out of " PRIsize " and " PRIsize ")\n", n_vertex_num, n_first_vertex,
-					r_last_edge.n_Vertex_Id(0), r_last_edge.n_Vertex_Id(1));
+					r_edge.n_Vertex_Id(0), r_edge.n_Vertex_Id(1));
 			}*/ // debug
 		}
 		// detect loop closures (otherwise the edges are initialized based on measurement and error would be zero)
@@ -536,8 +552,8 @@ public:
 			FILE *p_fw = fopen("timeSteps_L.txt", (m_n_real_step > 0)? "a" : "w");
 			fprintf(p_fw, "" PRIsize ";%f;" PRIsize ";" PRIsize ";" PRIsize ";" PRIsize ";" PRIsize ";" PRIsize "\n", m_n_real_step, m_timer.f_Time(),
 				m_n_Lup_num, m_n_full_L_num, m_n_L_optim_num, m_n_lambda_optim_num,
-				std::max(r_last_edge.n_Vertex_Id(0), r_last_edge.n_Vertex_Id(1)) -
-				std::min(r_last_edge.n_Vertex_Id(0), r_last_edge.n_Vertex_Id(1)),
+				std::max(r_edge.n_Vertex_Id(0), r_edge.n_Vertex_Id(1)) -
+				std::min(r_edge.n_Vertex_Id(0), r_edge.n_Vertex_Id(1)),
 				m_n_loop_size_cumsum);
 			fclose(p_fw);
 		}
@@ -556,7 +572,7 @@ public:
 					break;
 				if(m_b_linearization_dirty) {
 					typedef CNonlinearSolver_L<CSystem, CLinearSolver, CAMatrixBlockSizes> TThisType;
-					TThisType *p_this = const_cast<TThisType*>(this); // don't want to put 'mutable' arround everything
+					TThisType *p_this = const_cast<TThisType*>(this); // don't want to put 'mutable' around everything
 					if(!p_this->CalculateOneTimeDx(1)) // this is one smaller
 						break;
 					p_this->m_r_system.r_Vertex_Pool().For_Each_Parallel(0,
@@ -796,8 +812,11 @@ protected:
 		const size_t n_variables_size = m_r_system.n_VertexElement_Num();
 		const size_t n_measurements_size = m_r_system.n_EdgeElement_Num();
 		if(n_variables_size > n_measurements_size) {
-			fprintf(stderr, "warning: the system is underspecified\n");
-			return false;
+			if(n_measurements_size)
+				fprintf(stderr, "warning: the system is underspecified\n");
+			else
+				fprintf(stderr, "warning: the system contains no edges at all: nothing to optimize\n");
+			//return false;
 		}
 		if(!n_measurements_size)
 			return false; // nothing to solve (but no results need to be generated so it's ok)
@@ -931,8 +950,10 @@ protected:
 
 #ifdef _DEBUG
 				for(size_t i = 0, n_variables_size = m_v_dx.rows(); i < n_variables_size; ++ i) {
-					if(_isnan(m_v_dx(i)))
-						fprintf(stderr, "warning: p_dx[" PRIsize "] = NaN (file \'%s\', line " PRIsize ")\n", i, __FILE__, __LINE__);
+					if(_isnan(m_v_dx(i))) {
+						fprintf(stderr, "warning: p_dx[" PRIsize "] = NaN (file \'%s\', line "
+							PRIsize ")\n", i, __FILE__, size_t(__LINE__));
+					}
 				}
 				// detect the NaNs, if any (warn, but don't modify)
 #endif // _DEBUG
@@ -961,7 +982,7 @@ protected:
 					b_cholesky_result = m_linear_solver.Solve_PosDef(m_lambda, v_eta); // p_dx = eta = lambda / eta
 					// dont reuse block ordering
 				}
-				// lambda is good without permutation (there is one inside and we save copying eta arround)
+				// lambda is good without permutation (there is one inside and we save copying eta around)
 #else // 1
 				{
 					_ASSERTE(m_p_lambda_elem_ordering);
@@ -982,8 +1003,10 @@ protected:
 
 #ifdef _DEBUG
 				for(size_t i = 0, n_variables_size = m_v_dx.rows(); i < n_variables_size; ++ i) {
-					if(_isnan(m_v_dx(i)))
-						fprintf(stderr, "warning: p_dx[" PRIsize "] = NaN (file \'%s\', line " PRIsize ")\n", i, __FILE__, __LINE__);
+					if(_isnan(m_v_dx(i))) {
+						fprintf(stderr, "warning: p_dx[" PRIsize "] = NaN (file \'%s\', line "
+							PRIsize ")\n", i, __FILE__, size_t(__LINE__));
+					}
 				}
 				// detect the NaNs, if any (warn, but don't modify)
 #endif // _DEBUG
@@ -1133,8 +1156,10 @@ public:
 #ifdef _DEBUG
 					for(size_t i = 0, n_variables_size = m_r_system.n_VertexElement_Num();
 					   i < n_variables_size; ++ i) {
-						if(_isnan(m_v_dx(i)))
-							fprintf(stderr, "warning: p_dx[" PRIsize "] = NaN (file \'%s\', line " PRIsize ")\n", i, __FILE__, __LINE__);
+						if(_isnan(m_v_dx(i))) {
+							fprintf(stderr, "warning: p_dx[" PRIsize "] = NaN (file \'%s\', line "
+								PRIsize ")\n", i, __FILE__, size_t(__LINE__));
+						}
 					}
 					// detect the NaNs, if any (warn, but don't modify)
 #endif // _DEBUG
@@ -1215,7 +1240,7 @@ public:
 									b_cholesky_result = false;
 									break;
 								}
-								// prepare symbolic decomposition, structure of lambda won't change in the next steps
+								// prepare symbolic factorization, structure of lambda won't change in the next steps
 
 								b_cholesky_result = _TyLinearSolverWrapper::Solve(m_linear_solver, m_lambda, v_eta);
 								// p_dx = eta = lambda / eta
@@ -1226,7 +1251,7 @@ public:
 						if(m_b_verbose)
 							printf("%s", (b_cholesky_result)? "Cholesky succeeded\n" : "Cholesky failed\n");
 					}
-					// lambda is good without permutation (there is one inside and we save copying eta arround)
+					// lambda is good without permutation (there is one inside and we save copying eta around)
 #else // 1
 					{
 						_ASSERTE(m_p_lambda_elem_ordering);
@@ -1246,7 +1271,7 @@ public:
 									b_cholesky_result = false;
 									break;
 								}
-								// prepare symbolic decomposition, structure of lambda won't change in the next steps
+								// prepare symbolic factorization, structure of lambda won't change in the next steps
 
 								b_cholesky_result = _TyLinearSolverWrapper::Solve(m_linear_solver, m_lambda_perm, m_v_perm_temp);
 								// p_dx = eta = lambda / eta
@@ -1269,8 +1294,10 @@ public:
 #ifdef _DEBUG
 					for(size_t i = 0, n_variables_size = m_r_system.n_VertexElement_Num();
 					   i < n_variables_size; ++ i) {
-						if(_isnan(m_v_dx(i)))
-							fprintf(stderr, "warning: p_dx[" PRIsize "] = NaN (file \'%s\', line " PRIsize ")\n", i, __FILE__, __LINE__);
+						if(_isnan(m_v_dx(i))) {
+							fprintf(stderr, "warning: p_dx[" PRIsize "] = NaN (file \'%s\', line "
+								PRIsize ")\n", i, __FILE__, size_t(__LINE__));
+						}
 					}
 					// detect the NaNs, if any (warn, but don't modify)
 #endif // _DEBUG
@@ -1461,13 +1488,13 @@ protected:
 
 		/**
 		 *	@brief function operator
-		 *	@tparam _TyEdge is edge type
-		 *	@param[in,out] r_t_edge is edge to output its part R error vector
+		 *	@tparam _TyVertex is vertex type
+		 *	@param[in,out] r_t_vertex is a vertex to output its part R error vector
 		 */
-		template <class _TyEdge>
-		inline void operator ()(_TyEdge &r_t_edge) // throw(std::bad_alloc)
+		template <class _TyVertex>
+		inline void operator ()(const _TyVertex &r_t_vertex) // throw(std::bad_alloc)
 		{
-			r_t_edge.Get_RightHandSide_Vector(m_r_b);
+			r_t_vertex.Get_RightHandSide_Vector(m_r_b);
 		}
 	};
 
@@ -2921,4 +2948,4 @@ protected:
 	CNonlinearSolver_L &operator =(const CNonlinearSolver_L &UNUSED(r_solver)) { return *this; } /**< @brief the object is not copyable */
 };
 
-#endif // __NONLINEAR_BLOCKY_SOLVER_L_INCLUDED
+#endif // !__NONLINEAR_BLOCKY_SOLVER_L_INCLUDED

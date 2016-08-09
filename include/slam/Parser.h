@@ -79,21 +79,21 @@ public:
 	/**
 	 *	@brief range-bearing measurement base class
 	 */
-	struct TLandmark2D : public CParseEntity {
-		int m_n_node_0; /**< @brief (zero-based) index of the first node (origin) */
-		int m_n_node_1; /**< @brief (zero-based) index of the second node (endpoint) */
+	struct TLandmark2D_RB : public CParseEntity {
+		size_t m_n_node_0; /**< @brief (zero-based) index of the first node (origin) */
+		size_t m_n_node_1; /**< @brief (zero-based) index of the second node (endpoint) */
 		Eigen::Vector2d m_v_delta; /**< @brief dealte measurement (also called "z") */
-		Eigen::Matrix2d m_t_inv_sigma; /**< @brief inverse sigma matrix, elements are square roots (also called "Sz") */
+		Eigen::Matrix2d m_t_inv_sigma; /**< @brief inverse sigma matrix, elements are not square roots */
 
 		/**
 		 *	@brief default constructor
 		 *
 		 *	@param[in] n_node_0 is (zero-based) index of the first (origin) node
 		 *	@param[in] n_node_1 is (zero-based) index of the second (endpoint) node
-		 *	@param[in] f_delta_x is delta x position
-		 *	@param[in] f_delta_y is delta y position
+		 *	@param[in] f_range is delta position (the range)
+		 *	@param[in] f_bearing is bearing angle
 		 *	@param[in] p_upper_matrix_2x2 is row-major upper triangular and diagonal 2x2 matrix
-		 *		containing the information matrix, elements are square roots
+		 *		containing the inverse sigma matrix, elements are not square roots
 		 *
 		 *	The matrix is stored row by row from top to bottom,
 		 *	with left-to-right column order. Example:
@@ -103,7 +103,47 @@ public:
 		 *	|  2|
 		 *	@endcode
 		 */
-		inline TLandmark2D(int n_node_0, int n_node_1,
+		inline TLandmark2D_RB(size_t n_node_0, size_t n_node_1,
+			double f_range, double f_bearing, const double *p_upper_matrix_2x2)
+			:m_n_node_0(n_node_0), m_n_node_1(n_node_1), m_v_delta(f_range, f_bearing)
+		{
+			m_t_inv_sigma <<
+				p_upper_matrix_2x2[0], p_upper_matrix_2x2[1],
+				p_upper_matrix_2x2[1], p_upper_matrix_2x2[2];
+			// fill the matrix
+		}
+
+		EIGEN_MAKE_ALIGNED_OPERATOR_NEW
+	};
+
+	/**
+	 *	@brief delta XY landmark measurement base class
+	 */
+	struct TLandmark2D_XY : public CParseEntity {
+		size_t m_n_node_0; /**< @brief (zero-based) index of the first node (origin) */
+		size_t m_n_node_1; /**< @brief (zero-based) index of the second node (endpoint) */
+		Eigen::Vector2d m_v_delta; /**< @brief dealte measurement (also called "z") */
+		Eigen::Matrix2d m_t_inv_sigma; /**< @brief inverse sigma matrix, elements are not square roots */
+
+		/**
+		 *	@brief default constructor
+		 *
+		 *	@param[in] n_node_0 is (zero-based) index of the first (origin) node
+		 *	@param[in] n_node_1 is (zero-based) index of the second (endpoint) node
+		 *	@param[in] f_delta_x is delta x position
+		 *	@param[in] f_delta_y is delta y position
+		 *	@param[in] p_upper_matrix_2x2 is row-major upper triangular and diagonal 2x2 matrix
+		 *		containing the inverse sigma matrix, elements are not square roots
+		 *
+		 *	The matrix is stored row by row from top to bottom,
+		 *	with left-to-right column order. Example:
+		 *
+		 *	@code
+		 *	|0 1|
+		 *	|  2|
+		 *	@endcode
+		 */
+		inline TLandmark2D_XY(size_t n_node_0, size_t n_node_1,
 			double f_delta_x, double f_delta_y, const double *p_upper_matrix_2x2)
 			:m_n_node_0(n_node_0), m_n_node_1(n_node_1), m_v_delta(f_delta_x, f_delta_y)
 		{
@@ -120,10 +160,10 @@ public:
 	 *	@brief XYT measurement base class
 	 */
 	struct TEdge2D : public CParseEntity {
-		int m_n_node_0; /**< @brief (zero-based) index of the first (origin) node */
-		int m_n_node_1; /**< @brief (zero-based) index of the second (endpoint) node */
+		size_t m_n_node_0; /**< @brief (zero-based) index of the first (origin) node */
+		size_t m_n_node_1; /**< @brief (zero-based) index of the second (endpoint) node */
 		Eigen::Vector3d m_v_delta; /**< @brief dealte measurement (also called "z") */
-		Eigen::Matrix3d m_t_inv_sigma; /**< @brief inverse sigma matrix, elements are square roots (also called "Sz") */
+		Eigen::Matrix3d m_t_inv_sigma; /**< @brief inverse sigma matrix, elements are not square roots */
 
 		/**
 		 *	@brief default constructor
@@ -134,7 +174,7 @@ public:
 		 *	@param[in] f_delta_y is delta y position
 		 *	@param[in] f_delta_theta is delta theta
 		 *	@param[in] p_upper_matrix_3x3 is row-major upper triangular and diagonal 3x3 matrix
-		 *		containing the information matrix, elements are square roots
+		 *		containing the inverse sigma matrix, elements are not square roots
 		 *
 		 *	The matrix is stored row by row from top to bottom,
 		 *	with left to right column order. Example:
@@ -144,7 +184,7 @@ public:
 		 *	|    5|
 		 *	@endcode
 		 */
-		inline TEdge2D(int n_node_0, int n_node_1,
+		inline TEdge2D(size_t n_node_0, size_t n_node_1,
 			double f_delta_x, double f_delta_y, double f_delta_theta,
 			const double *p_upper_matrix_3x3)
 			:m_n_node_0(n_node_0), m_n_node_1(n_node_1),
@@ -186,13 +226,99 @@ public:
 	};
 
 	/**
+	 *	@brief delta XYZ landmark measurement base class
+	 */
+	struct TLandmark3D_XYZ : public CParseEntity {
+		size_t m_n_node_0; /**< @brief (zero-based) index of the first node (origin) */
+		size_t m_n_node_1; /**< @brief (zero-based) index of the second node (endpoint) */
+		Eigen::Vector3d m_v_delta; /**< @brief delta measurement (also called "z") */
+		Eigen::Matrix3d m_t_inv_sigma; /**< @brief inverse sigma matrix, elements are not square roots */
+
+		/**
+		 *	@brief default constructor
+		 *
+		 *	@param[in] n_node_0 is (zero-based) index of the first (origin) node
+		 *	@param[in] n_node_1 is (zero-based) index of the second (endpoint) node
+		 *	@param[in] f_delta_x is delta x position
+		 *	@param[in] f_delta_y is delta y position
+		 *	@param[in] f_delta_z is delta z position
+		 *	@param[in] p_upper_matrix_3x3 is row-major upper triangular and diagonal 3x3 matrix
+		 *		containing the inverse sigma matrix, elements are not square roots
+		 *
+		 *	The matrix is stored row by row from top to bottom,
+		 *	with left-to-right column order. Example:
+		 *
+		 *	@code
+		 *	|0 1 2|
+		 *	|  2 4|
+		 *	|    5|
+		 *	@endcode
+		 */
+		inline TLandmark3D_XYZ(size_t n_node_0, size_t n_node_1,
+			double f_delta_x, double f_delta_y, double f_delta_z, const double *p_upper_matrix_3x3)
+			:m_n_node_0(n_node_0), m_n_node_1(n_node_1), m_v_delta(f_delta_x, f_delta_y, f_delta_z)
+		{
+			m_t_inv_sigma <<
+						p_upper_matrix_3x3[0], p_upper_matrix_3x3[1], p_upper_matrix_3x3[2],
+						p_upper_matrix_3x3[1], p_upper_matrix_3x3[3], p_upper_matrix_3x3[4],
+						p_upper_matrix_3x3[2], p_upper_matrix_3x3[4], p_upper_matrix_3x3[5];
+			// fill the matrix
+		}
+
+		EIGEN_MAKE_ALIGNED_OPERATOR_NEW
+	};
+
+	/**
+	 *	@brief spheron to XYZ landmark measurement
+	 */
+	struct TEdgeSpheronXYZ : public CParseEntity {
+		size_t m_n_node_0; /**< @brief (zero-based) index of the first node (origin) */
+		size_t m_n_node_1; /**< @brief (zero-based) index of the second node (endpoint) */
+		Eigen::Vector3d m_v_delta; /**< @brief dealte measurement (also called "z") */
+		Eigen::Matrix3d m_t_inv_sigma; /**< @brief inverse sigma matrix, elements are not square roots */
+
+		/**
+		 *	@brief default constructor
+		 *
+		 *	@param[in] n_node_0 is (zero-based) index of the first (origin) node
+		 *	@param[in] n_node_1 is (zero-based) index of the second (endpoint) node
+		 *	@param[in] f_delta_x is delta x position
+		 *	@param[in] f_delta_y is delta y position
+		 *	@param[in] f_delta_z is delta z position
+		 *	@param[in] p_upper_matrix_3x3 is row-major upper triangular and diagonal 3x3 matrix
+		 *		containing the inverse sigma matrix, elements are not square roots
+		 *
+		 *	The matrix is stored row by row from top to bottom,
+		 *	with left-to-right column order. Example:
+		 *
+		 *	@code
+		 *	|0 1 2|
+		 *	|  2 4|
+		 *	|    5|
+		 *	@endcode
+		 */
+		inline TEdgeSpheronXYZ(size_t n_node_0, size_t n_node_1,
+			double f_delta_x, double f_delta_y, double f_delta_z, const double *p_upper_matrix_3x3)
+			:m_n_node_0(n_node_0), m_n_node_1(n_node_1), m_v_delta(f_delta_x, f_delta_y, f_delta_z)
+		{
+			m_t_inv_sigma <<
+						p_upper_matrix_3x3[0], p_upper_matrix_3x3[1], p_upper_matrix_3x3[2],
+						p_upper_matrix_3x3[1], p_upper_matrix_3x3[3], p_upper_matrix_3x3[4],
+						p_upper_matrix_3x3[2], p_upper_matrix_3x3[4], p_upper_matrix_3x3[5];
+			// fill the matrix
+		}
+
+		EIGEN_MAKE_ALIGNED_OPERATOR_NEW
+	};
+
+	/**
 	 *	@brief XYZRPY measurement base class
 	 */
 	struct TEdge3D : public CParseEntity {
-		int m_n_node_0; /**< @brief (zero-based) index of the first (origin) node */
-		int m_n_node_1; /**< @brief (zero-based) index of the second (endpoint) node */
+		size_t m_n_node_0; /**< @brief (zero-based) index of the first (origin) node */
+		size_t m_n_node_1; /**< @brief (zero-based) index of the second (endpoint) node */
 		Eigen::Matrix<double, 6, 1> m_v_delta; /**< @brief dealte measurement (also called "z") */
-		Eigen::Matrix<double, 6, 6> m_t_inv_sigma; /**< @brief inverse sigma matrix, elements are square roots (also called "Sz") */
+		Eigen::Matrix<double, 6, 6> m_t_inv_sigma; /**< @brief inverse sigma matrix, elements are not square roots */
 
 		/**
 		 *	@brief default constructor
@@ -206,7 +332,7 @@ public:
 		 *	@param[in] f_delta_pitch is rotation around Y axis
 		 *	@param[in] f_delta_yaw is is rotation around Z axis
 		 *	@param[in] p_upper_matrix_6x6 is row-major upper triangular and diagonal 6x6 matrix
-		 *		containing the information matrix, elements are square roots
+		 *		containing the inverse sigma matrix, elements are not square roots
 		 *
 		 *	The matrix is stored row by row from top to bottom,
 		 *	with left to right column order. Example:
@@ -219,7 +345,7 @@ public:
 		 *	|             20|
 		 *	@endcode
 		 */
-		inline TEdge3D(int n_node_0, int n_node_1,
+		inline TEdge3D(size_t n_node_0, size_t n_node_1,
 			double f_delta_x, double f_delta_y, double f_delta_z,
 			double f_delta_roll, double f_delta_pitch, double f_delta_yaw,
 			const double *p_upper_matrix_6x6)
@@ -240,6 +366,55 @@ public:
 			// fill the matrix
 		}
 
+		/**
+		 *	@brief override constructor
+		 *
+		 *	@param[in] n_node_0 is (zero-based) index of the first (origin) node
+		 *	@param[in] n_node_1 is (zero-based) index of the second (endpoint) node
+		 *	@param[in] edge is vector containing position and AXIS-ANGLE representation of rotation
+		 *	@param[in] info is 6x6 information matrix
+		 *		containing the inverse sigma matrix, elements are not square roots
+		 */
+		inline TEdge3D(size_t n_node_0, size_t n_node_1, const Eigen::Matrix<double, 6, 1> &edge,
+				const Eigen::Matrix<double, 6, 6> &info)
+			:m_n_node_0(n_node_0), m_n_node_1(n_node_1), m_v_delta(edge), m_t_inv_sigma(info)
+		{}
+
+		EIGEN_MAKE_ALIGNED_OPERATOR_NEW
+	};
+
+	/**
+	 *	@brief unary factor class
+	 */
+	struct TUnaryFactor3D : public CParseEntity {
+		size_t m_n_node_0; /**< @brief (zero-based) index of the node */
+		Eigen::Matrix3d m_t_factor; /**< @brief the factor matrix, elements are not square roots */
+
+		/**
+		 *	@brief default constructor
+		 *
+		 *	@param[in] n_node_0 is (zero-based) index of the 3D point
+		 *	@param[in] p_upper_matrix_3x3 is row-major upper triangular and diagonal 3x3 matrix,
+		 *		elements are not square roots
+		 *
+		 *	The matrix is stored row by row from top to bottom,
+		 *	with left to right column order. Example:
+		 *	@code
+		 *	|0 1 2|
+		 *	|  3 4|
+		 *	|    5|
+		 *	@endcode
+		 */
+		inline TUnaryFactor3D(int n_node_0, const double *p_upper_matrix_3x3)
+			:m_n_node_0(n_node_0)
+		{
+			m_t_factor <<
+							p_upper_matrix_3x3[0], p_upper_matrix_3x3[1], p_upper_matrix_3x3[2],
+							p_upper_matrix_3x3[1], p_upper_matrix_3x3[3], p_upper_matrix_3x3[4],
+							p_upper_matrix_3x3[2], p_upper_matrix_3x3[4], p_upper_matrix_3x3[5];
+			// fill the matrix
+		}
+
 		EIGEN_MAKE_ALIGNED_OPERATOR_NEW
 	};
 
@@ -257,16 +432,16 @@ public:
 		 *	@param[in] f_x is x position
 		 *	@param[in] f_y is y position
 		 *	@param[in] f_z is z position
-		 *	@param[in] ax is x part of axis vector
-		 *	@param[in] ay is y part of axis vector
-		 *	@param[in] az is z part of axis vector
+		 *	@param[in] f_ax is x part of axis vector
+		 *	@param[in] f_ay is y part of axis vector
+		 *	@param[in] f_az is z part of axis vector
 		 *
 		 *	@note The vertices are only used as ground truth. Those are mostly not processed.
 		 */
-		inline TVertex3D(int n_node_id, double f_x, double f_y, double f_z, double ax, double ay, double az)
+		inline TVertex3D(int n_node_id, double f_x, double f_y, double f_z, double f_ax, double f_ay, double f_az)
 			:m_n_id(n_node_id)
 		{
-			m_v_position << f_x, f_y, f_z, ax, ay, az;
+			m_v_position << f_x, f_y, f_z, f_ax, f_ay, f_az;
 			// no constructor for 6-valued vector
 		}
 
@@ -319,7 +494,7 @@ public:
 		 *	@param[in] ay is y axis angle
 		 *	@param[in] az is z axis angle
 		 *	@param[in] fx is focal length
-		 *	@param[in] fy is fx * (aspect ratio of pixel)
+		 *	@param[in] fy is focal length
 		 *	@param[in] cx is principal point in x axis
 		 *	@param[in] cy is principal point in y axis
 		 *	@param[in] d is first distortion coefficient of the radial distortion
@@ -331,15 +506,15 @@ public:
 			double cx, double cy, double d)
 			:m_n_id(n_node_id)
 		{
+			d *= .5 * (fx + fy)/*sqrt(fx * fy)*/; // since post-ICRA2015 release the distortion is scaled by focal length in the internal representation
 			m_v_position << p_x, p_y, p_z, ax, ay, az, fx, fy, cx, cy, d;
 		}
 
 		EIGEN_MAKE_ALIGNED_OPERATOR_NEW
 	};
 
-#if 0 // unused
 	/**
-	 *	@brief node measurement class ("VERTEX_CAM" in the datafile)
+	 *	@brief node measurement class ("VERTEX_INTRINSICS" in the datafile)
 	 */
 	struct TVertexIntrinsics : public CParseEntity {
 		int m_n_id; /**< @brief vertex id */
@@ -351,30 +526,99 @@ public:
 		 *	@param[in] n_node_id is (zero-based) index of the node
 		 *	@param[in] fx is focal length
 		 *	@param[in] fy is focal length
-		 *	@param[in] cx is principal point x
-		 *	@param[in] cy is principal point y
-		 *	@param[in] d is distortion coeficient
+		 *	@param[in] cx is principal point in x axis
+		 *	@param[in] cy is principal point in y axis
+		 *	@param[in] d is first distortion coefficient of the radial distortion
 		 *
 		 *	@note The vertices are only used as ground truth. Those are mostly not processed.
 		 */
-		inline TVertexIntrinsics(int n_node_id, double f_x, double f_y, double c_x, double c_y, double d)
+		inline TVertexIntrinsics(int n_node_id, double fx, double fy,
+			double cx, double cy, double d)
 			:m_n_id(n_node_id)
 		{
-			m_v_position << f_x, f_y, c_x, c_y, d;
+			d *= .5 * (fx + fy)/*sqrt(fx * fy)*/; // since post-ICRA2015 release the distortion is scaled by focal length in the internal representation
+			m_v_position << fx, fy, cx, cy, d;
 		}
 
 		EIGEN_MAKE_ALIGNED_OPERATOR_NEW
 	};
-#endif // 0
+
+	/**
+	 *	@brief node measurement class ("VERTEX_CAM" in the datafile)
+	 */
+	struct TVertexSCam3D : public CParseEntity {
+		int m_n_id; /**< @brief vertex id */
+		Eigen::Matrix<double, 12, 1> m_v_position; /**< @brief vertex position (the state vector) */
+
+		/**
+		 *	@brief default constructor
+		 *
+		 *	@param[in] n_node_id is (zero-based) index of the node
+		 *	@param[in] p_x is x position
+		 *	@param[in] p_y is y position
+		 *	@param[in] p_z is z position
+		 *	@param[in] ax is x axis angle
+		 *	@param[in] ay is y axis angle
+		 *	@param[in] az is z axis angle
+		 *	@param[in] fx is focal length
+		 *	@param[in] fy is fx * (aspect ratio of pixel)
+		 *	@param[in] cx is principal point in x axis
+		 *	@param[in] cy is principal point in y axis
+		 *	@param[in] d is first distortion coefficient of the radial distortion
+		 *	@param[in] b is base line
+		 *
+		 *	@note The vertices are only used as ground truth. Those are mostly not processed.
+		 */
+		inline TVertexSCam3D(int n_node_id, double p_x, double p_y, double p_z,
+			double ax, double ay, double az, double fx, double fy,
+			double cx, double cy, double d, double b)
+			:m_n_id(n_node_id)
+		{
+			d *= .5 * (fx + fy)/*sqrt(fx * fy)*/; // since post-ICRA2015 release the distortion is scaled by focal length in the internal representation
+			m_v_position << p_x, p_y, p_z, ax, ay, az, fx, fy, cx, cy, d, b;
+		}
+
+		EIGEN_MAKE_ALIGNED_OPERATOR_NEW
+	};
+
+	/**
+	 *	@brief node measurement class ("VERTEX_SPHERON" in the datafile)
+	 */
+	struct TVertexSpheron : public CParseEntity {
+		int m_n_id; /**< @brief vertex id */
+		Eigen::Matrix<double, 6, 1> m_v_position; /**< @brief vertex position (the state vector) */
+
+		/**
+		 *	@brief default constructor
+		 *
+		 *	@param[in] n_node_id is (zero-based) index of the node
+		 *	@param[in] p_x is x position
+		 *	@param[in] p_y is y position
+		 *	@param[in] p_z is z position
+		 *	@param[in] ax is x axis angle
+		 *	@param[in] ay is y axis angle
+		 *	@param[in] az is z axis angle
+		 *
+		 *	@note The vertices are only used as ground truth. Those are mostly not processed.
+		 */
+		inline TVertexSpheron(int n_node_id, double p_x, double p_y, double p_z,
+			double ax, double ay, double az)
+			:m_n_id(n_node_id)
+		{
+			m_v_position << p_x, p_y, p_z, ax, ay, az;
+		}
+
+		EIGEN_MAKE_ALIGNED_OPERATOR_NEW
+	};
 
 	/**
 	 *	@brief P2C measurement base class
 	 */
 	struct TEdgeP2C3D : public CParseEntity {
-		int m_n_node_0; /**< @brief (zero-based) index of the 3D point */
-		int m_n_node_1; /**< @brief (zero-based) index of the camera vertex */
+		size_t m_n_node_0; /**< @brief (zero-based) index of the 3D point */
+		size_t m_n_node_1; /**< @brief (zero-based) index of the camera vertex */
 		Eigen::Matrix<double, 2, 1> m_v_delta; /**< @brief dealte measurement (also called "z") */
-		Eigen::Matrix<double, 2, 2> m_t_inv_sigma; /**< @brief inverse sigma matrix, elements are square roots (also called "Sz") */
+		Eigen::Matrix<double, 2, 2> m_t_inv_sigma; /**< @brief inverse sigma matrix, elements are not square roots */
 
 		/**
 		 *	@brief default constructor
@@ -384,7 +628,7 @@ public:
 		 *	@param[in] f_delta_x is delta x position
 		 *	@param[in] f_delta_y is delta y position
 		 *	@param[in] p_upper_matrix_2x2 is row-major upper triangular and diagonal 2x2 matrix,
-		 *		containing the information matrix, elements are square roots
+		 *		containing the inverse sigma matrix, elements are not square roots
 		 *
 		 *	The matrix is stored row by row from top to bottom,
 		 *	with left to right column order. Example:
@@ -393,7 +637,7 @@ public:
 		 *	|  2|
 		 *	@endcode
 		 */
-		inline TEdgeP2C3D(int n_node_0, int n_node_1,
+		inline TEdgeP2C3D(size_t n_node_0, size_t n_node_1,
 			double f_delta_x, double f_delta_y, const double *p_upper_matrix_2x2)
 			:m_n_node_0(n_node_0), m_n_node_1(n_node_1)
 		{
@@ -409,50 +653,184 @@ public:
 		EIGEN_MAKE_ALIGNED_OPERATOR_NEW
 	};
 
+	/**
+	 *	@brief P2C measurement base class
+	 */
+	struct TEdgeP2CI3D : public CParseEntity {
+		size_t m_n_node_0; /**< @brief (zero-based) index of the 3D point */
+		size_t m_n_node_1; /**< @brief (zero-based) index of the camera vertex */
+		size_t m_n_node_2; /**< @brief (zero-based) index of the intrinsics vertex */
+		Eigen::Matrix<double, 2, 1> m_v_delta; /**< @brief dealte measurement (also called "z") */
+		Eigen::Matrix<double, 2, 2> m_t_inv_sigma; /**< @brief inverse sigma matrix, elements are not square roots */
+
 		/**
-		 *	@brief P2C measurement base class
+		 *	@brief default constructor
+		 *
+		 *	@param[in] n_node_0 is (zero-based) index of the 3D point
+		 *	@param[in] n_node_1 is (zero-based) index of the camera vertex
+		 *	@param[in] n_node_2 is (zero-based) index of the intrinsics vertex
+		 *	@param[in] f_delta_x is delta x position
+		 *	@param[in] f_delta_y is delta y position
+		 *	@param[in] p_upper_matrix_2x2 is row-major upper triangular and diagonal 2x2 matrix,
+		 *		containing the inverse sigma matrix, elements are not square roots
+		 *
+		 *	The matrix is stored row by row from top to bottom,
+		 *	with left to right column order. Example:
+		 *	@code
+		 *	|0 1|
+		 *	|  2|
+		 *	@endcode
 		 */
-		struct TEdgeP2SC3D : public CParseEntity {
-			int m_n_node_0; /**< @brief (zero-based) index of the 3D point */
-			int m_n_node_1; /**< @brief (zero-based) index of the camera vertex */
-			Eigen::Matrix<double, 3, 1> m_v_delta; /**< @brief dealte measurement (also called "z") */
-			Eigen::Matrix<double, 3, 3> m_t_inv_sigma; /**< @brief inverse sigma matrix, elements are square roots (also called "Sz") */
+		inline TEdgeP2CI3D(size_t n_node_0, size_t n_node_1, size_t n_node_2,
+			double f_delta_x, double f_delta_y, const double *p_upper_matrix_2x2)
+			:m_n_node_0(n_node_0), m_n_node_1(n_node_1), m_n_node_2(n_node_2)
+		{
+			m_v_delta << f_delta_x, f_delta_y;
+			// no constructor for 2-valued vector
 
-			/**
-			 *	@brief default constructor
-			 *
-			 *	@param[in] n_node_0 is (zero-based) index of the 3D point
-			 *	@param[in] n_node_1 is (zero-based) index of the camera vertex
-			 *	@param[in] f_delta_x1 is delta x position - left cam
-			 *	@param[in] f_delta_y is delta y position
-			 *	@param[in] f_delta_x2 is delta x position - right cam
-			 *	@param[in] p_upper_matrix_3x3 is row-major upper triangular and diagonal 3x3 matrix,
-			 *		elements are square roots
-			 *
-			 *	The matrix is stored row by row from top to bottom,
-			 *	with left to right column order. Example:
-			 *	@code
-			 *	|0 1 2|
-			 *	|  3 4|
-			 *	|    5|
-			 *	@endcode
-			 */
-			inline TEdgeP2SC3D(int n_node_0, int n_node_1,
-				double f_delta_x1, double f_delta_y, double f_delta_x2, const double *p_upper_matrix_3x3)
-				:m_n_node_0(n_node_0), m_n_node_1(n_node_1)
-			{
-				m_v_delta << f_delta_x1, f_delta_y, f_delta_x2;
-				// no constructor for 2-valued vector
+			m_t_inv_sigma <<
+							p_upper_matrix_2x2[0], p_upper_matrix_2x2[1],
+							p_upper_matrix_2x2[1], p_upper_matrix_2x2[2];
+			// fill the matrix
+		}
 
-				m_t_inv_sigma <<
-								p_upper_matrix_3x3[0], p_upper_matrix_3x3[1], p_upper_matrix_3x3[2],
-								p_upper_matrix_3x3[1], p_upper_matrix_3x3[3], p_upper_matrix_3x3[4],
-								p_upper_matrix_3x3[2], p_upper_matrix_3x3[4], p_upper_matrix_3x3[5];
-				// fill the matrix
-			}
+		EIGEN_MAKE_ALIGNED_OPERATOR_NEW
+	};
 
-			EIGEN_MAKE_ALIGNED_OPERATOR_NEW
-		};
+	/**
+	 *	@brief P2C measurement base class
+	 */
+	struct TEdgeP2SC3D : public CParseEntity {
+		size_t m_n_node_0; /**< @brief (zero-based) index of the 3D point */
+		size_t m_n_node_1; /**< @brief (zero-based) index of the camera vertex */
+		Eigen::Matrix<double, 3, 1> m_v_delta; /**< @brief dealte measurement (also called "z") */
+		Eigen::Matrix<double, 3, 3> m_t_inv_sigma; /**< @brief inverse sigma matrix, elements are not square roots */
+
+		/**
+		 *	@brief default constructor
+		 *
+		 *	@param[in] n_node_0 is (zero-based) index of the 3D point
+		 *	@param[in] n_node_1 is (zero-based) index of the camera vertex
+		 *	@param[in] f_delta_x1 is delta x position - left cam
+		 *	@param[in] f_delta_y is delta y position
+		 *	@param[in] f_delta_x2 is delta x position - right cam
+		 *	@param[in] p_upper_matrix_3x3 is row-major upper triangular and diagonal 3x3 matrix,
+		 *		elements are not square roots
+		 *
+		 *	The matrix is stored row by row from top to bottom,
+		 *	with left to right column order. Example:
+		 *	@code
+		 *	|0 1 2|
+		 *	|  3 4|
+		 *	|    5|
+		 *	@endcode
+		 */
+		inline TEdgeP2SC3D(size_t n_node_0, size_t n_node_1,
+			double f_delta_x1, double f_delta_y, double f_delta_x2, const double *p_upper_matrix_3x3)
+			:m_n_node_0(n_node_0), m_n_node_1(n_node_1)
+		{
+			m_v_delta << f_delta_x1, f_delta_y, f_delta_x2;
+			// no constructor for 2-valued vector
+
+			m_t_inv_sigma <<
+							p_upper_matrix_3x3[0], p_upper_matrix_3x3[1], p_upper_matrix_3x3[2],
+							p_upper_matrix_3x3[1], p_upper_matrix_3x3[3], p_upper_matrix_3x3[4],
+							p_upper_matrix_3x3[2], p_upper_matrix_3x3[4], p_upper_matrix_3x3[5];
+			// fill the matrix
+		}
+
+		EIGEN_MAKE_ALIGNED_OPERATOR_NEW
+	};
+
+	/**
+	 *	@brief ground truth vertex measurement class ("ROCV:RECEIVER_GT" in the datafile)
+	 */
+	struct TVertex3D_Reference : public CParserBase::TVertex3D {
+		/**
+		 *	@copydoc CParserBase::TVertex3D::TVertex3D()
+		 */
+		TVertex3D_Reference(int n_node_id, double f_x, double f_y, double f_z, double f_ax, double f_ay, double f_az)
+			:CParserBase::TVertex3D(n_node_id, f_x, f_y, f_z, f_ax, f_ay, f_az)
+		{}
+
+		EIGEN_MAKE_ALIGNED_OPERATOR_NEW
+	};
+
+	/**
+	 *	@brief range-only constant velocity parsed range edge
+	 */
+	struct TROCV_RangeEdge : public CParserBase::CParseEntity {
+		size_t m_n_node_0; /**< @brief (zero-based) index of the 3D point */
+		size_t m_n_node_1; /**< @brief (zero-based) index of the landmark */
+		Eigen::Matrix<double, 1, 1> m_v_delta; /**< @brief measurement */
+		Eigen::Matrix<double, 1, 1> m_t_inv_sigma; /**< @brief inverse sigma matrix, elements are not square roots */
+
+		/**
+		 *	@brief default constructor
+		 *
+		 *	@param[in] n_node0 is (zero-based) index of the 3D point
+		 *	@param[in] n_node1 is (zero-based) index of the landmark
+		 *	@param[in] f_range is range measurement
+		 *	@param[in] f_inv_sigma is 1x1 matrix, containing the inverse sigma matrix, elements are not square roots
+		 */
+		TROCV_RangeEdge(size_t n_node0, size_t n_node1, double f_range, double f_inv_sigma)
+			:m_n_node_0(n_node0), m_n_node_1(n_node1)
+		{
+			m_v_delta << f_range;
+			m_t_inv_sigma << f_inv_sigma;
+			// initialize the matrices
+		}
+
+		EIGEN_MAKE_ALIGNED_OPERATOR_NEW
+	};
+
+	/**
+	 *	@brief range-only constant velocity parsed delta-time edge
+	 */
+	struct TROCV_DeltaTimeEdge : public CParserBase::CParseEntity {
+		size_t m_n_node_0; /**< @brief (zero-based) index of the first 3D point */
+		size_t m_n_node_1; /**< @brief (zero-based) index of the second 3D point */
+		Eigen::Matrix<double, 1, 1> m_v_delta; /**< @brief measurement */
+		Eigen::Matrix<double, 6, 6> m_t_inv_sigma; /**< @brief inverse sigma matrix, elements are not square roots */
+
+		/**
+		 *	@brief default constructor
+		 *
+		 *	@param[in] n_node0 is (zero-based) index of the first 3D point
+		 *	@param[in] n_node1 is (zero-based) index of the second 3D point
+		 *	@param[in] f_delta_time is delta-time measurement
+		 *	@param[in] p_upper_matrix_6x6 is row-major upper triangular and diagonal 6x6 matrix
+		 *		containing the inverse sigma matrix, elements are not square roots
+		 *
+		 *	The matrix is stored row by row from top to bottom,
+		 *	with left to right column order. Example:
+		 *	@code
+		 *	|0 1  2  3  4  5|
+		 *	|  6  7  8  9 10|
+		 *	|    11 12 13 14|
+		 *	|       15 16 17|
+		 *	|          18 19|
+		 *	|             20|
+		 *	@endcode
+		 */
+		TROCV_DeltaTimeEdge(size_t n_node0, size_t n_node1, double f_delta_time, const double *p_upper_matrix_6x6)
+			:m_n_node_0(n_node0), m_n_node_1(n_node1)
+		{
+			m_v_delta(0) = f_delta_time;
+
+			const double *p_u = p_upper_matrix_6x6;
+			m_t_inv_sigma <<
+				p_u[0],  p_u[1],  p_u[2],  p_u[3],  p_u[4],  p_u[5],
+				p_u[1],  p_u[6],  p_u[7],  p_u[8],  p_u[9], p_u[10],
+				p_u[2],  p_u[7], p_u[11], p_u[12], p_u[13], p_u[14],
+				p_u[3],  p_u[8], p_u[12], p_u[15], p_u[16], p_u[17],
+				p_u[4],  p_u[9], p_u[13], p_u[16], p_u[18], p_u[19],
+				p_u[5], p_u[10], p_u[14], p_u[17], p_u[19], p_u[20];
+			// fill the matrix
+		}
+
+		EIGEN_MAKE_ALIGNED_OPERATOR_NEW
+	};
 
 	/**
 	 *	@brief a simple callback class, to be used by the parser
@@ -472,7 +850,13 @@ public:
 		 *	@brief appends the system with a landmark measurement
 		 *	@param[in] r_t_landmark is the measurement to be appended
 		 */
-		virtual void AppendSystem(const TLandmark2D &r_t_landmark) = 0;
+		virtual void AppendSystem(const TLandmark2D_XY &r_t_landmark) = 0;
+
+		/**
+		 *	@brief appends the system with a landmark measurement
+		 *	@param[in] r_t_landmark is the measurement to be appended
+		 */
+		virtual void AppendSystem(const TLandmark2D_RB &r_t_landmark) = 0;
 
 		/**
 		 *	@brief appends the system with vertex position
@@ -486,6 +870,12 @@ public:
 		 *	@param[in] r_t_edge is the measurement to be appended
 		 */
 		virtual void AppendSystem(const TEdge3D &r_t_edge) = 0;
+
+		/**
+		 *	@brief appends the system with an 3d landmark measurement
+		 *	@param[in] r_t_edge is the measurement to be appended
+		 */
+		virtual void AppendSystem(const TLandmark3D_XYZ &r_t_edge) = 0;
 
 		/**
 		 *	@brief appends the system with vertex position
@@ -508,16 +898,71 @@ public:
 		virtual void InitializeVertex(const TVertexCam3D &r_t_vertex) = 0;
 
 		/**
+		 *	@brief appends the system with intrinsics vertex
+		 *	@param[in] r_t_vertex is the vertex to be appended
+		 */
+		virtual void InitializeVertex(const TVertexIntrinsics &r_t_vertex) = 0;
+
+		/**
+		 *	@brief appends the system with camera vertex position and parameters
+		 *	@param[in] r_t_vertex is the vertex to be appended
+		 */
+		virtual void InitializeVertex(const TVertexSpheron &r_t_vertex) = 0;
+
+		/**
+		 *	@brief appends the system with camera vertex position and parameters
+		 *	@param[in] r_t_vertex is the vertex to be appended
+		 */
+		virtual void InitializeVertex(const TVertexSCam3D &r_t_vertex) = 0;
+
+		/**
 		 *	@brief appends the system with an camera measurement
 		 *	@param[in] r_t_edge is the measurement to be appended
 		 */
 		virtual void AppendSystem(const TEdgeP2C3D &r_t_edge) = 0;
 
 		/**
+		 *	@brief appends the system with an camera+intrinsics measurement
+		 *	@param[in] r_t_edge is the measurement to be appended
+		 */
+		virtual void AppendSystem(const TEdgeP2CI3D &r_t_edge) = 0;
+
+		/**
+		 *	@brief appends the system with an camera measurement
+		 *	@param[in] r_t_edge is the measurement to be appended
+		 */
+		virtual void AppendSystem(const TEdgeSpheronXYZ &r_t_edge) = 0;
+
+		/**
 		 *	@brief appends the system with an camera measurement
 		 *	@param[in] r_t_edge is the measurement to be appended
 		 */
 		virtual void AppendSystem(const TEdgeP2SC3D &r_t_edge) = 0;
+
+		/**
+		 *	@brief appends the system with a reference 3D pose
+		 *	@param[in] r_t_vertex is the vertex to be appended
+		 *	@note The vertices can be ignored in most of the solvers.
+		 */
+		virtual void InitializeVertex(const TVertex3D_Reference &r_t_vertex) = 0;
+
+		/**
+		 *	@brief appends the system with a delta-time edge
+		 *	@param[in] r_t_edge is the measurement to be appended
+		 */
+		virtual void AppendSystem(const TROCV_DeltaTimeEdge &r_t_edge) = 0;
+
+		/**
+		 *	@brief appends the system with a range measurement edge
+		 *	@param[in] r_t_edge is the measurement to be appended
+		 */
+		virtual void AppendSystem(const TROCV_RangeEdge &r_t_edge) = 0;
+
+		/**
+		 *	@brief appends the system with a range measurement edge
+		 *	@param[in] r_t_edge is the measurement to be appended
+		 */
+		virtual void AppendSystem(const TUnaryFactor3D &r_t_edge) = 0;
 	};
 
 protected:
@@ -664,11 +1109,12 @@ public:
 	 *	@param[in] r_callback is a reference to the callback object that will receive parsed entities
 	 *	@param[in] n_line_limit is the limit of the number of processed lines (use e.g. 1500 for debugging)
 	 *	@param[in] b_ignore_case is case sensitivity flag; if set, token case is ignored
+	 *	@param[in] b_comments is comments handling flag; if set, comments are started using '#' or '%'
 	 *
 	 *	@return Returns true on success, false on failure.
 	 */
 	bool Parse(const char *p_s_filename, CParseLoopType &r_callback,
-		size_t n_line_limit = 0, bool b_ignore_case = false)
+		size_t n_line_limit = 0, bool b_ignore_case = false, bool b_comments = true)
 	{
 		FILE *p_fr;
 #if defined(_MSC_VER) && !defined(__MWERKS__) && _MSC_VER >= 1400
@@ -703,6 +1149,12 @@ public:
 				if(!ReadLine(s_line, p_fr)) {
 					fclose(p_fr);
 					return false;
+				}
+				if(b_comments) {
+					size_t n_comment_pos;
+					if((n_comment_pos = s_line.find_first_of("%#")) != std::string::npos)
+						s_line.erase(n_comment_pos);
+					// handle line comments
 				}
 				TrimSpace(s_line);
 				if(s_line.empty())
@@ -743,7 +1195,7 @@ public:
 				if(!CTypelistItemSelect<_TyParsePrimitiveTypelist,
 				   CPrimitiveFire>::Select(n_token_type, dispatcher)) {
 					fprintf(stderr, "warning: parser failed in parse primitive "
-						PRIsize " on line " PRIsize "\n", n_token_type, n_line_no);
+						PRIsize " on line " PRIsize "\n", n_token_type, n_line_no + 1); // line numbers are zero-based
 					fclose(p_fr);
 					return false;
 				}
@@ -759,4 +1211,4 @@ public:
 	}
 };
 
-#endif // __GRAPH_PARSER_INCLUDED
+#endif // !__GRAPH_PARSER_INCLUDED

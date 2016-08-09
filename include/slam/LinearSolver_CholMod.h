@@ -121,8 +121,8 @@ protected:
 	std::vector<_TyPerm> m_p_block_permutation; /**< @brief memory for block permutation of the lambda matrix */ // t_odo - resolve x64
 #ifdef __LINEAR_SOLVER_CHOLMOD_CSPARSE_INPLACE_SOLVE
 	std::vector<_TyPerm> m_p_inverse_scalar_permutation; /**< @brief memory for inverse scalar permutation of the lambda matrix */
-	double *m_p_workspace_double; /**< @brief reusable workspace for Cholesky decomposition */
-	size_t m_n_workspace_size; /**< @brief size of workspace for Cholesky decomposition */
+	double *m_p_workspace_double; /**< @brief reusable workspace for Cholesky factorization */
+	size_t m_n_workspace_size; /**< @brief size of workspace for Cholesky factorization */
 #endif // __LINEAR_SOLVER_CHOLMOD_CSPARSE_INPLACE_SOLVE
 #endif // __CHOLMOD_BLOCKY_LINEAR_SOLVER
 
@@ -149,6 +149,11 @@ public:
 	 *	@brief destructor (deletes memory for lambda, if allocated)
 	 */
 	~CLinearSolver_CholMod();
+
+	/**
+	 *	@brief deletes memory for all the auxiliary buffers and matrices, if allocated
+	 */
+	void Free_Memory();
 
 	/**
 	 *	@brief copy operator (has no effect; memory for lambda not copied)
@@ -190,8 +195,8 @@ public:
 		size_t n_dest_column_id = 0, bool b_upper_factor = true); // throw(std::bad_alloc)
 
 	/**
-	 *	@brief deletes symbolic decomposition, if calculated (forces a symbolic
-	 *		decomposition update in the next call to Solve_PosDef_Blocky())
+	 *	@brief deletes symbolic factorization, if calculated (forces a symbolic
+	 *		factorization update in the next call to Solve_PosDef_Blocky())
 	 */
 	inline void Clear_SymbolicDecomposition()
 	{
@@ -214,7 +219,7 @@ public:
 	 *	@return Returns true on success, false on failure.
 	 *
 	 *	@note This function throws std::bad_alloc.
-	 *	@note This enables a reuse of previously calculated symbolic decomposition,
+	 *	@note This enables a reuse of previously calculated symbolic factorization,
 	 *		it can be either calculated in SymbolicDecomposition_Blocky(), or it is
 	 *		calculated automatically after the first call to this function,
 	 *		or after Clear_SymbolicDecomposition() was called (preferred).
@@ -222,7 +227,7 @@ public:
 	bool Solve_PosDef_Blocky(const CUberBlockMatrix &r_lambda, Eigen::VectorXd &r_eta); // throw(std::bad_alloc)
 
 	/**
-	 *	@brief calculates symbolic decomposition of a block
+	 *	@brief calculates symbolic factorization of a block
 	 *		matrix for later (re)use in solving it
 	 *	@param[in] r_lambda is positive-definite matrix
 	 *	@return Returns true on success, false on failure.
@@ -269,4 +274,4 @@ protected:
 	static cs *fast_transpose(const cs *A, _TyCSIntType *p_workspace);
 };
 
-#endif // __LINEAR_SOLVER_CHOLMOD_INCLUDED
+#endif // !__LINEAR_SOLVER_CHOLMOD_INCLUDED

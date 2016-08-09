@@ -37,7 +37,7 @@
  *
  *	@date 2008-08-02
  *
- *	cleared up code arround n_MaxIntValue() a bit, removed MAX_VALUE_FUNCTION and MAX_VALUE_CONST
+ *	cleared up code around n_MaxIntValue() a bit, removed MAX_VALUE_FUNCTION and MAX_VALUE_CONST
  *	and moved all the stuff to Integer.h
  *
  *	@date 2008-08-08
@@ -61,7 +61,7 @@
  *
  *	@date 2013-01-13
  *
- *	Added new and more precise TIMER_USE_READREALTIME for linux.
+ *	Added new and more precise TIMER_USE_CLOCKGETTIME for linux.
  *
  */
 
@@ -138,16 +138,25 @@
  */
 #define TIMER_ALLOW_GETTICKCOUNT
 
+#if !defined(_WIN32) && !defined(_WIN64)
+#include <unistd.h>
+#if defined(_POSIX_TIMERS) && _POSIX_TIMERS > 0 && defined(_POSIX_MONOTONIC_CLOCK)
+
 /**
- *	@def TIMER_ALLOW_READREALTIME
- *	@brief this macro enables use of read_real_time() function (unix-only)
- *	@note This is only available in AIX.
+ *	@def TIMER_ALLOW_CLOCKGETTIME
+ *	@brief this macro enables use of clock_gettime() function (unix-only)
+ *	@note On some systems, this may need linking with librt (add "-lrt").
  */
-//#define TIMER_ALLOW_READREALTIME
+#define TIMER_ALLOW_CLOCKGETTIME
+
+#endif // _POSIX_TIMERS && _POSIX_TIMERS > 0 && _POSIX_MONOTONIC_CLOCK
+#endif // !_WIN32 && !_WIN64
 
 /**
  *	@def TIMER_ALLOW_GETTIMEOFDAY
  *	@brief this macro enables use of gettimeofday() function (unix-only)
+ *	@note The time of gettimeofday() is possibly drifting when time synchronization takes place.
+ *		This will only be used where TIMER_ALLOW_CLOCKGETTIME is not available.
  */
 #define TIMER_ALLOW_GETTIMEOFDAY
 
@@ -156,16 +165,17 @@
  *	@brief this macro disables automatic timer method selection
  *
  *	One of following macros must be defined as well to choose timer method:
- *		TIMER_USE_QPC			(win32-only, resolution less than 1 usec, depends on cpu)
- *		TIMER_USE_GETTICKCOUNT	(win32-only, resolution 1 msec)
- *		TIMER_USE_READREALTIME	(unix-only, resolution less than 1 usec, depends on cpu)
- *		TIMER_USE_GETTIMEOFDAY	(unix-only, resolution 1 usec)
- *		TIMER_USE_CLOCK			(default fallback, resolution 1 msec or less, depends on os)
+ *		TIMER_USE_QPC				(win32-only, resolution less than 1 usec, depends on CPU)
+ *		TIMER_USE_GETTICKCOUNT		(win32-only, resolution 1 msec)
+ *		TIMER_USE_CLOCKGETTIME		(unix-only, resolution 1 usec)
+ *		TIMER_USE_GETTIMEOFDAY		(unix-only, resolution 1 usec, possibly drifting when time synchronization takes place)
+ *		TIMER_USE_CLOCK				(default fallback, resolution 1 msec or less, depends on os)
  */
 //#define TIMER_METHOD_OVERRIDE
 
 #ifndef TIMER_METHOD_OVERRIDE
 #if defined(_WIN32) || defined(_WIN64)
+
 #if defined(TIMER_ALLOW_QPC)
 /**
  *	@def TIMER_USE_QPC
@@ -178,79 +188,63 @@
  *	@brief selected timer method
  */
 #define TIMER_USE_GETTICKCOUNT
-#else
+#else // TIMER_ALLOW_QPC
 /**
  *	@def TIMER_USE_CLOCK
  *	@brief selected timer method
  */
 #define TIMER_USE_CLOCK
-#endif
+#endif // TIMER_ALLOW_QPC
+
 #else // _WIN32 || _WIN64
-#if defined(TIMER_ALLOW_READREALTIME)
+
+#if defined(TIMER_ALLOW_CLOCKGETTIME)
 /**
- *	@def TIMER_USE_READREALTIME
+ *	@def TIMER_USE_CLOCKGETTIME
  *	@brief selected timer method
  */
-#define TIMER_USE_READREALTIME
+#define TIMER_USE_CLOCKGETTIME
 #elif defined(TIMER_ALLOW_GETTIMEOFDAY)
 /**
  *	@def TIMER_USE_GETTIMEOFDAY
  *	@brief selected timer method
  */
 #define TIMER_USE_GETTIMEOFDAY
-#else
+#else // TIMER_ALLOW_CLOCKGETTIME
 /**
  *	@def TIMER_USE_CLOCK
  *	@brief selected timer method
  */
 #define TIMER_USE_CLOCK
-#endif
+#endif // TIMER_ALLOW_CLOCKGETTIME
+
 #endif // _WIN32 || _WIN64
-#endif // TIMER_METHOD_OVERRIDE
+#endif // !TIMER_METHOD_OVERRIDE
 
-#include "slam/Integer.h"
-
-#ifdef TIMER_USE_READREALTIME
-#include <sys/time.h>
-//#include <sys/systemcfg.h> // timebasestruct_t
-#endif // TIMER_USE_READREALTIME
+#include "Integer.h"
 
 /**
- *	@brief a simple timer class
+ *	@brief a simple delta timer class
  */
-class CTimer {
-	int64_t m_n_freq;
-#ifdef TIMER_USE_READREALTIME
-	mutable timebasestruct_t m_t_time; // feeling a bit paranoid; todo - use uint64_t as well, test on multicore platforms
-#else // TIMER_USE_READREALTIME
-	mutable int64_t m_n_time;
-#endif // TIMER_USE_READREALTIME
-	mutable double m_f_time;
+class CDeltaTimer {
+	mutable int64_t m_n_freq, m_n_time;
 
 public:
 	/**
 	 *	@brief default constructor
 	 */
-	CTimer();
+	CDeltaTimer();
 
 	/**
-	 *	@brief resets timer (sets time to zero)
+	 *	@brief resets timer (starts counting time from now)
 	 */
 	void Reset();
 
 	/**
-	 *	@brief resets timer (sets time to zero)
-	 *	@deprecated This function is deprecated in favor of Reset().
-	 */
-	inline void ResetTimer()
-	{
-		Reset();
-	}
-
-	/**
 	 *	@brief gets time in seconds
-	 *	@return Returns time since creation of this object or since
-	 *		the last call to ResetTimer(), in seconds.
+	 *	@return Returns time since creation of this object, since
+	 *		the last call to Reset() or since the last call to
+	 *		f_Time(), whichever occured last, in seconds.
 	 *	@note This should cope nicely with counter overflows.
 	 */
 	double f_Time() const;
@@ -267,6 +261,61 @@ protected:
 	 *	@return Returns raw timer sample, semantic of the value depends on selected timer method.
 	 */
 	static inline int64_t n_SampleTimer();
+};
+
+/**
+ *	@brief a simple timer class
+ */
+class CTimer {
+	mutable CDeltaTimer m_timer;
+	mutable double m_f_time;
+
+public:
+	/**
+	 *	@brief default constructor
+	 */
+	inline CTimer()
+		:m_f_time(0)
+	{}
+
+	/**
+	 *	@brief resets timer (sets time to zero)
+	 */
+	inline void Reset()
+	{
+		m_f_time = 0;
+		m_timer.Reset();
+	}
+
+	/**
+	 *	@brief resets timer (sets time to zero)
+	 *	@deprecated This function is deprecated in favor of Reset().
+	 */
+	inline void ResetTimer()
+	{
+		Reset();
+	}
+
+	/**
+	 *	@brief gets time in seconds
+	 *	@return Returns time since creation of this object or since
+	 *		the last call to ResetTimer(), in seconds.
+	 *	@note This should cope nicely with counter overflows.
+	 */
+	inline double f_Time() const
+	{
+		m_f_time += m_timer.f_Time();
+		return m_f_time;
+	}
+
+	/**
+	 *	@brief gets timer frequency
+	 *	@return Returns timer frequency (inverse of the smallest time step).
+	 */
+	inline int64_t n_Frequency() const
+	{
+		return m_timer.n_Frequency();
+	}
 };
 
 /**
@@ -308,7 +357,7 @@ protected:
  *	To measure in a tree structure, one would need a stackable timer sampler (problems with
  *	threading and many additional issues with correct timing). Instead, one can use more timer
  *	sampler objects in a stacked fashion (the measurements of inner phases will not fit perfectly
- *	with the outer phase, thanks to double timer samples - no good way arround that). Could
+ *	with the outer phase, thanks to double timer samples - no good way around that). Could
  *	add functions like Fork() and Join() to support explicit hierarchy of the timed stages.
  *
  *	It is also easy to make a void sampler class, which will not touch the referenced variables,
@@ -478,6 +527,62 @@ public:
 	 */
 	inline void Accum_CumTime_LastSample(_TySample &UNUSED(r_f_time_accum)) const
 	{}
+
+	/**
+	 *	@brief accumulates differential sample (has no effect)
+	 *	@param[in,out] r_f_time_accum is time accumulation variable (unused)
+	 */
+	inline void Accum_DiffSample(double &UNUSED(r_f_time_accum)) // use double, in case the samples are in some structures
+	{}
+
+	/**
+	 *	@brief accumulates cummulative sample (has no effect)
+	 *	@param[in,out] r_f_time_accum is time accumulation variable (unused)
+	 */
+	inline void Accum_CumTime_LastSample(double &UNUSED(r_f_time_accum)) const // use double, in case the samples are in some structures
+	{}
 };
 
-#endif // __TIMER_INCLUDED
+/**
+ *	@brief timer sampler traits
+ *
+ *	This chooses time sampler type based on whether the timing is supposed to be enabled
+ *	or disabled. That allows simple specification of timing or zero-cost impostor, based
+ *	on a template parameter.
+ *
+ *	@param[in] _b_enable_timing is timing enable flag
+ */
+template <bool _b_enable_timing>
+class CTimerSamplerTraits {
+public:
+	/**
+	 *	@brief configuration stored as enum
+	 */
+	enum {
+		b_enable_timing = _b_enable_timing /**< @brief timing enabled flag */
+	};
+
+	typedef CVoidTimerSampler _TyTimerSampler; /**< @brief timer sampler type */
+	typedef CVoidTimerSampler _TyTimerSamplerRef; /**< @brief timer sampler type reference (also a void type, want to avoid having a (non-void!) reference to a void type) */
+	typedef _TyTimerSampler::_TySample _TySample; /**< @brief time sample data type (dummy) */
+};
+
+/**
+ *	@brief timer sampler traits (specialization for timing enabled)
+ */
+template <>
+class CTimerSamplerTraits<true> {
+public:
+	/**
+	 *	@brief configuration stored as enum
+	 */
+	enum {
+		b_enable_timing = true /**< @brief timing enabled flag */
+	};
+
+	typedef CTimerSampler _TyTimerSampler; /**< @brief timer sampler type */
+	typedef CTimerSampler &_TyTimerSamplerRef; /**< @brief timer sampler type reference (for passing the sampler to functions) */
+	typedef _TyTimerSampler::_TySample _TySample; /**< @brief time sample data type */
+};
+
+#endif // !__TIMER_INCLUDED

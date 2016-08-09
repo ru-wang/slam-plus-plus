@@ -31,6 +31,9 @@ ADD_DEFINITIONS(-DUSE_GKREGEX=)
 # restore any policy that was being set before
 CMAKE_POLICY(POP)
 
+# if SUITESPARSE_TIMER_ENABLED is set, it makes some problems
+ADD_DEFINITIONS(-DNTIMER)
+
 # support for GPU BLAS
 IF(SLAM_P_P_GPU_BLAS)
 	ADD_DEFINITIONS(-DGPU_BLAS)
@@ -127,59 +130,66 @@ IF(SLAM_P_P_USE_METIS)
 	  COLAMD/colamd.c
 	  COLAMD/colamd_global.c
 	  SuiteSparse/SuiteSparse_config.c
+	  METIS/auxapi.c
 	  METIS/balance.c
 	  METIS/bucketsort.c
-	  METIS/ccgraph.c
+	  METIS/checkgraph.c
+#	  METIS/ccgraph.c
 	  METIS/coarsen.c
 	  METIS/compress.c
+	  METIS/contig.c
 	  METIS/debug.c
-	  METIS/estmem.c
+#	  METIS/estmem.c
 	  METIS/fm.c
 	  METIS/fortran.c
 	  METIS/frename.c
+	  METIS/gklib.c
 	  METIS/graph.c
 	  METIS/initpart.c
 	  METIS/kmetis.c
-	  METIS/kvmetis.c
+#	  METIS/kvmetis.c
 	  METIS/kwayfm.c
 	  METIS/kwayrefine.c
-	  METIS/kwayvolfm.c
-	  METIS/kwayvolrefine.c
-	  METIS/LICENSE.txt
-	  METIS/match.c
-	  METIS/mbalance.c
-	  METIS/mbalance2.c
-	  METIS/mcoarsen.c
-	  METIS/memory.c
+#	  METIS/kwayvolfm.c
+#	  METIS/kwayvolrefine.c
+	  METIS/mcutil.c
+#	  METIS/match.c
+#	  METIS/mbalance.c
+#	  METIS/mbalance2.c
+#	  METIS/mcoarsen.c
+#	  METIS/memory.c
 	  METIS/mesh.c
 	  METIS/meshpart.c
-	  METIS/mfm.c
-	  METIS/mfm2.c
+#	  METIS/mfm.c
+#	  METIS/mfm2.c
+	  METIS/minconn.c
 	  METIS/mincover.c
-	  METIS/minitpart.c
-	  METIS/minitpart2.c
-	  METIS/mkmetis.c
-	  METIS/mkwayfmh.c
-	  METIS/mkwayrefine.c
-	  METIS/mmatch.c
+#	  METIS/minitpart.c
+#	  METIS/minitpart2.c
+#	  METIS/mkmetis.c
+#	  METIS/mkwayfmh.c
+#	  METIS/mkwayrefine.c
+#	  METIS/mmatch.c
 	  METIS/mmd.c
-	  METIS/mpmetis.c
-	  METIS/mrefine.c
-	  METIS/mrefine2.c
-	  METIS/mutil.c
-	  METIS/myqsort.c
+#	  METIS/mpmetis.c
+#	  METIS/mrefine.c
+#	  METIS/mrefine2.c
+#	  METIS/mutil.c
+#	  METIS/myqsort.c
 	  METIS/ometis.c
+	  METIS/options.c
 	  METIS/parmetis.c
 	  METIS/pmetis.c
-	  METIS/pqueue.c
+#	  METIS/pqueue.c
 	  METIS/refine.c
 	  METIS/separator.c
 	  METIS/sfm.c
 	  METIS/srefine.c
 	  METIS/stat.c
-	  METIS/subdomains.c
+#	  METIS/subdomains.c
 	  METIS/timing.c
 	  METIS/util.c
+	  METIS/wspace.c
 	  GKlib/b64.c
 	  GKlib/blas.c
 	  GKlib/csr.c
@@ -189,6 +199,7 @@ IF(SLAM_P_P_USE_METIS)
 	  GKlib/fs.c
 	  GKlib/getopt.c
 	  GKlib/gkregex.c
+	  GKlib/graph.c
 	  GKlib/htable.c
 	  GKlib/io.c
 	  GKlib/itemsets.c
@@ -198,6 +209,7 @@ IF(SLAM_P_P_USE_METIS)
 	  GKlib/pdb.c
 	  GKlib/pqueue.c
 	  GKlib/random.c
+	  GKlib/rw.c
 	  GKlib/seq.c
 	  GKlib/sort.c
 	  GKlib/string.c
@@ -286,83 +298,6 @@ ELSE(SLAM_P_P_USE_METIS)
 	  COLAMD/colamd.c
 	  COLAMD/colamd_global.c
 	  SuiteSparse/SuiteSparse_config.c
-#	  METIS/balance.c
-#	  METIS/bucketsort.c
-#	  METIS/ccgraph.c
-#	  METIS/coarsen.c
-#	  METIS/compress.c
-#	  METIS/debug.c
-#	  METIS/estmem.c
-#	  METIS/fm.c
-#	  METIS/fortran.c
-#	  METIS/frename.c
-#	  METIS/graph.c
-#	  METIS/initpart.c
-#	  METIS/kmetis.c
-#	  METIS/kvmetis.c
-#	  METIS/kwayfm.c
-#	  METIS/kwayrefine.c
-#	  METIS/kwayvolfm.c
-#	  METIS/kwayvolrefine.c
-#	  METIS/LICENSE.txt
-#	  METIS/match.c
-#	  METIS/mbalance.c
-#	  METIS/mbalance2.c
-#	  METIS/mcoarsen.c
-#	  METIS/memory.c
-#	  METIS/mesh.c
-#	  METIS/meshpart.c
-#	  METIS/mfm.c
-#	  METIS/mfm2.c
-#	  METIS/mincover.c
-#	  METIS/minitpart.c
-#	  METIS/minitpart2.c
-#	  METIS/mkmetis.c
-#	  METIS/mkwayfmh.c
-#	  METIS/mkwayrefine.c
-#	  METIS/mmatch.c
-#	  METIS/mmd.c
-#	  METIS/mpmetis.c
-#	  METIS/mrefine.c
-#	  METIS/mrefine2.c
-#	  METIS/mutil.c
-#	  METIS/myqsort.c
-#	  METIS/ometis.c
-#	  METIS/parmetis.c
-#	  METIS/pmetis.c
-#	  METIS/pqueue.c
-#	  METIS/refine.c
-#	  METIS/separator.c
-#	  METIS/sfm.c
-#	  METIS/srefine.c
-#	  METIS/stat.c
-#	  METIS/subdomains.c
-#	  METIS/timing.c
-#	  METIS/util.c
-#	  GKlib/b64.c
-#	  GKlib/blas.c
-#	  GKlib/csr.c
-#	  GKlib/error.c
-#	  GKlib/evaluate.c
-#	  GKlib/fkvkselect.c
-#	  GKlib/fs.c
-#	  GKlib/getopt.c
-#	  GKlib/gkregex.c
-#	  GKlib/htable.c
-#	  GKlib/io.c
-#	  GKlib/itemsets.c
-#	  GKlib/mcore.c
-#	  GKlib/memory.c
-#	  GKlib/omp.c
-#	  GKlib/pdb.c
-#	  GKlib/pqueue.c
-#	  GKlib/random.c
-#	  GKlib/seq.c
-#	  GKlib/sort.c
-#	  GKlib/string.c
-#	  GKlib/timers.c
-#	  GKlib/tokenizer.c
-#	  GKlib/util.c
 	)
 ENDIF(SLAM_P_P_USE_METIS)
 

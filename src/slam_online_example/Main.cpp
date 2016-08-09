@@ -137,11 +137,11 @@ int main(int UNUSED(n_arg_num), const char **UNUSED(p_arg_list))
  *	Once we have the lists, we can specialize our system (will contain graph of vertices and measurements):
  *
  *	@code
- *	typedef CFlatSystem<CSEBaseVertex, TVertexTypelist,
- *		CSEBaseEdge, TEdgeTypelist> CSystemType;
+ *	typedef CFlatSystem<CBaseVertex, TVertexTypelist,
+ *		CBaseEdge, TEdgeTypelist> CSystemType;
  *	@endcode
  *
- *	Here, CSEBaseVertex is base class of all the vertices, CSEBaseEdge is base clas of all the edges.
+ *	Here, CBaseVertex is base class of all the vertices, CBaseEdge is base clas of all the edges.
  *	In case only a single type of vertex or edge is used, it can be its own base type (it is ever so slightly
  *	faster as the compiler can inline some of the function calls which would otherwise need to be virtual).
  *	Now an instance of the CSystemType can hold our system.
@@ -186,7 +186,7 @@ int main(int UNUSED(n_arg_num), const char **UNUSED(p_arg_list))
  *	This will create a new 2D pose with index 0, position (0, 0) and rotation \f$\pi/ 4\f$.
  *	You can experiment with this initial pose and see how that effects the solution.
  *	If no initial pose is supplied, the default pose is constructed by the edge (in SE edge
- *	implementations, \ref CSEBaseEdgeImpl::CInitializeNullVertex "null" vector is the default pose).
+ *	implementations, \ref CBaseEdgeImpl::CInitializeNullVertex "null" vector is the default pose).
  *
  *	\section addedges Adding Edges
  *

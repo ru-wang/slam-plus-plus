@@ -183,6 +183,29 @@
 // also if EIGEN_VECTORIZE (practically if SSE2 is enabled in MSVC compiler settings)
 // this comes *after* eigen is included
 
+#if !defined(_WIN32) && !defined(_WIN64)
+/**
+ *	@def _finite
+ *	@brief determines if an input value is a finite number
+ *	@param[in] x is the input value
+ *	@return Returns true if the input value is a finite number, otherwise returns false.
+ *	@note This is only compiled on linux where standard library function _finite()
+ *		is not available. Always returns true (even for inf or nan).
+ */
+#define _finite(x) (true)
+
+/**
+ *	@def _isnan
+ *	@brief determines if an input value is not a number
+ *	@param[in] x is the input value
+ *	@return Returns true if the input value is not a number, otherwise returns false.
+ *	@note This is only compiled on linux where standard library function _isnan()
+ *		is not available. Always returns false (even for inf or nan).
+ */
+#define _isnan(x) (false)
+#endif // !_WIN32 && !_WIN64
+// we are using some advanced math functions to catch evil numbers; ignore those on linux
+
 #include <vector>
 #include "slam/Segregated.h"
 #include <utility>
@@ -229,31 +252,62 @@
 /**
  *	@brief contains static assertion template for alignment check
  */
-namespace __ubm_static_check {
+namespace ubm_static_check {
 
 /**
- *	@brief compile-time assertion (CPoolType::n_memory_alignment must
- *		be integer multiple of sizeof(_Ty))
- *	@tparam b_expression is expression being asserted
+ *	@brief compile-time assertion helper
+ *	@tparam b_expression is assertion value
  */
 template <const bool b_expression>
-class CMATRIX_POOL_MEMORY_ALIGNMENT_MUST_BE_INTEGER_MULTIPLE_OF_SCALAR_TYPE_SIZE;
+class CStaticAssert {
+public:
+	typedef void MATRIX_POOL_MEMORY_ALIGNMENT_MUST_BE_INTEGER_MULTIPLE_OF_SCALAR_TYPE_SIZE; /**< @brief assertion tag */
+	typedef void MATRIX_BLOCK_DIMENSIONS_MUST_BE_KNOWN_AT_COMPILE_TIME; /**< @brief assertion tag */
+	typedef void MATRIX_DIMENSIONS_MUST_BE_KNOWN_AT_COMPILE_TIME; /**< @brief assertion tag */
+	typedef void MATRIX_DIMENSIONS_MISMATCH; /**< @brief assertion tag */
+};
 
 /**
- *	@brief compile-time assertion (specialization for assertion passing)
+ *	@brief compile-time assertion helper (specialization for assertion failed)
  */
 template <>
-class CMATRIX_POOL_MEMORY_ALIGNMENT_MUST_BE_INTEGER_MULTIPLE_OF_SCALAR_TYPE_SIZE<true> {};
+class CStaticAssert<false> {};
+
+} // ~ubm_static_check
 
 /**
- *	@brief static assertion helper type
- *	@tparam n_size is size of object being used as assertion message
- *		(if it's a incomplete type, compiler will display object name in error output)
+ *	@brief checks dimension of a matrix against a reference
+ *
+ *	This asserts that the dimensions of the checked matrix matches that of the reference,
+ *	and if possible does it at compile time. Nothing else than the dimensions are checked.
+ *
+ *	@tparam CReferenceMat is reference Eigen::Matrix specialization with constant dimensions
+ *	@tparam CCheckedMat is checked Eigen::Matrix specialization
+ *
+ *	@param[in] r_matrix is the checked matrix
  */
-template <const size_t n_size>
-class CStaticAssert {};
+template <class CReferenceMat, class CCheckedMat>
+inline void DimensionCheck(const CCheckedMat &r_matrix)
+{
+	enum {
+		n_correct_rows = CReferenceMat::RowsAtCompileTime,
+		n_correct_cols = CReferenceMat::ColsAtCompileTime,
 
-} // ~__ubm_static_check
+		b_ref_is_not_dynamic = n_correct_rows != Eigen::Dynamic && n_correct_cols != Eigen::Dynamic,
+
+		n_checked_rows = CCheckedMat::RowsAtCompileTime,
+		n_checked_cols = CCheckedMat::ColsAtCompileTime,
+
+		b_checked_is_dynamic = n_checked_rows == Eigen::Dynamic || n_checked_cols == Eigen::Dynamic,
+		b_checked_matches = n_correct_rows == n_checked_rows && n_correct_cols == n_checked_cols
+	};
+
+	typedef typename ubm_static_check::CStaticAssert<b_ref_is_not_dynamic>::MATRIX_DIMENSIONS_MUST_BE_KNOWN_AT_COMPILE_TIME CAssert0; // reference type must not be dynamic
+	typedef typename ubm_static_check::CStaticAssert<b_checked_is_dynamic || b_checked_matches>::MATRIX_DIMENSIONS_MISMATCH CAssert1; // checked type either matches at compile time, or is dynamic
+
+	_ASSERTE(!b_checked_is_dynamic || (r_matrix.rows() == n_correct_rows && r_matrix.cols() == n_correct_cols)); // in case checked is not dynamic, this reduces to a compile time constant
+	// in case the matrix is dynamic-sized, check at runtime
+}
 
 /**
  *	@brief UberLame block matrix base class
@@ -274,12 +328,17 @@ public:
 		pool_PageSize = 1048576 /**< @brief data storage page size */
 	};
 
-	typedef Eigen::Map<Eigen::VectorXd> _TyVectorXdRef; /**< @brief dynamic-size referencing vector type */
 	typedef Eigen::Map<Eigen::Vector3d> _TyVector3dRef; /**< @brief 3D referencing vector type */
-	typedef Eigen::Map<Eigen::RowVectorXd> _TyRowVectorXdRef; /**< @brief dynamic-size referencing row vector type */
 	typedef Eigen::Map<Eigen::RowVector3d> _TyRowVector3dRef; /**< @brief 3D referencing row vector type */
-	typedef Eigen::Map<Eigen::MatrixXd, map_Alignment> _TyMatrixXdRef; /**< @brief dynamic-size referencing matrix type */
 	typedef Eigen::Map<Eigen::Matrix3d, map_Alignment> _TyMatrix3dRef; /**< @brief 3x3 referencing matrix type */
+
+	typedef Eigen::Map<Eigen::VectorXd> _TyVectorXdRef; /**< @brief dynamic-size referencing vector type */
+	typedef Eigen::Map<Eigen::RowVectorXd> _TyRowVectorXdRef; /**< @brief dynamic-size referencing row vector type */
+	typedef Eigen::Map<Eigen::MatrixXd, map_Alignment> _TyMatrixXdRef; /**< @brief dynamic-size referencing matrix type */
+
+	typedef const Eigen::Map<const Eigen::VectorXd> _TyConstVectorXdRef; /**< @brief dynamic-size referencing const vector type */
+	typedef const Eigen::Map<const Eigen::RowVectorXd> _TyConstRowVectorXdRef; /**< @brief dynamic-size referencing const row vector type */
+	typedef const Eigen::Map<const Eigen::MatrixXd, map_Alignment> _TyConstMatrixXdRef; /**< @brief dynamic-size referencing const matrix type */
 
 	/**
 	 *	@brief reference matrix helper
@@ -292,6 +351,7 @@ public:
 	public:
 		typedef Eigen::Matrix<double, n_row_num, n_column_num> _TyMatrix; /**< @brief plain matrix type */
 		typedef Eigen::Map<_TyMatrix, map_Alignment> _Ty; /**< @brief referencing matrix type */
+		typedef const Eigen::Map<const _TyMatrix, map_Alignment> _TyConst; /**< @brief referencing const matrix type */
 	};
 
 	/**
@@ -303,6 +363,7 @@ public:
 	class CMakeVectorRef {
 	public:
 		typedef Eigen::Map<Eigen::Matrix<double, n_row_num, 1> > _Ty; /**< @brief referencing vector type */
+		typedef const Eigen::Map<const Eigen::Matrix<double, n_row_num, 1> > _TyConst; /**< @brief referencing const vector type */
 	};
 
 	/**
@@ -314,6 +375,7 @@ public:
 	class CMakeRowVectorRef {
 	public:
 		typedef Eigen::Map<Eigen::Matrix<double, 1, n_column_num> > _Ty; /**< @brief referencing row vector type */
+		typedef const Eigen::Map<const Eigen::Matrix<double, 1, n_column_num> > _TyConst; /**< @brief referencing const row vector type */
 	};
 
 	typedef forward_allocated_pool<double, pool_PageSize, pool_MemoryAlignment> _TyPool; /**< @brief data storage type */
@@ -384,12 +446,12 @@ public:
 	 *		laid out in potentionally contiguous memory, with near matrices being near in the memory, increasing
 	 *		cache efficiency in the computational loops).
 	 *	@note In A, we mostly have up to two blocks on every row / column. That would make block_list quite an overkill.
-	 *	t_odo See if Florida matrix collection has any block matrices in it, or think about how to blockify them.
-	 *	@todo We better avoid copying this structure. Make a matrix observer
-	 *		to be able to select just a part of matrix for reading / writing.
 	 *	@todo try without storing width, only cummulative
 	 *	@todo try storing row index, but also row height in each block (saves one ref per block on some ops)
 	 */
+	// *	t_odo See if Florida matrix collection has any block matrices in it, or think about how to blockify them.
+	// *	t_odo We better avoid copying this structure. Make a matrix observer
+	// *		to be able to select just a part of matrix for reading / writing.
 	struct TColumn {
 		typedef std::pair<size_t, double*> TBlockEntry; /**< @brief one block entry @todo - try put row height and position, might dramatically increase locality of reference */
 
@@ -455,7 +517,7 @@ public:
 	typedef std::vector<TColumn::TBlockEntry>::const_iterator _TyBlockConstIter; /**< @brief block entry vector const iterator */
 
 	// @todo - try working with representation for a bit - storing just cumsusm? storing row height in block?
-	// @todo - implement Extend(rows, cols) operation that enables addition of matrices of different shape
+	// t_odo - implement Extend(rows, cols) operation that enables addition of matrices of different shape
 	// @todo - come up with different designs, benchmark what is best for our use (template away? that'd be rather cool)
 	// @todo - look into different sparse matrix representations (jagged diagonal, ...)
 
@@ -869,9 +931,7 @@ public:
 			alignment_Assert_Value = (n_memory_align > 0 && n_memory_align % sizeof(_Ty) == 0) /**< @brief value of the assert condition */
 		};
 
-		typedef __ubm_static_check::CStaticAssert<sizeof(
-			__ubm_static_check::CMATRIX_POOL_MEMORY_ALIGNMENT_MUST_BE_INTEGER_MULTIPLE_OF_SCALAR_TYPE_SIZE<
-			alignment_Assert_Value>)> _TyAssert0; /**< @brief makes sure the alignment is correct */
+		typedef typename ubm_static_check::CStaticAssert<alignment_Assert_Value>::MATRIX_POOL_MEMORY_ALIGNMENT_MUST_BE_INTEGER_MULTIPLE_OF_SCALAR_TYPE_SIZE CAssert0; /**< @brief makes sure the alignment is correct */
 
 	public:
 		/**
@@ -1405,6 +1465,13 @@ public:
 	void Dump_PerfCounters();
 
 	/**
+	 *	@brief calculates the size of this object in memory
+	 *	@return Returns the size of this object (and of all associated
+	 *		arrays or buffers) in memory, in bytes.
+	 */
+	size_t n_Allocation_Size() const;
+
+	/**
 	 *	@brief erases all the data of the matrix
 	 */
 	void Clear();
@@ -1567,4 +1634,4 @@ public:
 	}
 };
 
-#endif // __UBER_BLOCK_MATRIX_BASE_INCLUDED
+#endif // !__UBER_BLOCK_MATRIX_BASE_INCLUDED

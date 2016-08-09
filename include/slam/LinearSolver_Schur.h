@@ -22,8 +22,50 @@
  */
 
 #include "slam/LinearSolverTags.h"
+//#include "slam/LinearSolver_CSparse.h" // needed for debugging/profiling only
+//#include "slam/LinearSolver_CholMod.h" // needed for debugging/profiling only
 #include "csparse/cs.hpp"
 #include "slam/BlockMatrix.h" // includes Eigen as well
+
+/**
+ *	@def __SCHUR_PROFILING
+ *	@brief enables printing Schur complement timing greakdown
+ */
+//#define __SCHUR_PROFILING
+
+/**
+ *	@def __DISABLE_GPU
+ *	@brief overrides other GPU switches, GPU won't be used
+ *	@note Interfaces of the GPU objects will remain declared, but will throw.
+ */
+//#define __DISABLE_GPU
+
+/**
+ *	@def __SCHUR_USE_DENSE_SOLVER
+ *	@brief if defined, a dense linear solver is used on the Schur complement
+ *	@note This is usually faster if the Schur complement is a small portion
+ *		of the system and is dense enough (e.g. the upper triangular is more
+ *		than 10% of full square matrix NNZs).
+ */
+#define __SCHUR_USE_DENSE_SOLVER
+
+#ifndef __DISABLE_GPU
+
+/**
+ *	@def __GPU_SCHUR_NO_PRODS
+ *	@brief if defined, GPU is not used to accelerate U(C^-1) and U(C^-1)V products
+ *	@note This might yield faster code if running on a slower mobile GPU. cuSparse
+ *		is barely faster than SSE ÜberBlockMatrix on Tesla GPUs.
+ */
+#define __GPU_SCHUR_NO_PRODS
+
+/**
+ *	@def __SCHUR_DENSE_SOLVER_USE_GPU
+ *	@brief if defined (and __DISABLE_GPU not defined), a CULA dense linear solver is used on the Schur complement
+ */
+#define __SCHUR_DENSE_SOLVER_USE_GPU
+
+#endif // !__DISABLE_GPU
 
 /**
  *	@brief implementation of matrix orderings for Schur complement
@@ -1465,68 +1507,447 @@ public:
 };
 
 /**
+ *	@brief partiteness violating edge predicate
+ *
+ *	An edge violates partiteness for a given vertex if it can connect two (or more) such vertices together.
+ *
+ *	@tparam CEdgeType is edge type
+ *	@tparam CVertexType is vertex type
+ */
+template <class CEdgeType, class CVertexType>
+class CIsPartitenessViolatingEdge {
+protected:
+	typedef typename CEdgeType::_TyVertices _TyEdgeVertices; /**< @brief types of vertices the current edge connects */
+	typedef typename CFilterTypelist<_TyEdgeVertices, CVertexType, CEqualType>::_TyResult _TyVertexTypeOccurences; /**< @brief only vertices that are the same as the vertex in question, and that the current edge connects */
+
+public:
+	/**
+	 *	@brief result, stored as enum
+	 */
+	enum {
+		n_vertex_occurence_num = CTypelistLength<_TyVertexTypeOccurences>::n_result, /**< @brief the number of occurences of the current vertex in the current edge vertices; it can be zero or more (the current edge may be unrelated to the current vertex type) */
+		b_result = n_vertex_occurence_num > 1 /**< @brief the result; true if the edge connects more than one vertex of the current vertex type, otherwise false */
+	};
+};
+
+/**
+ *	@brief partite vertex predicate
+ *
+ *	A vertex type is partite, if there is no edge that would connect two different vertices of this type together.
+ *	Note that edges which connect them transitively through different vertices do not matter (vertex type A is
+ *	partite for edges of type A-B, B-C and C-A, as no two A vertices can directly be connected, in contrary
+ *	if there is edge A-A or possibly a hyperedge *-A-*-A-* (such as A-A-B), the vertex is not partite).
+ *
+ *	@tparam CVertexType is vertex type
+ *	@tparam CEdgeTypeList is type list of edge types
+ */
+template <class CVertexType, class CEdgeTypeList>
+class CIsPartiteVertex {
+public:
+	/**
+	 *	@brief result, stored as enum
+	 */
+	enum {
+		b_result = !CFindTypelistItem_If<CEdgeTypeList, CVertexType, CIsPartitenessViolatingEdge>::b_result
+	};
+};
+
+/**
+ *	@brief helper function; makes sure a list of fbs_ut::CCTSize is not empty
+ */
+template <class CList>
+struct CNonEmptySizeList {
+public:
+	typedef CList _TyResult; /**< @brief the resulting non-empty list */
+};
+
+/**
+ *	@brief helper function; makes sure a list of fbs_ut::CCTSize is not empty (specialization for an empty list; appends fbs_ut::CCTSize<-1>)
+ */
+template <>
+struct CNonEmptySizeList<CTypelistEnd> {
+public:
+	typedef CTypelist<fbs_ut::CCTSize<-1>, CTypelistEnd> _TyResult; /**< @brief the resulting non-empty list */
+};
+
+/**
+ *	@brief dense linear solver model based on Eigen
+ */
+class CLinearSolver_DenseEigen {
+public:
+	typedef CBasicLinearSolverTag _Tag; /**< @brief solver type tag */
+
+	typedef Eigen::LLT<Eigen::MatrixXd, Eigen::Upper> _TyDecomposition; /**< @brief matrix factorization type (Cholesky) */
+
+	// on Venice:
+	// sparse			20 sec / iteration
+	// LLT				9 sec / iteration
+	// LDLT				70 sec / iteration
+	// PartialPivLU		19 sec / iteration // without parallelization
+	// PartialPivLU		10 sec / iteration // with parallelization (8 cores), still slower than serial LLT
+	// FullPivLU		486 sec / iteration // very slightly lower chi2
+	// HouseholderQR	64 sec / iteration // pivotless
+
+protected:
+	Eigen::MatrixXd m_t_lambda; /**< @brief memory for lambda matrix, in order to avoid reallocation */
+	_TyDecomposition m_t_factorization; /**< @brief matrix factorization object */
+
+public:
+	/**
+	 *	@brief default constructor
+	 */
+	inline CLinearSolver_DenseEigen()
+	{};
+
+	/**
+	 *	@brief copy constructor (has no effect; memory for lambda not copied)
+	 *	@param[in] r_other is the solver to copy from (unused)
+	 */
+	inline CLinearSolver_DenseEigen(const CLinearSolver_DenseEigen &UNUSED(r_other))
+	{}
+
+	/**
+	 *	@brief copy operator (has no effect; memory for lambda not copied)
+	 *	@param[in] r_other is the solver to copy from (unused)
+	 *	@return Returns reference to this.
+	 */
+	inline CLinearSolver_DenseEigen &operator =(const CLinearSolver_DenseEigen &UNUSED(r_other))
+	{
+		return *this;
+	}
+
+	/**
+	 *	@brief deletes memory for all the auxiliary buffers and matrices, if allocated
+	 */
+	void Free_Memory()
+	{
+		{
+			Eigen::MatrixXd empty;
+			std::swap(empty, m_t_lambda);
+		}
+		{
+			_TyDecomposition empty;
+			std::swap(empty, m_t_factorization);
+		}
+	}
+
+	/**
+	 *	@brief solves linear system given by positive-definite matrix
+	 *
+	 *	@param[in] r_lambda is positive-definite matrix
+	 *	@param[in,out] r_eta is the right-side vector, and is overwritten with the solution
+	 *
+	 *	@return Returns true on success, false on failure.
+	 *
+	 *	@note This function throws std::bad_alloc.
+	 */
+	bool Solve_PosDef(const CUberBlockMatrix &r_lambda, Eigen::VectorXd &r_eta) // throw(std::bad_alloc)
+	{
+		r_lambda.Convert_to_Dense(m_t_lambda);
+
+		//m_t_factorization.compute(m_t_lambda.selfadjointView<Eigen::Upper>());
+		// LU
+
+		m_t_factorization.compute(m_t_lambda);
+		if(m_t_factorization.info() != Eigen::Success)
+			return false;
+		// Cholesky
+
+		r_eta = m_t_factorization.solve(r_eta);
+		// solve
+
+		return true;
+	}
+};
+
+/**
+ *	@brief dense linear solver model, running on a GPU
+ */
+class CLinearSolver_DenseGPU {
+public:
+	typedef CBasicLinearSolverTag _Tag; /**< @brief solver type tag */
+
+protected:
+	Eigen::MatrixXd m_t_lambda; /**< @brief memory for lambda matrix, in order to avoid reallocation */
+	static bool b_cula_initialized; /**< @brief determines whether CULA is initialized */
+	static size_t n_instance_num; /**< @brief number of instances of CLinearSolver_DenseGPU */
+
+	/**
+	 *	@brief holds GPU data
+	 */
+	struct TGPUData {
+		double *p_lambda_storage; /**< @brief array for storing the dense lambda matrix */
+		double *p_rhs_storage; /**< @brief array for storing the right hand side vector */
+		size_t n_lambda_size; /**< @brief number of rows / columns in p_lambda_storage and number of rows in p_rhs_storage */
+	};
+
+	TGPUData m_gpu; /**< @brief GPU data */
+
+public:
+	/**
+	 *	@brief default constructor; initializes CULA
+	 *	@note This function throws std::runtime_error.
+	 */
+	CLinearSolver_DenseGPU(); // throw(std::runtime_error)
+
+	/**
+	 *	@brief copy constructor (has no effect; memory for lambda not copied)
+	 *	@param[in] r_other is the solver to copy from (unused)
+	 */
+	inline CLinearSolver_DenseGPU(const CLinearSolver_DenseGPU &UNUSED(r_other))
+	{
+		_ASSERTE(n_instance_num); // r_other exists, and already tried to initialize at this point
+		++ n_instance_num;
+	}
+
+	/**
+	 *	@brief destructor; uninitializes CULA
+	 */
+	~CLinearSolver_DenseGPU();
+
+	/**
+	 *	@brief copy operator (has no effect; memory for lambda not copied)
+	 *	@param[in] r_other is the solver to copy from (unused)
+	 *	@return Returns reference to this.
+	 */
+	inline CLinearSolver_DenseGPU &operator =(const CLinearSolver_DenseGPU &UNUSED(r_other))
+	{
+		return *this;
+	}
+
+	/**
+	 *	@brief deletes memory for all the auxiliary buffers and matrices, if allocated
+	 */
+	void Free_Memory();
+
+	/**
+	 *	@brief solves linear system given by positive-definite matrix
+	 *
+	 *	@param[in] r_lambda is positive-definite matrix
+	 *	@param[in,out] r_eta is the right-side vector, and is overwritten with the solution
+	 *
+	 *	@return Returns true on success, false on failure.
+	 *
+	 *	@note This function throws std::bad_alloc.
+	 */
+	bool Solve_PosDef(const CUberBlockMatrix &r_lambda, Eigen::VectorXd &r_eta); // throw(std::bad_alloc)
+};
+
+/**
+ *	@brief linear solver model based on Schur complement, running on a GPU
+ */
+class CLinearSolver_Schur_GPUBase {
+public:
+	typedef CLinearSolver_DenseGPU _TyBaseSolver; /**< @brief name of the base linear solver */
+	typedef _TyBaseSolver::_Tag _TyBaseSolverTag; /**< @brief linear solver tag */
+	typedef CLinearSolverWrapper<_TyBaseSolver, _TyBaseSolverTag> _TyLinearSolverWrapper; /**< @brief wrapper for the base linear solvers (shields solver capability to solve blockwise) */
+
+protected:
+	static bool b_cuda_initialized; /**< @brief determines whether CUDA is initialized */
+	static size_t n_instance_num; /**< @brief number of instances of CLinearSolver_Schur_GPUBase */
+
+	/**
+	 *	@brief holds GPU data
+	 */
+	struct TGPUData {
+		void *t_cusparse; /**< @brief cuSparse handle */ // cusparseHandle_t
+		void *t_cublas; /**< @brief CUBLAS handle */ // cublasHandle_t
+		void *t_matrix_descr; /**< @brief cuSparse general matrix descriptor */ // cusparseMatDescr_t
+		void *t_sym_matrix_descr; /**< @brief cuSparse symmetric matrix descriptor */ // cusparseMatDescr_t
+		cs *p_A; /**< @brief sparse storage for U / V parts of Schur complement @note This always uses 32-bit indices, even in x64. */
+		cs *p_B; /**< @brief sparse storage for D part of Schur complement @note This always uses 32-bit indices, even in x64. */
+		int *csrRowPtrD; /**< @brief array for compressed row indices of the product */
+		int csrRowPtrD_size; /**< @brief size of csrRowPtrD, in elements */
+		int nnzD; /**< @brief number of nonzeros of the product */
+
+		/**
+		 *	@brief default constructor; clears all the members to zero
+		 */
+		TGPUData()
+			:t_cusparse(0), t_cublas(0), t_matrix_descr(0), t_sym_matrix_descr(0),
+			p_A(0), p_B(0), csrRowPtrD(0), csrRowPtrD_size(0), nnzD(0)
+		{}
+	};
+
+	TGPUData m_gpu; /**< @brief GPU data */
+
+public:
+	/**
+	 *	@brief default constructor; increments instance counter
+	 */
+	CLinearSolver_Schur_GPUBase();
+
+	/**
+	 *	@brief destructor; decrements instance counter, deletes CUDA objects
+	 */
+	~CLinearSolver_Schur_GPUBase();
+
+	/**
+	 *	@brief solve a linear system using Schur complement on a GPU
+	 *
+	 *	@param[in] r_lambda is the system matrix
+	 *	@param[in,out] r_v_eta is the right hand side vector on input and solution on output
+	 *	@param[in] b_keep_ordering is ordering change flag (if set, the ordering is the same as in the last iteration)
+	 *	@param[in] n_landmark_dimension is dimension of the landmark vertices (or -1 in case there are multiple
+	 *		different dimensions; this is used for the diagonal inverse optimization in case the landmarks are 3D)
+	 *	@param[in] m_double_workspace is workspace for permuting the right hand side (allocated inside this function)
+	 *	@param[in] m_order is ordering vector
+	 *	@param[in] m_n_matrix_cut is size of the reduced camera system, in vertices / blocks
+	 *	@param[in,out] m_linear_solver is instance of the linear solver for solving the reduced camera system
+	 *
+	 *	@return Returns true on success, false on failure.
+	 *
+	 *	@note This function throws std::bad_alloc and std::runtime_error.
+	 */
+	bool GPUSolve(const CUberBlockMatrix &r_lambda, Eigen::VectorXd &r_v_eta,
+		bool b_keep_ordering, size_t n_landmark_dimension, std::vector<double> &m_double_workspace,
+		const std::vector<size_t> &m_order, const size_t m_n_matrix_cut, _TyBaseSolver &m_linear_solver); // throw(std::bad_alloc, std::runtime_error)
+};
+
+/**
  *	@brief linear solver model based on Schur complement (a wrapper for another linear solver)
  *
  *	@tparam CBaseSolver is a type of basic linear solver,
  *		to be used to solve the Schur complement subproblem
- *	@tparam CAMatrixBlockSizes is is typelist, containing Eigen
+ *	@tparam CAMatrixBlockSizes is typelist, containing Eigen
  *		matrices with known compile-time sizes
+ *	@tparam CSystem is optimized system type
  */
-template <class CBaseSolver, class CAMatrixBlockSizes>
+template <class CBaseSolver, class CAMatrixBlockSizes, class CSystem>
 class CLinearSolver_Schur {
 public:
 	typedef CBlockwiseLinearSolverTag _Tag; /**< @brief solver type tag */
+#if defined(__SCHUR_USE_DENSE_SOLVER) || defined(__SCHUR_DENSE_SOLVER_USE_GPU)
+#ifdef __SCHUR_DENSE_SOLVER_USE_GPU
+	typedef CLinearSolver_DenseGPU _TyBaseSolver; /**< @brief name of the base linear solver */
+#else // __SCHUR_DENSE_SOLVER_USE_GPU
+	typedef CLinearSolver_DenseEigen _TyBaseSolver; /**< @brief name of the base linear solver */
+#endif // __SCHUR_DENSE_SOLVER_USE_GPU
+#else // __SCHUR_USE_DENSE_SOLVER || __SCHUR_DENSE_SOLVER_USE_GPU
 	typedef CBaseSolver _TyBaseSolver; /**< @brief name of the base linear solver */
+#endif // __SCHUR_USE_DENSE_SOLVER || __SCHUR_DENSE_SOLVER_USE_GPU
 
-	typedef typename CUniqueTypelist<CAMatrixBlockSizes>::_TyResult _TyAMatrixBlockSizes; /**< @brief list of block matrix sizes */
-	typedef typename __fbs_ut::CBlockMatrixTypesAfterPreMultiplyWithSelfTranspose<
-		_TyAMatrixBlockSizes>::_TyResult _TyLambdaMatrixBlockSizes; /**< @brief possible block matrices, found in lambda and L */
+	//typedef typename CUniqueTypelist<CAMatrixBlockSizes>::_TyResult _TyAMatrixBlockSizes; /**< @brief list of block matrix sizes */
+	//typedef typename fbs_ut::CBlockMatrixTypesAfterPreMultiplyWithSelfTranspose<
+	//	_TyAMatrixBlockSizes>::_TyResult _TyLambdaMatrixBlockSizes; /**< @brief possible block matrices, found in lambda and L */
 	//typedef typename _TyBaseSolver::_TySystem::_TyHessianMatrixBlockList _TyLambdaMatrixBlockSizes; // could use that instead, but there might be other prior knowledge of block sizes
 
-	typedef typename CTransformTypelist<_TyAMatrixBlockSizes,
-		__fbs_ut::CEigenToDimension>::_TyResult CDimsList; /**< @brief list of block sizes as CCTSize2D */
-	typedef typename CUniqueTypelist<typename CTransformTypelist<CDimsList,
-		__fbs_ut::CTransformDimensionColumnsToSize>::_TyResult>::_TyResult CWidthList; /**< @brief list of A block widths as CCTSize */
-	typedef typename CSortTypelist<CWidthList,
-		__fbs_ut::CCompareScalar_Less>::_TyResult _TyVertexSizeList; /**< @brief sorted list of all possible vertex sizes */
+	typedef typename CSystem::_TyVertexTypelist _TyVertexTypelist; /**< @brief list of vertex types */
+	typedef typename CSystem::_TyEdgeTypelist _TyEdgeTypelist; /**< @brief list of edge types */
 
-	/**
-	 *	@brief configuration, stored as enum
-	 */
-	enum {
-		vertex_Size_Num = CTypelistLength<_TyVertexSizeList>::n_result, /**< @brief number of different vertex dimensions */
-
-		vertex_Size_SmallIdx = 0, /**< @brief index of "small" vertex size */
-		vertex_Size_BigIdx = (vertex_Size_Num > 1)? 1 : 0, /**< @brief index of "big" vertex size */
-		// choose index that is in the list (to avoid bounds violation)
-
-		vertex_Size_Small = CTypelistItemAt<typename CConcatTypelist<_TyVertexSizeList,
-			__fbs_ut::CCTSize<-1> >::_TyResult, vertex_Size_SmallIdx>::_TyResult::n_size, /**< @brief value of "small" vertex size */
-		vertex_Size_Big = CTypelistItemAt<typename CConcatTypelist<_TyVertexSizeList,
-			__fbs_ut::CCTSize<-1> >::_TyResult, vertex_Size_BigIdx>::_TyResult::n_size /**< @brief value of "big" vertex size */
-		// padd the list with a single -1 item to allow compilation even with empty lists
-		// (maybe not very useful, but at least will not give confusing complicated error messages)
-	};
+	typedef typename CSystem::_TyHessianMatrixBlockList _TyLambdaMatrixBlockSizes; /**< @brief possible block matrices, found in lambda and L */
 
 	typedef typename _TyBaseSolver::_Tag _TyBaseSolverTag; /**< @brief linear solver tag */
+
+protected:
+	typedef typename CFilterTypelist<_TyVertexTypelist, _TyEdgeTypelist, CIsPartiteVertex>::_TyResult CPartiteVertexList; /**< @brief list of partite vertices */
+	typedef typename CTypelistDifference<_TyVertexTypelist, CPartiteVertexList>::_TyResult CNonPartiteVertexList; /**< @brief list of non-partite vertices */
+
+	typedef typename CTransformTypelist<_TyVertexTypelist, fbs_ut::CGetVertexDimension>::_TyResult CAllVertexDimsList; /**< @brief list of all vertex dimensions */
+	typedef typename CUniqueTypelist<CAllVertexDimsList>::_TyResult CAllUniqueVertexDims; /**< @brief list of unique vertex dimensions */
+	typedef typename CSortTypelist<CAllUniqueVertexDims, fbs_ut::CCompareScalar_Less>::_TyResult CAllUniqueSortedVertexDims; /**< @brief list of sorted unique vertex dimensions */
+
+	typedef typename CTransformTypelist<CPartiteVertexList, fbs_ut::CGetVertexDimension>::_TyResult CPartiteVertexDimsList; /**< @brief list of partite vertex dimensions (with possible repetitions) */
+	typedef typename CTransformTypelist<CNonPartiteVertexList, fbs_ut::CGetVertexDimension>::_TyResult CNonPartiteVertexDimsList; /**< @brief list of non-partite vertex dimensions (with possible repetitions) */
+
+	typedef typename CUniqueTypelist<CPartiteVertexDimsList>::_TyResult CPartiteUniqueVertexDims; /**< @brief list of partite unique vertex dimensions */
+	typedef typename CSortTypelist<CPartiteUniqueVertexDims, fbs_ut::CCompareScalar_Less>::_TyResult CPartiteUniqueSortedVertexDims; /**< @brief list of sorted unique partite vertex dimensions */
+	typedef typename CUniqueTypelist<CNonPartiteVertexDimsList>::_TyResult CNonPartiteUniqueVertexDims; /**< @brief list of unique non-partite vertex dimensions */
+
+	typedef typename CTypelistDifference<CPartiteUniqueVertexDims, CNonPartiteUniqueVertexDims>::_TyResult CRecognizablePartiteVertexDims; /**< @brief list of partite vertex dimensions that can be recognized from non-partite */ // only used to count them
+
+	/**
+	 *	@brief bitwise mask creation
+	 *
+	 *	@tparam _T1 is the first operand (specialization of CCTSize template), containing position of a bit to set
+	 *	@tparam _T2 is the second operand (specialization of CCTSize template), containing running value of the mask
+	 */
+	template <class _T1, class _T2>
+	class CAccumulateBitwiseMask {
+		/**
+		 *	@brief intermediates stored as an enum
+		 */
+		enum {
+			n_mask_value = _T2::n_size | (1 << _T1::n_size) /**< @brief the result (in here to avoid template problems when using the shift left operator) */
+			// note that we could save one bit by assuming that there will be no vertices of dimension zero
+			// but this is not a pressing problem right now
+		};
+
+	public:
+		typedef fbs_ut::CCTSize<n_mask_value> _TyResult; /**< @brief result of the addition */
+	};
+
+	/**
+	 *	@brief intermediates stored as an enum
+	 */
+	enum {
+		n_nonpartite_vertex_type_num = CTypelistLength<CNonPartiteVertexList>::n_result, /**< @brief number of non-partite vertices */
+		b_have_nonpartite_vertex_types = (n_nonpartite_vertex_type_num != 0)? 1 : 0, /**< @brief non-partite vertices presence flag */
+		n_partite_vertex_type_num = CTypelistLength<CPartiteVertexList>::n_result, /**< @brief number of partite vertices */
+		n_partite_vertex_dimension_num = CTypelistLength<CPartiteUniqueVertexDims>::n_result, /**< @brief number of partite vertices recoginzable by their dimension */
+		n_partite_unambiguous_vertex_dimension_num = CTypelistLength<CRecognizablePartiteVertexDims>::n_result, /**< @brief number of partite vertices recoginzable by their dimension, which can't be confused for non-partite */
+
+		b_can_use_guided_ordering = n_partite_unambiguous_vertex_dimension_num > 0, // cannot differentiate between partite and non-pertite vertices, based on their dimension (or maybe there are no partite vertices whatsoever)
+		b_efficient_guided_ordering = n_partite_unambiguous_vertex_dimension_num == n_partite_vertex_dimension_num, // can differentiate all of the partite vertices (if not, we can still try, but we can get a poor ordering in the sense that the size of the diagonal part will be low, compared to the rest of the system)
+		b_perfect_guided_ordering = b_efficient_guided_ordering && n_partite_vertex_type_num == n_partite_vertex_dimension_num, // have perfect ordering (if not, we can potentially run into trouble by ordering "eiffel tower" vertices in the diagonal part, making the Schur complement completely dense)
+		// different levels of usability of the guided ordering
+
+		n_max_partite_vertex_dimension = CTypelistReduce2<CPartiteUniqueVertexDims,
+			fbs_ut::CBinaryScalarMax, fbs_ut::CCTSize<0> >::_TyResult::n_size, /**< @brief maximum dimension of a partite vertex */
+		b_can_use_binary_mask_to_detect_partitedness = n_max_partite_vertex_dimension < 32, /**< @brief if set, the partite vertex dimensions can be stored in a bitmask */
+		n_partite_vertex_mask = CTypelistReduce2<typename
+			CChooseType<CPartiteUniqueVertexDims, CTypelistEnd, b_can_use_binary_mask_to_detect_partitedness>::_TyResult, // use empty list in case the maximum dimension is too large to avoid a bunch of integer overflow warnings
+			CAccumulateBitwiseMask, fbs_ut::CCTSize<0> >::_TyResult::n_size, /**< @brief bit mask, encoding ones at shifts corresponding to partite vertex dimensions @note This is only valid if b_can_use_binary_mask_to_detect_partitedness is set. */ // value of the partite vertex mask
+		// partite vertex detection using a bit mask
+
+		n_unique_vertex_dim_num = CTypelistLength<CAllUniqueVertexDims>::n_result /**< @brief number of unique vertex dimensions */
+	};
+
+	/*class CFillDimensions { // moved to fbs_ut
+	protected:
+		size_t *m_p_dest;
+
+	public:
+		CFillDimensions(size_t *p_dest)
+			:m_p_dest(p_dest)
+		{}
+
+		template <class CDimension>
+		void operator ()()
+		{
+			*m_p_dest = CDimension::n_size;
+			++ m_p_dest;
+		}
+
+		operator const size_t *() const
+		{
+			return m_p_dest;
+		}
+	};*/
 
 protected:
 	_TyBaseSolver m_linear_solver; /**< @brief linear solver */
 
 	typedef CLinearSolverWrapper<_TyBaseSolver, _TyBaseSolverTag> _TyLinearSolverWrapper; /**< @brief wrapper for the base linear solvers (shields solver capability to solve blockwise) */
 
-	std::vector<double> m_double_workspace; /**< @brief temporary workspace, used to reorder the vectors (not used outside Schur_Solve()) */
-	std::vector<size_t> m_order_workspace; /**< @brief temporary workspace, used to invert the ordering (not used outside n_Schur_Ordering()) */
+	std::vector<double> m_double_workspace; /**< @brief temporary workspace, used to reorder the vectors (not used outside Solve_PosDef_Blocky()) */
+	std::vector<size_t> m_order_workspace; /**< @brief temporary workspace, used to invert the ordering (not used outside CalculateOrdering()) */
 	std::vector<size_t> m_order; /**< @brief ordering that separates matrix into diagonal part and dense parts */
 	size_t m_n_matrix_cut; /**< @brief separation between the diagonal part and the dense parts (in blocks) */
 	bool m_b_base_solver_reorder; /**< @brief base solver reordering flag */
+	bool m_b_single_landmark_size; /**< @brief single landmark size flag (if set, the diagonal part of the matrix contains only square blocks of m_n_landmark_size) */
+	size_t m_n_landmark_size; /**< @brief dimension of the landmark vertex (only valid if m_b_single_landmark_size is set) */
+
+#if /*(defined(_WIN32) || defined(_WIN64)) &&*/ !defined(__DISABLE_GPU) && !defined(__GPU_SCHUR_NO_PRODS)
+	CLinearSolver_Schur_GPUBase m_gpu_schur; /**< @brief GPU Schur solver state */
+#endif // /*(_WIN32 || _WIN64) &&*/ !__DISABLE_GPU && !defined(__GPU_SCHUR_NO_PRODS)
 
 public:
 	/**
 	 *	@brief default constructor (does nothing)
 	 */
-	inline CLinearSolver_Schur(_TyBaseSolver &r_solver)
-		:m_linear_solver(r_solver), m_b_base_solver_reorder(true)
+	inline CLinearSolver_Schur(const /*_TyBaseSolver*/CBaseSolver &UNUSED(r_solver))
+		:/*m_linear_solver(r_solver),*/ m_b_base_solver_reorder(true), m_b_single_landmark_size(false)
 	{}
 
 	/**
@@ -1534,8 +1955,28 @@ public:
 	 *	@param[in] r_other is the solver to copy from
 	 */
 	inline CLinearSolver_Schur(const CLinearSolver_Schur &r_other)
-		:m_linear_solver(r_other.m_linear_solver), m_b_base_solver_reorder(true)
+		:m_linear_solver(r_other.m_linear_solver), m_b_base_solver_reorder(true), m_b_single_landmark_size(false)
 	{}
+
+	/**
+	 *	@brief deletes memory for all the auxiliary buffers and matrices, if allocated
+	 */
+	void Free_Memory()
+	{
+		m_linear_solver.Free_Memory();
+		{
+			std::vector<double> empty;
+			m_double_workspace.swap(empty);
+		}
+		{
+			std::vector<size_t> empty;
+			m_order_workspace.swap(empty);
+		}
+		{
+			std::vector<size_t> empty;
+			m_order.swap(empty);
+		}
+	}
 
 	/**
 	 *	@brief copy operator (has no effect; memory for lambda not copied)
@@ -1560,38 +2001,50 @@ public:
 	 */
 	bool Solve_PosDef(const CUberBlockMatrix &r_lambda, Eigen::VectorXd &r_v_eta) // throw(std::bad_alloc)
 	{
-		if(m_order.capacity() < r_lambda.n_BlockColumn_Num()) {
-			m_order.clear(); // prevent copying
-			m_order.reserve(std::max(2 * m_order.capacity(), r_lambda.n_BlockColumn_Num()));
-		}
-		m_order.resize(r_lambda.n_BlockColumn_Num());
-		// allocate the ordering array
-
-		size_t n_matrix_cut = n_Schur_Ordering(r_lambda, &m_order[0], m_order.size()); // calculate ordering
+		SymbolicDecomposition_Blocky(r_lambda); // calculate ordering
 		// calculate the ordering
 
-		return Schur_Solve(r_lambda, r_v_eta, r_v_eta, &m_order[0], m_order.size(), n_matrix_cut); // solve
+		return Solve_PosDef_Blocky(r_lambda, r_v_eta); // solve
 	}
 
 	/**
-	 *	@brief deletes symbolic decomposition, if calculated (forces a symbolic
-	 *		decomposition update in the next call to Solve_PosDef_Blocky())
+	 *	@brief deletes symbolic factorization, if calculated (forces a symbolic
+	 *		factorization update in the next call to Solve_PosDef_Blocky())
 	 */
 	inline void Clear_SymbolicDecomposition()
 	{
 		m_order.clear();
 		m_b_base_solver_reorder = true;
+		m_b_single_landmark_size = false;
 		m_n_matrix_cut = size_t(-1);
 	}
 
 	/**
-	 *	@brief calculates symbolic decomposition of a block
+	 *	@brief calculates symbolic factorization of a block
 	 *		matrix for later (re)use in solving it
 	 *	@param[in] r_lambda is positive-definite matrix
 	 *	@return Returns true on success, false on failure.
 	 */
-	bool SymbolicDecomposition_Blocky(const CUberBlockMatrix &r_lambda) // throw(std::bad_alloc)
+	inline bool SymbolicDecomposition_Blocky(const CUberBlockMatrix &r_lambda) // throw(std::bad_alloc)
 	{
+		return SymbolicDecomposition_Blocky(r_lambda, false);
+	}
+
+	/**
+	 *	@brief calculates symbolic factorization of a block
+	 *		matrix for later (re)use in solving it
+	 *
+	 *	@param[in] r_lambda is positive-definite matrix
+	 *	@param[in] b_force_guided_ordering is guided ordering flag
+	 *		(if set, the landmarks are determined based on their dimension)
+	 *
+	 *	@return Returns true on success, false on failure.
+	 */
+	bool SymbolicDecomposition_Blocky(const CUberBlockMatrix &r_lambda, bool b_force_guided_ordering) // throw(std::bad_alloc)
+	{
+		m_b_base_solver_reorder = true;
+		// will need to reorder later on
+
 		if(m_order.capacity() < r_lambda.n_BlockColumn_Num()) {
 			m_order.clear(); // prevent copying
 			m_order.reserve(std::max(2 * m_order.capacity(), r_lambda.n_BlockColumn_Num()));
@@ -1599,15 +2052,37 @@ public:
 		m_order.resize(r_lambda.n_BlockColumn_Num());
 		// allocate the ordering array
 
-		m_n_matrix_cut = n_Schur_Ordering(r_lambda, &m_order[0], m_order.size()); // calculate ordering
-		// calculate the ordering
+		if(b_can_use_guided_ordering) { // count of 2 also implies that the sizes are different
+			m_n_matrix_cut = n_Calculate_GuidedOrdering(m_order_workspace, r_lambda); // it is a member function now, requires different lists we'd made
+			/*m_n_matrix_cut = CSchurOrdering::n_Calculate_GuidedOrdering(m_order_workspace,
+				vertex_Size_Big, vertex_Size_Small, r_lambda);*/
+			// this is the "guided ordering", need to have two types of vertices with a different dimensionality
+			// note this may give inferior results, i.e. on landmark datasets like Victoria park
+		} else if(b_force_guided_ordering)
+			throw std::runtime_error("guided ordering forced but unable to distinguish landmarks"); // todo - handle this better
+		if(!b_force_guided_ordering && (!b_can_use_guided_ordering || m_n_matrix_cut >= r_lambda.n_BlockColumn_Num() / 2)) { // pose-only without -po also tries to use guided ordering (but there are no landmarks - wasted time)
+			m_n_matrix_cut = CSchurOrdering::n_Calculate_Ordering(m_order_workspace, r_lambda);
+			// this is full ordering, using the graph structure, always gives best results
 
-		m_b_base_solver_reorder = true;
-		// will need to reorder later on
+			m_b_single_landmark_size = (n_unique_vertex_dim_num == 1);
+			m_n_landmark_size = CTypelistItemAt<CAllUniqueVertexDims, 0>::_TyResult::n_size;
+			// can still have a single landmark size if all the vertices have the same dimension
+			// otherwise can't guarantee it: the vertices can be ordered arbitrarily
+		}
+
+		/*printf("debug: Schur inverse size: " PRIsize " vertices (out of " PRIsize ")\n",
+			r_lambda.n_BlockColumn_Num() - m_n_matrix_cut, r_lambda.n_BlockColumn_Num());*/
+		// see how successful the ordering was
+
+		for(size_t i = 0, n = m_order.size(); i < n; ++ i)
+			m_order[m_order_workspace[i]] = i;
+		//	m_order[i] = m_order_workspace[i]; // bad ordering - to test inverse of not purely diagonal matrix
+		// have to use inverse ordering for matrix reordering
 
 		return true;
 	}
 
+public:
 	/**
 	 *	@brief solves linear system given by positive-definite matrix
 	 *
@@ -1617,7 +2092,7 @@ public:
 	 *	@return Returns true on success, false on failure.
 	 *
 	 *	@note This function throws std::bad_alloc.
-	 *	@note This enables a reuse of previously calculated symbolic decomposition,
+	 *	@note This enables a reuse of previously calculated symbolic factorization,
 	 *		it can be either calculated in SymbolicDecomposition_Blocky(), or it is
 	 *		calculated automatically after the first call to this function,
 	 *		or after Clear_SymbolicDecomposition() was called (preferred).
@@ -1637,8 +2112,8 @@ public:
 		solver.Solve_PosDef(r_lambda, sol_copy);*/
 		// calculate reference "good" solution
 
-		bool b_result = Schur_Solve(r_lambda, r_v_eta, r_v_eta, &m_order[0],
-			m_order.size(), m_n_matrix_cut, b_keep_ordering); // solve
+		//bool b_result = Schur_Solve(r_lambda, r_v_eta, r_v_eta, &m_order[0],
+		//	m_order.size(), m_n_matrix_cut, b_keep_ordering); // solve
 
 		/*sol_copy -= r_v_eta;
 		printf("error in solution is %g (head %g, tail %g)\n",
@@ -1646,47 +2121,318 @@ public:
 			sol_copy.tail((r_lambda.n_BlockColumn_Num() - m_n_matrix_cut) * 2).norm());*/
 		// calculate difference in the solution
 
-		return b_result;
-	}
+		//return b_result;
 
-	/**
-	 *	@brief computes solution for linear system using schur complement
-	 */
-	bool Schur_Solve(const CUberBlockMatrix &r_lambda,
-		const Eigen::VectorXd &r_v_eta, Eigen::VectorXd &r_v_schur_sol,
-		const size_t *p_ordering, size_t UNUSED(n_ordering_size), size_t n_matrix_cut,
-		bool b_reuse_block_structure = false)
-	{
+#if /*(defined(_WIN32) || defined(_WIN64)) &&*/ !defined(__DISABLE_GPU) && !defined(__GPU_SCHUR_NO_PRODS)
+
+		if(m_b_single_landmark_size) {
+			return m_gpu_schur.GPUSolve(r_lambda, r_v_eta, b_keep_ordering,
+				m_n_landmark_size, m_double_workspace, m_order, m_n_matrix_cut, m_linear_solver);
+		}
+		// if the landmarks are of a single size, solve it on a GPU
+
+#endif // /*(_WIN32 || _WIN64) &&*/ !__DISABLE_GPU && !defined(__GPU_SCHUR_NO_PRODS)
+
 		_ASSERTE(r_lambda.b_SymmetricLayout()); // pos-def is supposed to be symmetric
 		_ASSERTE(r_v_eta.rows() == r_lambda.n_Row_Num()); // make sure the vector has correct dimension
 
-		// note that &r_v_eta == &r_v_schur_sol is permissible (can solve inplace)
 		_ASSERTE(r_lambda.b_SymmetricLayout());
-		_ASSERTE(r_lambda.n_BlockColumn_Num() == n_ordering_size);
-		_ASSERTE(n_matrix_cut > 0 && n_matrix_cut + 1 < n_ordering_size);
-		_ASSERTE(r_v_schur_sol.rows() == r_lambda.n_Column_Num());
+		_ASSERTE(r_lambda.n_BlockColumn_Num() == m_order.size());
+		_ASSERTE((m_order.empty() && !m_n_matrix_cut) || (!m_order.empty() &&
+			m_n_matrix_cut > 0 && m_n_matrix_cut < SIZE_MAX && m_n_matrix_cut + 1 < m_order.size()));
 		_ASSERTE(r_v_eta.rows() == r_lambda.n_Column_Num());
 
+#ifdef __SCHUR_PROFILING
+		CDeltaTimer dt;
+#endif // __SCHUR_PROFILING
+
 		CUberBlockMatrix lambda_perm;
-		r_lambda.Permute_UpperTriangular_To(lambda_perm,
-			p_ordering, n_ordering_size, true);
+		r_lambda.Permute_UpperTriangular_To(lambda_perm, &m_order[0], m_order.size(), true);
 		// reorder the matrix
+
+#ifdef __SCHUR_PROFILING
+		double f_reperm_time = dt.f_Time();
+#endif // __SCHUR_PROFILING
 
 		const size_t n = lambda_perm.n_BlockColumn_Num();
 
 		CUberBlockMatrix A, U, C, V;
+		const size_t n_matrix_cut = m_n_matrix_cut; // antialiass
 		lambda_perm.SliceTo(A, 0, n_matrix_cut, 0, n_matrix_cut, true);
 		lambda_perm.SliceTo(U, 0, n_matrix_cut, n_matrix_cut, n, true);
 		lambda_perm.SliceTo(C, n_matrix_cut, n, n_matrix_cut, n, true);
+
+#ifdef __SCHUR_PROFILING
+		double f_slice_time = dt.f_Time();
+#endif // __SCHUR_PROFILING
+
 		U.TransposeTo(V); // because lower-triangular of lambda is not calculated
+		// cut Lambda matrix into pieces
+		// \lambda = | A U |
+		//           | V C |
+
+#ifdef __SCHUR_PROFILING
+		double f_transpose_time = dt.f_Time();
+#endif // __SCHUR_PROFILING
+
+		CUberBlockMatrix C_inv_storage; // only used if C is not diagonal
+		bool b_is_diagonal = C.b_BlockDiagonal();
+		CUberBlockMatrix &C_inv = (b_is_diagonal)? C : C_inv_storage; // can do diagonal
+		if(b_is_diagonal)
+			C_inv.InverseOf_BlockDiag_FBS_Parallel<_TyLambdaMatrixBlockSizes>(C); // faster version, slightly less general
+		else
+			C_inv.InverseOf_Symmteric_FBS<_TyLambdaMatrixBlockSizes>(C); // C is block diagonal (should also be symmetric)
+		// inverse of C
+
+#ifdef __SCHUR_PROFILING
+		double f_inverse_time = dt.f_Time();
+#endif // __SCHUR_PROFILING
+
+		C_inv.Scale(-1.0);	// -U*(C^-1)
+
+#ifdef __SCHUR_PROFILING
+		double f_scale_time = dt.f_Time();
+#endif // __SCHUR_PROFILING
+
+		CUberBlockMatrix minus_U_Cinv;
+		U.MultiplyToWith_FBS<_TyLambdaMatrixBlockSizes,
+			_TyLambdaMatrixBlockSizes>(minus_U_Cinv, C_inv);	// U*(C^-1) // U is not symmetric, it is rather dense, tmp is again dense
+
+#ifdef __SCHUR_PROFILING
+		double f_mul0_time = dt.f_Time();
+#endif // __SCHUR_PROFILING
+
+		/*minus_U_Cinv.Scale(-1.0);	// -U*(C^-1)
+
+		double f_scale_time = dt.f_Time();*/
+
+		CUberBlockMatrix schur_compl; // not needed afterwards
+		minus_U_Cinv.MultiplyToWith_FBS<_TyLambdaMatrixBlockSizes,
+			_TyLambdaMatrixBlockSizes>(schur_compl, V, true); // -U*(C^-1)V // UV is symmetric, the whole product should be symmetric, calculate only the upper triangular part
+
+#ifdef __SCHUR_PROFILING
+		double f_mul1_time = dt.f_Time();
+#endif // __SCHUR_PROFILING
+
+		A.AddTo_FBS<_TyLambdaMatrixBlockSizes>(schur_compl); // -U*(C^-1)V + A // A is symmetric, if schur_compl is symmetric, the difference also is
+		// compute left-hand side A - U(C^-1)V
+		// todo - need multiplication with transpose matrices (in this case schur * U^T)
+
+#ifdef __SCHUR_PROFILING
+		double f_add_time = dt.f_Time();
+#endif // __SCHUR_PROFILING
+
+		// note that the sum and difference of two symmetric matrices is again symmetric,
+		// but this is not always true for the product
+
+		/*lambda_perm.Save_MatrixMarket("lambda_perm.mtx", "lambda_perm.bla");
+		A.Save_MatrixMarket("lambda_perm00.mtx", "lambda_perm00.bla");
+		U.Save_MatrixMarket("lambda_perm01.mtx", "lambda_perm01.bla");
+		V.Save_MatrixMarket("lambda_perm10.mtx", "lambda_perm10.bla");
+		C.Save_MatrixMarket("lambda_perm11.mtx", "lambda_perm11.bla");
+		C_inv.Save_MatrixMarket("lambda_perm11_inv.mtx", "lambda_perm11_inv.bla");
+		schur_compl.Save_MatrixMarket("schur.mtx", "schur.bla");*/
+		/*lambda_perm.Rasterize("schur0_lambda_perm.tga", 3);
+		A.Rasterize("schur1_lambda_perm00.tga", 3);
+		U.Rasterize("schur2_lambda_perm01.tga", 3);
+		V.Rasterize("schur3_lambda_perm10.tga", 3);
+		C.Rasterize("schur4_lambda_perm11.tga", 3);
+		schur_compl.Rasterize("schur5_A-(UC-1V).tga", 3);
+		C_inv.Rasterize("schur6_lambda_perm11_inv.tga", 3);*/
+		// debug // note that C gets overwritten by Cinv, need to save that one before!!
+
+		size_t n_rhs_vector_size = r_lambda.n_Column_Num();
+		size_t n_pose_vector_size = A.n_Column_Num(); // 6 * m_n_matrix_cut;
+		size_t n_landmark_vector_size = U.n_Column_Num(); // 3 * (n - m_n_matrix_cut);
+		// not block columns! element ones
+
+		if(m_double_workspace.capacity() < n_rhs_vector_size) {
+			m_double_workspace.clear(); // avoid data copying
+			m_double_workspace.reserve(std::max(2 * m_double_workspace.capacity(), n_rhs_vector_size));
+		}
+		m_double_workspace.resize(n_rhs_vector_size);
+		double *p_double_workspace = &m_double_workspace[0];
+		// alloc workspace
+
+		lambda_perm.InversePermute_RightHandSide_Vector(p_double_workspace,
+			&r_v_eta(0), n_rhs_vector_size, &m_order[0], m_order.size());
+		// need to permute the vector !!
+
+		Eigen::VectorXd v_x = Eigen::Map<Eigen::VectorXd>(p_double_workspace, n_pose_vector_size); // don't really need a copy, but need Eigen::VectorXd for _TyLinearSolverWrapper::Solve()
+		Eigen::VectorXd v_l = Eigen::Map<Eigen::VectorXd>(p_double_workspace +
+			n_pose_vector_size, n_landmark_vector_size); // need a copy, need one vector of workspace
+		// get eta and cut it into pieces
+		// \eta = | x |
+		//        | l |
+
+		// we are now solving:
+		// \lambda          \eta
+		// | A U | | dx | = | x |
+		// | V C | | dl |   | l |
+
+		minus_U_Cinv.PreMultiply_Add_FBS<_TyLambdaMatrixBlockSizes>(&v_x(0),
+			n_pose_vector_size, &v_l(0), n_landmark_vector_size); // x - U(C^-1)l
+		// compute right-hand side x - U(C^-1)l
+
+#ifdef __SCHUR_PROFILING
+		double f_RHS_time = dt.f_Time();
+#endif // __SCHUR_PROFILING
+
+		if(!b_keep_ordering)
+			_TyLinearSolverWrapper::FinalBlockStructure(m_linear_solver, schur_compl); // the ordering on schur_compl will not change, can calculate it only in the first pass and then reuse
+		bool b_result = _TyLinearSolverWrapper::Solve(m_linear_solver, schur_compl, v_x);
+		Eigen::VectorXd &v_dx = v_x; // rename, solves inplace
+		// solve for dx = A - U(C^-1)V / x
+
+#ifdef __SCHUR_PROFILING
+		double f_linsolve0_time = dt.f_Time();
+#endif // __SCHUR_PROFILING
+
+		// note that schur_compl only contains pose-sized blocks when guided ordering is used! could optimize for that
+		// also note that schur_compl is not completely dense if it is not many times smaller than C
+
+		Eigen::Map<Eigen::VectorXd>(p_double_workspace, n_pose_vector_size) = v_dx; // an unnecessary copy, maybe could work around
+		// obtained a first part of the solution
+
+		Eigen::Map<Eigen::VectorXd> v_dl(p_double_workspace +
+			n_pose_vector_size, n_landmark_vector_size); // calculated inplace
+		v_l = -v_l; // trades setZero() for sign negation and a smaller sign negation above
+
+		/*Eigen::VectorXd v_l_copy = v_l;
+		V.PreMultiply_Add_FBS<_TyLambdaMatrixBlockSizes>(&v_l_copy(0),
+			n_landmark_vector_size, &v_dx(0), n_pose_vector_size); // V * dx*/
+		U.PostMultiply_Add_FBS_Parallel<_TyLambdaMatrixBlockSizes>(&v_l(0),
+			n_landmark_vector_size, &v_dx(0), n_pose_vector_size); // dx^T * U^T = (V * dx)^T and the vector transposes are ignored
+		//printf("post-mad error %g (rel %g)\n", (v_l_copy - v_l).norm(), (v_l_copy - v_l).norm() / v_l.norm());
+
+		// l = V * dx - l
+		v_dl.setZero();
+		C_inv.PreMultiply_Add/*_FBS<_TyLambdaMatrixBlockSizes>*/(&v_dl(0),
+			n_landmark_vector_size, &v_l(0), n_landmark_vector_size); // (C^-1)(l - V * dx)
+		// solve for dl = (C^-1)(l - V * dx) = -(C^-1)(V * dx - l)
+		// the second part of the solution is calculated inplace in the dest vector
+
+		lambda_perm.Permute_RightHandSide_Vector(&r_v_eta(0), p_double_workspace,
+			n_rhs_vector_size, &m_order[0], m_order.size());
+		// permute back!
+
+#ifdef __SCHUR_PROFILING
+		double f_linsolve1_time = dt.f_Time();
+		double f_totel_time = f_reperm_time + f_slice_time + f_transpose_time +
+			f_inverse_time + f_mul0_time + f_scale_time + f_mul1_time +
+			f_add_time + f_RHS_time + f_linsolve0_time + f_linsolve1_time;
+
+		printf("Schur took %f sec, out of which:\n", f_totel_time);
+		printf("   reperm: %f\n", f_reperm_time);
+		printf("    slice: %f\n", f_slice_time);
+		printf("transpose: %f\n", f_transpose_time);
+		printf("  inverse: %f\n", f_inverse_time);
+		printf(" multiply: %f, out of which:\n", f_mul0_time + f_scale_time + f_mul1_time);
+		printf("\tdiag gemm: %f\n", f_mul0_time);
+		printf("\t    scale: %f\n", f_scale_time);
+		printf("\t     gemm: %f\n", f_mul1_time);
+		printf("      add: %f\n", f_add_time);
+		printf(" RHS prep: %f\n", f_RHS_time);
+		printf("  cholsol: %f (" PRIsize " x " PRIsize ", " PRIsize " nnz (%.2f %%))\n",
+			f_linsolve0_time, schur_compl.n_Row_Num(), schur_compl.n_Column_Num(),
+			schur_compl.n_NonZero_Num(), 100 * float(schur_compl.n_NonZero_Num()) /
+			(schur_compl.n_Row_Num() * schur_compl.n_Column_Num()));
+		printf(" dy solve: %f\n", f_linsolve1_time);
+		// debug - do some profiling
+#endif // __SCHUR_PROFILING
+
+		/*static size_t n_iter = 0;
+		if(!n_iter) {
+			std::string s_name;
+			{
+				char p_s_it_nr[256];
+				sprintf(p_s_it_nr, "schur/lambda_perm_" PRIsize "_", n_iter);
+				s_name = p_s_it_nr;
+				++ n_iter;
+			}
+			A.Save_MatrixMarket((s_name + "00.mtx").c_str(), (s_name + "00.bla").c_str());
+			U.Save_MatrixMarket((s_name + "01.mtx").c_str(), (s_name + "01.bla").c_str());
+			V.Save_MatrixMarket((s_name + "10.mtx").c_str(), (s_name + "10.bla").c_str());
+			C.Save_MatrixMarket((s_name + "11.mtx").c_str(), (s_name + "11.bla").c_str());
+			C_inv.Save_MatrixMarket((s_name + "11_inv.mtx").c_str(), (s_name + "11_inv.bla").c_str());
+			schur_compl.Save_MatrixMarket((s_name + "schur.mtx").c_str(), (s_name + "schur.bla").c_str());
+		}*/
+		// debug - dump the matrices
+
+		return b_result;
+	}
+
+	/**
+	 *	@brief solves linear system given by positive-definite matrix, marginalizes out the poses
+	 *
+	 *	@param[in] r_lambda is positive-definite matrix
+	 *	@param[in,out] r_v_eta is the right-side vector, and is overwritten with the solution
+	 *
+	 *	@return Returns true on success, false on failure.
+	 *
+	 *	@note This function throws std::bad_alloc.
+	 *	@note This enables a reuse of previously calculated symbolic factorization,
+	 *		it can be either calculated in SymbolicDecomposition_Blocky(), or it is
+	 *		calculated automatically after the first call to this function,
+	 *		or after Clear_SymbolicDecomposition() was called (preferred).
+	 *	@note This only solves for the landmarks (the vertices with lower dimension),
+	 *		the solution for poses is zeroed out. This is faster than Solve_PosDef_Blocky().
+	 *	@note This requires ordering to be guided by the dimensionality, use
+	 *		SymbolicDecomposition_Blocky(const CUberBlockMatrix&, bool) with
+	 *		<tt>b_force_guided_ordering</tt> set to <tt>true</tt>.
+	 */
+	bool Solve_PosDef_Blocky_MarginalPoses(const CUberBlockMatrix &r_lambda, Eigen::VectorXd &r_v_eta) // throw(std::bad_alloc)
+	{
+		if(r_lambda.n_BlockColumn_Num() != m_order.size())
+			SymbolicDecomposition_Blocky(r_lambda, true); // force guided!
+		// in case the ordering is nonconforming, calculate a new one
+
+		//bool b_keep_ordering = !m_b_base_solver_reorder;
+		//m_b_base_solver_reorder = false; // only once, or until the ordering changes
+		//// in case we need to reorder the base linear solver as well
+		// do not touch this, we do no cholesky now
+
+		//bool b_result = Schur_Solve_MarginalPoses(r_lambda, r_v_eta, r_v_eta, &m_order[0],
+		//	m_order.size(), m_n_matrix_cut/*, b_keep_ordering*/); // fast solve
+
+#if 1 // solve vertex-only system
+//		_ASSERTE(vertex_Size_Num == 2); // otherwise the landmarks could not have been distinguisjed (they could, but it would not be clear what are we marginalizing out)
+		// todo - will have to think about this a bit harder, possibly pass more parameters
+
+		_ASSERTE(r_lambda.b_SymmetricLayout()); // pos-def is supposed to be symmetric
+		_ASSERTE(r_v_eta.rows() == r_lambda.n_Row_Num()); // make sure the vector has correct dimension
+
+		_ASSERTE(r_lambda.b_SymmetricLayout());
+		_ASSERTE(r_lambda.n_BlockColumn_Num() == m_order.size());
+		_ASSERTE((m_order.empty() && !m_n_matrix_cut) || (!m_order.empty() &&
+			m_n_matrix_cut > 0 && m_n_matrix_cut < SIZE_MAX && m_n_matrix_cut + 1 < m_order.size()));
+		_ASSERTE(r_v_eta.rows() == r_lambda.n_Column_Num());
+
+		CUberBlockMatrix lambda_perm;
+		r_lambda.Permute_UpperTriangular_To(lambda_perm,
+			&m_order[0], m_order.size(), true);
+		// reorder the matrix
+
+		const size_t n = lambda_perm.n_BlockColumn_Num();
+
+		CUberBlockMatrix /*A, U,*/ C/*, V*/;
+		/*lambda_perm.SliceTo(A, 0, n_matrix_cut, 0, n_matrix_cut, true);
+		lambda_perm.SliceTo(U, 0, n_matrix_cut, n_matrix_cut, n, true);*/
+		lambda_perm.SliceTo(C, m_n_matrix_cut, n, m_n_matrix_cut, n, true);
+		/*U.TransposeTo(V);*/ // because lower-triangular of lambda is not calculated
 		/*CUberBlockMatrix &A = lambda_perm;
 		A.SliceTo(A, n_matrix_cut, n_matrix_cut, true);*/ // can't, would free data that U, C and V references
 		// cut Lambda matrix into pieces
 		// \lambda = | A U |
 		//           | V C |
 
+#if 1
 		CUberBlockMatrix C_inv;
 		C_inv.InverseOf_Symmteric_FBS<_TyLambdaMatrixBlockSizes>(C); // C is block diagonal (should also be symmetric)
+#else // 1
+		CUberBlockMatrix &C_inv = C;
+		C_inv.InverseOf_BlockDiag_FBS_Parallel<_TyLambdaMatrixBlockSizes>(C); // faster version, slightly less general
+#endif // 1
 		// inverse of C
 
 		/*CUberBlockMatrix unity, u_ref;
@@ -1698,15 +2444,16 @@ public:
 		fprintf(stderr, "error of matrix inverse is: %g\n", f_error);*/
 		// check inverse
 
-		CUberBlockMatrix minus_U_Cinv;
+		/*CUberBlockMatrix minus_U_Cinv;
 		U.MultiplyToWith_FBS<_TyLambdaMatrixBlockSizes,
 			_TyLambdaMatrixBlockSizes>(minus_U_Cinv, C_inv);	// U*(C^-1) // U is not symmetric, it is rather dense, tmp is again dense
 		minus_U_Cinv.Scale(-1.0);	// -U*(C^-1)
 		CUberBlockMatrix schur_compl; // not needed afterwards
 		minus_U_Cinv.MultiplyToWith_FBS<_TyLambdaMatrixBlockSizes,
 			_TyLambdaMatrixBlockSizes>(schur_compl, V, true); // -U*(C^-1)V // UV is symmetric, the whole product should be symmetric, calculate only the upper triangular part
-		A.AddTo_FBS<_TyLambdaMatrixBlockSizes>(schur_compl); // -U*(C^-1)V + A // A is symmetric, if schur_compl is symmetric, the difference also is
+		A.AddTo_FBS<_TyLambdaMatrixBlockSizes>(schur_compl);*/ // -U*(C^-1)V + A // A is symmetric, if schur_compl is symmetric, the difference also is
 		// compute left-hand side A - U(C^-1)V
+		// todo - need multiplication with transpose matrices (in this case schur * U^T)
 
 		// note that the sum and difference of two symmetric matrices is again symmetric,
 		// but this is not always true for the product
@@ -1728,8 +2475,8 @@ public:
 		// debug
 
 		size_t n_rhs_vector_size = r_lambda.n_Column_Num();
-		size_t n_pose_vector_size = A.n_Column_Num(); // 6 * n_matrix_cut;
-		size_t n_landmark_vector_size = U.n_Column_Num(); // 3 * (n - n_matrix_cut);
+		size_t n_landmark_vector_size = C.n_Column_Num(); // 3 * (n - n_matrix_cut);
+		size_t n_pose_vector_size = n_rhs_vector_size - n_landmark_vector_size; // 6 * n_matrix_cut;
 		// not block columns! element ones
 
 		if(m_double_workspace.capacity() < n_rhs_vector_size) {
@@ -1741,10 +2488,10 @@ public:
 		// alloc workspace
 
 		lambda_perm.InversePermute_RightHandSide_Vector(p_double_workspace,
-			&r_v_eta(0), n_rhs_vector_size, p_ordering, n_ordering_size);
+			&r_v_eta(0), n_rhs_vector_size, &m_order[0], m_order.size());
 		// need to permute the vector !!
 
-		Eigen::VectorXd v_x = Eigen::Map<Eigen::VectorXd>(p_double_workspace, n_pose_vector_size); // don't really need a copy, but need Eigen::VectorXd for _TyLinearSolverWrapper::Solve()
+		//Eigen::VectorXd v_x = Eigen::Map<Eigen::VectorXd>(p_double_workspace, n_pose_vector_size); // don't really need a copy, but need Eigen::VectorXd for _TyLinearSolverWrapper::Solve()
 		Eigen::VectorXd v_l = Eigen::Map<Eigen::VectorXd>(p_double_workspace +
 			n_pose_vector_size, n_landmark_vector_size); // need a copy, need one vector of workspace
 		// get eta and cut it into pieces
@@ -1756,7 +2503,7 @@ public:
 		// | A U | | dx | = | x |
 		// | V C | | dl |   | l |
 
-		minus_U_Cinv.PreMultiply_Add_FBS<_TyLambdaMatrixBlockSizes>(&v_x(0),
+		/*minus_U_Cinv.PreMultiply_Add_FBS<_TyLambdaMatrixBlockSizes>(&v_x(0),
 			n_pose_vector_size, &v_l(0), n_landmark_vector_size); // x - U(C^-1)l
 		// compute right-hand side x - U(C^-1)l
 
@@ -1769,7 +2516,7 @@ public:
 		// note that schur_compl only contains pose-sized blocks when guided ordering is used! could optimize for that
 		// also note that schur_compl is not completely dense if it is not many times smaller than C
 
-		Eigen::Map<Eigen::VectorXd>(p_double_workspace, n_pose_vector_size) = v_dx; // an unnecessary copy, maybe could work arround
+		Eigen::Map<Eigen::VectorXd>(p_double_workspace, n_pose_vector_size) = v_dx; // an unnecessary copy, maybe could work around
 		// obtained a first part of the solution
 
 		Eigen::Map<Eigen::VectorXd> v_dl(p_double_workspace +
@@ -1782,52 +2529,320 @@ public:
 		C_inv.PreMultiply_Add_FBS<_TyLambdaMatrixBlockSizes>(&v_dl(0),
 			n_landmark_vector_size, &v_l(0), n_landmark_vector_size); // (C^-1)(l - V * dx)
 		// solve for dl = (C^-1)(l - V * dx)
-		// the second part of the solution is calculated inplace in the dest vector
+		// the second part of the solution is calculated inplace in the dest vector*/
 
-		lambda_perm.Permute_RightHandSide_Vector(&r_v_schur_sol(0), p_double_workspace,
-			n_rhs_vector_size, p_ordering, n_ordering_size);
+		Eigen::Map<Eigen::VectorXd>(p_double_workspace, n_pose_vector_size).setZero();
+		// the dx for poses is zero
+
+		Eigen::Map<Eigen::VectorXd> v_dl(p_double_workspace +
+			n_pose_vector_size, n_landmark_vector_size); // calculated inplace
+		v_dl.setZero();
+		C_inv.PreMultiply_Add_FBS<_TyLambdaMatrixBlockSizes>(&v_dl(0),
+			n_landmark_vector_size, &v_l(0), n_landmark_vector_size); // C^-1 * eta
+		// the dl is just C^-1 times eta, simple
+
+		lambda_perm.Permute_RightHandSide_Vector(&r_v_eta(0), p_double_workspace,
+			n_rhs_vector_size, &m_order[0], m_order.size());
 		// permute back!
 
 		// todo - do some profiling
 
+		return true; // no cholesky, no not pos def will ever happen
+#else // just zero out the camera component
+		bool b_result = Solve_PosDef_Blocky(r_lambda, r_v_eta);
+		// reuse code
+
+		_ASSERTE(m_double_workspace.size() == r_lambda.n_Column_Num());
+		double *p_double_workspace = &m_double_workspace[0];
+
+		lambda_perm.InversePermute_RightHandSide_Vector(p_double_workspace,
+			&r_v_eta(0), n_rhs_vector_size, &m_order[0], m_order.size());
+		// need to permute the vector
+
+		Eigen::Map<Eigen::VectorXd>(p_double_workspace, n_pose_vector_size).setZero();
+		// the poses are forcibly zeroed-out
+
+		lambda_perm.Permute_RightHandSide_Vector(&r_v_eta(0), p_double_workspace,
+			n_rhs_vector_size, &m_order[0], m_order.size());
+		// permute back
+
 		return b_result;
+#endif
 	}
 
+protected:
 	/**
-	 *	@brief computes ordering on lambda that spearate poses from landmarks
+	 *	@brief calculates ordering guided by vertex dimensions (corresponds to lambda block sizes)
+	 *
+	 *	@param[out] r_ordering is ordering vector (allocated and filled in this function)
+	 *	@param[in] r_lambda is the lambda matrix to be ordered
+	 *
+	 *	@return Returns the number of vertices in the reduced camera system (in vertices / blocks, not in elements).
 	 */
-	size_t n_Schur_Ordering(const CUberBlockMatrix &r_lambda,
-		size_t *p_ordering, size_t UNUSED(n_ordering_size)) // throw(std::bad_alloc)
+	size_t n_Calculate_GuidedOrdering(std::vector<size_t> &r_ordering,
+		const CUberBlockMatrix &r_lambda) // throw(std::bad_alloc)
 	{
-		_ASSERTE(p_ordering);
-		_ASSERTE(n_ordering_size == r_lambda.n_BlockColumn_Num());
-
-		size_t n_pose_num;
-		if(vertex_Size_Num == 2) { // count of 2 also implies that the sizes are different
-			n_pose_num = CSchurOrdering::n_Calculate_GuidedOrdering(m_order_workspace,
-				vertex_Size_Big, vertex_Size_Small, r_lambda);
-			// this is the "guided ordering", need to have two types of vertices with a different dimensionality
-			// note this may give inferior results, i.e. on landmark datasets like Victoria park
+		const size_t n = r_lambda.n_BlockColumn_Num();
+		if(r_ordering.capacity() < n) {
+			r_ordering.clear();
+			r_ordering.reserve(std::max(2 * r_ordering.capacity(), n));
 		}
-		if(vertex_Size_Num != 2 || n_pose_num >= r_lambda.n_BlockColumn_Num() / 2) { // pose-only without -po also tries to use guided ordering (but there are no landmarks - wasted time)
-			n_pose_num = CSchurOrdering::n_Calculate_Ordering(m_order_workspace, r_lambda);
-			// this is full ordering, using the graph structure, always gives best results
+		r_ordering.resize(n);
+		// allocate space
+
+		_ASSERTE(b_can_use_guided_ordering);
+		static bool b_warned_about_ordering = false;
+		if(!b_warned_about_ordering) {
+			b_warned_about_ordering = true;
+			if(!b_efficient_guided_ordering) {
+				fprintf(stderr, "warning: guided Schur ordering with ambiguous vertex dimensions:"
+					" may result in low speedups\n");
+				// if this happens, make sure that the size of the schur complement is what it should be.
+				// if it is not, consider disabling the guided ordering and using MIS always to save time.
+			} else if(!b_perfect_guided_ordering) {
+				fprintf(stderr, "warning: guided Schur ordering with ambiguous vertex dimensions:"
+					" the Schur complement may be dense\n");
+				// if this happens, make sure that the sparsity of the schur complement is reasonable.
+				// if it is completely dense, try using dense Cholesky factorization instead of sparse.
+			}
 		}
+		// warn about less-than-perfect orderings in order to help solving performance issues
 
-		/*printf("debug: Schur inverse size: " PRIsize " vertices (out of " PRIsize ")\n",
-			r_lambda.n_BlockColumn_Num() - n_pose_num, r_lambda.n_BlockColumn_Num());*/
-		// see how successful the ordering was
+		size_t p_vertex_dimensions[n_partite_vertex_dimension_num + b_have_nonpartite_vertex_types] = {0};
+		//const int *p_end = CTypelistForEach<CPartiteUniqueSortedVertexDims/*CPartiteUniqueVertexDims*/, CFillDimensions>::Run( // todo - is CPartiteUniqueSortedVertexDims correct here?
+		//	CFillDimensions(&p_vertex_dimensions[b_have_nonpartite_vertex_types]));
+		//_ASSERTE(p_end == &p_vertex_dimensions[0] + sizeof(p_vertex_dimensions) / sizeof(p_vertex_dimensions[0])); // make sure we filled all
+		fbs_ut::Copy_CTSizes_to_Array<CPartiteUniqueSortedVertexDims>(p_vertex_dimensions,
+			n_partite_vertex_dimension_num); // use a fancy function
+		// gether dimensions of partite vertex types
 
-		for(size_t i = 0; i < n_ordering_size; ++ i)
-			p_ordering[m_order_workspace[i]] = i;
-		//	p_ordering[i] = m_order_workspace[i]; // bad ordering - to test inverse of not purely diagonal matrix
-		// have to use inverse ordering for matrix reordering
+		size_t n_nonpartite_dimension_sum = 0;
+		// sum of dimensions of all the nonpartite vertices
+
+		std::vector<size_t> p_vertex_type_indices[n_partite_vertex_dimension_num +
+			b_have_nonpartite_vertex_types]; // the first list is for the non-partite vertices, if there are any
+
+		if(!b_have_nonpartite_vertex_types && n_partite_vertex_dimension_num == 2) {
+			m_b_single_landmark_size = true;
+			m_n_landmark_size = p_vertex_dimensions[0];
+
+			enum {
+				n_landmark_dim = CTypelistItemAt<CAllUniqueSortedVertexDims, 0>::_TyResult::n_size,
+				n_pose_dim = CTypelistItemAt<CAllUniqueSortedVertexDims, n_unique_vertex_dim_num - 1>::_TyResult::n_size
+			};
+
+			return CSchurOrdering::n_Calculate_GuidedOrdering(r_ordering,
+				p_vertex_dimensions[1], p_vertex_dimensions[0], r_lambda);
+		}
+		// t_odo - write a specialized implementation for ideal simple bundle adjustment
+		// (all cameras at the beginning, all points at the end)
+		// we actually already had that implemented ;)
+
+		for(size_t i = 0; i < n; ++ i) {
+			size_t n_vertex_i_dimension = r_lambda.n_BlockColumn_Column_Num(i);
+
+			bool b_is_partite_vertex;
+			if(!b_have_nonpartite_vertex_types)
+				b_is_partite_vertex = true; // there are no nonpartite vertices in this system
+			else if(b_can_use_binary_mask_to_detect_partitedness) {
+				b_is_partite_vertex = ((1 << n_vertex_i_dimension) & n_partite_vertex_mask) != 0;
+				// find out whether the vertex is partite using a mask - very fast, should be
+				// sufficient in most cases (vertex dimensions less than 32 (32 not permitted
+				// for compatibility reasons, as the mask is stored as an enum))
+			} else {
+				b_is_partite_vertex = !CTypelistItemBFind<typename CNonEmptySizeList<CNonPartiteUniqueVertexDims>::_TyResult,
+					fbs_ut::CRuntimeCompareScalar, size_t, CBinarySearchResult>::Find(n_vertex_i_dimension, CBinarySearchResult());
+				// find the partite vertex at runtime
+			}
+			// determine whether the vertex is partite, based on its dimension
+
+			if(!b_is_partite_vertex) {
+				n_nonpartite_dimension_sum += n_vertex_i_dimension; // not sure if this is useful for anything
+				p_vertex_type_indices[0].push_back(i); // add it to the list of non-partite vertices
+			} else {
+				// the vertex is partite, need to find out which type of a vertex it is
+
+				typedef CBinarySearchResultWithIndex<CPartiteUniqueSortedVertexDims/*CPartiteUniqueVertexDims*/> TFindResult;
+				size_t n_vertex_type_index = CTypelistItemBFind<typename CNonEmptySizeList<CPartiteUniqueSortedVertexDims/*CPartiteUniqueVertexDims*/>::_TyResult,
+					fbs_ut::CRuntimeCompareScalar, size_t, TFindResult>::FindExisting(n_vertex_i_dimension, TFindResult()).n_Index();
+				_ASSERTE(n_vertex_type_index < n_partite_vertex_dimension_num);
+				// finds the current dimentsion in the list of partite vertex dimension
+
+				n_vertex_type_index = n_partite_vertex_dimension_num - n_vertex_type_index - 1;
+				_ASSERTE(n_vertex_type_index < n_partite_vertex_dimension_num); // make sure it did not somehow over/underflow
+				// reverse the index so that vertices with higher dimensions are stored in lower index lists
+
+				if(b_have_nonpartite_vertex_types)
+					++ n_vertex_type_index;
+				// if there are nonpartite vertices, they are occupying index 0
+
+				p_vertex_type_indices[n_vertex_type_index].push_back(i);
+				// add it to the list of partite vertices of the given type
+			}
+		}
+		// sort all the vertex types in the matrix to a list
+
+		if(b_have_nonpartite_vertex_types)
+			r_ordering.swap(p_vertex_type_indices[0]);
+		else
+			r_ordering.clear();
+		// the ordering starts with the non-partite vertex types
+
+#if 0
+		size_t n_pose_num = 0;
+		size_t n_partite_vertex_num = n - r_ordering.size();
+		for(int n_pass = 0; n_pass < 2; ++ n_pass) {
+			for(int i = 0; i < (int)n_partite_vertex_dimension_num; ++ i) {
+				std::vector<size_t> &r_vertex_type_i_indices =
+					p_vertex_type_indices[i + b_have_nonpartite_vertex_types];
+				// indices of vertex of this type
+
+				size_t n_vertex_num = r_vertex_type_i_indices.size();
+				if((!n_pass && n_partite_vertex_num / n_vertex_num > 4) ||
+				   (n_pass && n_partite_vertex_num / n_vertex_num <= 4)) { // todo - make this threshold a parameter of the solver
+					if(r_ordering.empty())
+						r_ordering.swap(r_vertex_type_i_indices);
+					else {
+						r_ordering.insert(r_ordering.end(), r_vertex_type_i_indices.begin(),
+							r_vertex_type_i_indices.end());
+					}
+				}
+				// in the first pass:
+				// in case the vertices are partite, but there is only a few of them, then they are
+				// likely seen by most of the other vertices, and would create a very dense Schur
+				// complement if ordered in the diagonal part: keep them in the Schur complement
+				// in the second pass:
+				// add the rest of the vertices that were not chosen in the first pass. these will
+				// form the diagonal matrix
+			}
+
+			if(!n_pass)
+				n_pose_num = r_ordering.size();
+			// at the end of the first pass, the ordering contains all the vertices that
+			// will form the Schur complement; the rest of the vertices will form the
+			// diagonal part
+		}
+		// this is flawed: this will not form a diagonal part, unless all of the partite vertices
+		// are independent of each other. if there are possible edges between these vertices,
+		// then the inverse of D would be completely dense!
+		// need to have a test of which partite vertex types can be combined in the diagonal
+		// part together (todo - do this when there is such a system available)
+
+		// if we had a function which finds which pairs of vertices are connected by an edge,
+		// this function would form a graph. we would need to enumerate all independent sets
+		// of this graph and choose such a one, which has the greatest dimension of vertices,
+		// corresponding to the vertex types in that set (a recursion of the MIS problem that
+		// is being solved by this function).
+
+		m_b_single_landmark_size = false;
+		// not sure how this branch works. better be safe.
+#else // 0
+		std::vector<size_t> *p_VT_indices = &p_vertex_type_indices[0] + b_have_nonpartite_vertex_types;
+		const size_t *p_VT_dimensions = &p_vertex_dimensions[0] + b_have_nonpartite_vertex_types;
+		int n_largest_partite_vertices = 0;
+		size_t n_largest_partite_vertices_size = p_VT_indices[0].size() * p_VT_dimensions[n_partite_vertex_dimension_num - 0 - 1]; // the dimensions are reversed in the loop above!
+		for(int i = 1; i < (int)n_partite_vertex_dimension_num; ++ i) {
+			size_t n_ith_partite_vertices_size = p_VT_indices[i].size() * p_VT_dimensions[n_partite_vertex_dimension_num - i - 1]; // the dimensions are reversed in the loop above!
+			if(n_ith_partite_vertices_size > n_largest_partite_vertices_size) {
+				n_largest_partite_vertices = i;
+				n_largest_partite_vertices_size = n_ith_partite_vertices_size;
+			}
+		}
+		// find the index of the largest partite vertices
+
+		for(int i = 0; i < (int)n_partite_vertex_dimension_num; ++ i) {
+			if(i == n_largest_partite_vertices)
+				continue;
+			// skip the largest ones
+
+			std::vector<size_t> &r_vertex_type_i_indices = p_VT_indices[i];
+			// indices of vertex of this type
+
+			if(!b_have_nonpartite_vertex_types && r_ordering.empty()) // if we have nonpartite verts, then the ordering wont be empty anymore
+				r_ordering.swap(r_vertex_type_i_indices);
+			else {
+				r_ordering.insert(r_ordering.end(), r_vertex_type_i_indices.begin(),
+					r_vertex_type_i_indices.end());
+			}
+		}
+		// gather all the types of vertices that are less numerous, those will all go to the
+		// Schur complement, as they could potentially make the diagonal part not diagonal
+		// (we do not have a test for which vertices would do that implemented, as of yet,
+		// but in BA, the less plentiful cameras and camera parameters all connect to the
+		// (plentiful) landmarks and therefore need to be excluded from the diagonal and
+		// this code therefore serves us extremely well)
+
+		size_t n_pose_num = r_ordering.size();
+		// now the ordering contains all the vertices that will form the Schur complement;
+		// the rest of the vertices will form the diagonal part
+
+		r_ordering.insert(r_ordering.end(),
+			p_VT_indices[n_largest_partite_vertices].begin(),
+			p_VT_indices[n_largest_partite_vertices].end());
+		// add the largest partite at the end to form the diagonal
+
+		m_b_single_landmark_size = true;
+		m_n_landmark_size = p_VT_dimensions[n_partite_vertex_dimension_num -
+			n_largest_partite_vertices - 1]; // the dimensions are reversed in the loops above!
+		// have a single landmark size
+#endif // 0
+
+		/*size_t n_pose_num = 0, n_landmark_num = 0;
+		{
+			size_t i = 0;
+
+			for(; i < n; ++ i) {
+				if(r_lambda.n_BlockColumn_Column_Num(i) == n_pose_vertex_dimension) {
+					r_ordering[n_pose_num] = i;
+					++ n_pose_num;
+				} else
+					break;
+			}
+			// look for all the poses
+
+			n_landmark_num = n_pose_num; // offset the destination index
+			for(; i < n; ++ i) {
+				if(r_lambda.n_BlockColumn_Column_Num(i) == n_landmark_vertex_dimension) {
+					r_ordering[n_landmark_num] = i;
+					++ n_landmark_num;
+				} else
+					break;
+			}
+			n_landmark_num -= n_pose_num; // offset back
+			// look for all the landmarks (assume landmarks are smaller than poses)
+
+			if(i < n) {
+				std::vector<size_t> &r_poses = r_ordering; // keep only poses in the destination ordering
+				std::vector<size_t> landmarks(n - n_pose_num); // allocate space for the remaining landmarks
+				// get memory
+
+				std::copy(r_ordering.begin() + n_pose_num, r_ordering.begin() +
+					(n_pose_num + n_landmark_num), landmarks.begin());
+				// copy the landmarks away to a second array
+
+				for(; i < n; ++ i) {
+					if(r_lambda.n_BlockColumn_Column_Num(i) == n_pose_vertex_dimension) {
+						r_poses[n_pose_num] = i;
+						++ n_pose_num;
+					} else {
+						_ASSERTE(r_lambda.n_BlockColumn_Column_Num(i) == n_landmark_vertex_dimension);
+						landmarks[n_landmark_num] = i;
+						++ n_landmark_num;
+					}
+				}
+				// loop through the rest of the vertices
+
+				std::copy(landmarks.begin(), landmarks.begin() + n_landmark_num,
+					r_ordering.begin() + n_pose_num);
+				// copy the landmarks back
+			}
+		}
+		_ASSERTE(n_pose_num + n_landmark_num == r_lambda.n_BlockColumn_Num());*/
+		// calculate the simple guided ordering (assumes that landmarks have smaller
+		// dimension than poses, and that landmarks are not connected among each other)
 
 		return n_pose_num;
-		// calculate ordering
-
-		// t_odo - calculate proper schur ordering based on the graph dissection
 	}
 };
 
-#endif // __LINEAR_SOLVER_SCHUR_INCLUDED
+#endif // !__LINEAR_SOLVER_SCHUR_INCLUDED

@@ -194,6 +194,9 @@ struct TIncrementalSolveSetting {
 
 	/**
 	 *	@brief linear incremental constructor
+	 *
+	 *	@param[in] t_tag is tag for tag based dispatch (value unused at runtime)
+	 *	@param[in] t_freq is incremental solve frequency settings
 	 */
 	inline TIncrementalSolveSetting(solve::linear_tag UNUSED(t_tag), TIncrementalFreqSetting t_freq)
 		:t_linear_freq(t_freq), n_max_nonlinear_iteration_num(default_NonlinearIteration_Num),
@@ -202,6 +205,11 @@ struct TIncrementalSolveSetting {
 
 	/**
 	 *	@brief nonlinear incremental constructor
+	 *
+	 *	@param[in] t_tag is tag for tag based dispatch (value unused at runtime)
+	 *	@param[in] t_freq is incremental solve frequency settings
+	 *	@param[in] _n_max_nonlinear_iteration_num is the maximum number of nonlinear solver iterations
+	 *	@param[in] _f_nonlinear_error_thresh is nonlinear solver residual norm threshold
 	 */
 	inline TIncrementalSolveSetting(solve::nonlinear_tag UNUSED(t_tag), TIncrementalFreqSetting t_freq,
 		size_t _n_max_nonlinear_iteration_num = default_NonlinearIteration_Num,
@@ -212,6 +220,14 @@ struct TIncrementalSolveSetting {
 
 	/**
 	 *	@brief mixed linear/nonlinear incremental constructor
+	 *
+	 *	@param[in] t_tag0 is tag for tag based dispatch (value unused at runtime)
+	 *	@param[in] t_linear_freq is incremental linear solve frequency settings
+	 *	@param[in] t_tag1 is tag for tag based dispatch (value unused at runtime)
+	 *	@param[in] t_nonlinear_freq is incremental nonlinear solve frequency settings
+	 *	@param[in] _n_max_nonlinear_iteration_num is the maximum number of nonlinear solver iterations
+	 *	@param[in] _f_nonlinear_error_thresh is nonlinear solver residual norm threshold
+	 *
 	 *	@note The opposite combination nonlinear first then linear is not allowed.
 	 */
 	inline TIncrementalSolveSetting(solve::linear_tag UNUSED(t_tag0),
@@ -318,10 +334,13 @@ enum {
 	do_calculate = true /**< @brief name of choice for calculating the marginals */
 };
 
-};
+} // ~marginals
 
 /**
  *	@brief matrix part names
+ *
+ *	@note Do not use binary operations to subtract matrix parts, use n_MPart_Subtract() instead.
+ *	@note To test matrix parts, use <tt>(a & mpart_Something) == mpart_Something</tt>
  */
 enum EBlockMatrixPart {
 	mpart_Nothing = 0, /**< @brief nothing */
@@ -331,6 +350,26 @@ enum EBlockMatrixPart {
 	mpart_Diagonal = 8, /**< @brief the block diagonal */
 	mpart_FullMatrix = 1023 /**< @brief the full matrix (idempotent to combination with other flags) */
 };
+
+/**
+ *	@brief subtracts matrix parts from selected matrix parts
+ *
+ *	@param[in] a is selected matrix parts
+ *	@param[in] b is matrix parts to subtract
+ *
+ *	@return Returns the selected matrix parts without the subtracted matrix parts.
+ */
+static inline EBlockMatrixPart n_MPart_Subtract(EBlockMatrixPart a, EBlockMatrixPart b)
+{
+	if(a == mpart_FullMatrix && b != mpart_FullMatrix)
+		return a;
+	// full matrix minus anything but full matrix is still a full matrix
+
+	return EBlockMatrixPart(a & ~b);
+	// just bitwise subtract
+
+	// if there was more flags that involve other flags, it would be even more complicated
+}
 
 /**
  *	@brief setting for incremental marginal covariance calculation
@@ -473,4 +512,4 @@ that is maybe nicer to read, probably the same complexity from the point of writ
 
 */
 
-#endif // __INCREMENTAL_POLICIES_INCLUDED
+#endif // !__INCREMENTAL_POLICIES_INCLUDED

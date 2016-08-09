@@ -127,7 +127,7 @@
  *	@def __SE_TYPES_SUPPORT_L_SOLVERS
  *	@brief if defined, SE(2) types implement functions, required by CNonlinearSolver_L
  */
-#define __SE_TYPES_SUPPORT_L_SOLVERS
+#define __SE_TYPES_SUPPORT_L_SOLVERS // disable L for the reduction plan debugging
 
 #include "slam/Segregated.h"
 #include "slam/BlockMatrix.h"
@@ -149,4 +149,4 @@
 #include "slam/LinearSolver_Schur.h" // always include
 // rarely change (pch optimization)
 
-#endif // __SLAMPP_CONFIGURATION_INCLUDED
+#endif // !__SLAMPP_CONFIGURATION_INCLUDED

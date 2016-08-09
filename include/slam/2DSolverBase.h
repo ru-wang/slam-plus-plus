@@ -30,31 +30,8 @@
 #endif // _USE_MATH_DEFINES
 #include <math.h>
 #include <float.h>
-//#include "slam/BlockMatrix.h"
+#include "slam/BlockMatrix.h" // _finite(), _isnan()
 #include "eigen/Eigen/Cholesky"
-
-#if !defined(_WIN32) && !defined(_WIN64)
-/**
- *	@def _finite
- *	@brief determines if an input value is a finite number
- *	@param[in] x is the input value
- *	@return Returns true if the input value is a finite number, otherwise returns false.
- *	@note This is only compiled on linux where standard library function _finite()
- *		is not available. Always returns true (even for inf or nan).
- */
-#define _finite(x) (true)
-
-/**
- *	@def _isnan
- *	@brief determines if an input value is not a number
- *	@param[in] x is the input value
- *	@return Returns true if the input value is not a number, otherwise returns false.
- *	@note This is only compiled on linux where standard library function _isnan()
- *		is not available. Always returns false (even for inf or nan).
- */
-#define _isnan(x) (false)
-#endif // !_WIN32 && !_WIN64
-// we are using some advanced math functions to catch evil numbers; ignore those on linux
 
 /**
  *	@brief implementation of Jacobian calculations, required by 2D solvers
@@ -62,9 +39,9 @@
 class C2DJacobians {
 public:
 	/**
-	 *	@brief modifies angle so it ends up in the [-2Pi, 2Pi] interval
+	 *	@brief modifies angle so it ends up in the \f$[-2\pi, 2\pi]\f$ interval
 	 *	@param[in] f_angle is the angle
-	 *	@return Returns modulo of the angle inside the [-2Pi, 2Pi] interval.
+	 *	@return Returns modulo of the angle inside the \f$[-2\pi, 2\pi]\f$ interval.
 	 */
 	static double f_ClampAngle_2Pi(double f_angle)
 	{
@@ -107,7 +84,11 @@ public:
 		return (fabs(f_min_abs_a_b) < fabs(f_c))? f_min_abs_a_b : f_c;
 	}
 
-	//! fixup the error so the absolute value is the lowest possible (considering it is modulo 2pi)
+	/**
+	 *	@brief fixup the error so the absolute value is the lowest possible (considering it is modulo \f$2\pi\f$)
+	 *	@param[in] f_error is unclamped angular error
+	 *	@return Returns angular error modulo \f$2\pi\f$.
+	 */
 	static double f_ClampAngularError_2Pi(double f_error)
 	{
 		f_error = f_ClampAngle_2Pi(f_error);
@@ -117,13 +98,22 @@ public:
 	/**
 	 *	@brief converts xyt coordinates from relative measurement to absolute measurement
 	 *
+	 *	@tparam Derived0 is Eigen derived matrix type for the first matrix argument
+	 *	@tparam Derived1 is Eigen derived matrix type for the second matrix argument
+	 *	@tparam Derived2 is Eigen derived matrix type for the third matrix argument
+	 *
 	 *	@param[in] r_t_vertex1 is the first vertex, in absolute coordinates
 	 *	@param[in] r_t_vertex2 is the second vertex, relative to the first one
 	 *	@param[out] r_t_dest is filled with absolute coordinates of the second vertex
 	 */
-	static void Relative_to_Absolute(const Eigen::Vector3d &r_t_vertex1,
-		const Eigen::Vector3d &r_t_vertex2, Eigen::Vector3d &r_t_dest)
+	template <class Derived0, class Derived1, class Derived2>
+	static void Relative_to_Absolute(const Eigen::MatrixBase<Derived0> &r_t_vertex1,
+		const Eigen::MatrixBase<Derived1> &r_t_vertex2, Eigen::MatrixBase<Derived2> &r_t_dest)
 	{
+		DimensionCheck<Eigen::Vector3d>(r_t_vertex1);
+		DimensionCheck<Eigen::Vector3d>(r_t_vertex2);
+		DimensionCheck<Eigen::Vector3d>(r_t_dest);
+
 		double p1e = r_t_vertex1(0);
 		double p1n = r_t_vertex1(1);
 		double p1a = r_t_vertex1(2);
@@ -134,9 +124,9 @@ public:
 
 		//double pre, prn, o, co, so, p3e, p3n, p3a;
 
-		/**
+		/*
 		syms p1e p1n p1a p2e p2n p2a real
-		 */
+		*/
 
 		double o = p1a;
 		double co = cos(o);
@@ -149,7 +139,7 @@ public:
 		double p3n = p1n + prn;
 		double p3a = p1a + p2a;
 
-		/**
+		/*
 		p1 = [p1e,p1n,p1a]';
 		p2 = [p2e,p2n,p2a]';
 		p3 = [p3e,p3n,p3a]';
@@ -164,7 +154,7 @@ public:
 		[ cos(p1a), -sin(p1a), 0]
 		[ sin(p1a),  cos(p1a), 0]
 		[        0,         0, 1]
-		 */
+		*/
 
 		p3a = f_ClampAngle_2Pi(p3a);
 
@@ -177,14 +167,22 @@ public:
 	/**
 	 *	@brief converts xyt coordinates from absolute measurement to relative measurement
 	 *
+	 *	@tparam Derived0 is Eigen derived matrix type for the first matrix argument
+	 *	@tparam Derived1 is Eigen derived matrix type for the second matrix argument
+	 *	@tparam Derived2 is Eigen derived matrix type for the third matrix argument
+	 *
 	 *	@param[in] r_t_vertex1 is the first vertex, in absolute coordinates
 	 *	@param[in] r_t_vertex2 is the second vertex, also in absolute coordinates
 	 *	@param[out] r_t_dest is filled with relative coordinates of the second vertex
 	 */
-	template <class _TyDestVector> // want to be able to call this with differnent dest types (sometimes generic VectorXd, sometimes with Vector3d)
-	static void Absolute_to_Relative(const Eigen::Vector3d &r_t_vertex1,
-		const Eigen::Vector3d &r_t_vertex2, _TyDestVector &r_t_dest)
+	template <class Derived0, class Derived1, class Derived2>
+	static void Absolute_to_Relative(const Eigen::MatrixBase<Derived0> &r_t_vertex1,
+		const Eigen::MatrixBase<Derived1> &r_t_vertex2, Eigen::MatrixBase<Derived2> &r_t_dest)
 	{
+		DimensionCheck<Eigen::Vector3d>(r_t_vertex1);
+		DimensionCheck<Eigen::Vector3d>(r_t_vertex2);
+		DimensionCheck<Eigen::Vector3d>(r_t_dest);
+
 		double p1e = r_t_vertex1(0);
 		double p1n = r_t_vertex1(1);
 		double p1a = r_t_vertex1(2);
@@ -220,7 +218,7 @@ public:
 		double prl = so * de + co * dn;
 		double pra = da;
 
-		/**
+		/*
 		p1 = [p1e,p1n,p1a]';
 		p2 = [p2e,p2n,p2a]';
 		pr = [prf,prl,pra]';
@@ -235,7 +233,7 @@ public:
 		[  cos(p1a), sin(p1a), 0]
 		[ -sin(p1a), cos(p1a), 0]
 		[         0,        0, 1]
-		 */
+		*/
 
 		pra = f_ClampAngle_2Pi(pra);
 
@@ -248,17 +246,29 @@ public:
 	 *	@brief converts xyt coordinates from absolute measurement to relative measurement
 	 *		and calculates the jacobians
 	 *
+	 *	@tparam Derived0 is Eigen derived matrix type for the first matrix argument
+	 *	@tparam Derived1 is Eigen derived matrix type for the second matrix argument
+	 *	@tparam Derived2 is Eigen derived matrix type for the third matrix argument
+	 *	@tparam Derived3 is Eigen derived matrix type for the fourth matrix argument
+	 *	@tparam Derived4 is Eigen derived matrix type for the fifth matrix argument
+	 *
 	 *	@param[in] r_t_vertex1 is the first vertex, in absolute coordinates
 	 *	@param[in] r_t_vertex2 is the second vertex, also in absolute coordinates
 	 *	@param[out] r_t_dest is filled with relative coordinates of the second vertex
 	 *	@param[out] r_t_pose3_pose1 is filled with the first jacobian
 	 *	@param[out] r_t_pose3_pose2 is filled with the second jacobian
 	 */
-	template <class _TyDestVector, class _TyDestMatrix0, class _TyDestMatrix1> // want to be able to call this with differnent dest types (sometimes generic VectorXd / MatrixXd, sometimes with Vector3d / Matrix3d)
-	static void Absolute_to_Relative(const Eigen::Vector3d &r_t_vertex1,
-		const Eigen::Vector3d &r_t_vertex2, _TyDestVector &r_t_dest,
-		_TyDestMatrix0 &r_t_pose3_pose1, _TyDestMatrix1 &r_t_pose3_pose2)
+	template <class Derived0, class Derived1, class Derived2, class Derived3, class Derived4> // want to be able to call this with differnent dest types (sometimes generic VectorXd / MatrixXd, sometimes with Vector3d / Matrix3d)
+	static void Absolute_to_Relative(const Eigen::MatrixBase<Derived0> &r_t_vertex1,
+		const Eigen::MatrixBase<Derived1> &r_t_vertex2, Eigen::MatrixBase<Derived2> &r_t_dest,
+		Eigen::MatrixBase<Derived3> &r_t_pose3_pose1, Eigen::MatrixBase<Derived4> &r_t_pose3_pose2)
 	{
+		DimensionCheck<Eigen::Vector3d>(r_t_vertex1);
+		DimensionCheck<Eigen::Vector3d>(r_t_vertex2);
+		DimensionCheck<Eigen::Vector3d>(r_t_dest);
+		DimensionCheck<Eigen::Matrix3d>(r_t_pose3_pose1);
+		DimensionCheck<Eigen::Matrix3d>(r_t_pose3_pose2);
+
 		double p1e = r_t_vertex1(0);
 		double p1n = r_t_vertex1(1);
 		double p1a = r_t_vertex1(2);
@@ -289,13 +299,13 @@ public:
 		double sp1a = sin(p1a);
 
 		{
-			_TyDestMatrix0 &M = r_t_pose3_pose1;
+			Eigen::MatrixBase<Derived3> &M = r_t_pose3_pose1;
 			M(0, 0) = -cp1a;	M(0, 1) = -sp1a;	M(0, 2) = sp1a * (p1e - p2e) - cp1a * (p1n - p2n);
 			M(1, 0) =  sp1a;	M(1, 1) = -cp1a;	M(1, 2) = cp1a * (p1e - p2e) + sp1a * (p1n - p2n);
 			M(2, 0) =  0;		M(2, 1) =  0;		M(2, 2) = -1;
 		}
 		{
-			_TyDestMatrix1 &M = r_t_pose3_pose2;
+			Eigen::MatrixBase<Derived4> &M = r_t_pose3_pose2;
 			M(0, 0) =  cp1a;	M(0, 1) = sp1a;		M(0, 2) = 0;
 			M(1, 0) = -sp1a;	M(1, 1) = cp1a;		M(1, 2) = 0;
 			M(2, 0) =  0;		M(2, 1) = 0;		M(2, 2) = 1;
@@ -306,16 +316,29 @@ public:
 	 *	@brief converts range bearing coordinates from absolute measurement
 	 *		to relative measurement and calculates the jacobians
 	 *
+	 *	@tparam Derived0 is Eigen derived matrix type for the first matrix argument
+	 *	@tparam Derived1 is Eigen derived matrix type for the second matrix argument
+	 *	@tparam Derived2 is Eigen derived matrix type for the third matrix argument
+	 *	@tparam Derived3 is Eigen derived matrix type for the fourth matrix argument
+	 *	@tparam Derived4 is Eigen derived matrix type for the fifth matrix argument
+	 *
 	 *	@param[in] r_v_pose is the first vertex (pose), in absolute coordinates
 	 *	@param[in] r_v_landmark is the second vertex (landmark), also in absolute coordinates
 	 *	@param[out] r_v_observation is filled with relative coordinates of the second vertex (the landmark)
 	 *	@param[out] r_t_observation_pose is filled with the first jacobian
 	 *	@param[out] r_t_observation_landmark is filled with the second jacobian
 	 */
-	template <class _TyDestVector, class _TyDestMatrix0, class _TyDestMatrix1> // want to be able to call this with differnent dest types (sometimes generic VectorXd / MatrixXd, sometimes with Vector3d, Vector2d / Matrix2x3d, Matrix2x2d)
-	static void Observation2D_RangeBearing(const Eigen::Vector3d &r_v_pose, const Eigen::Vector2d &r_v_landmark,
-		_TyDestVector &r_v_observation, _TyDestMatrix0 &r_t_observation_pose, _TyDestMatrix1 &r_t_observation_landmark) // t_odo - mind the convention
+	template <class Derived0, class Derived1, class Derived2, class Derived3, class Derived4> // want to be able to call this with differnent dest types (sometimes generic VectorXd / MatrixXd, sometimes with Vector3d, Vector2d / Matrix2x3d, Matrix2x2d)
+	static void Observation2D_RangeBearing(const Eigen::MatrixBase<Derived0> &r_v_pose,
+		const Eigen::MatrixBase<Derived1> &r_v_landmark, Eigen::MatrixBase<Derived2> &r_v_observation,
+		Eigen::MatrixBase<Derived3> &r_t_observation_pose, Eigen::MatrixBase<Derived4> &r_t_observation_landmark) // t_odo - mind the convention
 	{
+		DimensionCheck<Eigen::Vector3d>(r_v_pose);
+		DimensionCheck<Eigen::Vector2d>(r_v_landmark);
+		DimensionCheck<Eigen::Vector2d>(r_v_observation);
+		DimensionCheck<Eigen::Matrix<double, 2, 3> >(r_t_observation_pose);
+		DimensionCheck<Eigen::Matrix2d>(r_t_observation_landmark);
+
 		double pe = r_v_pose(0);
 		double pn = r_v_pose(1);
 		double pa = r_v_pose(2);
@@ -329,18 +352,18 @@ public:
 		double obsr = sqrt(de * de + dn * dn);
 		double obsb = f_ClampAngle_2Pi(atan2(dn, de) - pa);
 
-		/**
+		/*
 		  v=pt-P1(1:2);
 		  d=norm(v);
 		  H1=[-v(1)/d     -v(2)/d      0;
 			   v(2)/d^2   -v(1)/d^2   -1 ];
 		  H2=[ v(1)/d    v(2)/d;
 			  -v(2)/d^2  v(1)/d^2 ];
-		 */
+		*/
 
 		if(fabs(obsr) < 1e-5)
 			obsr = 1e-5;
-		// @todo - what the hell? are we having numerical issues?
+		// are we having numerical issues?
 
 		r_v_observation(0) = obsr;
 		r_v_observation(1) = obsb;
@@ -350,16 +373,16 @@ public:
 		double d  = obsr;
 		double d2 = d * d;
 		{
-			_TyDestMatrix0 &M = r_t_observation_pose;
+			Eigen::MatrixBase<Derived3> &M = r_t_observation_pose;
 			M(0, 0) = -v1 / d;		M(0, 1) = -v2 / d;		M(0, 2) = 0;
 			M(1, 0) =  v2 / d2;		M(1, 1) = -v1 / d2;		M(1, 2) = -1; // hell, it *is* 3 by 2
 		}
 		{
-			_TyDestMatrix1 &M = r_t_observation_landmark;
+			Eigen::MatrixBase<Derived4> &M = r_t_observation_landmark;
 			M(0, 0) =  v1 / d;		M(0, 1) = v2 / d;		/*M(0, 2) = 0;*/
 			M(1, 0) = -v2 / d2;		M(1, 1) = v1 / d2;		/*M(1, 2) = 0;*/ // t_odo - this is just a fixup; remove it (should be 2x2)
 		}
 	}
 };
 
-#endif // __2D_SOLVER_BASE_INCLUDED
+#endif // !__2D_SOLVER_BASE_INCLUDED

@@ -38,14 +38,14 @@ class CBasicLinearSolverTag {};
  *
  *	The usage of such solver is supposed to be:
  *
- *@code
+ *	@code
  *	UberBlockMatrix A;
  *	Eigen::VectorXd b;
  *	Solver s;
  *
  *	s.SymbolicDecomposition_Blocky(A);
  *	s.Solve_PosDef_Blocky(A, b);
- *@endcode
+ *	@endcode
  */
 class CBlockwiseLinearSolverTag {};
 
@@ -130,4 +130,4 @@ public:
 	}
 };
 
-#endif // __LINEAR_SOLVER_TAGS_INCLUDED
+#endif // !__LINEAR_SOLVER_TAGS_INCLUDED

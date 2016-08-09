@@ -25,6 +25,7 @@
 #include "slam/OrderingMagic.h"
 #include "slam/IncrementalPolicy.h"
 #include "slam/Marginals.h"
+#include "slam/NonlinearSolver_Lambda.h"
 
 /**
  *	@def __NONLINEAR_SOLVER_FAST_L_BACKSUBSTITUTE_EACH_1
@@ -84,7 +85,7 @@
  *	@brief replaces timer implementation with dummy timer to avoid costy runtime
  *		library calls to get the time (more costy on windows than on linux)
  */
-//#define __NONLINEAR_SOLVER_FAST_L_DETAILED_TIMING
+#define __NONLINEAR_SOLVER_FAST_L_DETAILED_TIMING
 
 #ifndef _DEBUG
 
@@ -110,9 +111,15 @@
 //#define __NONLINEAR_SOLVER_FAST_L_DUMP_RSS2013_PRESENTATION_ANIMATION_DATA
 
 /**
+ *	@def __NONLINEAR_SOLVER_FAST_L_DUMP_WAFR2014_PRESENTATION_ANIMATION_DATA
+ *	@brief dump WAFR 2014 matrix animation data
+ */
+//#define __NONLINEAR_SOLVER_FAST_L_DUMP_WAFR2014_PRESENTATION_ANIMATION_DATA
+
+/**
  *	@brief namespace with fast L solver utilities
  */
-namespace __fL_util {
+namespace fL_util {
 
 /**
  *	@brief a simple native solver predicate
@@ -144,15 +151,18 @@ public:
 	};
 };
 
-} // ~__fL_util
+} // ~fL_util
 
 /**
  *	@brief nonlinear blocky solver working above the L factor matrix
  *
- *	@tparam CSystem is the system type
- *	@tparam CLinearSolver is a linear solver
+ *	@tparam CSystem is optimization system type
+ *	@tparam CLinearSolver is linear solver type
+ *	@tparam CAMatrixBlockSizes is list of block sizes in the Jacobian matrix
+ *	@tparam CLambdaMatrixBlockSizes is list of block sizes in the information (Hessian) matrix
  */
-template <class CSystem, class CLinearSolver, class CAMatrixBlockSizes = typename CSystem::_TyJacobianMatrixBlockList>
+template <class CSystem, class CLinearSolver, class CAMatrixBlockSizes = typename CSystem::_TyJacobianMatrixBlockList,
+	class CLambdaMatrixBlockSizes = typename CSystem::_TyHessianMatrixBlockList>
 class CNonlinearSolver_FastL {
 public:
 	typedef CSystem _TySystem; /**< @brief system type */
@@ -169,16 +179,20 @@ public:
 	typedef typename CLinearSolver::_Tag _TySolverTag; /**< @brief linear solver tag */
 	typedef CLinearSolverWrapper<_TyLinearSolver, _TySolverTag> _TyLinearSolverWrapper; /**< @brief wrapper for linear solvers (shields solver capability to solve blockwise) */
 
-	typedef typename CUniqueTypelist<CAMatrixBlockSizes>::_TyResult _TyAMatrixBlockSizes; /**< @brief possible block matrices, that can be found in A */
-	typedef typename __fbs_ut::CBlockMatrixTypesAfterPreMultiplyWithSelfTranspose<
-		_TyAMatrixBlockSizes>::_TyResult _TyLambdaMatrixBlockSizes; /**< @brief possible block matrices, found in lambda and R */
+	typedef /*typename CUniqueTypelist<*/CAMatrixBlockSizes/*>::_TyResult*/ _TyAMatrixBlockSizes; /**< @brief possible block matrices, that can be found in A */
+	typedef /*typename*/ CLambdaMatrixBlockSizes /*fbs_ut::CBlockMatrixTypesAfterPreMultiplyWithSelfTranspose<
+		_TyAMatrixBlockSizes>::_TySizeList*/ _TyLambdaMatrixBlockSizes; /**< @brief possible block matrices, found in lambda and R */
+
+	typedef typename CChooseType<lambda_utils::CLambdaOps<_TyLambdaMatrixBlockSizes>,
+		lambda_utils::CLambdaOps2<_TyLambdaMatrixBlockSizes>, !base_iface::lambda_ReductionPlan_v2>::_TyResult _TyLambdaOps; /**< @brief implementation of operations for filling the lambda matrix */
+	typedef typename _TyLambdaOps::_TyReductionPlan _TyReductionPlan; /**< @brief reduction plan implementation */
 
 	/**
 	 *	@brief some run-time constants, stored as enum
 	 */
 	enum {
 		b_Is_PoseOnly_SLAM = CTypelistLength<_TyAMatrixBlockSizes>::n_result == 1, /**< @brief determines if we're doing pose-only SLAM (10k) */
-		b_Have_NativeSolver = __fL_util::CIsNativeSolver<_TyLinearSolver>::b_result /**< @brief determines if the native linear solver is being used */
+		b_Have_NativeSolver = fL_util::CIsNativeSolver<_TyLinearSolver>::b_result /**< @brief determines if the native linear solver is being used */
 	};
 
 	/**
@@ -223,6 +237,7 @@ protected:
 	size_t m_n_lambda_block_ordering_size; /**< @brief lambda block ordering size */
 	CUberBlockMatrix m_lambda_perm; /**< @brief the reordered reference to the lambda matrix */
 	CUberBlockMatrix m_lambda; /**< @brief the lambda matrix (built / updated incrementally) */
+	_TyReductionPlan m_reduction_plan; /**< @brief lambda incremental reduction plan */
 
 	CMatrixOrdering m_lambda11_ordering; /**< @brief lambda11 block ordering calculator (CAMD wrapper) */
 	const size_t *m_p_lambda11_block_ordering; /**< @brief lambda block ordering (only valid if m_b_R_up_to_date is set) */ // todo - convert all those to size_t
@@ -307,8 +322,10 @@ protected:
 	std::vector<size_t> lambda_perm_frontline; /**< @brief cached frontline of the lambda_perm matrix */
 
 	TMarginalsComputationPolicy m_t_marginals_config; /**< @brief marginal covariance computation configuration */
-	_TyTime m_f_marginals_time; /**< @brief time spent in calculating marginal covariances */
-	CMarginalCovariance m_marginals; /***< @brief marginals cache */
+	_TyTime m_f_marginals_time; /**< @brief time spent in calculating marginal covariances (batch) */
+	_TyTime m_f_incmarginals_time; /**< @brief time spent in calculating marginal covariances (update) */
+	size_t m_n_incmarginals_num; /**< @brief number of times the marginals update ran instead of batch recalculation */
+	CMarginalCovariance m_marginals; /**< @brief marginals cache */
 
 	CTimer m_shared_timer; /**< @brief timer object */
 
@@ -370,7 +387,8 @@ public:
 		m_n_resumed_chol_num(0), m_n_blocks_above_num(0), m_n_limited_search_num(0),
 		m_f_ordering_fold_time(0), m_f_repermute_time(0), m_f_Rslice_time(0), m_f_etree_time(0),
 		m_f_resumed_chol_time(0), m_f_ordering11_time(0), m_f_ordering11_part_time(0),
-		m_f_ordering11_full_time(0), m_f_marginals_time(0)
+		m_f_ordering11_full_time(0), m_f_marginals_time(0), m_f_incmarginals_time(0),
+		m_n_incmarginals_num(0)
 	{
 		_ASSERTE(!m_n_nonlinear_solve_threshold || !m_n_linear_solve_threshold); // only one of those
 
@@ -424,20 +442,38 @@ public:
 		m_n_resumed_chol_num(0), m_n_blocks_above_num(0), m_n_limited_search_num(0),
 		m_f_ordering_fold_time(0), m_f_repermute_time(0), m_f_Rslice_time(0), m_f_etree_time(0),
 		m_f_resumed_chol_time(0), m_f_ordering11_time(0), m_f_ordering11_part_time(0),
-		m_f_ordering11_full_time(0), m_t_marginals_config(t_marginals_config), m_f_marginals_time(0)
+		m_f_ordering11_full_time(0), m_t_marginals_config(t_marginals_config),
+		m_f_marginals_time(0), m_f_incmarginals_time(0), m_n_incmarginals_num(0)
 	{
 		_ASSERTE(!m_n_nonlinear_solve_threshold || !m_n_linear_solve_threshold); // only one of those
 
 #ifdef __NONLINEAR_SOLVER_FAST_L_DUMP_TIMESTEPS
 		m_n_loop_size_cumsum = 0;
 #endif // __NONLINEAR_SOLVER_FAST_L_DUMP_TIMESTEPS
-	}
 
-	/**
-	 *	@brief destructor (only required if ? is defined)
-	 */
-	inline ~CNonlinearSolver_FastL()
-	{}
+		if(t_marginals_config.b_calculate) {
+			if(t_marginals_config.t_increment_freq.n_period != t_incremental_config.t_nonlinear_freq.n_period &&
+			   t_marginals_config.t_increment_freq.n_period != t_incremental_config.t_linear_freq.n_period) {
+				throw std::runtime_error("in CNonlinearSolver_Lambda, the marginals must"
+					" be updated with the same frequency as the system");
+			}
+			// unfortunately, yes, but in this particular solver that is easy to come around // todo
+
+			/*if(t_marginals_config.n_incremental_policy != (mpart_LastColumn | mpart_Diagonal)) {
+				throw std::runtime_error("in CNonlinearSolver_Lambda, the marginals update"
+					" policy must be mpart_LastColumn | mpart_Diagonal");
+			}
+			if(t_marginals_config.n_incremental_policy != t_marginals_config.n_relinearize_policy) {
+				throw std::runtime_error("in CNonlinearSolver_Lambda, the marginals "
+					" incremental and relinearize update policy must be the same");
+			}*/ // these are now implemented
+			if(t_marginals_config.n_cache_miss_policy != mpart_Nothing) {
+				throw std::runtime_error("in CNonlinearSolver_Lambda, the marginals cache"
+					" miss policy is not supported at the moment, sorry for inconvenience");
+			}
+			// nothing else is implemented so far
+		}
+	}
 
 	/**
 	 *	@brief displays performance info on stdout
@@ -447,13 +483,17 @@ public:
 	{
 		printf("solver took " PRIsize " iterations\n", m_n_iteration_num); // debug, to be able to say we didn't botch it numerically
 #ifdef __NONLINEAR_SOLVER_FAST_L_DETAILED_TIMING
-		if(m_t_marginals_config.b_calculate)
-			printf("solver spent %f seconds in calculating the marginals\n", m_f_marginals_time);
+		if(m_t_marginals_config.b_calculate) {
+			printf("solver spent %f seconds in calculating the marginals\n",
+				m_f_marginals_time + m_f_incmarginals_time);
+			printf("\t batch: %f\n", m_f_marginals_time);
+			printf("\t  incm: %f (ran " PRIsize " times)\n", m_f_incmarginals_time, m_n_incmarginals_num);
+		}
 
 		double f_serial_time = m_f_backsubst_time + m_f_chol_time + m_f_norm_time + m_f_vert_upd_time;
 		if(f_total_time > 0) {
 			printf("solver spent %f seconds in parallelizable section (updating R)\n",
-				f_total_time - f_serial_time);
+				f_total_time - f_serial_time - (m_f_marginals_time + m_f_incmarginals_time));
 		}
 		double f_total_resumed_up = m_f_resumed_chol_time + m_f_Rslice_time +
 			m_f_etree_time + m_f_ordering_fold_time + m_f_repermute_time;
@@ -467,7 +507,8 @@ public:
 		double f_measured_parallel_time = m_f_lambda_refresh_time + m_f_rhs_time + m_f_ordering_time +
 			m_f_fullR_d + m_f_fullR_cholesky + f_l_upd_time + m_f_d_time;
 		printf("measured parallel time: %f, disparity: %f; out of which:\n", f_measured_parallel_time,
-			f_total_time - f_serial_time - f_measured_parallel_time);
+			(f_total_time > 0)? f_total_time - f_serial_time - f_measured_parallel_time -
+			m_f_marginals_time - m_f_incmarginals_time : 0);
 		printf("\t   ,\\: %f\n", m_f_lambda_refresh_time);
 		printf("\t  rhs: %f\n", m_f_rhs_time);
 		printf("\torder: %f\n", m_f_ordering_time);
@@ -534,14 +575,12 @@ public:
 		if(m_b_linearization_dirty) {
 			if(!CalculateOneTimeDx())
 				return -1;
-			PushValuesInGraphSystem(m_v_dx);
-			double f_chi2 = m_r_system.r_Edge_Pool().For_Each(CSum_ChiSquareError()) /
-				(m_r_system.r_Edge_Pool().n_Size() - m_r_system.r_Edge_Pool()[0].n_Dimension());
-			PushValuesInGraphSystem(-m_v_dx); // !!
+			base_iface::CSolverOps_Base::PushValuesInGraphSystem(m_r_system, m_v_dx);
+			double f_chi2 = _TyLambdaOps::f_Chi_Squared_Error(m_r_system);
+			base_iface::CSolverOps_Base::PushValuesInGraphSystem(m_r_system, -m_v_dx); // !!
 			return f_chi2;
 		} else {
-			return m_r_system.r_Edge_Pool().For_Each(CSum_ChiSquareError()) /
-				(m_r_system.r_Edge_Pool().n_Size() - m_r_system.r_Edge_Pool()[0].n_Dimension());
+			return _TyLambdaOps::f_Chi_Squared_Error(m_r_system);
 		}
 	}
 
@@ -565,12 +604,12 @@ public:
 			typedef CNonlinearSolver_FastL<CSystem, CLinearSolver, CAMatrixBlockSizes> TThisType;
 			if(!CalculateOneTimeDx())
 				return -1;
-			PushValuesInGraphSystem(m_v_dx);
-			double f_chi2 = m_r_system.r_Edge_Pool().For_Each(CSum_ChiSquareError());
-			PushValuesInGraphSystem(-m_v_dx); // !!
+			base_iface::CSolverOps_Base::PushValuesInGraphSystem(m_r_system, m_v_dx);
+			double f_chi2 = _TyLambdaOps::f_Chi_Squared_Error_Denorm(m_r_system);
+			base_iface::CSolverOps_Base::PushValuesInGraphSystem(m_r_system, -m_v_dx); // !!
 			return f_chi2;
 		} else
-			return m_r_system.r_Edge_Pool().For_Each(CSum_ChiSquareError());
+			return _TyLambdaOps::f_Chi_Squared_Error_Denorm(m_r_system);
 	}
 
 	/**
@@ -616,24 +655,363 @@ public:
 	}
 
 	/**
+	 *	@brief measurement change on the last edge
+	 *
+	 *	This is used in incremental odometry scenario where the robot did not make enough movement in the last edge,
+	 *	and we wish to include the next step in the same edge, rather than appending a new vertex and a new edge.
+	 *	In simple applications, testing whether the edge has sufficient displacement before adding it into the system
+	 *	in the first place might be enough, and this function is then not needed. However, when we want to calculate
+	 *	information gain or some other probabilistic quantity, the edge may need to first be inserted to the system,
+	 *	and only after that can we decide whether to keep it or discard it. At this point, SLAM++ does not allow removal
+	 *	of edges or vertices, and that is where this function comes in.
+	 *
+	 *	@tparam _TyEdge is edge type
+	 *	@tparam _TyMeasurement is measurement vector type (must be convertible to Eigen::Matrix of appropriate dimensions)
+	 *	@tparam _TySigmaInv is information matrix type (must be convertible to Eigen::Matrix of appropriate dimensions)
+	 *	@tparam _TyVertexState is vertex state type (a vector; must be convertible to Eigen::Matrix of appropriate dimensions)
+	 *
+	 *	@param[in] r_last_edge is the edge to be updated (must be currently the last edge in the system)
+	 *	@param[in] r_v_new_delta is value of the new measurement (replaces the old measurement in the edge, is not additive)
+	 *	@param[in] r_t_new_sigma is value of the new measurement information matrix (replaces the old one)
+	 *	@param[in] r_t_new_vertex_state is value of the new vertex state (applied to vertex with index 1 in the specified edge)
+	 *	@param[in] b_do_omega_update is omega update flag (if set, the marginals are updated incrementally
+	 *		when possible. if not set, marginals are always recalculated from scratch)
+	 *
+	 *	@note This function throws std::bad_alloc and std::runtime_error (when R is not-pos-def).
+	 *	@note This is an experimental feature and there are sometimes numberical issues when performing incremental updates.
+	 *
+	 *	@todo Remove debug image outputs, finalize the code.
+	 */
+	template <class _TyEdge, class _TyMeasurement, class _TySigmaInv, class _TyVertexState>
+	void Change_LastEdge(_TyEdge &r_last_edge, const _TyMeasurement &r_v_new_delta,
+		const _TySigmaInv &r_t_new_sigma, const _TyVertexState &r_t_new_vertex_state, bool b_do_omega_update = true) // throw(std::bad_alloc, std::runtime_error)
+	{
+		_TyTimeSampler timer(m_shared_timer);
+
+		_ASSERTE(!m_r_system.r_Edge_Pool().b_Empty()); // the system is not empty
+		_ASSERTE(r_last_edge.n_Order() == m_r_system.r_Edge_Pool()[m_r_system.r_Edge_Pool().n_Size() - 1].n_Order()); // the last edge is the last
+		_ASSERTE(m_n_lambda_block_ordering_size == m_r_system.r_Vertex_Pool().n_Size()); // make sure the ordering is up-to-date
+		_ASSERTE(m_b_R_up_to_date); // make sure R is up to date with lambda and we can actually increment
+		_ASSERTE(m_n_verts_in_lambda == m_r_system.r_Vertex_Pool().n_Size());
+		_ASSERTE(m_n_edges_in_lambda == m_r_system.r_Edge_Pool().n_Size()); // make sure the system was not inconsistently incremented, after all, this is called by the end user, not from SLAM++ console application
+		// prerequisites
+
+		_ASSERTE(!m_b_inhibit_optimization);
+		// currently one edge at a time, whixh makes sense with our use case. otherwise this
+		// function would get slightly more complicated (especially the interface of it)
+
+		const size_t n_refresh_from_edge = m_r_system.r_Edge_Pool().n_Size() - 1;
+		// refreshing the last edge
+
+		size_t n_order_min = SIZE_MAX;
+		std::vector<size_t> required_column_list;
+		for(size_t i = n_refresh_from_edge, n = m_r_system.r_Edge_Pool().n_Size(); i < n; ++ i) {
+			size_t n_order_v0 = m_p_lambda_block_ordering[m_r_system.r_Edge_Pool()[i].n_Vertex_Id(0)];
+			size_t n_order_v1 = m_p_lambda_block_ordering[m_r_system.r_Edge_Pool()[i].n_Vertex_Id(1)]; // note that these are ids, but these equal order at the moment
+			// todo - support hyperedges in this solver
+			n_order_min = std::min(n_order_min, std::min(n_order_v0, n_order_v1));
+			required_column_list.push_back(n_order_v0);
+			required_column_list.push_back(n_order_v1);
+		}
+		std::sort(required_column_list.begin(), required_column_list.end());
+		// calculate min order and the required column list (for marginals update)
+
+		const size_t n_order_max = m_lambda.n_BlockColumn_Num();
+		// makes sure that max is fixed at the end
+
+		size_t n_min_vertex = m_p_lambda_block_ordering[n_order_min];
+		bool b_identity_perm = true;
+		for(size_t i = n_order_min; i < n_order_max; ++ i) {
+			if(m_p_lambda_block_ordering[i] != i) {
+				b_identity_perm = false;
+				break;
+			}
+		} // the omega update seems to lead to not positive definite matrix (maybe it needs to subtract stuff from R and that does not pass through Cholesky, or there is a different error)
+		// see if omega has identity ordering (probably iff the edge is (v0, v1)
+		// where v1 = v0 + 1 = m_r_system.r_Vertex_Pool().n_Size() - 1)
+
+		timer.Accum_DiffSample(m_f_ordering_time);
+		// stats
+
+		CUberBlockMatrix delta_omega;
+		const size_t n_elem_order_min = m_lambda_perm.n_BlockColumn_Base(n_order_min);
+		if(true || b_identity_perm) { // need this for marginals update even if not identity
+			m_r_system.r_Edge_Pool().For_Each(n_refresh_from_edge, m_r_system.r_Edge_Pool().n_Size(),
+				CCalculateOmega(delta_omega, n_elem_order_min));
+			delta_omega.CheckIntegrity();
+
+			timer.Accum_DiffSample(m_f_r11_omega_calc_time);
+
+			delta_omega.Rasterize("omega_old.tga");
+		}
+		// calculates the omega matrix
+
+		{
+			r_last_edge.Update(r_v_new_delta, r_t_new_sigma);
+			// update the edge
+
+			m_r_system.r_Vertex_Pool()[r_last_edge.n_Vertex_Id(1)].v_State() = r_t_new_vertex_state;
+			// update the new vertex // todo - this likely needs a better interface, or needs to be done before calling this function manually, as omega does not depend on it
+
+			_ASSERTE(!m_b_system_dirty); // otherwise we might disturb something
+			//if(!m_b_system_dirty)
+				_TyLambdaOps::Refresh_Lambda(m_r_system, m_reduction_plan, m_lambda, 0/*m_n_verts_in_lambda*/, n_refresh_from_edge); // calculate only for the affected edges
+			/*else
+				_TyLambdaOps::Refresh_Lambda(m_r_system, m_reduction_plan, m_lambda);*/ // calculate for entire system, rebuild R from scratch
+			// refresh lambda (does not fully refresh permutated lambda, even though it is a reference matrix)
+			// this forces hessian recalculation in the edge
+
+			timer.Accum_DiffSample(m_f_lambda_refresh_time);
+			// stats
+
+			_ASSERTE(m_lambda.n_BlockColumn_Num() == m_n_lambda_block_ordering_size);
+			_ASSERTE(CMatrixOrdering::b_IsValidOrdering(m_p_lambda_block_ordering, m_n_lambda_block_ordering_size));
+			// make sure that the ordering is good
+
+			m_lambda.Permute_UpperTriangular_To(m_lambda_perm, m_p_lambda_block_ordering,
+				m_lambda.n_BlockColumn_Num(), true);
+			// make a reordered version of lambda (*always* changes if lambda changes)
+
+			timer.Accum_DiffSample(m_f_ordering_time);
+			// stats
+		}
+
+		if(true || b_identity_perm) { // need this for marginals update even if not identity
+			CUberBlockMatrix omega_new;
+			//const size_t n_elem_order_min = m_lambda_perm.n_BlockColumn_Base(n_order_min);
+			m_r_system.r_Edge_Pool().For_Each(n_refresh_from_edge, m_r_system.r_Edge_Pool().n_Size(),
+				CCalculateOmega(omega_new, n_elem_order_min));
+			omega_new.CheckIntegrity();
+			// calculates the omega matrix
+
+			omega_new.Rasterize("omega_new.tga");
+
+			omega_new.AddTo(delta_omega, -1, +1); // this was wrong; could be FBS
+			// delta_omega = delta_omega * -1 + omega_new * +1
+
+			delta_omega.Rasterize("omega_delta.tga");
+
+			timer.Accum_DiffSample(m_f_r11_omega_calc_time);
+		}
+		// finalize delta omega
+
+		if(!b_do_omega_update)
+			b_identity_perm = false; // in case gives not pos def again
+
+		bool b_omega_available = b_identity_perm; // omega is available so that we can calculate the incremental marginals
+
+		if(n_refresh_from_edge) {
+			CUberBlockMatrix R11TR11;
+			if(b_identity_perm) {
+				++ m_n_omega_update_num;
+				// count them
+
+				CUberBlockMatrix /*omega,*/ R11;
+				/*size_t n_elem_order_min = m_lambda_perm.n_BlockColumn_Base(n_order_min);
+				m_r_system.r_Edge_Pool().For_Each(n_refresh_from_edge, m_r_system.r_Edge_Pool().n_Size(),
+					CCalculateOmega(omega, n_elem_order_min));
+				omega.CheckIntegrity();*/
+				const CUberBlockMatrix &omega = delta_omega; // already have omega .. of sorts
+
+				timer.Accum_DiffSample(m_f_r11_omega_calc_time);
+
+				m_R.SliceTo(R11, n_order_min, n_order_max, n_order_min, n_order_max, true); // row(0 - min) x col(min - max)
+				// calculate the omega matrix (ho, ho, ho) and slice R11
+
+				timer.Accum_DiffSample(m_f_r11_omega_slice_time);
+
+				if(n_order_max - n_order_min >= __NONLINEAR_SOLVER_FAST_L_PARALLEL_MATMULT_THRESH) // big one // t_odo this never runs, the limit for using R is also 100
+					R11.PreMultiplyWithSelfTransposeTo_FBS_Parallel<_TyLambdaMatrixBlockSizes>(R11TR11, true); // calculate R11^T * R11 // t_odo - use FBS and maybe also parallel // t_odo - only need lower diagonal, what to do?
+				else
+					R11.PreMultiplyWithSelfTransposeTo_FBS<_TyLambdaMatrixBlockSizes>(R11TR11, true); // calculate R11^T * R11 // t_odo - use FBS and maybe also parallel // t_odo - only need lower diagonal, what to do?
+				// calculate R11TR11
+
+				timer.Accum_DiffSample(m_f_r11_omega_ata_time);
+
+				bool UNUSED(b_result) = omega.AddTo_FBS<_TyLambdaMatrixBlockSizes>(R11TR11); // todo - maybe also parallel
+				_ASSERTE(b_result); // if the block order in omega was wrong, this would fail
+				// calculate R11TR11_new = R11TR11 + omega
+				// note this uses faster addition algorithm
+
+				timer.Accum_DiffSample(m_f_r11_omega_add_time);
+			}
+
+			CUberBlockMatrix R01TR01;
+			if(!b_identity_perm) {
+				CUberBlockMatrix lambda11, R01;
+				++ m_n_lambda_update_num;
+				// count them
+
+				m_R.SliceTo(R01, 0, n_order_min, n_order_min, n_order_max, true); // row(0 - min) x col(min - max)
+				m_lambda_perm.SliceTo(lambda11, n_order_min, n_order_max, n_order_min, n_order_max, true);
+
+				timer.Accum_DiffSample(m_f_r11_lambda_slice_time);
+
+				if(n_order_max - n_order_min >= __NONLINEAR_SOLVER_FAST_L_PARALLEL_MATMULT_THRESH) // big one // t_odo this never runs, the limit for using R is also 100
+					R01.PreMultiplyWithSelfTransposeTo_FBS_Parallel<_TyLambdaMatrixBlockSizes>(R01TR01, true); // calculate R01^T * R01 // t_odo - use FBS and maybe also parallel // t_odo - only need lower diagonal, what to do?
+				else
+					R01.PreMultiplyWithSelfTransposeTo_FBS<_TyLambdaMatrixBlockSizes>(R01TR01, true); // calculate R01^T * R01 // t_odo - use FBS and maybe also parallel // t_odo - only need lower diagonal, what to do?
+
+				timer.Accum_DiffSample(m_f_r11_lambda_ata_time);
+
+				lambda11.AddTo_FBS<_TyLambdaMatrixBlockSizes>(R01TR01, -1, 1); // t_odo - use FBS // todo - maybe also parallel
+				// calculates R01TR01 = -R01TR01 + lambda11 (note the "-1, 1" is correct, the opposite way it crashes)
+				// note that lambda11 is upper diagonal, as well as R01TR01
+
+				timer.Accum_DiffSample(m_f_r11_lambda_add_time);
+			}
+
+			Refresh_R11(n_order_min, n_order_max, (b_identity_perm)? R11TR11 : R01TR01);
+
+			timer.Accum_DiffSample(m_f_Rupdate_time);
+
+			Refresh_d_IncR11(n_refresh_from_edge, n_order_min); // use the function, do not repeat code, it is ...
+			// note that this contains its own timing inside
+		} else {
+			++ m_n_full_R_num;
+			Refresh_R_FullR();
+			// there is only a single edge, do not do incremental update, do batch
+		}
+
+		_ASSERTE(m_b_R_up_to_date); // should be, right?
+		// and that should be it. now the marginals:
+
+		if(m_t_marginals_config.b_calculate /*&& b_incremented*/) {
+			// todo - handle freq settings (now they are tied to b_incremented - same as system) // i guess this does not really apply here
+			// todo - handle policies
+
+			if(!m_b_R_up_to_date)
+				Optimize(0, 0); // R is not up to date
+			_ASSERTE(m_b_R_up_to_date);
+			// make sure that R is up to date and we can readily calculate the marginals
+
+			double f_dummy;
+			timer.Accum_DiffSample(f_dummy);
+			// there were some samples taken in between
+
+			//m_R.Rasterize("R_for_margs.tga"); // debug
+			size_t n_add_edge_num = m_r_system.r_Edge_Pool().n_Size() - m_marginals.n_Edge_Num();
+			bool b_incremental = b_do_omega_update/*b_omega_available*/ && m_marginals.b_CanUpdate(); // omega always available
+			//_ASSERTE(b_incremental); // should be always incremental, right? // not now, we don't know how to calculate it
+			if(b_incremental) { // otherwise just update what we have
+				CUberBlockMatrix &r_m = const_cast<CUberBlockMatrix&>(m_marginals.r_SparseMatrix()); // watch out, need to call Swap_SparseMatrix() afterwards
+				if(!CMarginals::Update_BlockDiagonalMarginals_FBS_ExOmega<false>(m_r_system, r_m,
+				   m_lambda, m_R, m_lambda_ordering, m_marginals.n_Edge_Num(),
+				   m_t_marginals_config.n_incremental_policy, 0/*f_omega_build_time*/,
+				   delta_omega, required_column_list)) { // new shiny better
+				/*if(!CMarginals::Update_BlockDiagonalMarginals_FBS<false>(m_r_system, r_m, m_lambda,
+				   m_R, m_lambda_ordering, m_marginals.n_Edge_Num(), m_t_marginals_config.n_incremental_policy)) {*/ // would not work, as there is no new edge and it wouldn't know by how much to increment / decrement
+#ifdef _DEBUG
+					fprintf(stderr, "warning: Update_BlockDiagonalMarginals_FBS() had a numerical issue:"
+						" restarting with Calculate_DenseMarginals_Recurrent_FBS() instead\n");
+#endif // _DEBUG
+					b_incremental = false;
+					// failed, will enter the batch branch below, that will not have a numerical issue
+				} else {
+					m_marginals.Swap_SparseMatrix(r_m); // now the marginals know that the matrix changed
+
+					timer.Accum_DiffSample(m_f_incmarginals_time);
+					++ m_n_incmarginals_num;
+				}
+			}
+			if(!b_incremental) { // if need batch marginals
+				CUberBlockMatrix margs_ordered;
+				CMarginals::Calculate_DenseMarginals_Recurrent_FBS<_TyLambdaMatrixBlockSizes>(margs_ordered, m_R,
+					m_lambda_ordering, m_t_marginals_config.n_relinearize_policy, false);
+				// calculate the thing
+
+				CUberBlockMatrix &r_m = const_cast<CUberBlockMatrix&>(m_marginals.r_SparseMatrix()); // watch out, need to call Swap_SparseMatrix() afterwards
+				margs_ordered.Permute_UpperTriangular_To(r_m, m_lambda_ordering.p_Get_Ordering(),
+					m_lambda_ordering.n_Ordering_Size(), false); // no share! the original will be deleted
+				m_marginals.Swap_SparseMatrix(r_m); // now the marginals know that the matrix changed
+				// take care of having the correct permutation there
+
+				m_marginals.EnableUpdate();
+				// now the marginals are current and can be updated until the linearization point is changed again
+
+				timer.Accum_DiffSample(m_f_marginals_time);
+			}
+			// update the marginals, simple and easy
+
+			m_marginals.Set_Edge_Num(m_r_system.r_Edge_Pool().n_Size());
+			// now all those edges are in the marginals
+
+#if 0
+			try {
+				CUberBlockMatrix R;
+				CMatrixOrdering mord;
+				mord.p_BlockOrdering(m_lambda, true);
+				const size_t *p_order = mord.p_Get_InverseOrdering();
+				CUberBlockMatrix lambda_perm;
+				m_lambda.Permute_UpperTriangular_To(lambda_perm, p_order, mord.n_Ordering_Size(), true);
+				if(!R.CholeskyOf_FBS<_TyLambdaMatrixBlockSizes>(lambda_perm))
+					throw std::runtime_error("fatal error: R.CholeskyOf_FBS<_TyLambdaMatrixBlockSizes>(lambda_perm) failed");
+				// want to use from-the-scratch-reference R for comparison
+
+				CUberBlockMatrix margs_ref, margs_untg;
+				CMarginals::Calculate_DenseMarginals_Recurrent_FBS<_TyLambdaMatrixBlockSizes>(margs_ref, R);
+				margs_ref.Permute_UpperTriangular_To(margs_untg, mord.p_Get_Ordering(),
+					mord.n_Ordering_Size(), true); // ref is ok, it will be a short lived matrix
+				Eigen::MatrixXd margs_buffer;
+				margs_untg.Convert_to_Dense(margs_buffer);
+				Eigen::VectorXd diag_ref = margs_buffer.diagonal();
+				if(!margs_untg.b_EqualLayout(m_marginals.r_SparseMatrix()))
+					printf("error: the marginals have different block layout\n");
+				m_marginals.r_SparseMatrix().Convert_to_Dense(margs_buffer);
+				double f_error = (diag_ref - margs_buffer.diagonal()).norm();
+				printf("debug: vertex " PRIsize ": added " PRIsize
+					" edges: marginals diagonal tracking: %g (%g weighted, max elem: %g)\n",
+					m_lambda.n_BlockColumn_Num(), n_add_edge_num, f_error, f_error / diag_ref.norm(), diag_ref.maxCoeff());
+				if(f_error > 100 /*|| diag_ref.maxCoeff() < 250*/) { // the 250 thing is only good for debugging intel.txt
+					printf("\tthis calls for special attention ...\n");
+					Eigen::VectorXd diag_ref2 = margs_buffer.diagonal(); // now there is m_marginals.r_SparseMatrix() in there
+					CUberBlockMatrix R_unord;
+					R_unord.CholeskyOf(m_lambda); // sloow
+					CMarginals::Calculate_DenseMarginals_Ref(margs_buffer, R_unord); // sloow
+					double f_error = (diag_ref2 - margs_buffer.diagonal()).norm();
+					printf("debug again: vertex " PRIsize ": added " PRIsize
+						" edges: marginals diagonal tracking: %g (max elem: %g, difference of refs: %g)\n",
+						m_lambda.n_BlockColumn_Num(), n_add_edge_num, f_error,
+						margs_buffer.diagonal().maxCoeff(), (margs_buffer.diagonal() - diag_ref).norm());
+
+					m_marginals.DisableUpdate(); // see how long this lasts
+				}
+			} catch(std::bad_alloc&) {
+				fprintf(stderr, "warning: unable to verify marginals (bad_alloc)\n");
+			}
+			// calculate marginals again and subtract the diagonal to see how much off it gets
+			// (i'm lazy, the whole diagonal blocks should be compared instead, that's why the dense bad_alloc business)
+#endif // 0
+			// check marginals against reference
+		}
+		// handle also update of the marginals
+	}
+
+	/**
 	 *	@brief incremental optimization function
 	 *	@param[in] r_last_edge is the last edge that was added to the system
 	 *	@note This function throws std::bad_alloc and std::runtime_error (when R is not-pos-def).
 	 */
-	void Incremental_Step(_TyBaseEdge &r_last_edge) // throw(std::bad_alloc, std::runtime_error)
+	void Incremental_Step(_TyBaseEdge &UNUSED(r_last_edge)) // throw(std::bad_alloc, std::runtime_error)
 	{
+		_ASSERTE(!m_r_system.r_Edge_Pool().b_Empty());
+		typename _TyEdgeMultiPool::_TyConstBaseRef r_edge =
+			m_r_system.r_Edge_Pool()[m_r_system.r_Edge_Pool().n_Size() - 1];
+		// get a reference to the last edge interface
+
 		size_t n_vertex_num = m_r_system.r_Vertex_Pool().n_Size();
 		if(!m_b_had_loop_closure) {
-			_ASSERTE(r_last_edge.n_Vertex_Id(0) != r_last_edge.n_Vertex_Id(1));
-			size_t n_first_vertex = std::min(r_last_edge.n_Vertex_Id(0), r_last_edge.n_Vertex_Id(1));
-			//size_t n_vertex_num = m_r_system.r_Vertex_Pool().n_Size();
-			m_b_had_loop_closure = (n_first_vertex < n_vertex_num - 2);
-			_ASSERTE(m_b_had_loop_closure || std::max(r_last_edge.n_Vertex_Id(0),
-				r_last_edge.n_Vertex_Id(1)) == n_vertex_num - 1);
-			/*if(m_b_had_loop_closure) {
-				printf("" PRIsize ", " PRIsize " (out of " PRIsize " and " PRIsize ")\n", n_vertex_num, n_first_vertex,
-					r_last_edge.n_Vertex_Id(0), r_last_edge.n_Vertex_Id(1));
-			}*/ // debug
+			if(r_edge.n_Vertex_Num() > 1) { // unary factors do not cause classical loop closures
+				_ASSERTE(r_edge.n_Vertex_Id(0) != r_edge.n_Vertex_Id(1));
+				size_t n_first_vertex = std::min(r_edge.n_Vertex_Id(0), r_edge.n_Vertex_Id(1));
+				m_b_had_loop_closure = (n_first_vertex < n_vertex_num - 2);
+				_ASSERTE(m_b_had_loop_closure || std::max(r_edge.n_Vertex_Id(0),
+					r_edge.n_Vertex_Id(1)) == n_vertex_num - 1);
+			} else {
+				size_t n_first_vertex = r_edge.n_Vertex_Id(0);
+				m_b_had_loop_closure = (n_first_vertex < n_vertex_num - 1);
+			}
+			// todo - encapsulate this code, write code to support hyperedges as well, use it
 		}
 		// detect loop closures (otherwise the edges are initialized based on measurement and error would be zero)
 
@@ -643,17 +1021,21 @@ public:
 			fprintf(p_fw, "" PRIsize ";%f;" PRIsize ";" PRIsize ";" PRIsize ";" PRIsize ";"
 				PRIsize ";" PRIsize "\n", m_n_real_step, m_shared_timer.f_Time(),
 				m_n_Rup_num, m_n_full_R_num, m_n_R_optim_num, m_n_lambda_optim_num,
-				std::max(r_last_edge.n_Vertex_Id(0), r_last_edge.n_Vertex_Id(1)) -
-				std::min(r_last_edge.n_Vertex_Id(0), r_last_edge.n_Vertex_Id(1)),
+				std::max(r_edge.n_Vertex_Id(0), r_edge.n_Vertex_Id(1)) -
+				std::min(r_edge.n_Vertex_Id(0), r_edge.n_Vertex_Id(1)),
 				m_n_loop_size_cumsum);
 			fclose(p_fw);
 		}
 		// dump time per step
 #endif // __NONLINEAR_SOLVER_FAST_L_DUMP_TIMESTEPS
 
-#ifdef __NONLINEAR_SOLVER_FAST_L_DUMP_CHI2
+#if defined(__NONLINEAR_SOLVER_FAST_L_DUMP_WAFR2014_PRESENTATION_ANIMATION_DATA) || \
+	defined(__NONLINEAR_SOLVER_FAST_L_DUMP_CHI2) || defined(__NONLINEAR_SOLVER_FAST_L_DUMP_DENSITY)
 		bool b_new_vert = m_lambda.n_BlockColumn_Num() < m_r_system.r_Vertex_Pool().n_Size();
+#endif /* __NONLINEAR_SOLVER_FAST_L_DUMP_WAFR2014_PRESENTATION_ANIMATION_DATA ||
+	__NONLINEAR_SOLVER_FAST_L_DUMP_CHI2 || __NONLINEAR_SOLVER_FAST_L_DUMP_DENSITY */
 
+#ifdef __NONLINEAR_SOLVER_FAST_L_DUMP_CHI2
 #ifdef __NONLINEAR_SOLVER_FAST_L_DUMP_CHI2_AT_LAST_EDGE
 		if(b_new_vert) {
 			FILE *p_fw = fopen("chi2perVert.txt", (m_n_real_step > 0)? "a" : "w");
@@ -671,19 +1053,19 @@ public:
 #endif // !__NONLINEAR_SOLVER_FAST_L_BACKSUBSTITUTE_EACH_1
 				if(m_b_linearization_dirty) {
 					typedef CNonlinearSolver_FastL<CSystem, CLinearSolver, CAMatrixBlockSizes> TThisType;
-					TThisType *p_this = const_cast<TThisType*>(this); // don't want to put 'mutable' arround everything
+					TThisType *p_this = const_cast<TThisType*>(this); // don't want to put 'mutable' around everything
 					if(!p_this->CalculateOneTimeDx(1)) // this is one smaller
 						break;
 					p_this->m_r_system.r_Vertex_Pool().For_Each_Parallel(0,
-						m_r_system.r_Vertex_Pool().n_Size() - 1, CUpdateEstimates(m_v_dx)); // ignore the last vertex
+						m_r_system.r_Vertex_Pool().n_Size() - 1, base_iface::CSolverOps_Base::CUpdateEstimates(m_v_dx)); // ignore the last vertex
 					f_chi2 = m_r_system.r_Edge_Pool().For_Each(0,
-						m_r_system.r_Edge_Pool().n_Size() - 1, CSum_ChiSquareError()); // ignore the last edge
+						m_r_system.r_Edge_Pool().n_Size() - 1, base_iface::CSolverOps_Base::CSum_ChiSquareError()); // ignore the last edge
 					p_this->m_r_system.r_Vertex_Pool().For_Each_Parallel(0,
-						m_r_system.r_Vertex_Pool().n_Size() - 1, CUpdateEstimates(-m_v_dx)); // !!
+						m_r_system.r_Vertex_Pool().n_Size() - 1, base_iface::CSolverOps_Base::CUpdateEstimates(-m_v_dx)); // !!
 					break;
 				} else {
 					f_chi2 = m_r_system.r_Edge_Pool().For_Each(0,
-						m_r_system.r_Edge_Pool().n_Size() - 1, CSum_ChiSquareError());
+						m_r_system.r_Edge_Pool().n_Size() - 1, base_iface::CSolverOps_Base::CSum_ChiSquareError());
 				}
 			} while(0);
 			// calculate chi2, excluding the last edge (the current one)
@@ -695,19 +1077,152 @@ public:
 #endif // __NONLINEAR_SOLVER_FAST_L_DUMP_CHI2_AT_LAST_EDGE
 #endif // __NONLINEAR_SOLVER_FAST_L_DUMP_CHI2
 
-		TryOptimize(m_n_nonlinear_solve_max_iteration_num, m_f_nonlinear_solve_error_threshold);
+		bool b_incremented = TryOptimize(m_n_nonlinear_solve_max_iteration_num,
+			m_f_nonlinear_solve_error_threshold);
 		// optimize
 
-		if(m_t_marginals_config.b_calculate) {
-			// todo - handle freq settings
-			// todo - handle policies, now it defaults to full everytime
+		if(m_t_marginals_config.b_calculate && b_incremented) {
+			// todo - handle freq settings (now they are tied to b_incremented - same as system)
+			// todo - handle policies
+
+			if(!m_b_R_up_to_date)
+				Optimize(0, 0); // R is not up to date
+			_ASSERTE(m_b_R_up_to_date);
+			// make sure that R is up to date and we can readily calculate the marginals
 
 			_TyTimeSampler timer(m_shared_timer);
+#if 0
+			int firstvertexdim = m_r_system.r_Vertex_Pool()[0].n_Dimension();
+			Eigen::MatrixXd marg_mat(m_R.n_Column_Num(), firstvertexdim);
+			//CUberBlockMatrix &r_m = const_cast<CUberBlockMatrix&>(m_marginals.r_SparseMatrix()); // watch out, need to call Swap_SparseMatrix() afterwards
+			//CMarginals::Calculate_DenseMarginals_Fast_ColumnBand_FBS<_TyLambdaMatrixBlockSizes>(marg_mat,
+			//		m_R, 0, firstvertexdim, (m_lambda_ordering.p_Get_Ordering()), (m_lambda_ordering.n_Ordering_Size()), false);
+			CMarginals::Calculate_DenseMarginals_Fast_ColumnBand_FBS<_TyLambdaMatrixBlockSizes>(marg_mat.block(0, 0, m_R.n_Column_Num(), firstvertexdim),
+					m_R, 0, (m_lambda_ordering.p_Get_Ordering()), (m_lambda_ordering.n_Ordering_Size()), (m_lambda_ordering.n_Ordering_Size()));
+			//m_marginals.Swap_SparseMatrix(r_m); // now the marginals know that the matrix changed
 
-			CMarginals::Calculate_DenseMarginals_Fast(m_marginals.r_Matrix(), m_R);
+			timer.Accum_DiffSample(m_f_incmarginals_time);
+			++ m_n_incmarginals_num;
 			// calculate the thing
+#elif 0
+			CUberBlockMatrix &r_m = const_cast<CUberBlockMatrix&>(m_marginals.r_SparseMatrix()); // watch out, need to call Swap_SparseMatrix() afterwards
+			CMarginals::Calculate_DenseMarginals_Recurrent_FBS
+				/*Calculate_DenseMarginals_Fast_Parallel_FBS*/<_TyLambdaMatrixBlockSizes>(
+				r_m, m_R/*, p_order, mord.n_Ordering_Size()*/);
+			m_marginals.Swap_SparseMatrix(r_m); // now the marginals know that the matrix changed
+			// calculate the thing
+#endif // 0
+			// don't want slow dense marginals
+#if 1
+			//m_R.Rasterize("R_for_margs.tga"); // debug
+			size_t n_add_edge_num = m_r_system.r_Edge_Pool().n_Size() - m_marginals.n_Edge_Num();
+			bool b_incremental = m_marginals.b_CanUpdate() && CMarginals::b_PreferIncremental(m_r_system,
+				m_marginals.r_SparseMatrix(), m_lambda, m_R, m_lambda_ordering, m_marginals.n_Edge_Num(),
+				m_t_marginals_config.n_incremental_policy);
+			if(b_incremental) { // otherwise just update what we have
+				CUberBlockMatrix &r_m = const_cast<CUberBlockMatrix&>(m_marginals.r_SparseMatrix()); // watch out, need to call Swap_SparseMatrix() afterwards
+				if(!CMarginals::Update_BlockDiagonalMarginals_FBS<false>(m_r_system, r_m, m_lambda,
+				   m_R, m_lambda_ordering, m_marginals.n_Edge_Num(), m_t_marginals_config.n_incremental_policy)) {
+#ifdef _DEBUG
+					fprintf(stderr, "warning: Update_BlockDiagonalMarginals_FBS() had a numerical issue:"
+						" restarting with Calculate_DenseMarginals_Recurrent_FBS() instead\n");
+#endif // _DEBUG
+					b_incremental = false;
+					// failed, will enter the batch branch below, that will not have a numerical issue
+				} else {
+					m_marginals.Swap_SparseMatrix(r_m); // now the marginals know that the matrix changed
 
-			timer.Accum_DiffSample(m_f_marginals_time);
+					timer.Accum_DiffSample(m_f_incmarginals_time);
+					++ m_n_incmarginals_num;
+				}
+			}
+			if(!b_incremental) { // if need batch marginals
+				CUberBlockMatrix margs_ordered;
+				CMarginals::Calculate_DenseMarginals_Recurrent_FBS<_TyLambdaMatrixBlockSizes>(margs_ordered, m_R,
+					m_lambda_ordering, m_t_marginals_config.n_relinearize_policy, false);
+				// calculate the thing
+
+				CUberBlockMatrix &r_m = const_cast<CUberBlockMatrix&>(m_marginals.r_SparseMatrix()); // watch out, need to call Swap_SparseMatrix() afterwards
+				margs_ordered.Permute_UpperTriangular_To(r_m, m_lambda_ordering.p_Get_Ordering(),
+					m_lambda_ordering.n_Ordering_Size(), false); // no share! the original will be deleted
+				m_marginals.Swap_SparseMatrix(r_m); // now the marginals know that the matrix changed
+				// take care of having the correct permutation there
+
+				m_marginals.EnableUpdate();
+				// now the marginals are current and can be updated until the linearization point is changed again
+
+				timer.Accum_DiffSample(m_f_marginals_time);
+			}
+			// update the marginals, simple and easy
+
+			m_marginals.Set_Edge_Num(m_r_system.r_Edge_Pool().n_Size());
+			// now all those edges are in the marginals
+#endif // 0
+#if 0
+			try {
+				CUberBlockMatrix R;
+				CMatrixOrdering mord;
+				mord.p_BlockOrdering(m_lambda, true);
+				const size_t *p_order = mord.p_Get_InverseOrdering();
+				CUberBlockMatrix lambda_perm;
+				m_lambda.Permute_UpperTriangular_To(lambda_perm, p_order, mord.n_Ordering_Size(), true);
+				if(!R.CholeskyOf_FBS<_TyLambdaMatrixBlockSizes>(lambda_perm))
+					throw std::runtime_error("fatal error: R.CholeskyOf_FBS<_TyLambdaMatrixBlockSizes>(lambda_perm) failed");
+				// want to use from-the-scratch-reference R for comparison
+
+				CUberBlockMatrix margs_ref, margs_untg;
+				CMarginals::Calculate_DenseMarginals_Recurrent_FBS<_TyLambdaMatrixBlockSizes>(margs_ref, R);
+				margs_ref.Permute_UpperTriangular_To(margs_untg, mord.p_Get_Ordering(),
+					mord.n_Ordering_Size(), true); // ref is ok, it will be a short lived matrix
+				Eigen::MatrixXd margs_buffer;
+				margs_untg.Convert_to_Dense(margs_buffer);
+				Eigen::VectorXd diag_ref = margs_buffer.diagonal();
+				if(!margs_untg.b_EqualLayout(m_marginals.r_SparseMatrix()))
+					printf("error: the marginals have different block layout\n");
+				m_marginals.r_SparseMatrix().Convert_to_Dense(margs_buffer);
+				double f_error = (diag_ref - margs_buffer.diagonal()).norm();
+				printf("debug: vertex " PRIsize ": added " PRIsize
+					" edges: marginals diagonal tracking: %g (%g weighted, max elem: %g)\n",
+					m_lambda.n_BlockColumn_Num(), n_add_edge_num, f_error, f_error / diag_ref.norm(), diag_ref.maxCoeff());
+				if(f_error > 100 /*|| diag_ref.maxCoeff() < 250*/) { // the 250 thing is only good for debugging intel.txt
+					printf("\tthis calls for special attention ...\n");
+					Eigen::VectorXd diag_ref2 = margs_buffer.diagonal(); // now there is m_marginals.r_SparseMatrix() in there
+					CUberBlockMatrix R_unord;
+					R_unord.CholeskyOf(m_lambda); // sloow
+					CMarginals::Calculate_DenseMarginals_Ref(margs_buffer, R_unord); // sloow
+					double f_error = (diag_ref2 - margs_buffer.diagonal()).norm();
+					printf("debug again: vertex " PRIsize ": added " PRIsize
+						" edges: marginals diagonal tracking: %g (max elem: %g, difference of refs: %g)\n",
+						m_lambda.n_BlockColumn_Num(), n_add_edge_num, f_error,
+						margs_buffer.diagonal().maxCoeff(), (margs_buffer.diagonal() - diag_ref).norm());
+
+					m_marginals.DisableUpdate(); // see how long this lasts
+				}
+			} catch(std::bad_alloc&) {
+				fprintf(stderr, "warning: unable to verify marginals (bad_alloc)\n");
+			}
+			// calculate marginals again and subtract the diagonal to see how much off it gets
+			// (i'm lazy, the whole diagonal blocks should be compared instead, that's why the dense bad_alloc business)
+#endif // 0
+			// check marginals against reference
+
+			/*FILE *p_fw;
+			if((p_fw = fopen("marginals.txt", "w"))) {
+				for(size_t i = 0, n = m_lambda.n_BlockColumn_Num(); i < n; ++ i) {
+					size_t n_order = m_lambda.n_BlockColumn_Base(i);
+					size_t n_dimension = m_lambda.n_BlockColumn_Column_Num(i);
+					// get col
+
+					Eigen::MatrixXd block = m_marginals.r_Matrix().block(n_order, n_order, n_dimension, n_dimension);
+					// get block
+
+					fprintf(p_fw, "block_%d_%d = ", int(i), int(i));
+					CDebug::Print_DenseMatrix_in_MatlabFormat(p_fw, block);
+					// prints the matrix
+				}
+				fclose(p_fw);
+			}*/
+			// dump diagonal blocks of the marginals to a file
 		}
 		// now R is up to date, can get marginals
 
@@ -728,6 +1243,32 @@ public:
 		// dump nnz of R, given different ordering strategies
 #endif // __NONLINEAR_SOLVER_FAST_L_DUMP_DENSITY
 
+#ifdef __NONLINEAR_SOLVER_FAST_L_DUMP_WAFR2014_PRESENTATION_ANIMATION_DATA
+		if(b_new_vert) {
+			_ASSERTE(m_R.n_BlockColumn_Num() == m_r_system.r_Vertex_Pool().n_Size());
+			char p_s_filename[256];
+			cs *p_R = m_R.p_BlockStructure_to_Sparse(); // !!
+			_ASSERTE(p_R->m == p_R->n);
+			_ASSERTE(p_R->m == m_r_system.r_Vertex_Pool().n_Size());
+			if(m_R.n_BlockColumn_Num() == 2) { // the first time around
+				system("mkdir R");
+				system("mkdir sys");
+			}
+			sprintf(p_s_filename, "R/LDump" PRIsize ".pig", m_r_system.r_Vertex_Pool().n_Size());
+			FILE *p_fw = fopen(p_s_filename, "wb");
+			uint32_t n_iter_num = m_n_iteration_num, n = p_R->n, nnz = p_R->p[p_R->n]; // to detect LP changes
+			fwrite(&n_iter_num, sizeof(uint32_t), 1, p_fw); // write number of solver iters at this point
+			fwrite(&n, sizeof(uint32_t), 1, p_fw); // write matrix size
+			fwrite(&nnz, sizeof(uint32_t), 1, p_fw); // write #nnz
+			fwrite(p_R->p, sizeof(csi), p_R->n + 1, p_fw); // write row pointers
+			fwrite(p_R->i, sizeof(csi), nnz, p_fw); // write indices
+			fclose(p_fw);
+			cs_spfree(p_R);
+			sprintf(p_s_filename, "sys/sys%05" _PRIsize ".txt", m_r_system.r_Vertex_Pool().n_Size());
+			m_r_system.Dump(p_s_filename); // this also
+		}
+#endif // __NONLINEAR_SOLVER_FAST_L_DUMP_WAFR2014_PRESENTATION_ANIMATION_DATA
+
 		++ m_n_real_step;
 		// used only above
 	}
@@ -739,9 +1280,12 @@ protected:
 	 *	@param[in] n_max_iteration_num is the maximal number of iterations
 	 *	@param[in] f_min_dx_norm is the residual norm threshold
 	 *
+	 *	@return Returns true if optimization triggered (number of new vertices
+	 *		reached (non)linear solve threshold), otherwise returns false.
+	 *
 	 *	@note This function throws std::bad_alloc and std::runtime_error (when R is not-pos-def).
 	 */
-	void TryOptimize(size_t n_max_iteration_num, double f_min_dx_norm) // throw(std::bad_alloc, std::runtime_error)
+	bool TryOptimize(size_t n_max_iteration_num, double f_min_dx_norm) // throw(std::bad_alloc, std::runtime_error)
 	{
 		bool b_optimization_triggered = false;
 
@@ -749,8 +1293,10 @@ protected:
 		if(!m_b_inhibit_optimization) {
 #ifdef __SLAM_COUNT_ITERATIONS_AS_VERTICES
 			size_t n_new_vertex_num = n_vertex_num - m_n_last_optimized_vertex_num;
-			if(!n_new_vertex_num) // evidently, this backfires; need to have another m_n_last_optimized_vertex_num where it would remember when was the system last extended and check if there are new vertices since *then* // fixed now
-				return; // no new vertices; don't go in ... (otherwise 2x slower on molson35, for obvious reasons)
+			if(!n_new_vertex_num) { // evidently, this backfires; need to have another m_n_last_optimized_vertex_num where it would remember when was the system last extended and check if there are new vertices since *then* // fixed now
+				m_b_R_up_to_date = false; // now missing some edge
+				return false; // no new vertices; don't go in ... (otherwise 2x slower on molson35, for obvious reasons)
+			}
 			// the optimization periods are counted in vertices, not in edges (should save work on 10k, 100k)
 #else // __SLAM_COUNT_ITERATIONS_AS_VERTICES
 			++ m_n_step;
@@ -794,8 +1340,10 @@ protected:
 		if(!b_optimization_triggered) {
 #ifdef __NONLINEAR_SOLVER_FAST_L_BACKSUBSTITUTE_EACH_1
 			size_t n_vertex_num = m_r_system.r_Vertex_Pool().n_Size();
-			if(m_lambda.n_BlockColumn_Num() == n_vertex_num)
-				return;
+			if(m_lambda.n_BlockColumn_Num() == n_vertex_num) {
+				m_b_R_up_to_date = false; // now missing some edge
+				return false;
+			}
 			// there is enough vertices in lambda, none would be added
 
 			Optimize(0, 0); // big todo - remove this in order to be faster for each 100; move it to function that does approx solutions on request
@@ -804,6 +1352,8 @@ protected:
 #endif // __NONLINEAR_SOLVER_FAST_L_BACKSUBSTITUTE_EACH_1
 		} else
 			Optimize(n_max_iteration_num, f_min_dx_norm);
+
+		return b_optimization_triggered;
 	}
 
 	/**
@@ -817,7 +1367,10 @@ protected:
 		const size_t n_variables_size = m_r_system.n_VertexElement_Num();
 		const size_t n_measurements_size = m_r_system.n_EdgeElement_Num();
 		if(n_variables_size > n_measurements_size) {
-			fprintf(stderr, "warning: the system is underspecified\n");
+			if(n_measurements_size)
+				fprintf(stderr, "warning: the system is underspecified\n");
+			else
+				fprintf(stderr, "warning: the system contains no edges at all: nothing to optimize\n");
 			return false;
 		}
 		if(!n_measurements_size)
@@ -832,10 +1385,28 @@ protected:
 		// recalculated all the jacobians inside Extend_LambdaR(), also extend R structurally
 
 		if(!m_b_system_dirty)
-			Refresh_Lambda(0/*m_n_verts_in_lambda*/, m_n_edges_in_lambda); // calculate only for new edges // @todo - but how to mark affected vertices?
+			_TyLambdaOps::Refresh_Lambda(m_r_system, m_reduction_plan, m_lambda, 0/*m_n_verts_in_lambda*/, m_n_edges_in_lambda); // calculate only for new edges // @todo - but how to mark affected vertices?
 		else
-			Refresh_Lambda(); // calculate for entire system, rebuild R from scratch
+			_TyLambdaOps::Refresh_Lambda(m_r_system, m_reduction_plan, m_lambda); // calculate for entire system, rebuild R from scratch
 		// refresh lambda (does not fully refresh permutated lambda, even though it is a reference matrix)
+
+		if(m_lambda.n_BlockColumn_Num() < m_r_system.r_Vertex_Pool().n_Size()) {
+			timer.Accum_DiffSample(m_f_lambda_refresh_time);
+			fprintf(stderr, "warning: waiting for more edges\n");
+
+			m_n_verts_in_lambda = m_r_system.r_Vertex_Pool().n_Size();
+			m_n_edges_in_lambda = m_r_system.r_Edge_Pool().n_Size();
+			// probably breaks the solver otherwise
+
+			m_b_R_up_to_date = false;
+			m_b_system_dirty = true;
+			// force refresh next time atound
+
+			return false; // breaks the L solver, R will not be correctly updated // t_odo
+			// now it should work, but maybe it is not optimal (but anyway this only happens
+			// at the beginning when the system is small, at least in our applications)
+		}
+		// waiting for more edges
 
 		m_v_dx.resize(n_variables_size);
 		m_v_perm_temp.resize(n_variables_size);
@@ -848,20 +1419,34 @@ protected:
 		timer.Accum_DiffSample(m_f_lambda_refresh_time);
 
 		{
-			if(m_b_R_up_to_date && // can increment R only if up to date
-			   !m_b_system_dirty) // avoidance of big incremental updates of R is inside b_Refresh_R() - can only decide if ordering is known
-				m_b_first_iteration_use_R = b_Refresh_R(0/*m_n_verts_in_lambda*/, m_n_edges_in_lambda); // calculate only for new edges // @todo - but how to mark affected vertices?
-			else
-				m_b_first_iteration_use_R = b_Refresh_R(); // calculate for entire system, rebuild R from scratch
+			try {
+				if(m_b_R_up_to_date && // can increment R only if up to date
+				   !m_b_system_dirty) // avoidance of big incremental updates of R is inside b_Refresh_R() - can only decide if ordering is known
+					m_b_first_iteration_use_R = b_Refresh_R(0/*m_n_verts_in_lambda*/, m_n_edges_in_lambda); // calculate only for new edges // @todo - but how to mark affected vertices?
+				else
+					m_b_first_iteration_use_R = b_Refresh_R(); // calculate for entire system, rebuild R from scratch
+			} catch(std::runtime_error &r_exc) {
+				if(!strcmp(r_exc.what(), "Factorize_PosDef_Blocky() failed to calculate full R")) { // could also use different exception types
+					fprintf(stderr, "warning: %s\n", r_exc.what());
+					m_b_R_up_to_date = false;
+					m_b_system_dirty = true;
+					m_n_verts_in_lambda = m_r_system.r_Vertex_Pool().n_Size();
+					m_n_edges_in_lambda = m_r_system.r_Edge_Pool().n_Size(); // probably needs to be here
+					return false;
+				} else
+					throw r_exc; // rethrow
+			}
 
 			m_b_R_up_to_date = m_b_first_iteration_use_R;
 			// in case R is not used, it will fall behind
 		}
 		// refresh R
 
-		m_b_system_dirty = false;
 		m_n_verts_in_lambda = m_r_system.r_Vertex_Pool().n_Size();
 		m_n_edges_in_lambda = m_r_system.r_Edge_Pool().n_Size(); // right? // yes.
+		// not before R is refreshed
+
+		m_b_system_dirty = false;
 		_ASSERTE(m_lambda.n_Row_Num() == m_lambda.n_Column_Num() &&
 			m_lambda.n_BlockColumn_Num() == m_r_system.r_Vertex_Pool().n_Size() &&
 			m_lambda.n_Column_Num() == n_variables_size);
@@ -905,19 +1490,23 @@ protected:
 
 #ifdef _DEBUG
 				for(size_t i = 0, n_variables_size = m_v_dx.rows(); i < n_variables_size; ++ i) {
-					if(_isnan(m_v_dx(i)))
-						fprintf(stderr, "warning: p_dx[" PRIsize "] = NaN (file \'%s\', line " PRIsize ")\n", i, __FILE__, __LINE__);
+					if(_isnan(m_v_dx(i))) {
+						fprintf(stderr, "warning: p_dx[" PRIsize "] = NaN (file \'%s\', line "
+							PRIsize ")\n", i, __FILE__, size_t(__LINE__));
+					}
 				}
 				// detect the NaNs, if any (warn, but don't modify)
 #endif // _DEBUG
 			}
 		} else {
 			if(!n_ignore_vertices)
-				Collect_RightHandSide_Vector(m_v_dx);
-			else {
-				m_r_system.r_Vertex_Pool().For_Each_Parallel(0,
+				_TyLambdaOps::Collect_RightHandSide_Vector(m_r_system, m_reduction_plan, m_v_dx);
+			else { // t_odo - see how this would work
+				_TyLambdaOps::Collect_RightHandSide_Vector(m_r_system, m_reduction_plan, m_v_dx,
+					0, m_r_system.r_Vertex_Pool().n_Size() - n_ignore_vertices);
+				/*m_r_system.r_Vertex_Pool().For_Each_Parallel(0,
 					m_r_system.r_Vertex_Pool().n_Size() - n_ignore_vertices,
-					CCollect_RightHandSide_Vector(m_v_dx));
+					_TyLambdaOps::CCollect_RightHandSide_Vector(m_v_dx));*/
 			}
 			// collects the right-hand side vector
 
@@ -928,7 +1517,7 @@ protected:
 					b_cholesky_result = m_linear_solver.Solve_PosDef(m_lambda, v_eta); // p_dx = eta = lambda / eta
 					// dont reuse block ordering
 				}
-				// lambda is good without permutation (there is one inside and we save copying eta arround)
+				// lambda is good without permutation (there is one inside and we save copying eta around)
 				// calculate cholesky, reuse block ordering if the linear solver supports it
 
 				if(!b_cholesky_result)
@@ -936,8 +1525,10 @@ protected:
 
 #ifdef _DEBUG
 				for(size_t i = 0, n_variables_size = m_v_dx.rows(); i < n_variables_size; ++ i) {
-					if(_isnan(m_v_dx(i)))
-						fprintf(stderr, "warning: p_dx[" PRIsize "] = NaN (file \'%s\', line " PRIsize ")\n", i, __FILE__, __LINE__);
+					if(_isnan(m_v_dx(i))) {
+						fprintf(stderr, "warning: p_dx[" PRIsize "] = NaN (file \'%s\', line "
+							PRIsize ")\n", i, __FILE__, size_t(__LINE__));
+					}
 				}
 				// detect the NaNs, if any (warn, but don't modify)
 #endif // _DEBUG
@@ -1037,8 +1628,10 @@ public:
 #ifdef _DEBUG
 					for(size_t i = 0, n_variables_size = m_r_system.n_VertexElement_Num();
 					   i < n_variables_size; ++ i) {
-						if(_isnan(m_v_dx(i)))
-							fprintf(stderr, "warning: p_dx[" PRIsize "] = NaN (file \'%s\', line " PRIsize ")\n", i, __FILE__, __LINE__);
+						if(_isnan(m_v_dx(i))) {
+							fprintf(stderr, "warning: p_dx[" PRIsize "] = NaN (file \'%s\', line "
+								PRIsize ")\n", i, __FILE__, size_t(__LINE__));
+						}
 					}
 					// detect the NaNs, if any (warn, but don't modify)
 #endif // _DEBUG
@@ -1061,11 +1654,13 @@ public:
 
 					if(b_utsolve_result) {
 						/*printf("just optimized using R\n");*/
-						PushValuesInGraphSystem(m_v_dx); // note this kills R
+						base_iface::CSolverOps_Base::PushValuesInGraphSystem(m_r_system, m_v_dx); // note this kills R
 						m_b_system_dirty = true;
 						m_b_R_up_to_date = false; // !!
 
 						m_b_linearization_dirty = false;
+
+						m_marginals.DisableUpdate(); // !!
 
 						timer.Accum_DiffSample(m_f_vert_upd_time);
 					}
@@ -1079,7 +1674,7 @@ public:
 				_TyTimeSampler timer(m_shared_timer);
 
 				if(n_iteration && m_b_system_dirty) {
-					Refresh_Lambda(); // want only lambda, leave R behind
+					_TyLambdaOps::Refresh_Lambda(m_r_system, m_reduction_plan, m_lambda); // want only lambda, leave R behind
 					m_b_system_dirty = false;
 					m_b_R_up_to_date = false; // lambda not dirty anymore, but R still is
 
@@ -1108,7 +1703,7 @@ public:
 				++ m_n_lambda_optim_num;
 				// we fall back to lambda
 
-				Collect_RightHandSide_Vector(m_v_dx);
+				_TyLambdaOps::Collect_RightHandSide_Vector(m_r_system, m_reduction_plan, m_v_dx);
 				// collects the right-hand side vector
 
 				timer.Accum_DiffSample(m_f_rhs_time);
@@ -1125,7 +1720,7 @@ public:
 									b_cholesky_result = false;
 									break;
 								}
-								// prepare symbolic decomposition, structure of lambda won't change in the next steps
+								// prepare symbolic factorization, structure of lambda won't change in the next steps
 
 								b_cholesky_result = _TyLinearSolverWrapper::Solve(m_linear_solver, m_lambda, v_eta);
 								// p_dx = eta = lambda / eta
@@ -1136,7 +1731,7 @@ public:
 						if(m_b_verbose)
 							printf("%s", (b_cholesky_result)? "Cholesky succeeded\n" : "Cholesky failed\n");
 					}
-					// lambda is good without permutation (there is one inside and we save copying eta arround)
+					// lambda is good without permutation (there is one inside and we save copying eta around)
 					// calculate cholesky, reuse block ordering if the linear solver supports it
 
 					timer.Accum_DiffSample(m_f_chol_time);
@@ -1144,8 +1739,10 @@ public:
 #ifdef _DEBUG
 					for(size_t i = 0, n_variables_size = m_r_system.n_VertexElement_Num();
 					   i < n_variables_size; ++ i) {
-						if(_isnan(m_v_dx(i)))
-							fprintf(stderr, "warning: p_dx[" PRIsize "] = NaN (file \'%s\', line " PRIsize ")\n", i, __FILE__, __LINE__);
+						if(_isnan(m_v_dx(i))) {
+							fprintf(stderr, "warning: p_dx[" PRIsize "] = NaN (file \'%s\', line "
+								PRIsize ")\n", i, __FILE__, size_t(__LINE__));
+						}
 					}
 					// detect the NaNs, if any (warn, but don't modify)
 #endif // _DEBUG
@@ -1170,7 +1767,7 @@ public:
 					if(b_cholesky_result) {
 						/*printf("just optimized using lambda\n");*/
 
-						PushValuesInGraphSystem(m_v_dx);
+						base_iface::CSolverOps_Base::PushValuesInGraphSystem(m_r_system, m_v_dx);
 
 						timer.Accum_DiffSample(m_f_vert_upd_time);
 
@@ -1196,6 +1793,8 @@ public:
 	}
 
 protected:
+#if 0
+
 	/**
 	 *	@brief function object that calls lambda hessian block allocation for all edges
 	 */
@@ -1228,6 +1827,8 @@ protected:
 		}
 	};
 
+#endif // 0
+
 	/**
 	 *	@brief function object that calls R factor block allocation for all vertices
 	 */
@@ -1257,6 +1858,8 @@ protected:
 		}
 	};
 
+#if 0
+
 	/**
 	 *	@brief function object that calls lambda hessian block allocation for all edges
 	 */
@@ -1285,6 +1888,8 @@ protected:
 			r_vertex_or_edge.Alloc_HessianBlocks(m_r_lambda);
 		}
 	};
+
+#endif // 0
 
 	/**
 	 *	@brief function object that calls omega hessian block allocation and evaluation for all edges
@@ -1318,6 +1923,8 @@ protected:
 		}
 	};
 
+#if 0
+
 	/**
 	 *	@brief function object that calls b vector calculation for all edges
 	 */
@@ -1336,13 +1943,13 @@ protected:
 
 		/**
 		 *	@brief function operator
-		 *	@tparam _TyEdge is edge type
-		 *	@param[in,out] r_t_edge is edge to output its part R error vector
+		 *	@tparam _TyVertex is vertex type
+		 *	@param[in,out] r_t_vertex is a vertex to output its part R error vector
 		 */
-		template <class _TyEdge>
-		inline void operator ()(_TyEdge &r_t_edge) // throw(std::bad_alloc)
+		template <class _TyVertex>
+		inline void operator ()(const _TyVertex &r_t_vertex) // throw(std::bad_alloc)
 		{
-			r_t_edge.Get_RightHandSide_Vector(m_r_b);
+			r_t_vertex.Get_RightHandSide_Vector(m_r_b);
 		}
 	};
 
@@ -1365,9 +1972,11 @@ protected:
 		// this will most likely only be any good for incremental
 
 		m_lambda.Clear();
-		const Eigen::MatrixXd &r_t_uf = m_r_system.r_t_Unary_Factor();
-		if(!m_lambda.Append_Block(Eigen::MatrixXd(r_t_uf.transpose() * r_t_uf), 0, 0))
-			throw std::bad_alloc();
+		if(!_TySystem::null_UnaryFactor) {
+			const Eigen::MatrixXd &r_t_uf = m_r_system.r_t_Unary_Factor();
+			if(!m_lambda.Append_Block(Eigen::MatrixXd(r_t_uf.transpose() * r_t_uf), 0, 0))
+				throw std::bad_alloc();
+		}
 		// add unary factor (actually UF^T * UF, but it's the same matrix)
 
 		m_R.Clear();
@@ -1415,6 +2024,38 @@ protected:
 		// create block matrix lambda
 	}
 
+#endif // 0
+
+	/**
+	 *	@brief incrementally updates the lambda matrix structure (can be empty)
+	 *
+	 *	@param[in] n_vertices_already_in_lambda is number of vertices before the first vertex that changes
+	 *	@param[in] n_edges_already_in_lambda is number of edges before the first edge that changes
+	 *
+	 *	@note This function throws std::bad_alloc.
+	 */
+	inline void Extend_LambdaR(size_t n_vertices_already_in_lambda, size_t n_edges_already_in_lambda) // throw(std::bad_alloc)
+	{
+		_TyLambdaOps::Extend_Lambda(m_r_system, m_reduction_plan, m_lambda,
+			n_vertices_already_in_lambda, n_edges_already_in_lambda);
+		// extend lambda using the lambda ops
+
+		if(!n_vertices_already_in_lambda && !n_edges_already_in_lambda) {
+			m_R.Clear();
+			m_r_system.r_Vertex_Pool().For_Each(CAlloc_RBlocks(m_R)); // can stay, there is no ordering to be applied
+
+			//AddEntriesInSparseSystem(); // works for empty
+		} else {
+			_ASSERTE(m_lambda.n_Row_Num() > 0 && m_lambda.n_Column_Num() == m_lambda.n_Row_Num()); // make sure lambda is not empty
+			m_r_system.r_Vertex_Pool().For_Each(n_vertices_already_in_lambda,
+				m_r_system.r_Vertex_Pool().n_Size(), CAlloc_RBlocks(m_R)); // will not work if ordering is applied (but it mostly isn't, the increments follow identity ordering)
+
+			//UpdateSparseSystem(n_vertices_already_in_lambda, n_edges_already_in_lambda); // does not work for empty
+		}
+		// create block matrix lambda
+		// todo - add this to L ops?
+	}
+
 #if 0
 	/**
 	 *	@brief checks if R == chol(lambda), prints the norm of the difference to stdout
@@ -1445,7 +2086,7 @@ protected:
 	 *
 	 *	@param[in] n_order_min is the minimum vertex that changes in R (zero-based index in blocks)
 	 *	@param[in] n_order_max is number of column blocks in R (in blocks)
-	 *	@param[in] r_R11_new is matrix, containing the new \f$R_{11}\f$, before calculating cholesky of it
+	 *	@param[in] r_R11_new is matrix, containing the new \f$R_{11}\f$, before calculating Cholesky of it
 	 *
 	 *	@note This may modify / damage r_R11_new as it is no longer needed and it is *not* a reference
 	 *		to a part of R, in case that enables speed optimizations.
@@ -1603,7 +2244,7 @@ protected:
 	}
 
 	/**
-	 *	@brief calculates the new right-hand-side vector, does it incrementally were possible
+	 *	@brief calculates the new right-hand-side vector, does it incrementally where possible
 	 *
 	 *	@param[in] n_refresh_from_edge is the first edge that changes
 	 *	@param[in] n_order_min is the minimum vertex that changes in R (zero-based index in blocks)
@@ -1642,8 +2283,10 @@ protected:
 				++ m_n_resumed_forwardsubst_num;
 
 				_ASSERTE(m_v_d.rows() == m_lambda.n_Column_Num());
-				m_r_system.r_Vertex_Pool().For_Each_Parallel(n_order_min,
-					m_r_system.r_Vertex_Pool().n_Size(), CCollect_RightHandSide_Vector(m_v_d));
+				_TyLambdaOps::Collect_RightHandSide_Vector(m_r_system, m_reduction_plan, m_v_d,
+					n_order_min, m_r_system.r_Vertex_Pool().n_Size());
+				//m_r_system.r_Vertex_Pool().For_Each_Parallel(n_order_min,
+				//	m_r_system.r_Vertex_Pool().n_Size(), CCollect_RightHandSide_Vector(m_v_d));
 				// collect part of b to the lower part of d (this is inside of Collect_RightHandSide_Vector())
 
 				timer.Accum_DiffSample(m_f_rhs_time);
@@ -1664,11 +2307,13 @@ protected:
 						-- m_n_resumed_perm_forwardsubst_num;
 						++ m_n_full_forwardsubst_num; // this is really a full one
 
-						m_r_system.r_Vertex_Pool().For_Each_Parallel(n_min_vertex,
-							m_r_system.r_Vertex_Pool().n_Size(), CCollect_RightHandSide_Vector(m_v_d));
+						/*m_r_system.r_Vertex_Pool().For_Each_Parallel(n_min_vertex,
+							m_r_system.r_Vertex_Pool().n_Size(), CCollect_RightHandSide_Vector(m_v_d));*/
+						_TyLambdaOps::Collect_RightHandSide_Vector(m_r_system, m_reduction_plan, m_v_d,
+							n_min_vertex, m_r_system.r_Vertex_Pool().n_Size());
 					} else {
 						const size_t *p_order_inv = m_lambda_ordering.p_Get_Ordering();
-						CCollect_RightHandSide_Vector collector(m_v_d);
+						//CCollect_RightHandSide_Vector collector(m_v_d);
 #ifdef _OPENMP
 						_ASSERTE(n_order_max <= INT_MAX);
 						const int n = int(n_order_max);
@@ -1677,7 +2322,8 @@ protected:
 #else // _OPENMP
 						for(size_t i = n_min_vertex; i < n_order_max; ++ i)
 #endif // _OPENMP
-							collector(m_r_system.r_Vertex_Pool()[p_order_inv[i]]);
+							_TyLambdaOps::Collect_RightHandSide_Vector(m_r_system, m_reduction_plan, m_v_d, p_order_inv[i]); // this requires ReduceSingle()
+							//collector(m_r_system.r_Vertex_Pool()[p_order_inv[i]]);
 						// can do this in parallel as well
 					}
 				}
@@ -1737,7 +2383,7 @@ protected:
 		timer.Accum_DiffSample(m_f_fullR_cholesky);
 
 		{
-			Collect_RightHandSide_Vector(m_v_dx);
+			_TyLambdaOps::Collect_RightHandSide_Vector(m_r_system, m_reduction_plan, m_v_dx);
 			// collects the right-hand side vector (eta)
 
 			timer.Accum_DiffSample(m_f_rhs_time);
@@ -1763,7 +2409,7 @@ protected:
 	 *
 	 *	@param[in] n_referesh_from_vertex is zero-based index of the first vertex that changes (unused)
 	 *	@param[in] n_refresh_from_edge is zero-based index of the first edge that changes
-	 *	@param[in] b_supress_reorder is 
+	 *	@param[in] b_supress_reorder is ordering supression flag (if set, full reordering will not take place)
 	 *
 	 *	@return Returns true if R was refreshed, false if it decided to take lambda fallback instead.
 	 *
@@ -1838,7 +2484,7 @@ protected:
 		else if(b_supress_reorder)
 			n_order_min = 0; // the whole system changed numerically? from the ground up then ...
 		else {
-			n_order_min = m_p_lambda_block_ordering[m_n_lambda_block_ordering_size - 1];
+			n_order_min = m_n_lambda_block_ordering_size;//m_p_lambda_block_ordering[m_n_lambda_block_ordering_size - 1]; // bigtodo - is this that, or just m_n_lambda_block_ordering_size? should be better with m_n_lambda_block_ordering_size
 			for(size_t i = n_refresh_from_edge, n = m_r_system.r_Edge_Pool().n_Size(); i < n; ++ i) {
 				size_t n_order_v0 = m_p_lambda_block_ordering[m_r_system.r_Edge_Pool()[i].n_Vertex_Id(0)];
 				size_t n_order_v1 = m_p_lambda_block_ordering[m_r_system.r_Edge_Pool()[i].n_Vertex_Id(1)]; // note that these are ids, but these equal order at the moment
@@ -2111,7 +2757,7 @@ protected:
 				timer.Accum_DiffSample(m_f_ordering_fold_time);
 
 				m_lambda.Permute_UpperTriangular_To(m_lambda_perm, m_p_lambda_block_ordering,
-					m_lambda.n_BlockColumn_Num(), true, n_order_min, true);
+					m_lambda.n_BlockColumn_Num(), true, n_order_min, true); // last false is a strong approximate
 				// note that this does leave allocated blocks, but in the next round, lambda will reperm and free those
 
 #ifdef __NONLINEAR_SOLVER_FAST_L_VERIFY_PERM_FOLDING
@@ -2374,6 +3020,8 @@ protected:
 		return true;
 	}
 
+#if 0
+
 	/**
 	 *	@brief refreshes the lambda matrix by recalculating edge hessians
 	 *
@@ -2395,13 +3043,15 @@ protected:
 			m_r_system.r_Vertex_Pool().For_Each_Parallel(CCalculate_Lambda()); // this is currently always from vert 0
 		// can do this in parallel
 
-		if(!n_referesh_from_vertex) {
+		if(!_TySystem::null_UnaryFactor && !n_referesh_from_vertex) {
 			const Eigen::MatrixXd &r_t_uf = m_r_system.r_t_Unary_Factor();
 			m_lambda.t_FindBlock(0, 0).noalias() += r_t_uf.transpose() * r_t_uf;
 			// for lambda yes
 		}
 		// add unary factor (gets overwritten by the first vertex' block)
 	}
+
+#endif // 0
 
 #ifdef __NONLINEAR_SOLVER_FAST_L_DUMP_DENSITY
 
@@ -2529,6 +3179,8 @@ protected:
 
 #endif // __NONLINEAR_SOLVER_FAST_L_DUMP_DENSITY
 
+#if 0
+
 	/**
 	 *	@brief function object that calculates and accumulates chi^2 from all the edges
 	 */
@@ -2618,8 +3270,10 @@ protected:
 		}
 	};
 
+#endif // 0
+
 	CNonlinearSolver_FastL(const CNonlinearSolver_FastL &UNUSED(r_solver)); /**< @brief the object is not copyable */
 	CNonlinearSolver_FastL &operator =(const CNonlinearSolver_FastL &UNUSED(r_solver)) { return *this; } /**< @brief the object is not copyable */
 };
 
-#endif // __NONLINEAR_BLOCKY_SOLVER_FAST_L_INCLUDED
+#endif // !__NONLINEAR_BLOCKY_SOLVER_FAST_L_INCLUDED

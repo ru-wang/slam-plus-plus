@@ -428,7 +428,7 @@ public:
 		// colors of borders (just darker)
 
 		size_t m = (A_prev)? std::max(A->m, A_prev->m) : A->m;
-		size_t n = (A_prev)? std::max(A->n, A_prev->n) : A->n; // in fact, it's the other way arround, but lets not confuse things
+		size_t n = (A_prev)? std::max(A->n, A_prev->n) : A->n; // in fact, it's the other way around, but lets not confuse things
 
 		if(m == SIZE_MAX || n == SIZE_MAX || m > INT_MAX || n > INT_MAX ||
 		   m * (n_scalar_size - 1) + 1 > INT_MAX || n * (n_scalar_size - 1) + 1 > INT_MAX ||
@@ -698,6 +698,27 @@ public:
 	}
 
 	/**
+	 *	@brief prints dense matrix dimensions
+	 *
+	 *	@tparam MatrixType is specialization of Eigen::Matrix
+	 *
+	 *	@param[in] p_fw is the output stream
+	 *	@param[in] r_A is the matrix to be printed
+	 *	@param[in] p_s_prefix is prefix code before the matrix body (can be null)
+	 *	@param[in] p_s_suffix is suffix code after the matrix body (can be null)
+	 */
+	template <class MatrixType>
+	static void Print_DenseMatrix_Dimensions(FILE *p_fw, const MatrixType &r_A,
+		const char *p_s_prefix = 0, const char *p_s_suffix = "\n")
+	{
+		if(p_s_prefix)
+			fprintf(p_fw, "%s", p_s_prefix);
+		fprintf(p_fw, "dense, " PRIsize " x " PRIsize, r_A.rows(), r_A.cols());
+		if(p_s_suffix)
+			fprintf(p_fw, "%s", p_s_suffix);
+	}
+
+	/**
 	 *	@brief prints dense matrix in matlab format
 	 *
 	 *	@tparam MatrixType is specialization of Eigen::Matrix
@@ -706,12 +727,14 @@ public:
 	 *	@param[in] r_A is the matrix to be printed
 	 *	@param[in] p_s_prefix is prefix code before the matrix body (can be null)
 	 *	@param[in] p_s_suffix is suffix code after the matrix body (can be null)
+	 *	@param[in] p_s_fmt is format string (" %f" by default; the space is important)
 	 *
 	 *	@return Returns true on success, false on failure.
 	 */
 	template <class MatrixType>
 	static bool Print_DenseMatrix_in_MatlabFormat(FILE *p_fw,
-		const MatrixType &r_A, const char *p_s_prefix = 0, const char *p_s_suffix = ";\n")
+		const MatrixType &r_A, const char *p_s_prefix = 0,
+		const char *p_s_suffix = ";\n", const char *p_s_fmt = " %f")
 	{
 		if(p_s_prefix)
 			fprintf(p_fw, "%s", p_s_prefix);
@@ -721,7 +744,7 @@ public:
 			for(size_t i = 0, m = r_A.rows(); i < m; ++ i) { // iterate rows in the outer loop
 				for(size_t j = 0, n = r_A.cols(); j < n; ++ j) { // iterate columns in the inner loop
 					double f_value = r_A(i, j);
-					fprintf(p_fw, " %f", f_value);
+					fprintf(p_fw, p_s_fmt, f_value);
 				}
 				if(i + 1 != m)
 					fprintf(p_fw, "; ");
@@ -879,4 +902,4 @@ public:
 	}
 };
 
-#endif // __DEBUGGING_FUNCTIONALITY_INCLUDED
+#endif // !__DEBUGGING_FUNCTIONALITY_INCLUDED

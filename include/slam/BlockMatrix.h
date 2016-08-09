@@ -42,7 +42,7 @@
  *	@date 2012-19-12
  *
  *	Resolved Linux compatibility problems, especially added small namespace
- *	__fbs_ut and moved there fixed block size utility classes from CFixedBlockSize_Ops,
+ *	fbs_ut and moved there fixed block size utility classes from CFixedBlockSize_Ops,
  *	not depending on CFixedBlockSize_Ops template parameters.
  *
  *	To avoid moving all the loops from CFixedBlockSize_Ops, a new template
@@ -421,11 +421,65 @@ public:
 	 *
 	 *	@note This *does not* perform row lookup, n_block_index is block index within
 	 *		the column, and it depends on the actual fill of this column.
-	 *	@note This allows write access to matrix elements, would neet a Eigen::ConstMap<>.
 	 *	@note This function used to be called t_BlockAt() and the unfortunate order of arguments
 	 *		was swapped, to match n_Block_Row() where column is first.
-	 */ // t_odo This function is easily misused, make a better name or something.
-	inline _TyMatrixXdRef t_Block_AtColumn(size_t n_column_index, size_t n_block_index) const;
+	 */
+	inline _TyMatrixXdRef t_Block_AtColumn(size_t n_column_index, size_t n_block_index);
+
+	/**
+	 *	@brief gets a matrix block (read-only)
+	 *
+	 *	@param[in] n_column_index is (zero-based) index of a column (in blocks!)
+	 *	@param[in] n_block_index is (zero-based) index of a block (in blocks!)
+	 *
+	 *	@return Returns an Eigen::Map<> to the block in question.
+	 *
+	 *	@note This *does not* perform row lookup, n_block_index is block index within
+	 *		the column, and it depends on the actual fill of this column.
+	 *	@note This function used to be called t_BlockAt() and the unfortunate order of arguments
+	 *		was swapped, to match n_Block_Row() where column is first.
+	 */
+	inline _TyConstMatrixXdRef t_Block_AtColumn(size_t n_column_index, size_t n_block_index) const;
+
+	/**
+	 *	@brief gets a fixed-size matrix block (read-only)
+	 *
+	 *	@tparam n_block_row_num is explected number of rows in the block
+	 *	@tparam n_block_column_num is explected number of columns in the block
+	 *
+	 *	@param[in] n_column_index is (zero-based) index of a column (in blocks!)
+	 *	@param[in] n_block_index is (zero-based) index of a block (in blocks!)
+	 *
+	 *	@return Returns a constant-sized Eigen::Map<> to the block in question.
+	 *
+	 *	@note This *does not* perform row lookup, n_block_index is block index within
+	 *		the column, and it depends on the actual fill of this column.
+	 *	@note This function used to be called t_BlockAt() and the unfortunate order of arguments
+	 *		was swapped, to match n_Block_Row() where column is first.
+	 */
+	template <const int n_block_row_num, const int n_block_column_num>
+	inline typename CMakeMatrixRef<n_block_row_num, n_block_column_num>::_TyConst
+		t_Block_AtColumn(size_t n_column_index, size_t n_block_index) const;
+
+	/**
+	 *	@brief gets a fixed-size matrix block (read-only)
+	 *
+	 *	@tparam n_block_row_num is explected number of rows in the block
+	 *	@tparam n_block_column_num is explected number of columns in the block
+	 *
+	 *	@param[in] n_column_index is (zero-based) index of a column (in blocks!)
+	 *	@param[in] n_block_index is (zero-based) index of a block (in blocks!)
+	 *
+	 *	@return Returns a constant-sized Eigen::Map<> to the block in question.
+	 *
+	 *	@note This *does not* perform row lookup, n_block_index is block index within
+	 *		the column, and it depends on the actual fill of this column.
+	 *	@note This function used to be called t_BlockAt() and the unfortunate order of arguments
+	 *		was swapped, to match n_Block_Row() where column is first.
+	 */
+	template <const int n_block_row_num, const int n_block_column_num>
+	inline typename CMakeMatrixRef<n_block_row_num, n_block_column_num>::_Ty
+		t_Block_AtColumn(size_t n_column_index, size_t n_block_index);
 
 	/**
 	 *	@brief gets number of allocated blocks
@@ -510,6 +564,29 @@ public:
 	}
 
 	/**
+	 *	@brief determines whether the matrix has off-diagonal blocks
+	 *	@return Returns true if the matrix has any has off-diagonal blocks, otherwise returns false.
+	 *
+	 *	@note This does not imply symmetric layout.
+	 *	@note See also b_BlockDiagonal(). Note that this function is not a simple negation of it.
+	 */
+	bool b_OffDiagonal_Blocks() const;
+
+	/**
+	 *	@brief determines whether the matrix is symmetric and has block diagonal
+	 *
+	 *	@return Returns true if the matrix is symmetric and has all the blocks of
+	 *		the main diagonal and no blocks anywhere else, otherwise returns false.
+	 *
+	 *	@note This returns false if the layout is not symmetric (but the matrix may
+	 *		still have blocks only on the diagonal). This also returns false if the
+	 *		matrix is rank deficient (some blocks of the diagonal are missing).
+	 *	@note See also b_HasOffDiagonalBlocks(). Note that this function is not
+	 *		a simple negation of it.
+	 */
+	bool b_BlockDiagonal() const;
+
+	/**
 	 *	@brief determines whether the matrix has symmetric layout
 	 *	@return Returns true if the matrix has symmetric row and column layout, false otherwise.
 	 *	@note Despite the layout being symmetric, the blocks might be present at places
@@ -585,6 +662,18 @@ public:
 	size_t n_NonZero_Num() const;
 
 	/**
+	 *	@brief extends the matrix to a given size by adding empty block row / column at the end
+	 *
+	 *	@param[in] n_row_num is number of rows (must be greater or equal
+	 *		to the current number of rows; in elements)
+	 *	@param[in] n_column_num is number of columns (must be greater or equal
+	 *		to the current number of columns; in elements)
+	 *
+	 *	@note This function throws std::bad_alloc.
+	 */
+	void ExtendTo(size_t n_row_num, size_t n_column_num); // throw(std::bad_alloc)
+
+	/**
 	 *	@brief finds a matrix block
 	 *
 	 *	@param[in] n_row is starting row of the block (in elements)
@@ -608,17 +697,26 @@ public:
 		bool b_mind_uninitialized = true); // throw(std::bad_alloc)
 
 	/**
-	 *	@brief finds a matrix block (read-only)
+	 *	@brief finds a matrix block
 	 *
 	 *	@param[in] n_row is starting row of the block (in elements)
 	 *	@param[in] n_column is starting column of the block (in elements)
 	 *
 	 *	@return Returns an Eigen::Map<> to the block in question on success,
 	 *		or an empty 0 x 0 matrix on failure.
-	 *
-	 *	@note This allows write access to matrix elements, would neet a ConstReferencingMatrixXd.
 	 */
-	inline _TyMatrixXdRef t_FindBlock(size_t n_row, size_t n_column) const;
+	inline _TyMatrixXdRef t_FindBlock(size_t n_row, size_t n_column);
+
+	/**
+	 *	@brief finds a matrix block (read-only)
+	 *
+	 *	@param[in] n_row is starting row of the block (in elements)
+	 *	@param[in] n_column is starting column of the block (in elements)
+	 *
+	 *	@return Returns a const Eigen::Map<> to the block in question on success,
+	 *		or an empty 0 x 0 matrix on failure.
+	 */
+	inline _TyConstMatrixXdRef t_FindBlock(size_t n_row, size_t n_column) const;
 
 	/**
 	 *	@brief finds a matrix block, strictly inside the matrix
@@ -645,17 +743,26 @@ public:
 		bool b_mind_uninitialized = true); // throw(std::bad_alloc)
 
 	/**
-	 *	@brief gets a matrix block (read-only)
+	 *	@brief gets a matrix block
 	 *
 	 *	@param[in] n_row_index is index of a row (in blocks!)
 	 *	@param[in] n_column_index is index of a column (in blocks!)
 	 *
 	 *	@return Returns an Eigen::Map<> to the block in question on success,
 	 *		or an empty 0 x 0 matrix on failure.
-	 *
-	 *	@note This allows write access to matrix elements, would neet a ConstReferencingMatrixXd.
 	 */
-	inline _TyMatrixXdRef t_GetBlock_Log(size_t n_row_index, size_t n_column_index) const;
+	inline _TyMatrixXdRef t_GetBlock_Log(size_t n_row_index, size_t n_column_index);
+
+	/**
+	 *	@brief gets a matrix block (read-only)
+	 *
+	 *	@param[in] n_row_index is index of a row (in blocks!)
+	 *	@param[in] n_column_index is index of a column (in blocks!)
+	 *
+	 *	@return Returns a const Eigen::Map<> to the block in question on success,
+	 *		or an empty 0 x 0 matrix on failure.
+	 */
+	inline _TyConstMatrixXdRef t_GetBlock_Log(size_t n_row_index, size_t n_column_index) const;
 
 	/**
 	 *	@brief finds a matrix block (read-only)
@@ -692,7 +799,7 @@ public:
 	 *	@note This can only allocate new block rows / columns at the edge of the matrix.
 	 */
 	double *p_GetBlock_Log(size_t n_row_index, size_t n_column_index,
-		size_t n_block_row_num, size_t n_block_column_num, bool b_alloc_if_not_found = true,
+		size_t n_block_row_num, size_t n_block_column_num, bool b_alloc_if_not_found /*= true*/, // otherwise ambiguous
 		bool b_mind_uninitialized = true); // throw(std::bad_alloc)
 
 	/**
@@ -733,7 +840,7 @@ public:
 	 *	@note This function throws std::bad_alloc.
 	 */
 	double *p_FindBlock(size_t n_row, size_t n_column, size_t n_block_row_num,
-		size_t n_block_column_num, bool b_alloc_if_not_found = true,
+		size_t n_block_column_num, bool b_alloc_if_not_found /*= true*/, // otherwise ambiguous
 		bool b_mind_uninitialized = true); // throw(std::bad_alloc)
 
 	/**
@@ -754,6 +861,20 @@ public:
 		size_t n_block_column_num, bool &r_b_is_uninitialized); // throw(std::bad_alloc)
 
 	/**
+	 *	@brief finds a matrix block
+	 *
+	 *	@param[in] n_row is starting row of the block (in elements)
+	 *	@param[in] n_column is starting column of the block (in elements)
+	 *	@param[in] n_block_row_num is number of block rows (in elements)
+	 *	@param[in] n_block_column_num is number of block columns (in elements)
+	 *
+	 *	@return Returns pointer to raw data (storage order same as in Eigen) on success,
+	 *		or 0 on failure.
+	 */
+	double *p_FindBlock(size_t n_row, size_t n_column,
+		size_t n_block_row_num, size_t n_block_column_num);
+
+	/**
 	 *	@brief finds a matrix block (read-only)
 	 *
 	 *	@param[in] n_row is starting row of the block (in elements)
@@ -766,6 +887,20 @@ public:
 	 */
 	const double *p_FindBlock(size_t n_row, size_t n_column,
 		size_t n_block_row_num, size_t n_block_column_num) const;
+
+	/**
+	 *	@brief finds a matrix block (read-only)
+	 *
+	 *	@param[in] n_row is starting row of the block (in elements)
+	 *	@param[in] n_column is starting column of the block (in elements)
+	 *	@param[out] r_n_block_row_num is filled with number of block rows (in elements)
+	 *	@param[out] r_n_block_column_num is filled with number of block columns (in elements)
+	 *
+	 *	@return Returns pointer to raw data (storage order same as in Eigen) on success,
+	 *		or 0 on failure.
+	 */
+	double *p_FindBlock_ResolveSize(size_t n_row, size_t n_column,
+		size_t &r_n_block_row_num, size_t &r_n_block_column_num);
 
 	/**
 	 *	@brief finds a matrix block (read-only)
@@ -838,8 +973,6 @@ public:
 	 *
 	 *	@note This function throws std::bad_alloc.
 	 *	@note This is slightly faster than Append_Block().
-	 *
-	 *	@todo this is practically untested, test it
 	 */
 	template <class CMatrixType>
 	bool Append_Block_Log(const CMatrixType &r_t_block, size_t n_row_index, size_t n_column_index); // throw(std::bad_alloc)
@@ -864,8 +997,6 @@ public:
 	 *
 	 *	@note This function throws std::bad_alloc.
 	 *	@note This is slightly faster than Append_Block().
-	 *
-	 *	@todo this is practically untested, test it
 	 */
 	template <int n_compile_time_row_num, int n_compile_time_col_num, int n_options>
 	bool Append_Block_Log(const Eigen::Matrix<double, n_compile_time_row_num, n_compile_time_col_num,
@@ -883,8 +1014,6 @@ public:
 	 *	@note This calculates \f$p\_dest\_vector = p\_dest\_vector + this \cdot p\_src\_vector\f$. To calculate the product
 	 *		in reverse order, use PostMultiply_Add().
 	 *	@note Error-checking is enabled in debug only.
-	 *
-	 *	@todo - this is largerly untested; test this
 	 */
 	void PreMultiply_Add(double *p_dest_vector, size_t UNUSED(n_dest_size),
 		const double *p_src_vector, size_t UNUSED(n_src_size)) const;
@@ -908,8 +1037,6 @@ public:
 	 *	@note This calculates \f$p\_dest\_vector = p\_dest\_vector + this \cdot p\_src\_vector\f$. To calculate the product
 	 *		in reverse order, use PostMultiply_Add().
 	 *	@note Error-checking is enabled in debug only.
-	 *
-	 *	@todo - this is largerly untested; test this
 	 */
 	template <class CBlockMatrixTypelist>
 	void PreMultiply_Add_FBS(double *p_dest_vector, size_t UNUSED(n_dest_size),
@@ -931,8 +1058,6 @@ public:
 	 *	@note Error-checking is enabled in debug only.
 	 *	@note This function is easily parallelized using OpenMP (use PostMultiply_Add_Parallel()).
 	 *	@note It is possible to use the following relationship to convert premultiply to postmultiply: \f$M^T \cdot u = (u \cdot M)^T\f$.
-	 *
-	 *	@todo - this is largerly untested; test this
 	 */
 	void PostMultiply_Add(double *p_dest_vector, size_t UNUSED(n_dest_size),
 		const double *p_src_vector, size_t UNUSED(n_src_size)) const;
@@ -951,8 +1076,6 @@ public:
 	 *	@note Error-checking is enabled in debug only.
 	 *	@note This function is parallelized using OpenMP (if not available, it runs serially).
 	 *	@note It is possible to use the following relationship to convert premultiply to postmultiply: \f$M^T \cdot u = (u \cdot M)^T\f$.
-	 *
-	 *	@todo - this is largerly untested; test this
 	 */
 	void PostMultiply_Add_Parallel(double *p_dest_vector, size_t UNUSED(n_dest_size),
 		const double *p_src_vector, size_t UNUSED(n_src_size)) const;
@@ -979,8 +1102,6 @@ public:
 	 *	@note This function is easily parallelized using OpenMP (use PostMultiply_Add_FBS_Parallel()).
 	 *	@note It is possible to use the following relationship to convert premultiply
 	 *		to postmultiply: \f$M^T \cdot u = (u \cdot M)^T\f$.
-	 *
-	 *	@todo - this is largerly untested; test this
 	 */
 	template <class CBlockMatrixTypelist>
 	void PostMultiply_Add_FBS(double *p_dest_vector, size_t UNUSED(n_dest_size),
@@ -1006,8 +1127,6 @@ public:
 	 *	@note This function is parallelized using OpenMP (if not available, runs in serial).
 	 *	@note It is possible to use the following relationship to convert premultiply
 	 *		to postmultiply: \f$M^T \cdot u = (u \cdot M)^T\f$.
-	 *
-	 *	@todo - this is largerly untested; test this
 	 */
 	template <class CBlockMatrixTypelist>
 	void PostMultiply_Add_FBS_Parallel(double *p_dest_vector, size_t UNUSED(n_dest_size),
@@ -1236,6 +1355,8 @@ public:
 	 *	@return Returns true on success, false on failure.
 	 *
 	 *	@note This function throws std::bad_alloc.
+	 *	@note This does not erase the matrix at the beginning. Any existing contents will
+	 *		remain there, if not overwritten by the new data.
 	 */
 	bool From_Sparse(size_t n_base_row_id, size_t n_base_column_id,
 		const cs *p_sparse, bool b_transpose, std::vector<size_t> &r_workspace); // throw(std::bad_alloc)
@@ -1271,6 +1392,8 @@ public:
 	 *	@note This function throws std::bad_alloc.
 	 *	@note This is potentially dangerous as it expects 32-bit integers in the cs structure,
 	 *		which may define integers as 64-bit and expect them to be so. Use with caution.
+	 *	@note This does not erase the matrix at the beginning. Any existing contents will
+	 *		remain there, if not overwritten by the new data.
 	 */
 	bool From_Sparse32(size_t n_base_row_id, size_t n_base_column_id,
 		const cs *p_sparse, bool b_transpose, std::vector<size_t> &r_workspace); // throw(std::bad_alloc)
@@ -1418,7 +1541,6 @@ public:
 	 *
 	 *	@note This is a version for full / symmetric matrices, it will not work on triangular
 	 *		matrices (will scatter data to the other diagonal half as well). See UpperPermuteTo().
-	 *	@todo This is completely untested - test it.
 	 */
 	void PermuteTo(CUberBlockMatrix &r_dest, const size_t *p_block_ordering,
 		size_t UNUSED(n_ordering_size), bool b_reorder_rows = true,
@@ -1430,7 +1552,8 @@ public:
 	 *	@param[out] r_dest is the destination matrix (will be overwritten)
 	 *	@param[in] p_block_ordering is pointer to the block ordering vector
 	 *	@param[in] n_ordering_size is size of the ordering (must match the number
-	 *		of block columns of this matrix)
+	 *		of block columns of this matrix, or it can be shorter but then the
+	 *		dest matrix will be smaller and number of referenced elements will not be precise)
 	 *	@param[in] b_share_data is data sharing flag; if not set a deep copy is made,
 	 *		if set, a shallow copy is made and the blocks reference the data of this
 	 *		matrix, except if the blocks end up below the diagonal (due to permutation)
@@ -1440,7 +1563,6 @@ public:
 	 *	@note This function throws std::bad_alloc.
 	 *
 	 *	@todo Make b_IsUpperTriangular() predicate.
-	 *	@todo This is largerly untested - test it.
 	 *	@todo This is a version for upper diagonal matrices, it is unable to efficiently
 	 *		share data (sometimes it needs to transpose and copy), make an incremental version
 	 *		(data changed / the original matrix grew while the permutation only extended
@@ -2141,7 +2263,7 @@ public:
 	 *	@brief calculates inverse of a sparse symmetric block matrix
 	 *
 	 *	The function looks for independent groups of blocks in the matrix, and
-	 *	calculates dense inverse arround each block. In case the matrix is fully
+	 *	calculates dense inverse around each block. In case the matrix is fully
 	 *	connected, the inverse will be completely dense.
 	 *	The use of this function is therefore limited to a few very specific
 	 *	cases (Schur complement is one of them). To solve a general system of
@@ -2181,11 +2303,11 @@ public:
 	 *		the nonzero blocks can be scattered at will,
 	 *		the content does not need to be symmetric at all.
 	 *
-	 *	@todo Implement InverseOf_SymmtericBlockDiagonal(), implement FBS versions of both.
 	 *	@todo Test it on some data, it is largerly untested.
 	 *	@todo Often, symmetric matrices are only represented by the upper triangular,
 	 *		need to add parameter to mirror the blocks below the diagonal as well.
 	 */
+	// *	t_odo Implement InverseOf_SymmtericBlockDiagonal(), implement FBS versions of both.
 	void InverseOf_Symmteric(const CUberBlockMatrix &r_A); // throw(std::bad_alloc)
 
 #ifdef __UBER_BLOCK_MATRIX_FIXED_BLOCK_SIZE_OPS
@@ -2194,7 +2316,7 @@ public:
 	 *	@brief calculates inverse of a sparse symmetric block matrix
 	 *
 	 *	The function looks for independent groups of blocks in the matrix, and
-	 *	calculates dense inverse arround each block. In case the matrix is fully
+	 *	calculates dense inverse around each block. In case the matrix is fully
 	 *	connected, the inverse will be completely dense.
 	 *	The use of this function is therefore limited to a few very specific
 	 *	cases (Schur complement is one of them). To solve a general system of
@@ -2236,13 +2358,29 @@ public:
 	 *		the nonzero blocks can be scattered at will,
 	 *		the content does not need to be symmetric at all.
 	 *
-	 *	@todo Implement InverseOf_SymmtericBlockDiagonal(), implement FBS versions of both.
 	 *	@todo Test it on some data, it is largerly untested.
 	 *	@todo Often, symmetric matrices are only represented by the upper triangular,
 	 *		need to add parameter to mirror the blocks below the diagonal as well.
 	 */
 	template <class CBlockMatrixTypelist>
 	void InverseOf_Symmteric_FBS(const CUberBlockMatrix &r_A); // throw(std::bad_alloc)
+
+	/**
+	 *	@brief calculates inverse of a sparse block diagonal matrix
+	 *
+	 *	@tparam CBlockMatrixTypelist is list of Eigen::Matrix block sizes
+	 *
+	 *	@param[in] r_A is the input matrix (must be invertible, can point to this)
+	 *
+	 *	@note This function throws std::bad_alloc.
+	 *	@note In case the matrix is not invertible, the result
+	 *		is undefined (no exception is thrown).
+	 *	@note Actually, only the layout needs to be symmetric,
+	 *		the nonzero blocks can be scattered at will,
+	 *		the content does not need to be symmetric at all.
+	 */
+	template <class CBlockMatrixTypelist>
+	void InverseOf_BlockDiag_FBS_Parallel(const CUberBlockMatrix &r_A); // throw(std::bad_alloc)
 
 #endif // __UBER_BLOCK_MATRIX_FIXED_BLOCK_SIZE_OPS
 
@@ -2256,14 +2394,21 @@ public:
 	 *		to n_vector_length elements, will be overwritten)
 	 *	@param[in] p_src is source vector (must be allocated to n_vector_length elements)
 	 *	@param[in] n_vector_length is number of elements of the dense vector
-	 *		(must equal to the number of matrix rows)
+	 *		(must be equal to or less than the number of matrix columns,
+	 *		depending on n_permutation_length)
 	 *	@param[in] p_permutation is blockwise permutation vector
 	 *	@param[in] n_permutation_length is number of blockwise permutation elements
-	 *		(must equal to the number of matrix block rows)
+	 *		(must be equal to or less than the number of matrix block columns)
+	 *
+	 *	@note With this function, it is possible to permute shorter vectors
+	 *		than the size of the matrix, the result is the same as the corresponding
+	 *		head of the vector of the same length as the matrix. It is important
+	 *		that the vector lenght exactly matches the sum of sizes of blocks
+	 *		selected by the permutation vector.
 	 */
 	void Permute_RightHandSide_Vector(double *p_dest, const double *p_src,
 		size_t UNUSED(n_vector_length), const size_t *p_permutation,
-		size_t UNUSED(n_permutation_length)) const;
+		size_t n_permutation_length) const;
 
 	/**
 	 *	@brief permutes left-hand side vector by blockwise permutation
@@ -2275,14 +2420,21 @@ public:
 	 *		to n_vector_length elements, will be overwritten)
 	 *	@param[in] p_src is source vector (must be allocated to n_vector_length elements)
 	 *	@param[in] n_vector_length is number of elements of the dense vector
-	 *		(must equal to the number of matrix columns)
+	 *		(must be equal to or less than the number of matrix columns,
+	 *		depending on n_permutation_length)
 	 *	@param[in] p_permutation is blockwise permutation vector
 	 *	@param[in] n_permutation_length is number of blockwise permutation elements
-	 *		(must equal to the number of matrix block columns)
+	 *		(must be equal to or less than the number of matrix block columns)
+	 *
+	 *	@note With this function, it is possible to permute shorter vectors
+	 *		than the size of the matrix, the result is the same as the corresponding
+	 *		head of the vector of the same length as the matrix. It is important
+	 *		that the vector lenght exactly matches the sum of sizes of blocks
+	 *		selected by the permutation vector.
 	 */
 	void Permute_LeftHandSide_Vector(double *p_dest, const double *p_src,
 		size_t UNUSED(n_vector_length), const size_t *p_permutation,
-		size_t UNUSED(n_permutation_length)) const;
+		size_t n_permutation_length) const;
 
 	/**
 	 *	@brief inversely permutes right-hand side vector by blockwise permutation
@@ -2301,7 +2453,7 @@ public:
 	 */
 	void InversePermute_RightHandSide_Vector(double *p_dest, const double *p_src,
 		size_t UNUSED(n_vector_length), const size_t *p_permutation,
-		size_t UNUSED(n_permutation_length)) const;
+		size_t n_permutation_length) const;
 
 	/**
 	 *	@brief inversely permutes left-hand side vector by blockwise permutation
@@ -2320,8 +2472,7 @@ public:
 	 */
 	void InversePermute_LeftHandSide_Vector(double *p_dest, const double *p_src,
 		size_t UNUSED(n_vector_length), const size_t *p_permutation,
-		size_t UNUSED(n_permutation_length)) const;
-
+		size_t n_permutation_length) const;
 
 #ifdef __UBER_BLOCK_MATRIX_FIXED_BLOCK_SIZE_OPS
 
@@ -2404,7 +2555,68 @@ public:
 	 *		p_x there and back again (measure, measure).
 	 */
 	template <class CBlockMatrixTypelist>
-	bool UpperTriangular_Solve_FBS(double *p_x, size_t UNUSED(n_vector_size)) const;
+	inline bool UpperTriangular_Solve_FBS(double *p_x, size_t n_vector_size) const
+	{
+		return UpperTriangular_Solve_FBS<CBlockMatrixTypelist>(p_x,
+			n_vector_size, 0, m_block_cols_list.size() - 1);
+	}
+
+	/**
+	 *	@brief solves a system given by upper triangular matrix and a right-hand side vector
+	 *
+	 *	Solves \f$this^T \cdot x = b\f$, where p_x is \f$b\f$ on input, \f$x\f$ on output. This is in fact back substitution.
+	 *
+	 *	@tparam CBlockMatrixTypelist is typelist, containing Eigen
+	 *		matrices with known compile-time sizes
+	 *
+	 *	@param[in,out] p_x is the right-hand side vector (gets overwritten by the solution)
+	 *	@param[in] n_vector_size is the size of the right-hand side vector, in elements
+	 *		(must match size of this matrix)
+	 *	@param[in] n_first_column is zero-based index of the first block column to start
+	 *		backsubstitution at (the corresponding tail of p_x is supposed to be zero)
+	 *
+	 *	@return Returns true on success, false on failure (no solution or infinite number of solutions).
+	 *
+	 *	@note This function requires the matrix to be square, have symmetric layout
+	 *		and to be upper triangular (all the blocks on the diagonal must be square).
+	 *
+	 *	@todo Add support for block permutation (2nd function), should be faster than permuting
+	 *		p_x there and back again (measure, measure).
+	 */
+	template <class CBlockMatrixTypelist>
+	inline bool UpperTriangular_Solve_FBS(double *p_x, size_t n_vector_size, size_t n_first_column) const
+	{
+		return UpperTriangular_Solve_FBS<CBlockMatrixTypelist>(p_x,
+			n_vector_size, 0, n_first_column);
+	}
+
+	/**
+	 *	@brief solves a system given by upper triangular matrix and a right-hand side vector
+	 *
+	 *	Solves \f$this^T \cdot x = b\f$, where p_x is \f$b\f$ on input, \f$x\f$ on output. This is in fact back substitution.
+	 *
+	 *	@tparam CBlockMatrixTypelist is typelist, containing Eigen
+	 *		matrices with known compile-time sizes
+	 *
+	 *	@param[in,out] p_x is the right-hand side vector (gets overwritten by the solution)
+	 *	@param[in] n_vector_size is the size of the right-hand side vector, in elements
+	 *		(must match size of this matrix)
+	 *	@param[in] n_last_column is zero-based index of the last block column to perform
+	 *		backsubstitution (zero by default, it is inclusive: the last is also processed)
+	 *	@param[in] n_first_column is zero-based index of the first block column to start
+	 *		backsubstitution at (the corresponding tail of p_x is supposed to be zero)
+	 *
+	 *	@return Returns true on success, false on failure (no solution or infinite number of solutions).
+	 *
+	 *	@note This function requires the matrix to be square, have symmetric layout
+	 *		and to be upper triangular (all the blocks on the diagonal must be square).
+	 *
+	 *	@todo Add support for block permutation (2nd function), should be faster than permuting
+	 *		p_x there and back again (measure, measure).
+	 */
+	template <class CBlockMatrixTypelist>
+	bool UpperTriangular_Solve_FBS(double *p_x, size_t UNUSED(n_vector_size),
+		size_t n_last_column, size_t n_first_column) const;
 
 #endif // __UBER_BLOCK_MATRIX_FIXED_BLOCK_SIZE_OPS
 
@@ -2477,7 +2689,7 @@ public:
 	 */
 	inline bool UpperTriangular_Solve(double *p_x, size_t UNUSED(n_vector_size)) const
 	{
-		return UpperTriangular_Solve(p_x, n_vector_size, m_block_cols_list.size() - 1);
+		return UpperTriangular_Solve(p_x, n_vector_size, 0, m_block_cols_list.size() - 1);
 		// no performance penalty involved here
 	}
 
@@ -2500,7 +2712,35 @@ public:
 	 *	@todo Add support for block permutation (2nd function), should be faster than permuting
 	 *		p_x there and back again (measure, measure).
 	 */
-	bool UpperTriangular_Solve(double *p_x, size_t UNUSED(n_vector_size), size_t n_first_column) const;
+	inline bool UpperTriangular_Solve(double *p_x, size_t UNUSED(n_vector_size), size_t n_first_column) const
+	{
+		return UpperTriangular_Solve(p_x, n_vector_size, 0, n_first_column);
+		// no performance penalty involved here
+	}
+
+	/**
+	 *	@brief solves a system given by upper triangular matrix and a right-hand side vector
+	 *
+	 *	Solves \f$this \cdot x = b\f$, where p_x is \f$b\f$ on input, \f$x\f$ on output. This is in fact back substitution.
+	 *
+	 *	@param[in,out] p_x is the right-hand side vector (gets overwritten by the solution)
+	 *	@param[in] n_vector_size is the size of the right-hand side vector, in elements
+	 *		(must match size of this matrix)
+	 *	@param[in] n_last_column is zero-based index of the last block column to perform
+	 *		backsubstitution (zero by default, it is inclusive: the last is also processed)
+	 *	@param[in] n_first_column is zero-based index of the first block column to start
+	 *		backsubstitution at (the corresponding tail of p_x is supposed to be zero)
+	 *
+	 *	@return Returns true on success, false on failure (no solution or infinite number of solutions).
+	 *
+	 *	@note This function requires the matrix to be square, have symmetric layout
+	 *		and to be upper triangular (all the blocks on the diagonal must be square).
+	 *
+	 *	@todo Add support for block permutation (2nd function), should be faster than permuting
+	 *		p_x there and back again (measure, measure).
+	 */
+	bool UpperTriangular_Solve(double *p_x, size_t UNUSED(n_vector_size),
+		size_t n_last_column, size_t n_first_column) const;
 
 #ifdef __UBER_BLOCK_MATRIX_FIXED_BLOCK_SIZE_OPS
 
@@ -2539,7 +2779,7 @@ public:
 	bool Cholesky_Dense(); // throw(std::bad_alloc)
 
 	/**
-	 *	@brief builds an elimination tree for Cholesky decomposition
+	 *	@brief builds an elimination tree for Cholesky factorization
 	 *
 	 *	This matrix needs to be symmetric in order to calculate the elimination tree.
 	 *
@@ -3131,4 +3371,4 @@ protected:
 
 #endif // __UBER_BLOCK_MATRIX_FIXED_BLOCK_SIZE_OPS
 
-#endif // __UBER_BLOCK_MATRIX_INCLUDED
+#endif // !__UBER_BLOCK_MATRIX_INCLUDED

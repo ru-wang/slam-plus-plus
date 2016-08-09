@@ -17,7 +17,8 @@
  *	@date 2013-06-14
  */
 
-#include "slam_app/Main.h"
+#include "slam_app/Config.h"
+//#include "slam_app/Main.h"
 
 /**
  *	@def BBPARAM

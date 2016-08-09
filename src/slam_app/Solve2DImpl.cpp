@@ -17,15 +17,17 @@
  *	@date 2013-06-14
  */
 
-#include "slam_app/Main.h"
-#include "slam/ConfigSolvers.h" // only included in files that actually need the solvers (slow to compile)
-#include "slam/SE2_Types.h"
-
 /**
  *	@def __SE2_ENABLED
  *	@brief if defined, the solver specializations for SE(2) are compiled
  */
 #define __SE2_ENABLED
+
+#include "slam_app/Main.h"
+#ifdef __SE2_ENABLED
+#include "slam/ConfigSolvers.h" // only included in files that actually need the solvers (slow to compile)
+#include "slam/SE2_Types.h"
+#endif // __SE2_ENABLED
 
 int n_Run_SE2_Solver(TCommandLineArgs t_args) // throw(std::runtime_error, std::bad_alloc)
 {
@@ -34,8 +36,8 @@ int n_Run_SE2_Solver(TCommandLineArgs t_args) // throw(std::runtime_error, std::
 	typedef MakeTypelist2(CEdgePose2D, CEdgePoseLandmark2D) TEdgeTypelist;
 	// define types of vertices, edges
 
-	typedef CFlatSystem<CSEBaseVertex, TVertexTypelist,
-		/*CVertexTypeTraits,*/ CSEBaseEdge, TEdgeTypelist> CSystemType;
+	typedef CFlatSystem<CBaseVertex, TVertexTypelist,
+		/*CVertexTypeTraits,*/ CBaseEdge, TEdgeTypelist> CSystemType;
 	// make a system permitting SE(2) vertex and edge types
 
 	typedef CSolverCaller<CSystemType, CSE2EdgeTraits,

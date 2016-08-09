@@ -1166,4 +1166,4 @@ inline _Ty n_LeadingZero_Num(_Ty n_x)
  *								=== ~bit hacks ===
  */
 
-#endif // __INTEGER_TYPES_INCLUDED
+#endif // !__INTEGER_TYPES_INCLUDED

@@ -22,7 +22,7 @@
  *	@note This file is not to be included; it is automatically included from BlockMatrix.h
  */
 
-#include "slam/BlockMatrixBase.h"
+#include "slam/BlockMatrix.h"
 
 template <class CBlockMatrixTypelist>
 void CUberBlockMatrix::PostMultiply_Add_FBS(double *p_dest_vector, size_t UNUSED(n_dest_size),
@@ -1183,8 +1183,8 @@ void CUberBlockMatrix::PreMultiplyWithSelfTransposeTo_FBS(CUberBlockMatrix &r_de
 					/*for(size_t x = 0; x < n_block_width; ++ x)
 						for(size_t y = 0; y < n_block_height; ++ y)
 							p_block_data[y + n_block_height * x] = p_src_data[x + n_block_width * y];*/ // f_ixme - does the src / dest ordering matter? is it interchangable? // t_odo - test transposing a matrix // this seems to be correct
-					_TyMatrixXdRef src((double*)p_src_data, n_block_width, n_block_height),
-						dest(p_block_data, n_block_height, n_block_width);
+					_TyConstMatrixXdRef src(p_src_data, n_block_width, n_block_height);
+					_TyMatrixXdRef dest(p_block_data, n_block_height, n_block_width);
 					dest.noalias() = src.transpose();
 					// copy/transpose the block
 				} else {
@@ -1470,8 +1470,8 @@ void CUberBlockMatrix::PreMultiplyWithSelfTransposeTo_FBS_Parallel(CUberBlockMat
 					/*for(size_t x = 0; x < n_block_width; ++ x)
 						for(size_t y = 0; y < n_block_height; ++ y)
 							p_block_data[y + n_block_height * x] = p_src_data[x + n_block_width * y];*/ // f_ixme - does the src / dest ordering matter? is it interchangable? // t_odo - test transposing a matrix // this seems to be correct
-					_TyMatrixXdRef src((double*)p_src_data, n_block_width, n_block_height),
-						dest(p_block_data, n_block_height, n_block_width);
+					_TyConstMatrixXdRef src(p_src_data, n_block_width, n_block_height);
+					_TyMatrixXdRef dest(p_block_data, n_block_height, n_block_width);
 					dest.noalias() = src.transpose();
 					// copy/transpose the block
 				} else {
@@ -1491,6 +1491,95 @@ void CUberBlockMatrix::PreMultiplyWithSelfTransposeTo_FBS_Parallel(CUberBlockMat
 	PreMultiplyWithSelfTransposeTo_FBS<CBlockMatrixTypelist>(r_dest, b_upper_diagonal_only);
 	// just call serial version (uses less memory than the parallel version)
 #endif // _OPENMP
+#endif // __UBER_BLOCK_MATRIX_SUPRESS_FBS
+}
+
+template <class CBlockMatrixTypelist>
+void CUberBlockMatrix::InverseOf_BlockDiag_FBS_Parallel(const CUberBlockMatrix &r_A) // throw(std::bad_alloc)
+{
+	_ASSERTE(b_SymmetricLayout());
+	// inverse only defined for square matrices, this also requires symmetric layout
+
+#ifdef __UBER_BLOCK_MATRIX_SUPRESS_FBS
+	if(&r_a == this) {
+		CUberBlockMatrix tmp; // does not work inplace
+		tmp.InverseOf_Symmteric(r_A); // use the regular version
+		tmp.Swap(*this);
+	} else
+		InverseOf_Symmteric(r_A); // use the regular version
+#else // __UBER_BLOCK_MATRIX_SUPRESS_FBS
+	const size_t n = m_block_cols_list.size();
+	// number of block columns (and rows) in both src and dest matrix
+
+	if(&r_A != this) {
+		//Clear(); // CopyLayoutTo() does that
+		r_A.CopyLayoutTo(*this);
+		// assume the inverse will have the same layout
+
+		_ASSERTE(n <= INT_MAX);
+		int _n = int(n);
+		#pragma omp parallel for if(_n > 50)
+		for(int i = 0; i < _n; ++ i) {
+			const TColumn &r_t_col = r_A.m_block_cols_list[i];
+			if(r_t_col.block_list.empty())
+				continue; // structural rank deficient (allowed)
+			_ASSERTE(r_t_col.block_list.size() == 1);
+			// contains just a single block (independent from the rest of the matrix)
+
+			const TColumn::TBlockEntry &r_src_block = r_t_col.block_list.front();
+			_ASSERTE(r_src_block.first == i); // block at the diagonal
+			const double *p_data = r_src_block.second;
+			// make a map of the source block
+
+			TColumn &r_t_dest_col = m_block_cols_list[i];
+			_ASSERTE(r_t_dest_col.block_list.empty()); // should be initially empty
+			r_t_dest_col.block_list.reserve(1);
+			TColumn::TBlockEntry t_block(i,
+				p_Get_DenseStorage(r_t_col.n_width * r_t_col.n_width));
+			r_t_dest_col.block_list.push_back(t_block);
+			// alloc a new (destination) block in this matrix
+
+			CUberBlockMatrix_FBS::CFBS_BlockwiseUnaryOp<CBlockMatrixTypelist>::template
+				BlockwiseUnary_Static_Op_Square<CInvertBlock>(t_block.second,
+				p_data, r_t_col.n_width);
+			// calculate inverse of a single block
+			// note that in case that there is a rectangular independent (off-diagonal) block,
+			// the inverse will fail (inverse is only defined for square matrices)-
+		}
+	} else {
+		// working inplace
+
+		_ASSERTE(n <= INT_MAX);
+		int _n = int(n);
+		#pragma omp parallel for if(_n > 50)
+		for(int i = 0; i < _n; ++ i) {
+			const TColumn &r_t_col = r_A.m_block_cols_list[i];
+			if(r_t_col.block_list.empty())
+				continue; // structural rank deficient (allowed)
+			_ASSERTE(r_t_col.block_list.size() == 1);
+			// contains just a single block (independent from the rest of the matrix)
+
+			const TColumn::TBlockEntry &r_src_block = r_t_col.block_list.front();
+			_ASSERTE(r_src_block.first == i); // block at the diagonal
+			const double *p_data = r_src_block.second;
+			// make a map of the source block
+
+			/*TColumn &r_t_dest_col = m_block_cols_list[i];
+			_ASSERTE(r_t_dest_col.block_list.empty()); // should be initially empty
+			r_t_dest_col.block_list.reserve(1);
+			TColumn::TBlockEntry t_block(i,
+				p_Get_DenseStorage(r_t_col.n_width * r_t_col.n_width));
+			r_t_dest_col.block_list.push_back(t_block);*/ // working inplace
+			// alloc a new (destination) block in this matrix
+
+			CUberBlockMatrix_FBS::CFBS_BlockwiseUnaryOp<CBlockMatrixTypelist>::template
+				BlockwiseUnary_Static_Op_Square<CInvertBlock>((double*)p_data/*t_block.second*/, // working inplace
+				p_data, r_t_col.n_width);
+			// calculate inverse of a single block
+			// note that in case that there is a rectangular independent (off-diagonal) block,
+			// the inverse will fail (inverse is only defined for square matrices)-
+		}
+	}
 #endif // __UBER_BLOCK_MATRIX_SUPRESS_FBS
 }
 
@@ -1689,7 +1778,7 @@ void CUberBlockMatrix::InverseOf_Symmteric_FBS(const CUberBlockMatrix &r_A) // t
 						size_t n_row_height = r_A.m_block_cols_list[n_row_id].n_width;
 						// is symmetric
 
-						_TyMatrixXdRef fill_block((double*)p_data, n_row_height, r_t_col.n_width);
+						_TyConstMatrixXdRef fill_block(p_data, n_row_height, r_t_col.n_width);
 						// make a map
 
 						dense.block(n_row_org - n_first_col, n_dest_column_org,
@@ -1702,9 +1791,9 @@ void CUberBlockMatrix::InverseOf_Symmteric_FBS(const CUberBlockMatrix &r_A) // t
 				dense = dense.inverse();
 				// invert the matrix, making it most likely rather dense
 			}
-			// todo - it would be better to slice the matrix and make a blockwise sparse LU decomposition,
+			// todo - it would be better to slice the matrix and make a blockwise sparse LU factorization,
 			// and use that to calculate the inverse (now we are calculating a rather expensive inverse
-			// of a dense (although containing many zeroes) matrix, using dense LU decomposition inside Eigen)
+			// of a dense (although containing many zeroes) matrix, using dense LU factorization inside Eigen)
 
 			for(size_t k = n_begin; k <= n_end; ++ k) {
 				TColumn &r_t_col = m_block_cols_list[k];
@@ -1811,7 +1900,8 @@ bool CUberBlockMatrix::UpperTriangularTranspose_Solve_FBS(double *p_x, size_t UN
 }
 
 template <class CBlockMatrixTypelist>
-bool CUberBlockMatrix::UpperTriangular_Solve_FBS(double *p_x, size_t UNUSED(n_vector_size)) const
+bool CUberBlockMatrix::UpperTriangular_Solve_FBS(double *p_x,
+	size_t UNUSED(n_vector_size), size_t n_last_column, size_t n_first_column) const
 {
 #ifdef __UBER_BLOCK_MATRIX_SUPRESS_FBS
 	return UpperTriangular_Solve(p_x, n_vector_size);
@@ -1828,8 +1918,14 @@ bool CUberBlockMatrix::UpperTriangular_Solve_FBS(double *p_x, size_t UNUSED(n_ve
 	_ASSERTE(n_vector_size == m_n_col_num);
 	// make sure that the vector's got correct size
 
-	for(_TyColumnConstIter p_col_it = m_block_cols_list.end(),
-	   p_end_it = m_block_cols_list.begin(); p_col_it != p_end_it;) { // back substitution
+	_ASSERTE(n_last_column <= n_first_column);
+	// it goes backwards so last is before first
+
+	_ASSERTE(n_first_column < m_block_cols_list.size());
+	// should be a valid block index
+
+	for(_TyColumnConstIter p_col_it = m_block_cols_list.begin() + (n_first_column + 1),
+	   p_end_it = m_block_cols_list.begin() + n_last_column; p_col_it != p_end_it;) { // back substitution
 		-- p_col_it;
 		// decrement at the beginning of the loop! (but after the comparison)
 
@@ -1862,7 +1958,7 @@ bool CUberBlockMatrix::Cholesky_Dense_FBS() // throw(std::bad_alloc)
 		typedef CUberBlockMatrix_FBS::ref_pair<CUberBlockMatrix&, bool&> _TyContext;
 		bool b_result;
 		_TyContext context(*this, b_result);
-		__fbs_ut::CMakeSquareMatrixSizeDecisionTree<CMatrixBlockSizeList,
+		fbs_ut::CMakeSquareMatrixSizeDecisionTree<CMatrixBlockSizeList,
 			n_max_matrix_size>::template Do<CUberBlockMatrix_FBS::CCallDenseCholesky>(m_n_col_num, context); // oh, it's the weird syntax again
 		return context.second;
 	} else
@@ -2313,4 +2409,4 @@ bool CUberBlockMatrix::CholeskyOf_FBS(const CUberBlockMatrix &r_lambda, const st
 #endif // __UBER_BLOCK_MATRIX_SUPRESS_FBS
 }
 
-#endif // __UBER_BLOCK_MATRIX_FIXED_BLOCK_SIZE_FUNCTIONS_IMPLEMENTATION_INCLUDED
+#endif // !__UBER_BLOCK_MATRIX_FIXED_BLOCK_SIZE_FUNCTIONS_IMPLEMENTATION_INCLUDED

@@ -533,10 +533,186 @@ public:
 typedef CCrc<uint16_t, 0xA001, 0xffff, 0xffff> CCrc_16; /**< CRC-16, as defined by ANSI (X3.28) */
 typedef CCrc<uint32_t, 0xedb88320U, 0xffffffffU, 0xffffffffU> CCrc_32; /**< CRC-32, as defined by POSIX */
 
+#ifdef __MATRIX_ORDERING_USE_MMD
+
+extern "C" {
+
+#include "cholmod/METIS/metis.h"
+extern void libmetis__genmmd(idx_t neqns, idx_t *xadj, idx_t *adjncy, idx_t *invp, idx_t *perm,
+     idx_t delta, idx_t *head, idx_t *qsize, idx_t *list, idx_t *marker,
+     idx_t maxint, idx_t *ncsub);
+
+};
+
+#endif // __MATRIX_ORDERING_USE_MMD
+
 const size_t *CMatrixOrdering::p_BlockOrdering(const CUberBlockMatrix &r_A, bool b_need_inverse) // throw(std::bad_alloc)
 {
 	_ASSERTE(r_A.b_BlockSquare());
 
+#ifdef __MATRIX_ORDERING_USE_MMD
+	// todo - this currently seems to be giving worse ordering (more fill-in)
+	// than AMD. read the paper and see what kind of graph does it expect ...
+
+	if(!(m_p_block = r_A.p_BlockStructure_to_Sparse(m_p_block)))
+		throw std::bad_alloc(); // rethrow
+	// get block structure of A
+
+	_ASSERTE(r_A.b_SymmetricLayout()); // well, it should be
+	// it should also be upper-triangular
+
+	if(!m_p_block->n) {
+		m_ordering.clear();
+		m_ordering_invert.clear();
+		return 0;
+	}
+	// empty ordering
+
+	if(sizeof(idx_t) != sizeof(size_t))
+		throw std::runtime_error("size of METIS idx_t not configured correctly");
+	// must be the same
+
+	size_t nzaat = 2 * (m_p_block->p[m_p_block->n] - m_p_block->n); // we know this
+	size_t naat = m_p_block->n;
+	size_t aat_size = naat + 1 + nzaat;
+	if(m_camd_workspace.capacity() < aat_size + naat) {
+		m_camd_workspace.clear();
+		m_camd_workspace.resize(std::max(aat_size + naat, m_camd_workspace.capacity() * 2));
+	}
+	size_t *Len = &m_camd_workspace[0];
+	size_t *AATp = Len + naat;
+	size_t *AATi = AATp + naat + 1;
+	{
+		const size_t n = m_p_block->n, nz = m_p_block->p[m_p_block->n];
+		const ptrdiff_t *Ap = m_p_block->p, *Ai = m_p_block->i; // antialiass
+		for(size_t i = 0, p1 = Ap[0]; i < n; ++ i) {
+			size_t p2 = Ap[i + 1];
+			_ASSERTE(p1 < p2); // no empty columns!
+			_ASSERTE(Ai[p2 - 1] == i); // diagonal is here (skip)
+			_ASSERTE(p2 > p1); // makes sure the next line will not underflow
+			Len[i] = p2 - p1 - 2; // could actually underflow by 1, the diag entry will fix it
+			p1 = p2;
+			_ASSERTE(p1 == Ap[i + 1]); // this will soo fail on jumbled matrices (_DEBUG checks for them)
+		}
+		for(size_t i = 0; i < nz; ++ i)
+			++ Len[Ai[i]];
+		// this could be vectorized, essentially len = Ap+1 + Ap + Ai - 2, at least the first two could do with integer sse
+		// alternately, memset could be ommited by splitting to one loop over Ap (assigning) and one over Ai (incrementing)
+	}
+	{
+		const size_t n = m_p_block->n;
+		const ptrdiff_t *Ap = m_p_block->p, *Ai = m_p_block->i; // antialiass
+
+		size_t pfree = 0; // this is needed in amd_2()
+		{
+			size_t *Pe = AATp, *Iw = AATi;
+
+			*Pe = 0; // not really calculated, needs to be written here
+			size_t *p_column_dest = Pe + 1; // calculate Pe inplace
+			for(size_t j = 0; j < n; ++ j) {
+				p_column_dest[j] = pfree; // pointer to the next entry to write in column j
+				pfree += Len[j];
+			} // t_odo could only accum p_column_dest, and employ that p_column_dest[i] == Pe[i + 1] at the end. just need to off by 1 and add the starting 0
+			_ASSERTE(pfree == nzaat);
+			// initialize column pointers
+
+			for(size_t k = 0; k < n; ++ k) {
+				size_t p1 = Ap[k];
+				size_t p2 = Ap[k + 1];
+
+				_ASSERTE(p1 < p2); // no empty columns!
+				_ASSERTE(Ai[p2 - 1] == k); // diagonal is here (skip)
+				-- p2; // skip the diagonal
+				_ASSERTE(p2 >= p1); // makes sure the next line will not overflow
+
+				for(size_t p = p1; p < p2; ++ p) {
+					size_t j = Ai[p];
+					_ASSERTE(j >= 0 && j < n);
+					_ASSERTE(j < k); // only above-diagonal elements
+					// scan the upper triangular part of A
+
+					Iw[p_column_dest[j] ++] = k;
+					Iw[p_column_dest[k] ++] = j;
+					// entry A(j, k) in the strictly upper triangular part
+				}
+				// construct one column of A+A^T
+			}
+			// builds A+A^T from a symmetric matrix (todo - make this a part of CUberBlockMatrix, avoid forming A, build A+A^T directly)
+		}
+	}
+
+	idx_t nvtxs = m_p_block->n,
+		*xadj = (idx_t*)AATp,//m_p_block->p,
+		*adjncy = (idx_t*)AATi;//m_p_block->i;
+
+	for(idx_t i = 0, k = xadj[nvtxs]; i < k; ++ i)
+		++ adjncy[i];
+	for(idx_t i = 0, n = nvtxs + 1; i < n; ++ i)
+		++ xadj[i];
+	// genmmd() uses 1-based indexing
+
+	const size_t n = nvtxs + 5;
+#ifdef __MATRIX_ORDERING_CACHE_ALIGN
+	const size_t n_al = n_Align_Up_POT(n, __MATRIX_ORDERING_CACHE_ALIGNMENT_BYTES / sizeof(size_t));
+#else // __MATRIX_ORDERING_CACHE_ALIGN
+	const size_t n_al = n;
+#endif // __MATRIX_ORDERING_CACHE_ALIGN
+	// to align, or not to align ...
+
+	size_t slen = n_al;
+	if(slen > SIZE_MAX / 4) // check overflow
+		throw std::bad_alloc(); // would get AMD_OUT_OF_MEMORY
+	slen *= 4;
+	if(m_camd_workspace1.size() < slen) {
+		m_camd_workspace1.clear(); // avoid copying data if it needs to realloc
+		m_camd_workspace1.resize(std::max(slen, m_camd_workspace1.size() * 2));
+	}
+	_ASSERTE(m_camd_workspace1.size() >= slen);
+	idx_t *head = (idx_t*)&m_camd_workspace1[0];
+	idx_t *qsize = head + n_al;
+	idx_t *list = qsize + n_al;
+	idx_t *marker = list + n_al;
+	// alloc temp buffers
+
+	if(m_ordering.capacity() < n_al) {
+		m_ordering.clear(); // avoid copying data if it needs to realloc
+		m_ordering.resize(std::max(n_al, m_ordering.size() * 2));
+	}
+	if(m_ordering_invert.capacity() < n_al) {
+		m_ordering_invert.clear(); // avoid copying data if it needs to realloc
+		m_ordering_invert.resize(std::max(n_al, m_ordering_invert.size() * 2));
+	}
+	m_ordering.resize(nvtxs);
+	m_ordering_invert.resize(nvtxs);
+	idx_t *perm = (idx_t*)&m_ordering[0];
+	idx_t *iperm = (idx_t*)&m_ordering_invert[0];
+	// alloc ordering
+
+	//std::swap(perm, iperm); // bad idea, bad ordering
+	// or the other way around?
+
+	idx_t nofsub; // unused output
+	libmetis__genmmd(nvtxs, xadj, adjncy, iperm, perm, __MATRIX_ORDERING_MMD_DELTA,
+		head, qsize, list, marker, IDX_MAX, &nofsub);
+	// calculate the ordering
+
+	for(idx_t i = 0; i < nvtxs; ++ i) {
+		-- perm[i];
+		-- iperm[i];
+	}
+	// genmmd() uses 1-based indexing
+
+	/*for(idx_t i = 0; i < nvtxs; ++ i) { // bad idea, bad ordering
+		perm[i] = nvtxs - 1 - perm[i];
+		iperm[perm[i]] = i; // update inverse as well (is there an easier way?)
+	}*/
+	// reverse the vertex labels permutatuion
+
+	_ASSERTE(b_IsValidOrdering(&m_ordering[0], m_ordering.size()));
+
+	return (size_t*)perm;
+	// calculate ordering by block, m_p_block damaged in the process
+#else // __MATRIX_ORDERING_USE_MMD
 	/*CTimer timer;
 	double f_start = timer.f_Time();*/
 
@@ -566,6 +742,7 @@ const size_t *CMatrixOrdering::p_BlockOrdering(const CUberBlockMatrix &r_A, bool
 
 	return p_result;
 	// calculate ordering by block, can destroy the block matrix in the process
+#endif // __MATRIX_ORDERING_USE_MMD
 }
 
 #if 0

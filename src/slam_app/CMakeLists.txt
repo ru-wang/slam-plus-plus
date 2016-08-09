@@ -38,7 +38,12 @@ SET(SLAM_P_P_BINARY_SOURCES
   Solve2DImpl.cpp
   Solve2DPoseOnlyImpl.cpp
   Solve3DImpl.cpp
-  SolveBAImpl.cpp)
+  Solve3DPoseOnlyImpl.cpp
+  SolveBAImpl.cpp
+  SolveROCVImpl.cpp
+  SolveSpheronImpl.cpp
+  SolveBAStereoImpl.cpp
+  SolveBAIntrinsicsImpl.cpp)
 
 IF(SLAM_P_P_LINEAR_SOLVER_TYPE)
 	ADD_DEFINITIONS("-D__LINEAR_SOLVER_OVERRIDE=${SLAM_P_P_LINEAR_SOLVER_TYPE}")

@@ -28,10 +28,10 @@
  *
  *	Added support for aligned edge and vertex types for the use of SSE2.
  *
- *	t_odo Write base edge template, that would inherit from CSEBaseEdge, and would implement
+ *	t_odo Write base edge template, that would inherit from CBaseEdge, and would implement
  *		all the functionality, required by the linear solvers. The edge itself should only
  *		contain a single function which calculates jacobians and expectation.
- *	t_odo Do the same for CSEBaseVertex.
+ *	t_odo Do the same for CBaseVertex.
  *
  */
 
@@ -61,7 +61,7 @@ public:
 	{}
 
 	/**
-	 *	@copydoc CSEBaseVertex::Operator_Plus()
+	 *	@copydoc base_iface::CVertexFacade::Operator_Plus()
 	 */
 	inline void Operator_Plus(const Eigen::VectorXd &r_v_delta) // "smart" plus
 	{
@@ -70,7 +70,7 @@ public:
 	}
 
 	/**
-	 *	@copydoc CSEBaseVertex::Operator_Minus()
+	 *	@copydoc base_iface::CVertexFacade::Operator_Minus()
 	 */
 	inline void Operator_Minus(const Eigen::VectorXd &r_v_delta) // "smart" minus
 	{
@@ -101,7 +101,7 @@ public:
 	{}
 
 	/**
-	 *	@copydoc CSEBaseVertex::Operator_Plus()
+	 *	@copydoc base_iface::CVertexFacade::Operator_Plus()
 	 */
 	inline void Operator_Plus(const Eigen::VectorXd &r_v_delta) // "smart" plus
 	{
@@ -110,7 +110,7 @@ public:
 	}
 
 	/**
-	 *	@copydoc CSEBaseVertex::Operator_Minus()
+	 *	@copydoc base_iface::CVertexFacade::Operator_Minus()
 	 */
 	inline void Operator_Minus(const Eigen::VectorXd &r_v_delta) // "smart" minus
 	{
@@ -171,7 +171,7 @@ public:
 /**
  *	@brief SE(2) pose-pose edge
  */
-class CEdgePose2D : public CSEBaseEdgeImpl<CEdgePose2D, CVertexPose2D, CVertexPose2D, 3> {
+class CEdgePose2D : public CBaseEdgeImpl<CEdgePose2D, MakeTypelist(CVertexPose2D, CVertexPose2D), 3> {
 public:
 	/**
 	 *	@brief vertex initialization functor
@@ -225,18 +225,18 @@ public:
 	 */
 	template <class CSystem>
 	CEdgePose2D(const CParserBase::TEdge2D &r_t_edge, CSystem &r_system)
-		:CSEBaseEdgeImpl<CEdgePose2D, CVertexPose2D, CVertexPose2D, 3>(r_t_edge.m_n_node_0,
+		:CBaseEdgeImpl<CEdgePose2D, MakeTypelist(CVertexPose2D, CVertexPose2D), 3>(r_t_edge.m_n_node_0,
 		r_t_edge.m_n_node_1, r_t_edge.m_v_delta, r_t_edge.m_t_inv_sigma)
 	{
 		m_p_vertex0 = &r_system.template r_Get_Vertex<CVertexPose2D>(r_t_edge.m_n_node_0,
-			CInitializeNullVertex());
+			CInitializeNullVertex<>());
 		m_p_vertex1 = &r_system.template r_Get_Vertex<CVertexPose2D>(r_t_edge.m_n_node_1,
-			CRelative_to_Absolute_XYT_Initializer(m_p_vertex0->v_State(), r_t_edge.m_v_delta));
+			CRelative_to_Absolute_XYT_Initializer(m_p_vertex0->r_v_State(), r_t_edge.m_v_delta));
 		// get vertices (initialize if required)
 		// "template" is required by g++, otherwise gives "expected primary-expression before '>' token"
 
-		_ASSERTE(((CSEBaseVertex*)m_p_vertex0)->n_Dimension() == 3);
-		_ASSERTE(((CSEBaseVertex*)m_p_vertex1)->n_Dimension() == 3);
+		_ASSERTE(r_system.r_Vertex_Pool()[r_t_edge.m_n_node_0].n_Dimension() == 3); // get the vertices from the vertex pool to ensure a correct type is used, do not use m_p_vertex0 / m_p_vertex1 for this
+		_ASSERTE(r_system.r_Vertex_Pool()[r_t_edge.m_n_node_1].n_Dimension() == 3);
 		// make sure the dimensionality is correct (might not be)
 	}
 
@@ -252,31 +252,30 @@ public:
 	 *	@param[in,out] r_system is reference to system (used to query edge vertices)
 	 */
 	template <class CSystem>
-	CEdgePose2D(int n_node0, int n_node1, Eigen::Vector3d v_delta,
-		Eigen::Matrix3d &r_t_inv_sigma, CSystem &r_system)
-		:CSEBaseEdgeImpl<CEdgePose2D, CVertexPose2D, CVertexPose2D, 3>(n_node0,
+	CEdgePose2D(size_t n_node0, size_t n_node1, const Eigen::Vector3d &v_delta,
+		const Eigen::Matrix3d &r_t_inv_sigma, CSystem &r_system)
+		:CBaseEdgeImpl<CEdgePose2D, MakeTypelist(CVertexPose2D, CVertexPose2D), 3>(n_node0,
 		n_node1, v_delta, r_t_inv_sigma)
 	{
 		m_p_vertex0 = &r_system.template r_Get_Vertex<CVertexPose2D>(n_node0,
-			CInitializeNullVertex());
+			CInitializeNullVertex<>());
 		m_p_vertex1 = &r_system.template r_Get_Vertex<CVertexPose2D>(n_node1,
-			CRelative_to_Absolute_XYT_Initializer(m_p_vertex0->v_State(), v_delta));
+			CRelative_to_Absolute_XYT_Initializer(m_p_vertex0->r_v_State(), v_delta));
 		// get vertices (initialize if required)
 		// "template" is required by g++, otherwise gives "expected primary-expression before '>' token"
 
-		_ASSERTE(((CSEBaseVertex*)m_p_vertex0)->n_Dimension() == 3);
-		_ASSERTE(((CSEBaseVertex*)m_p_vertex1)->n_Dimension() == 3);
+		_ASSERTE(r_system.r_Vertex_Pool()[n_node0].n_Dimension() == 3); // get the vertices from the vertex pool to ensure a correct type is used, do not use m_p_vertex0 / m_p_vertex1 for this
+		_ASSERTE(r_system.r_Vertex_Pool()[n_node1].n_Dimension() == 3);
 		// make sure the dimensionality is correct (might not be)
 	}
 
 	/**
 	 *	@brief updates the edge with a new measurement
-	 *
 	 *	@param[in] r_t_edge is parsed edge
 	 */
 	inline void Update(const CParserBase::TEdge2D &r_t_edge)
 	{
-		CSEBaseEdgeImpl<CEdgePose2D, CVertexPose2D, CVertexPose2D,
+		CBaseEdgeImpl<CEdgePose2D, MakeTypelist(CVertexPose2D, CVertexPose2D),
 			3>::Update(r_t_edge.m_v_delta, r_t_edge.m_t_inv_sigma);
 	}
 
@@ -292,8 +291,8 @@ public:
 		Eigen::Matrix3d &r_t_jacobian1, Eigen::Vector3d &r_v_expectation,
 		Eigen::Vector3d &r_v_error) const
 	{
-		C2DJacobians::Absolute_to_Relative(m_p_vertex0->v_State(),
-			m_p_vertex1->v_State(), r_v_expectation, r_t_jacobian0, r_t_jacobian1);
+		C2DJacobians::Absolute_to_Relative(m_p_vertex0->r_v_State(),
+			m_p_vertex1->r_v_State(), r_v_expectation, r_t_jacobian0, r_t_jacobian1);
 		// calculates the expectation and the jacobians
 
 		r_v_error = m_v_measurement - r_v_expectation;
@@ -312,7 +311,7 @@ public:
 		Calculate_Jacobians_Expectation_Error(p_jacobi[0], p_jacobi[1], v_expectation, v_error);
 		// calculates the expectation, error and the jacobians
 
-		//return (v_error.transpose() * m_t_sigma_inv).dot(v_error); // ||h_i(O_i) - z_i||^2 lambda_i
+		//return (v_error.transpose() * m_t_sigma_inv).dot(v_error); // ||z_i - h_i(O_i)||^2 lambda_i
 		return v_error.dot(m_t_sigma_inv * v_error);
 	}
 };
@@ -320,14 +319,14 @@ public:
 /**
  *	@brief SE(2) pose-landmark edge
  */
-class CEdgePoseLandmark2D : public CSEBaseEdgeImpl<CEdgePoseLandmark2D,
-	CVertexPose2D, CVertexLandmark2D, 2> {
+class CEdgePoseLandmark2D : public CBaseEdgeImpl<CEdgePoseLandmark2D,
+	MakeTypelist(CVertexPose2D, CVertexLandmark2D), 2> {
 public:
 	/**
 	 *	@brief vertex initialization functor
 	 *	Calculates vertex position from the first vertex and a range-bearing edge.
 	 */
-	class CRelative_to_Absolute_RangeBearing_Initializer { // t_odo - optimize for z=0 // can't
+	class CRelative_to_Absolute_RangeBearing_Initializer {
 	protected:
 		const Eigen::Vector3d &m_r_v_pose1; /**< @brief the first vertex */
 		const Eigen::Vector2d &m_r_v_edge; /**< @brief the edge, shared by r_v_vertex1 and the vertex being initialized */
@@ -349,8 +348,42 @@ public:
 		 */
 		inline operator CVertexLandmark2D() const
 		{
-			Eigen::Vector3d pose1(m_r_v_pose1(0), m_r_v_pose1(1), m_r_v_pose1(2)); // fixme - is this correct? is it 3D or just 2D?
-			Eigen::Vector3d relPose(m_r_v_edge(0), m_r_v_edge(1), 0); // 2D to 3D (append 0)
+			Eigen::Vector3d pose1(m_r_v_pose1(0), m_r_v_pose1(1), m_r_v_pose1(2));
+			Eigen::Vector3d relPose(m_r_v_edge(0), 0, m_r_v_edge(1)); // x = range, y = 0, theta = bearing
+			Eigen::Vector3d	v_result;
+			C2DJacobians::Relative_to_Absolute(pose1, relPose, v_result);
+			return CVertexLandmark2D(Eigen::Vector2d(v_result.segment<2>(0).norm(), v_result(2))); // range is length of displacement, bearing is theta
+		}
+	};
+
+	/**
+	 *	@brief vertex initialization functor
+	 *	Calculates vertex position from the first vertex and a XY edge.
+	 */
+	class CRelative_to_Absolute_XY_Initializer {
+	protected:
+		const Eigen::Vector3d &m_r_v_pose1; /**< @brief the first vertex */
+		const Eigen::Vector2d &m_r_v_edge; /**< @brief the edge, shared by r_v_vertex1 and the vertex being initialized */
+
+	public:
+		/**
+		 *	@brief default constructor
+		 *	@param[in] r_v_vertex1 is the first vertex
+		 *	@param[in] r_v_edge is the edge, shared by r_v_vertex1 and the vertex being initialized
+		 */
+		inline CRelative_to_Absolute_XY_Initializer(const Eigen::Vector3d &r_v_vertex1,
+			const Eigen::Vector2d &r_v_edge)
+			:m_r_v_pose1(r_v_vertex1), m_r_v_edge(r_v_edge)
+		{}
+
+		/**
+		 *	@brief function operator
+		 *	@return Returns the value of the vertex being initialized.
+		 */
+		inline operator CVertexLandmark2D() const
+		{
+			Eigen::Vector3d pose1(m_r_v_pose1(0), m_r_v_pose1(1), m_r_v_pose1(2));
+			Eigen::Vector3d relPose(m_r_v_edge(0), m_r_v_edge(1), 0);
 			Eigen::Vector3d	v_result;
 			C2DJacobians::Relative_to_Absolute(pose1, relPose, v_result);
 			return CVertexLandmark2D(Eigen::Vector2d(v_result.segment<2>(0)));
@@ -358,7 +391,7 @@ public:
 	};
 
 protected:
-	_TyMatrixAlign m_t_sigma_inv_xy; /**< @brief inverse sigma, in euclidean coordinate space */
+	//_TyMatrixAlign m_t_sigma_inv_xy; /**< @brief inverse sigma, in euclidean coordinate space */
 
 public:
 	__SE2_TYPES_ALIGN_OPERATOR_NEW
@@ -378,8 +411,46 @@ public:
 	 *	@param[in,out] r_system is reference to system (used to query edge vertices)
 	 */
 	template <class CSystem>
-	CEdgePoseLandmark2D(const CParserBase::TLandmark2D &r_t_edge, CSystem &r_system)
-		:CSEBaseEdgeImpl<CEdgePoseLandmark2D, CVertexPose2D, CVertexLandmark2D,
+	CEdgePoseLandmark2D(const CParserBase::TLandmark2D_RB &r_t_edge, CSystem &r_system)
+		:CBaseEdgeImpl<CEdgePoseLandmark2D, MakeTypelist(CVertexPose2D, CVertexLandmark2D),
+		2>(r_t_edge.m_n_node_0, r_t_edge.m_n_node_1, r_t_edge.m_v_delta,
+		r_t_edge.m_t_inv_sigma)
+	{
+		if(r_system.r_Vertex_Pool().n_Size() > size_t(r_t_edge.m_n_node_0) &&
+		   r_system.r_Vertex_Pool()[r_t_edge.m_n_node_0].n_Dimension() == 2)
+			std::swap(m_p_vertex_id[0], m_p_vertex_id[1]);
+		else if(r_system.r_Vertex_Pool().n_Size() > size_t(r_t_edge.m_n_node_1) &&
+		   r_system.r_Vertex_Pool()[r_t_edge.m_n_node_1].n_Dimension() == 3)
+			std::swap(m_p_vertex_id[0], m_p_vertex_id[1]);
+		// try to detect inverted edges (those where landmark is not second),
+		// and invert them if needed
+
+		m_p_vertex0 = &r_system.template r_Get_Vertex<CVertexPose2D>(r_t_edge.m_n_node_0,
+			CInitializeNullVertex<>());
+		m_p_vertex1 = &r_system.template r_Get_Vertex<CVertexLandmark2D>(r_t_edge.m_n_node_1,
+			CRelative_to_Absolute_RangeBearing_Initializer(m_p_vertex0->r_v_State(), r_t_edge.m_v_delta));
+		// get references to the vertices, initialize the vertices, if neccessary
+		// "template" is required by g++, otherwise gives "expected primary-expression before '>' token"
+
+		_ASSERTE(r_system.r_Vertex_Pool()[r_t_edge.m_n_node_0].n_Dimension() == 3); // get the vertices from the vertex pool to ensure a correct type is used, do not use m_p_vertex0 / m_p_vertex1 for this
+		_ASSERTE(r_system.r_Vertex_Pool()[r_t_edge.m_n_node_1].n_Dimension() == 2);
+		// make sure the dimensionality is correct (might not be)
+
+		//m_t_sigma_inv_xy = r_t_edge.m_t_inv_sigma;
+		// it's in different coordinate space, save it
+	}
+
+	/**
+	 *	@brief constructor; converts parsed edge to edge representation
+	 *
+	 *	@tparam CSystem is type of system where this edge is being stored
+	 *
+	 *	@param[in] r_t_edge is parsed edge
+	 *	@param[in,out] r_system is reference to system (used to query edge vertices)
+	 */
+	template <class CSystem>
+	CEdgePoseLandmark2D(const CParserBase::TLandmark2D_XY &r_t_edge, CSystem &r_system)
+		:CBaseEdgeImpl<CEdgePoseLandmark2D, MakeTypelist(CVertexPose2D, CVertexLandmark2D),
 		2>(r_t_edge.m_n_node_0, r_t_edge.m_n_node_1, v_ToPolar(r_t_edge.m_v_delta),
 		t_ToPolar(r_t_edge.m_t_inv_sigma))
 	{
@@ -393,17 +464,17 @@ public:
 		// and invert them if needed
 
 		m_p_vertex0 = &r_system.template r_Get_Vertex<CVertexPose2D>(r_t_edge.m_n_node_0,
-			CInitializeNullVertex());
+			CInitializeNullVertex<>());
 		m_p_vertex1 = &r_system.template r_Get_Vertex<CVertexLandmark2D>(r_t_edge.m_n_node_1,
-			CRelative_to_Absolute_RangeBearing_Initializer(m_p_vertex0->v_State(), r_t_edge.m_v_delta));
+			CRelative_to_Absolute_XY_Initializer(m_p_vertex0->r_v_State(), r_t_edge.m_v_delta));
 		// get references to the vertices, initialize the vertices, if neccessary
 		// "template" is required by g++, otherwise gives "expected primary-expression before '>' token"
 
-		_ASSERTE(((CSEBaseVertex*)m_p_vertex0)->n_Dimension() == 3);
-		_ASSERTE(((CSEBaseVertex*)m_p_vertex1)->n_Dimension() == 2);
+		_ASSERTE(r_system.r_Vertex_Pool()[r_t_edge.m_n_node_0].n_Dimension() == 3); // get the vertices from the vertex pool to ensure a correct type is used, do not use m_p_vertex0 / m_p_vertex1 for this
+		_ASSERTE(r_system.r_Vertex_Pool()[r_t_edge.m_n_node_1].n_Dimension() == 2);
 		// make sure the dimensionality is correct (might not be)
 
-		m_t_sigma_inv_xy = r_t_edge.m_t_inv_sigma;
+		//m_t_sigma_inv_xy = r_t_edge.m_t_inv_sigma;
 		// it's in different coordinate space, save it
 	}
 
@@ -414,15 +485,15 @@ public:
 	 *
 	 *	@param[in] n_node0 is (zero-based) index of the first (origin) node
 	 *	@param[in] n_node1 is (zero-based) index of the second (endpoint) node
-	 *	@param[in] r_v_delta is vector of delta x position  and delta y-position
+	 *	@param[in] r_v_delta is vector of range and bearing
 	 *	@param[in] r_t_inv_sigma is the information matrix
 	 *	@param[in,out] r_system is reference to system (used to query edge vertices)
 	 */
 	template <class CSystem>
-	CEdgePoseLandmark2D(int n_node0, int n_node1, Eigen::Vector2d &r_v_delta,
-		Eigen::Matrix2d &r_t_inv_sigma, CSystem &r_system)
-		:CSEBaseEdgeImpl<CEdgePoseLandmark2D, CVertexPose2D, CVertexLandmark2D,
-		2>(n_node0, n_node1, v_ToPolar(r_v_delta), t_ToPolar(r_t_inv_sigma))
+	CEdgePoseLandmark2D(size_t n_node0, size_t n_node1, const Eigen::Vector2d &r_v_delta,
+		const Eigen::Matrix2d &r_t_inv_sigma, CSystem &r_system)
+		:CBaseEdgeImpl<CEdgePoseLandmark2D, MakeTypelist(CVertexPose2D, CVertexLandmark2D),
+		2>(n_node0, n_node1, r_v_delta, r_t_inv_sigma)
 	{
 		if(r_system.r_Vertex_Pool().n_Size() > size_t(n_node0) &&
 		   r_system.r_Vertex_Pool()[n_node0].n_Dimension() == 2)
@@ -434,17 +505,17 @@ public:
 		// and invert them if needed
 
 		m_p_vertex0 = &r_system.template r_Get_Vertex<CVertexPose2D>(n_node0,
-			CInitializeNullVertex());
+			CInitializeNullVertex<>());
 		m_p_vertex1 = &r_system.template r_Get_Vertex<CVertexLandmark2D>(n_node1,
-			CRelative_to_Absolute_RangeBearing_Initializer(m_p_vertex0->v_State(), r_v_delta));
+			CRelative_to_Absolute_RangeBearing_Initializer(m_p_vertex0->r_v_State(), r_v_delta));
 		// get references to the vertices, initialize the vertices, if neccessary
 		// "template" is required by g++, otherwise gives "expected primary-expression before '>' token"
 
-		_ASSERTE(((CSEBaseVertex*)m_p_vertex0)->n_Dimension() == 3);
-		_ASSERTE(((CSEBaseVertex*)m_p_vertex1)->n_Dimension() == 2);
+		_ASSERTE(r_system.r_Vertex_Pool()[n_node0].n_Dimension() == 3); // get the vertices from the vertex pool to ensure a correct type is used, do not use m_p_vertex0 / m_p_vertex1 for this
+		_ASSERTE(r_system.r_Vertex_Pool()[n_node1].n_Dimension() == 2);
 		// make sure the dimensionality is correct (might not be)
 
-		m_t_sigma_inv_xy = r_t_inv_sigma;
+		//m_t_sigma_inv_xy = r_t_inv_sigma;
 		// it's in different coordinate space, save it
 	}
 
@@ -453,9 +524,9 @@ public:
 	 *
 	 *	@param[in] r_t_edge is parsed edge
 	 */
-	inline void Update(const CParserBase::TLandmark2D &r_t_edge)
+	inline void Update(const CParserBase::TLandmark2D_RB &r_t_edge)
 	{
-		CSEBaseEdgeImpl<CEdgePoseLandmark2D, CVertexPose2D, CVertexLandmark2D,
+		CBaseEdgeImpl<CEdgePoseLandmark2D, MakeTypelist(CVertexPose2D, CVertexLandmark2D),
 			2>::Update(r_t_edge.m_v_delta, r_t_edge.m_t_inv_sigma);
 	}
 
@@ -472,7 +543,7 @@ public:
 		Eigen::Vector2d &r_v_error) const
 	{
 		C2DJacobians::Observation2D_RangeBearing(
-			m_p_vertex0->v_State(), m_p_vertex1->v_State(),
+			m_p_vertex0->r_v_State(), m_p_vertex1->r_v_State(),
 			r_v_expectation, r_t_jacobian0, r_t_jacobian1);
 		// calculates the expectation and the jacobians (possibly re-calculates, if running A-SLAM)
 
@@ -492,11 +563,14 @@ public:
 		Calculate_Jacobians_Expectation_Error(t_jacobian0, t_jacobian1, v_expectation, v_error);
 		// calculates the expectation, error and the jacobians
 
-		Eigen::Vector2d v_error_xy(v_error(0) * cos(v_error(1)), v_error(0) * sin(v_error(1)));
+		return v_error.dot(m_t_sigma_inv * v_error);
+		// have sigma inv in RB
+
+		//Eigen::Vector2d v_error_xy(v_error(0) * cos(v_error(1)), v_error(0) * sin(v_error(1)));
 		// how about converting error to the same coordinate space sigma inv is in
 
-		//return (v_error_xy.transpose() * m_t_sigma_inv_xy).dot(v_error_xy); // ||h_i(O_i) - z_i||^2 lambda_i
-		return v_error_xy.dot(m_t_sigma_inv_xy * v_error_xy);
+		//return (v_error_xy.transpose() * m_t_sigma_inv_xy).dot(v_error_xy); // ||z_i - h_i(O_i)||^2 lambda_i
+		//return v_error_xy.dot(m_t_sigma_inv_xy * v_error_xy);
 	}
 
 	/**
@@ -553,7 +627,16 @@ public:
  *	@brief edge traits for SE(2) solver (specialized for CParser::TLandmark2D)
  */
 template <>
-class CSE2EdgeTraits<CParserBase::TLandmark2D> {
+class CSE2EdgeTraits<CParserBase::TLandmark2D_XY> {
+public:
+	typedef CEdgePoseLandmark2D _TyEdge; /**< @brief the edge type to construct from the parsed type */
+};
+
+/**
+ *	@brief edge traits for SE(2) solver (specialized for CParser::TLandmark2D)
+ */
+template <>
+class CSE2EdgeTraits<CParserBase::TLandmark2D_RB> {
 public:
 	typedef CEdgePoseLandmark2D _TyEdge; /**< @brief the edge type to construct from the parsed type */
 };
@@ -608,7 +691,7 @@ public:
  *	@brief edge traits for SE(2) pose-only solver (specialized for CParser::TLandmark2D)
  */
 template <>
-class CSE2OnlyPoseEdgeTraits<CParserBase::TLandmark2D> {
+class CSE2OnlyPoseEdgeTraits<CParserBase::TLandmark2D_XY> {
 public:
 	typedef CFailOnEdgeType _TyEdge; /**< @brief the edge type to construct from the parsed type */
 
@@ -623,4 +706,23 @@ public:
 	}
 };
 
-#endif // __SE2_PRIMITIVE_TYPES_INCLUDED
+/**
+ *	@brief edge traits for SE(2) pose-only solver (specialized for CParser::TLandmark2D)
+ */
+template <>
+class CSE2OnlyPoseEdgeTraits<CParserBase::TLandmark2D_RB> {
+public:
+	typedef CFailOnEdgeType _TyEdge; /**< @brief the edge type to construct from the parsed type */
+
+	/**
+	 *	@brief gets reason for error
+	 *	@return Returns const null-terminated string, containing
+	 *		description of the error (human readable).
+	 */
+	static const char *p_s_Reason()
+	{
+		return "landmark edges not permitted in pose-only solver";
+	}
+};
+
+#endif // !__SE2_PRIMITIVE_TYPES_INCLUDED

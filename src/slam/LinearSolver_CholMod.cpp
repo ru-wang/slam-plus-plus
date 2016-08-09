@@ -145,24 +145,52 @@ CLinearSolver_CholMod::CLinearSolver_CholMod(const CLinearSolver_CholMod &UNUSED
 	m_f_solve_time = 0;*/
 }
 
-CLinearSolver_CholMod::~CLinearSolver_CholMod()
+void CLinearSolver_CholMod::Free_Memory()
 {
+	{
+		std::vector<_TyPerm> empty;
+		m_p_scalar_permutation.swap(empty);
+	}
+	{
+		std::vector<_TyPerm> empty;
+		m_p_block_permutation.swap(empty);
+	}
 #ifdef __CHOLMOD_BLOCKY_LINEAR_SOLVER
-	if(m_p_block_structure)
+	if(m_p_block_structure) {
 		cs_spfree(m_p_block_structure);
-	if(m_p_factor)
+		m_p_block_structure = 0;
+	}
+	if(m_p_factor) {
 #ifdef __CHOLMOD_x64
 		cholmod_l_free_factor(&m_p_factor, &m_t_cholmod_common); // t_odo - dispose of m_p_factor
 #else // __CHOLMOD_x64
 		cholmod_free_factor(&m_p_factor, &m_t_cholmod_common); // t_odo - dispose of m_p_factor
 #endif // __CHOLMOD_x64
+		m_p_factor = 0;
+	}
 #ifdef __LINEAR_SOLVER_CHOLMOD_CSPARSE_INPLACE_SOLVE
-	if(m_p_workspace_double)
+	{
+		std::vector<_TyPerm> empty;
+		m_p_inverse_scalar_permutation.swap(empty);
+	}
+	if(m_p_workspace_double) {
 		delete[] m_p_workspace_double;
+		m_p_workspace_double = 0;
+	}
+	m_n_workspace_size = 0;
 #endif // __LINEAR_SOLVER_CHOLMOD_CSPARSE_INPLACE_SOLVE
 #endif // __CHOLMOD_BLOCKY_LINEAR_SOLVER
-	if(m_p_lambda)
+	if(m_p_lambda) {
 		cs_spfree(m_p_lambda);
+		m_p_lambda = 0;
+	}
+}
+
+CLinearSolver_CholMod::~CLinearSolver_CholMod()
+{
+	Free_Memory();
+	// delete all aux matrices and buffers
+
 #ifdef __CHOLMOD_x64
 	cholmod_l_finish(&m_t_cholmod_common); // shutdown cholmod!
 #else // __CHOLMOD_x64

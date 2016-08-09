@@ -21,6 +21,7 @@ IF(SLAM_P_P_GPU_BLAS)
 ENDIF(SLAM_P_P_GPU_BLAS)
 
 SET(SLAM_BASE_LIBRARY_SOURCES
+  LinearSolver_Schur_GPU.cpp
   BlockMatrix.cpp
   IncrementalPolicy.cpp
   LinearSolver_CholMod.cpp

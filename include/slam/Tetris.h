@@ -150,7 +150,7 @@ public:
 	/**
 	 *	@brief creates bitmask for a tile
 	 *
-	 *	@param[in] n_type is tile type (wraps arround, can be any number)
+	 *	@param[in] n_type is tile type (wraps around, can be any number)
 	 *	@param[in] n_rotation is rotation, in multiples of pi half radians
 	 *
 	 *	@return Returns bitmask for the specified tile.
@@ -1312,4 +1312,4 @@ int tetris_main(int n_arg_num, const char **p_arg_list)
 	return 0;
 }
 
-#endif // __TETRIS_INCLUDED
+#endif // !__TETRIS_INCLUDED

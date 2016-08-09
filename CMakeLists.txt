@@ -8,6 +8,7 @@ PROJECT(SLAM_plus_plus)
 # dont ask me about those ...
 MARK_AS_ADVANCED(CMAKE_BACKWARDS_COMPATIBILITY CMAKE_INSTALL_PREFIX EXECUTABLE_OUTPUT_PATH
 	LIBRARY_OUTPUT_PATH SLAM_P_P_DATA_PATH SLAM_P_P_SUPPLIED_LIBS_PATH)
+
 SET(SLAM_P_P_SOURCE_DIR ${PROJECT_SOURCE_DIR})
 
 # Path project-specific CMake modules.
@@ -41,15 +42,30 @@ ENDIF(SLAM_P_P_LINEAR_SOLVER_TYPE EQUAL 1 AND CMAKE_SIZEOF_VOID_P EQUAL 8 AND NO
 
 # explicitly ask about compiler flags
 IF(UNIX)
-	SET(MY_CXX_FLAGS_RELEASE "-ftemplate-depth=1024 -funsafe-loop-optimizations -fprefetch-loop-arrays -O3 -DNDEBUG -fopenmp -ffast-math"
-		CACHE STRING "C++ compiler flags")
-	SET(CMAKE_CXX_FLAGS_RELEASE "${MY_CXX_FLAGS_RELEASE}")
-	SET(MY_C_FLAGS_RELEASE "-funsafe-loop-optimizations -fprefetch-loop-arrays -O3 -DNDEBUG -ffast-math"
-		CACHE STRING "C compiler flags")
-	SET(CMAKE_C_FLAGS_RELEASE "${MY_C_FLAGS_RELEASE}")
+	IF(APPLE)
+		OPTION(SLAM_P_P_AGGRESSIVE_OPTIMIZATIONS "Use aggressive optimizations." FALSE)
+	ELSE(APPLE)
+		OPTION(SLAM_P_P_AGGRESSIVE_OPTIMIZATIONS "Use aggressive optimizations." TRUE)
+	ENDIF(APPLE)
+
+	SET(MY_CXX_FLAGS_RELEASE "-O3 -DNDEBUG" CACHE STRING "C++ compiler flags")
+	SET(MY_C_FLAGS_RELEASE "-O3 -DNDEBUG" CACHE STRING "C compiler flags")
+
+	# removed the following problematic flags: -ftemplate-depth=1024
+	IF(SLAM_P_P_AGGRESSIVE_OPTIMIZATIONS)
+		SET(MY_C_CXX_AGGRESSIVE_FLAGS "-ffast-math -funsafe-loop-optimizations -fprefetch-loop-arrays" CACHE STRING "C/C++ aggressive optimization compiler flags")
+		SET(CMAKE_CXX_FLAGS_RELEASE "${MY_CXX_FLAGS_RELEASE} ${MY_C_CXX_AGGRESSIVE_FLAGS}")
+		SET(CMAKE_C_FLAGS_RELEASE "${MY_C_FLAGS_RELEASE} ${MY_C_CXX_AGGRESSIVE_FLAGS}")
+	ELSE(SLAM_P_P_AGGRESSIVE_OPTIMIZATIONS)
+		SET(CMAKE_CXX_FLAGS_RELEASE "${MY_CXX_FLAGS_RELEASE}")
+		SET(CMAKE_C_FLAGS_RELEASE "${MY_C_FLAGS_RELEASE}")
+	ENDIF(SLAM_P_P_AGGRESSIVE_OPTIMIZATIONS)
+
+	SET(MY_EXE_LINKER_FLAGS " " CACHE STRING "Linker flags")
+	SET(CMAKE_EXE_LINKER_FLAGS "${MY_EXE_LINKER_FLAGS}")
 ENDIF(UNIX)
 
-# apply some OpenMP definmitions, make eigen not parallel (wha?)
+# apply some OpenMP definmitions, make eigen not parallel
 OPTION(SLAM_P_P_USE_OPENMP "Use OpenMP for parralelization." TRUE)
 IF(SLAM_P_P_USE_OPENMP)
 	FIND_PACKAGE(OpenMP)
@@ -59,9 +75,16 @@ IF(SLAM_P_P_USE_OPENMP)
 		SET(CMAKE_C_FLAGS_DEBUG "${CMAKE_C_FLAGS_DEBUG} ${OpenMP_C_FLAGS}")
 		SET(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -DEIGEN_DONT_PARALLELIZE ${OpenMP_CXX_FLAGS}")
 		MESSAGE(STATUS "Compiling with OpenMP support")
-		SET(MY_EXE_LINKER_FLAGS "-lgomp"
-			CACHE STRING "Linker flags")
-		SET(CMAKE_EXE_LINKER_FLAGS "${MY_EXE_LINKER_FLAGS}")
+		# no linker flags set, the compiller will somehow pass it onto the linker automatically
+	ELSE(OPENMP_FOUND)
+		IF(APPLE)
+			MESSAGE(STATUS "Compiling without OpenMP support (disabling OpenMP)")
+			SET(SLAM_P_P_USE_OPENMP FALSE CACHE BOOL "Use OpenMP for parralelization." FORCE)
+
+			mark_as_advanced(FORCE OpenMP_C_FLAGS)
+			mark_as_advanced(FORCE OpenMP_CXX_FLAGS)
+			# dont want to confuse the user with that
+		ENDIF(APPLE)
 	ENDIF(OPENMP_FOUND)
 ENDIF(SLAM_P_P_USE_OPENMP)
 
@@ -88,6 +111,41 @@ ELSE(SLAM_P_P_USE_SSE4)
 	ENDIF(SLAM_P_P_USE_SSE3)
 ENDIF(SLAM_P_P_USE_SSE4)
 
+# find CUDA
+OPTION(GPU_ENABLED "Use GPU acceleration for SLAM++." FALSE)
+if(GPU_ENABLED)
+	SET(CULA_FIND_REQUIRED TRUE)
+	FIND_PACKAGE(CULA)
+	# find CULA
+
+	SET(CUDA_FIND_REQUIRED TRUE)
+	FIND_PACKAGE(CUDA)
+	# find CUDA
+
+	mark_as_advanced(CUDA_BUILD_CUBIN)
+	mark_as_advanced(CUDA_BUILD_EMULATION)
+	mark_as_advanced(CUDA_CHECK_DEPENDENCIES_DURING_COMPILE)
+	mark_as_advanced(CUDA_GENERATE_DEPENDENCIES_DURING_CONFIGURE)
+	mark_as_advanced(CUDA_HOST_COMPILER)
+	mark_as_advanced(CUDA_SEPARABLE_COMPILATION)
+	mark_as_advanced(CUDA_SDK_ROOT_DIR)
+	mark_as_advanced(CUDA_VERBOSE_BUILD)
+	# average Joe doesn't need to know about those
+	
+	SET(CUDA_INCLUDE_IFENABLED ${CUDA_INCLUDE_DIRS} ${CULA_INCLUDE})
+	SET(CUDA_LIBRARIES_IFENABLED ${CUDA_CUDA_LIBRARY} ${CUDA_cublas_LIBRARY}
+		${CUDA_cusparse_LIBRARY} ${CULA_CULA_LIBRARY} ${CULA_lapack_LIBRARY})
+	# requires libcuda.so / cuda.lib. cudart won't do.
+
+	#message("includes: ${CUDA_INCLUDE_IFENABLED}")
+	#message("libs: ${CUDA_LIBRARIES_IFENABLED}")
+	# debug
+ELSE(GPU_ENABLED)
+	SET(CUDA_INCLUDE_IFENABLED "")
+	SET(CUDA_LIBRARIES_IFENABLED "")
+	ADD_DEFINITIONS(-D__DISABLE_GPU)
+ENDIF(GPU_ENABLED)
+
 # compile for native architecture, might run faster (less portable, is it?)
 IF(UNIX AND NOT APPLE)
 	OPTION(SLAM_P_P_USE_MARCH_NATIVE "Use native architecture (-march=native)." TRUE)
@@ -110,13 +168,13 @@ IF(UNIX)
 		ADD_DEFINITIONS(-D_DEBUG)
 		SET(CMAKE_C_FLAGS_DEBUG "${CMAKE_C_FLAGS_DEBUG} -g -ggdb")
 		SET(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_C_FLAGS_DEBUG} -g -ggdb")
-		SET(CMAKE_LINK_FLAGS "${CMAKE_LINK_FLAGS} -lgomp")
+		SET(CMAKE_LINK_FLAGS "${CMAKE_LINK_FLAGS} -lrt")
 	ENDIF(CMAKE_BUILD_TYPE STREQUAL "Debug")
 	IF(CMAKE_SIZEOF_VOID_P EQUAL 8)
 		OPTION(SLAM_P_P_32BIT_BUILD "Build 32bit binaries on 64bit system." "OFF")
 		IF(SLAM_P_P_32BIT_BUILD)
 			SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -m32 -O3")
-			SET(CMAKE_LINK_FLAGS "${CMAKE_LINK_FLAGS} -m32")
+			SET(CMAKE_LINK_FLAGS "${CMAKE_LINK_FLAGS} -m32 -lrt")
 		ENDIF(SLAM_P_P_32BIT_BUILD)
 	ENDIF(CMAKE_SIZEOF_VOID_P EQUAL 8)
 ELSE(UNIX)
@@ -142,17 +200,23 @@ SET(EXECUTABLE_OUTPUT_PATH ${PROJECT_SOURCE_DIR}/bin CACHE PATH
 SET(SLAM_P_P_DATA_PATH ${CMAKE_INSTALL_PREFIX}/data CACHE PATH
 	"Output directory program data.")
 
+# set compiler output directories (not make install, just make)
+set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${PROJECT_SOURCE_DIR}/lib)
+set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${PROJECT_SOURCE_DIR}/lib)
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${PROJECT_SOURCE_DIR}/bin)
+
 # if doing 64-bit build, we need CAMD with both DLONG and NLONG to be able to run short CHOLMOD
 IF(SLAM_P_P_SHORT_CHOLMOD AND CMAKE_SIZEOF_VOID_P EQUAL 8 AND NOT SLAM_P_P_32BIT_BUILD)
-	SET(SLAM_P_P_LIBRARIES slampp_base csparse cxsparse camd_dlong cholmod eigen)
-	SET(SLAM_EXAMPLE_LIBRARIES slampp_base csparse cxsparse camd_dlong cholmod eigen)
+	SET(SLAM_P_P_LIBRARIES slampp_base csparse cxsparse camd_dlong cholmod eigen ${CUDA_LIBRARIES_IFENABLED})
+	SET(SLAM_EXAMPLE_LIBRARIES slampp_base csparse cxsparse camd_dlong cholmod eigen ${CUDA_LIBRARIES_IFENABLED})
 ELSE(SLAM_P_P_SHORT_CHOLMOD AND CMAKE_SIZEOF_VOID_P EQUAL 8 AND NOT SLAM_P_P_32BIT_BUILD)
-	SET(SLAM_P_P_LIBRARIES slampp_base csparse cxsparse cholmod eigen)
-	SET(SLAM_EXAMPLE_LIBRARIES slampp_base csparse cxsparse cholmod eigen)
+	SET(SLAM_P_P_LIBRARIES slampp_base csparse cxsparse cholmod eigen ${CUDA_LIBRARIES_IFENABLED})
+	SET(SLAM_EXAMPLE_LIBRARIES slampp_base csparse cxsparse cholmod eigen ${CUDA_LIBRARIES_IFENABLED})
 ENDIF(SLAM_P_P_SHORT_CHOLMOD AND CMAKE_SIZEOF_VOID_P EQUAL 8 AND NOT SLAM_P_P_32BIT_BUILD)
 
 # Include project headers.
 INCLUDE_DIRECTORIES(
+  ${CUDA_INCLUDE_IFENABLED}
   ${PROJECT_SOURCE_DIR}/include/
   ${PROJECT_SOURCE_DIR}/external/Ceres/include/
   ${PROJECT_SOURCE_DIR}/external/Ceres/internal/
@@ -171,6 +235,5 @@ IF(UNIX)
 	ENDIF(CMAKE_SIZEOF_VOID_P EQUAL 8 AND NOT SLAM_P_P_32BIT_BUILD)
 ENDIF(UNIX)
 
-#ADD_SUBDIRECTORY(data)
 ADD_SUBDIRECTORY(include)
 ADD_SUBDIRECTORY(src)

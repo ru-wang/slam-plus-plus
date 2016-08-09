@@ -44,6 +44,20 @@ void CUberBlockMatrix_Base::Dump_PerfCounters()
 #endif // __UBER_BLOCK_MATRIX_PERFCOUNTERS
 }
 
+size_t CUberBlockMatrix_Base::n_Allocation_Size() const
+{
+	size_t m_data_size = m_data_pool.capacity() * sizeof(double);
+	size_t m_struct_size = sizeof(CUberBlockMatrix_Base);
+	size_t m_lists_size = m_data_pool.page_num() * sizeof(double*) +
+		m_block_rows_list.capacity() * sizeof(TRow) +
+		m_block_cols_list.capacity() * sizeof(TColumn);
+	for(size_t i = 0, n = m_block_cols_list.size(); i < n; ++ i) {
+		m_lists_size += m_block_cols_list[i].block_list.capacity() *
+			sizeof(TColumn::TBlockEntry);
+	}
+	return m_data_size + m_struct_size + m_lists_size;
+}
+
 void CUberBlockMatrix_Base::Clear()
 {
 	m_n_row_num = 0;
@@ -176,6 +190,41 @@ bool CUberBlockMatrix::b_SymmetricLayout() const
 		_ASSERTE((*p_col_it).n_width == (*p_row_it).n_height);
 		// if cumulative is the same, absolute must be the same as well
 	}
+	return true;
+}
+
+bool CUberBlockMatrix::b_OffDiagonal_Blocks() const
+{
+	for(size_t i = 0, n = m_block_cols_list.size(); i < n; ++ i) {
+		const TColumn &r_t_col = m_block_cols_list[i];
+		size_t m;
+		if((m = r_t_col.block_list.size()) > 1)
+			return true;
+		// there can be only up to a single block at the diagonal; multiple blocks imply off-diagonal
+
+		_ASSERTE(!m || m == 1); // at this point there can be either no block or a single block
+		if(m && r_t_col.block_list.front().first != i)
+			return true;
+		// if there is a single block, it can be off-diagonal (return true) or diagonal (continue looking)
+	}
+	return false;
+}
+
+bool CUberBlockMatrix::b_BlockDiagonal() const
+{
+	if(!b_SymmetricLayout())
+		return false;
+	// if it does not have symmetric layout, can't be diagonal
+
+	for(size_t i = 0, n = m_block_cols_list.size(); i < n; ++ i) {
+		const TColumn &r_t_col = m_block_cols_list[i];
+		if(r_t_col.block_list.size() != 1 ||
+		   r_t_col.block_list.front().first != i)
+			return false;
+	}
+	// each column must have exactly one block and
+	// the row id of each block must match column id
+
 	return true;
 }
 
@@ -371,6 +420,31 @@ size_t CUberBlockMatrix::n_NonZero_Num() const
 	return n_num;
 }
 
+void CUberBlockMatrix::ExtendTo(size_t n_row_num, size_t n_column_num) // throw(std::bad_alloc)
+{
+	_ASSERTE(n_row_num >= m_n_row_num);
+	_ASSERTE(n_column_num >= m_n_col_num);
+
+	CheckIntegrity(false);
+	// make sure block structure is ok
+
+	if(n_row_num > m_n_row_num) {
+		TRow t_row;
+		t_row.n_height = n_row_num - m_n_row_num;
+		t_row.n_cumulative_height_sum = m_n_row_num; 
+		m_block_rows_list.push_back(t_row);
+		m_n_row_num = n_row_num;
+	}
+	if(n_column_num > m_n_col_num) {
+		TColumn t_col;
+		t_col.n_width = n_column_num - m_n_col_num;
+		t_col.n_cumulative_width_sum = m_n_col_num; 
+		m_block_cols_list.push_back(t_col);
+		m_n_col_num = n_column_num;
+	}
+	// add a dummy row / column
+}
+
 CUberBlockMatrix::_TyMatrixXdRef CUberBlockMatrix::t_GetBlock_Log(size_t n_row_index,
 	size_t n_column_index, size_t n_block_row_num, size_t n_block_column_num,
 	bool b_alloc_if_not_found /*= true*/, bool b_mind_uninitialized /*= true*/) // throw(std::bad_alloc)
@@ -564,8 +638,46 @@ const double *CUberBlockMatrix::p_FindBlock(size_t n_row, size_t n_column,
 	// alloc data
 }
 
+double *CUberBlockMatrix::p_FindBlock(size_t n_row, size_t n_column,
+	size_t n_block_row_num, size_t n_block_column_num)
+{
+	//CheckIntegrity(); not here
+	// make sure the matrix is ok
+
+	size_t n_row_index, n_column_index;
+	{
+		size_t n_row_rows, n_col_cols;
+		if((n_row_index = n_RowGet(n_row, n_row_rows)) == size_t(-1) ||
+		   n_row_rows != n_block_row_num ||
+		   (n_column_index = n_ColumnGet(n_column, n_col_cols)) == size_t(-1) ||
+		   n_col_cols != n_block_column_num)
+			return 0;
+		// make sure the dimensions are the same
+	}
+	// alloc row / column
+
+	return p_GetBlockData(n_row_index, n_column_index);
+	// alloc data
+}
+
 const double *CUberBlockMatrix::p_FindBlock_ResolveSize(size_t n_row, size_t n_column,
 	size_t &r_n_block_row_num, size_t &r_n_block_column_num) const
+{
+	//CheckIntegrity(); // not here
+	// make sure the matrix is ok
+
+	size_t n_row_index, n_column_index;
+	if((n_row_index = n_RowGet(n_row, r_n_block_row_num)) == size_t(-1) ||
+	   (n_column_index = n_ColumnGet(n_column, r_n_block_column_num)) == size_t(-1))
+		return 0;
+	// alloc row / column
+
+	return p_GetBlockData(n_row_index, n_column_index);
+	// alloc data
+}
+
+double *CUberBlockMatrix::p_FindBlock_ResolveSize(size_t n_row, size_t n_column,
+	size_t &r_n_block_row_num, size_t &r_n_block_column_num)
 {
 	//CheckIntegrity(); // not here
 	// make sure the matrix is ok
@@ -1559,7 +1671,7 @@ cs *CUberBlockMatrix::p_Convert_to_Sparse_UpperTriangular(cs *p_alloc /*= 0*/) c
 #if defined(_M_X64) || defined(_M_AMD64) || defined(_M_IA64) || defined(__x86_64) || defined(__amd64) || defined(__ia64)
 
 /* allocate a sparse matrix (triplet form or compressed-column form) */
-static cs *cs_spalloc32(csi m, csi n, csi nzmax, csi values, csi triplet)
+cs *cs_spalloc32(csi m, csi n, csi nzmax, csi values, csi triplet)
 {
 	cs *A = (cs*)cs_calloc (1, sizeof (cs)) ;    /* allocate the cs struct */
 	if (!A) return (NULL) ;                 /* out of memory */
@@ -1574,7 +1686,7 @@ static cs *cs_spalloc32(csi m, csi n, csi nzmax, csi values, csi triplet)
 }
 
 /* change the max # of entries sparse matrix */
-static csi cs_sprealloc32(cs *A, csi nzmax)
+csi cs_sprealloc32(cs *A, csi nzmax)
 {
 	csi ok, oki, okj = 1, okx = 1 ;
 	if (!A) return (0) ;
@@ -2388,6 +2500,7 @@ inline void CUberBlockMatrix::From_Sparse_InnerLoop(const cs *p_sparse, TColumn 
 bool CUberBlockMatrix::From_Sparse32(size_t n_base_row_id, size_t n_base_column_id,
 	const cs *p_sparse, bool b_transpose /*= false*/, std::vector<size_t> &r_workspace) // throw(std::bad_alloc)
 {
+	_ASSERTE(!b_transpose); // warn the user in case he happens to ignore the return value
 	if(b_transpose)
 		return false;
 	// for the moment we only handle the not-transpose case
@@ -2472,6 +2585,7 @@ bool CUberBlockMatrix::From_Sparse32(size_t n_base_row_id, size_t n_base_column_
 bool CUberBlockMatrix::From_Sparse32_Parallel(size_t n_base_row_id, size_t n_base_column_id,
 	const cs *p_sparse, bool b_transpose /*= false*/, std::vector<size_t> &r_workspace) // throw(std::bad_alloc)
 {
+	_ASSERTE(!b_transpose); // warn the user in case he happens to ignore the return value
 	if(b_transpose)
 		return false;
 	// for the moment we only handle the not-transpose case
@@ -2589,6 +2703,7 @@ bool CUberBlockMatrix::From_Sparse32_Parallel(size_t n_base_row_id, size_t n_bas
 bool CUberBlockMatrix::From_Sparse_Parallel(size_t n_base_row_id, size_t n_base_column_id,
 	const cs *p_sparse, bool b_transpose /*= false*/, std::vector<size_t> &r_workspace) // throw(std::bad_alloc)
 {
+	_ASSERTE(!b_transpose); // warn the user in case he happens to ignore the return value
 	if(b_transpose)
 		return false;
 	// for the moment we only handle the not-transpose case
@@ -2704,6 +2819,7 @@ bool CUberBlockMatrix::From_Sparse_Parallel(size_t n_base_row_id, size_t n_base_
 bool CUberBlockMatrix::From_Sparse(size_t n_base_row_id, size_t n_base_column_id,
 	const cs *p_sparse, bool b_transpose /*= false*/, std::vector<size_t> &r_workspace) // throw(std::bad_alloc)
 {
+	_ASSERTE(!b_transpose); // warn the user in case he happens to ignore the return value
 	if(b_transpose)
 		return false;
 	// for the moment we only handle the not-transpose case
@@ -3845,7 +3961,7 @@ void CUberBlockMatrix::PreMultiplyWithSelfTransposeTo(CUberBlockMatrix &r_dest,
 					bool b_uninitialized;
 					double *p_new_block_data = r_dest.p_AllocBlockData(n_row_id_A,
 						n_column_id_B, n_bmA_rows, n_bmB_cols, b_uninitialized); // note this clears block data to 0 if not there yet // t_odo - create version with boolean flag saying whether it cleared or not
-					// get storage (log(N) time :(, no good way arround it)
+					// get storage (log(N) time :(, no good way around it)
 
 					_TyMatrixXdRef block_dest(p_new_block_data, n_bmA_rows, n_bmB_cols);
 					if(b_uninitialized)
@@ -4048,7 +4164,7 @@ void CUberBlockMatrix::PreMultiplyWithSelfTransposeTo(CUberBlockMatrix &r_dest,
 					/*bool b_uninitialized;
 					double *p_new_block_data = r_dest.p_AllocBlockData(n_row_id_A0,
 						n_row_id_A1, n_bmA0_rows, n_bmA1_cols, b_uninitialized); // note this clears block data to 0 if not there yet // t_odo - create version with boolean flag saying whether it cleared or not
-					// get storage (log(N) time :(, no good way arround it)
+					// get storage (log(N) time :(, no good way around it)
 
 //#ifdef __UBER_BLOCK_MATRIX_FORCE_3x3_BLOCKS
 //					_ASSERTE(n_bmA0_rows == 3 && n_bmA1_cols == 3);
@@ -4381,7 +4497,7 @@ bool CUberBlockMatrix::MultiplyToWith(CUberBlockMatrix &r_dest,
 						bool b_uninitialized;
 						double *p_new_block_data = r_dest.p_AllocBlockData(n_row_id_A,
 							n_column_id_B, n_bmA_rows, n_bmB_cols, b_uninitialized); // note this clears block data to 0 if not there yet // t_odo - create version with boolean flag saying whether it cleared or not
-						// get storage (log(N) time :(, no good way arround it)
+						// get storage (log(N) time :(, no good way around it)
 
 						//Eigen::R_eferencingMatrixXd block_dest(n_bmA_rows, n_bmB_cols, p_new_block_data);
 						_TyMatrixXdRef block_dest(p_new_block_data,
@@ -4710,7 +4826,7 @@ bool CUberBlockMatrix::MultiplyToWith(CUberBlockMatrix &r_dest,
 						bool b_uninitialized;
 						double *p_new_block_data = r_dest.p_AllocBlockData(n_row_id_A,
 							n_column_id_B, n_bmA_rows, n_bmB_cols, b_uninitialized); // note this clears block data to 0 if not there yet // t_odo - create version with boolean flag saying whether it cleared or not
-						// get storage (log(N) time :(, no good way arround it)
+						// get storage (log(N) time :(, no good way around it)
 
 						//Eigen::R_eferencingMatrixXd block_dest(n_bmA_rows, n_bmB_cols, p_new_block_data);
 						_TyMatrixXdRef block_dest(p_new_block_data,
@@ -4909,7 +5025,7 @@ TBmp *CUberBlockMatrix::p_Rasterize(TBmp *p_storage /*= 0*/, int n_scalar_size /
 	// colors of borders (just darker)
 
 	size_t m = m_n_row_num;
-	size_t n = m_n_col_num; // in fact, it's the other way arround, but lets not confuse things
+	size_t n = m_n_col_num; // in fact, it's the other way around, but lets not confuse things
 
 	if(m == SIZE_MAX || n == SIZE_MAX || m > INT_MAX || n > INT_MAX ||
 	   m * (n_scalar_size - 1) + 1 > INT_MAX || n * (n_scalar_size - 1) + 1 > INT_MAX ||
@@ -5049,7 +5165,7 @@ TBmp *CUberBlockMatrix::p_Rasterize_Symmetric(TBmp *p_storage /*= 0*/, int n_sca
 	// colors of borders (just darker)
 
 	size_t m = m_n_row_num;
-	size_t n = m_n_col_num; // in fact, it's the other way arround, but lets not confuse things
+	size_t n = m_n_col_num; // in fact, it's the other way around, but lets not confuse things
 
 	if(m != n || !b_SymmetricLayout())
 		return 0;
@@ -5226,7 +5342,7 @@ TBmp *CUberBlockMatrix::p_Rasterize(const CUberBlockMatrix &r_prev_state,
 	// colors of borders (just darker)
 
 	size_t m = m_n_row_num;
-	size_t n = m_n_col_num; // in fact, it's the other way arround, but lets not confuse things
+	size_t n = m_n_col_num; // in fact, it's the other way around, but lets not confuse things
 
 	if(m == SIZE_MAX || n == SIZE_MAX || m > INT_MAX || n > INT_MAX ||
 	   m * (n_scalar_size - 1) + 1 > INT_MAX || n * (n_scalar_size - 1) + 1 > INT_MAX ||
@@ -6364,7 +6480,7 @@ void CUberBlockMatrix::PermuteTo(CUberBlockMatrix &r_dest, const size_t *p_block
 }
 
 void CUberBlockMatrix::Permute_UpperTriangular_To(CUberBlockMatrix &r_dest,
-	const size_t *p_block_ordering, size_t UNUSED(n_ordering_size), bool b_share_data) const // throw(std::bad_alloc)
+	const size_t *p_block_ordering, size_t n_ordering_size, bool b_share_data) const // throw(std::bad_alloc)
 {
 	CheckIntegrity(true);
 
@@ -6375,9 +6491,9 @@ void CUberBlockMatrix::Permute_UpperTriangular_To(CUberBlockMatrix &r_dest,
 	_ASSERTE(&r_dest != this);
 	// can't permute to itself
 
-	_ASSERTE(n_ordering_size >= m_block_rows_list.size());
-	_ASSERTE(n_ordering_size >= m_block_cols_list.size()); // todo - permit >=, or be strict with ==?
-	// make sure that permutation vector is long enough (might actually be longer)
+	_ASSERTE(n_ordering_size <= m_block_rows_list.size());
+	_ASSERTE(n_ordering_size <= m_block_cols_list.size()); // t_odo - permit >=, or be strict with ==? // no, only <= makes sense (>= would mean that the buffer is allocated to more)
+	// make sure that permutation vector is long enough (might actually be shorter)
 
 	_ASSERTE(b_SymmetricLayout()); // either permutation on one side only, or the matrix is symmetric
 	// might fail, b_SymmetricLayout() doesn't cope well with empty blocks ... but then again, permutation does neither
@@ -6385,8 +6501,8 @@ void CUberBlockMatrix::Permute_UpperTriangular_To(CUberBlockMatrix &r_dest,
 	r_dest.Clear();
 	// erase dest ...
 
-	r_dest.m_n_row_num = m_n_row_num;
-	r_dest.m_n_col_num = m_n_col_num;
+	//r_dest.m_n_row_num = m_n_row_num;
+	//r_dest.m_n_col_num = m_n_col_num;
 	// set matrix size
 
 	if(b_share_data)
@@ -6394,24 +6510,28 @@ void CUberBlockMatrix::Permute_UpperTriangular_To(CUberBlockMatrix &r_dest,
 	// copy matrix size estimate!
 
 	{
-		r_dest.m_block_rows_list.resize(m_block_rows_list.size());
-		for(size_t i = 0, n = m_block_rows_list.size(); i < n; ++ i) {
+		r_dest.m_block_rows_list.resize(n_ordering_size);
+		for(size_t i = 0, n = n_ordering_size; i < n; ++ i) {
 			size_t n_dest_index = p_block_ordering[i];
 			size_t n_src_index = i;
 			r_dest.m_block_rows_list[n_dest_index].n_height =
 				m_block_rows_list[n_src_index].n_height;
 		}
-		for(size_t i = 0, n = m_block_rows_list.size(), n_running_cumsum = 0; i < n; ++ i) {
+		size_t n_running_cumsum = 0;
+		for(size_t i = 0, n = n_ordering_size; i < n; ++ i) {
 			size_t n_height = r_dest.m_block_rows_list[i].n_height;
 			r_dest.m_block_rows_list[i].n_cumulative_height_sum = n_running_cumsum;
 			n_running_cumsum += n_height;
 		}
 		// copy rows / cols with ordering, refresh cumsums
+
+		r_dest.m_n_row_num = r_dest.m_n_col_num = n_running_cumsum;
+		// set matrix size (works for n_ordering_size == 0 as well)
 	}
 	// set block rows
 
-	r_dest.m_block_cols_list.resize(m_block_cols_list.size());
-	for(size_t i = 0, n = m_block_cols_list.size(); i < n; ++ i) {
+	r_dest.m_block_cols_list.resize(n_ordering_size);
+	for(size_t i = 0, n = n_ordering_size; i < n; ++ i) {
 		size_t n_dest_col = p_block_ordering[i];
 		size_t n_src_col = i;
 		// calculate ordered indices
@@ -6498,7 +6618,8 @@ void CUberBlockMatrix::Permute_UpperTriangular_To(CUberBlockMatrix &r_dest,
 	}
 	// set block columns, copy block data (only blocks in the valid column range)
 
-	for(size_t i = 0, n = m_block_cols_list.size(), n_running_width_sum = 0; i < n; ++ i) {
+	_ASSERTE(r_dest.m_block_cols_list.size() == n_ordering_size);
+	for(size_t i = 0, n = n_ordering_size, n_running_width_sum = 0; i < n; ++ i) {
 		TColumn &r_t_dest = r_dest.m_block_cols_list[i];
 		r_t_dest.n_cumulative_width_sum = n_running_width_sum;
 		n_running_width_sum += r_t_dest.n_width;
@@ -6531,8 +6652,8 @@ void CUberBlockMatrix::Permute_UpperTriangular_To(CUberBlockMatrix &r_dest,
 	_ASSERTE(&r_dest != this);
 	// can't permute to itself
 
-	_ASSERTE(n_ordering_size >= m_block_rows_list.size());
-	_ASSERTE(n_ordering_size >= m_block_cols_list.size()); // todo - permit >=, or be strict with ==?
+	_ASSERTE(n_ordering_size == m_block_rows_list.size());
+	_ASSERTE(n_ordering_size == m_block_cols_list.size()); // t_odo - permit >=, or be strict with ==? // todo - apply the same "<=" semantic as with the other version of Permute_UpperTriangular_To()
 	// make sure that permutation vector is long enough (might actually be longer)
 
 	_ASSERTE(b_SymmetricLayout()); // either permutation on one side only, or the matrix is symmetric
@@ -7048,7 +7169,7 @@ bool CUberBlockMatrix::UpperTriangular_Solve(double *p_x, size_t UNUSED(n_vector
 #endif // 0
 
 bool CUberBlockMatrix::UpperTriangular_Solve(double *p_x,
-	size_t UNUSED(n_vector_size), size_t n_first_column) const
+	size_t UNUSED(n_vector_size), size_t n_last_column, size_t n_first_column) const
 {
 	CheckIntegrity(true);
 
@@ -7061,11 +7182,14 @@ bool CUberBlockMatrix::UpperTriangular_Solve(double *p_x,
 	_ASSERTE(n_vector_size == m_n_col_num);
 	// make sure that the vector's got correct size
 
+	_ASSERTE(n_last_column <= n_first_column);
+	// it goes backwards so last is before first
+
 	_ASSERTE(n_first_column < m_block_cols_list.size());
 	// should be a valid block index
 
 	for(_TyColumnConstIter p_col_it = m_block_cols_list.begin() + (n_first_column + 1),
-	   p_end_it = m_block_cols_list.begin(); p_col_it != p_end_it;) { // back substitution
+	   p_end_it = m_block_cols_list.begin() + n_last_column; p_col_it != p_end_it;) { // back substitution
 		-- p_col_it;
 		// decrement at the beginning of the loop! (but after the comparison)
 
@@ -7330,58 +7454,71 @@ double CUberBlockMatrix::f_Norm() const
 }
 
 void CUberBlockMatrix::Permute_RightHandSide_Vector(double *p_dest, const double *p_src,
-	size_t UNUSED(n_vector_length), const size_t *p_permutation,
-	size_t UNUSED(n_permutation_length)) const
+	size_t UNUSED(n_vector_length), const size_t *p_permutation, size_t n_permutation_length) const
 {
 	CheckIntegrity();
 
 	_ASSERTE(p_permutation); // permutation can't be null (csparse allows that, cs_pvec then acts like memcpy)
 	_ASSERTE(p_dest != p_src); // can't permute inplace
-	_ASSERTE(n_vector_length == m_n_row_num);
-	_ASSERTE(n_permutation_length == m_block_rows_list.size());
+	_ASSERTE(n_permutation_length != m_block_rows_list.size() || n_vector_length == m_n_row_num); // if not equal, hard to check the length
+	_ASSERTE(n_permutation_length <= m_block_rows_list.size()); // can be smaller
+#ifdef _DEBUG
+	double *p_dest_end = p_dest + n_vector_length;
+#endif // _DEBUG
 
-	for(size_t i = 0, n = m_block_rows_list.size(); i < n; ++ i) { // note this could run in parallel
+	for(size_t i = 0; i < n_permutation_length; ++ i) { // note this could run in parallel
 		size_t p = p_permutation[i];
-		_ASSERTE(p < n); // makes sure the permutation contains valid block indices
+		_ASSERTE(p < m_block_rows_list.size()); // makes sure the permutation contains valid block indices
 		size_t n_block_base = m_block_rows_list[p].n_cumulative_height_sum;
 		size_t n_block_size = m_block_rows_list[p].n_height;
 		_ASSERTE(n_block_size > 0); // can't contain zero-size blocks anyway
+		_ASSERTE(p_dest + n_block_size <= p_dest_end); // make sure this will not overrun the dest array
 		do {
 			*p_dest = p_src[n_block_base];
 			++ p_dest;
 			++ n_block_base;
 		} while(-- n_block_size);
 	}
+
+#ifdef _DEBUG
+	_ASSERTE(p_dest_end == p_dest); // check vector length
+#endif // _DEBUG
 }
 
 void CUberBlockMatrix::Permute_LeftHandSide_Vector(double *p_dest, const double *p_src,
-	size_t UNUSED(n_vector_length), const size_t *p_permutation,
-	size_t UNUSED(n_permutation_length)) const
+	size_t UNUSED(n_vector_length), const size_t *p_permutation, size_t n_permutation_length) const
 {
 	CheckIntegrity();
 
 	_ASSERTE(p_permutation); // permutation can't be null (csparse allows that, cs_pvec then acts like memcpy)
 	_ASSERTE(p_dest != p_src); // can't permute inplace
-	_ASSERTE(n_vector_length == m_n_col_num);
-	_ASSERTE(n_permutation_length == m_block_cols_list.size());
+	_ASSERTE(n_permutation_length != m_block_cols_list.size() || n_vector_length == m_n_col_num); // if not equal, hard to check the length
+	_ASSERTE(n_permutation_length <= m_block_cols_list.size()); // can be smaller
+#ifdef _DEBUG
+	double *p_dest_end = p_dest + n_vector_length;
+#endif // _DEBUG
 
-	for(size_t i = 0, n = m_block_cols_list.size(); i < n; ++ i) { // note this could run in parallel
+	for(size_t i = 0; i < n_permutation_length; ++ i) { // note this could run in parallel
 		size_t p = p_permutation[i];
-		_ASSERTE(p < n); // makes sure the permutation contains valid block indices
+		_ASSERTE(p < m_block_cols_list.size()); // makes sure the permutation contains valid block indices
 		size_t n_block_base = m_block_cols_list[p].n_cumulative_width_sum;
 		size_t n_block_size = m_block_cols_list[p].n_width;
 		_ASSERTE(n_block_size > 0); // can't contain zero-size blocks anyway
+		_ASSERTE(p_dest + n_block_size <= p_dest_end); // make sure this will not overrun the dest array
 		do {
 			*p_dest = p_src[n_block_base];
 			++ p_dest;
 			++ n_block_base;
 		} while(-- n_block_size);
 	}
+
+#ifdef _DEBUG
+	_ASSERTE(p_dest_end == p_dest); // check vector length
+#endif // _DEBUG
 }
 
 void CUberBlockMatrix::InversePermute_RightHandSide_Vector(double *p_dest, const double *p_src,
-	size_t UNUSED(n_vector_length), const size_t *p_permutation,
-	size_t UNUSED(n_permutation_length)) const
+	size_t UNUSED(n_vector_length), const size_t *p_permutation, size_t n_permutation_length) const
 {
 	CheckIntegrity();
 
@@ -7390,9 +7527,9 @@ void CUberBlockMatrix::InversePermute_RightHandSide_Vector(double *p_dest, const
 	_ASSERTE(n_vector_length == m_n_row_num);
 	_ASSERTE(n_permutation_length == m_block_rows_list.size());
 
-	for(size_t i = 0, n = m_block_rows_list.size(); i < n; ++ i) { // note this could run in parallel
+	for(size_t i = 0; i < n_permutation_length; ++ i) { // note this could run in parallel
 		size_t p = p_permutation[i];
-		_ASSERTE(p < n); // makes sure the permutation contains valid block indices
+		_ASSERTE(p < n_permutation_length); // makes sure the permutation contains valid block indices
 		size_t n_block_base = m_block_rows_list[p].n_cumulative_height_sum;
 		size_t n_block_size = m_block_rows_list[p].n_height;
 		_ASSERTE(n_block_size > 0); // can't contain zero-size blocks anyway
@@ -7405,8 +7542,7 @@ void CUberBlockMatrix::InversePermute_RightHandSide_Vector(double *p_dest, const
 }
 
 void CUberBlockMatrix::InversePermute_LeftHandSide_Vector(double *p_dest, const double *p_src,
-	size_t UNUSED(n_vector_length), const size_t *p_permutation,
-	size_t UNUSED(n_permutation_length)) const
+	size_t UNUSED(n_vector_length), const size_t *p_permutation, size_t n_permutation_length) const
 {
 	CheckIntegrity();
 
@@ -7415,9 +7551,9 @@ void CUberBlockMatrix::InversePermute_LeftHandSide_Vector(double *p_dest, const 
 	_ASSERTE(n_vector_length == m_n_col_num);
 	_ASSERTE(n_permutation_length == m_block_cols_list.size());
 
-	for(size_t i = 0, n = m_block_cols_list.size(); i < n; ++ i) { // note this could run in parallel
+	for(size_t i = 0; i < n_permutation_length; ++ i) { // note this could run in parallel
 		size_t p = p_permutation[i];
-		_ASSERTE(p < n); // makes sure the permutation contains valid block indices
+		_ASSERTE(p < n_permutation_length); // makes sure the permutation contains valid block indices
 		size_t n_block_base = m_block_cols_list[p].n_cumulative_width_sum;
 		size_t n_block_size = m_block_cols_list[p].n_width;
 		_ASSERTE(n_block_size > 0); // can't contain zero-size blocks anyway
@@ -8477,9 +8613,9 @@ void CUberBlockMatrix::InverseOf_Symmteric(const CUberBlockMatrix &r_A) // throw
 				dense = dense.inverse();
 				// invert the matrix, making it most likely rather dense
 			}
-			// todo - it would be better to slice the matrix and make a blockwise sparse LU decomposition,
+			// todo - it would be better to slice the matrix and make a blockwise sparse LU factorization,
 			// and use that to calculate the inverse (now we are calculating a rather expensive inverse
-			// of a dense (although containing many zeroes) matrix, using dense LU decomposition inside Eigen)
+			// of a dense (although containing many zeroes) matrix, using dense LU factorization inside Eigen)
 
 			for(size_t k = n_begin; k <= n_end; ++ k) {
 				TColumn &r_t_col = m_block_cols_list[k];
@@ -8528,6 +8664,10 @@ void CUberBlockMatrix::InverseOf_Symmteric(const CUberBlockMatrix &r_A) // throw
 
 #ifdef __UBER_BLOCK_MATRIX_IO
 
+/**
+ *	@brief removes whitespace from the beginning and from the end of the string
+ *	@param[in,out] r_s_string is the string to remove whitespace from
+ */
 static void TrimSpace(std::string &r_s_string)
 {
 	size_t b = 0, e = r_s_string.length();
@@ -8539,6 +8679,19 @@ static void TrimSpace(std::string &r_s_string)
 	r_s_string.erase(0, b);
 }
 
+/**
+ *	@brief reads line form a file
+ *
+ *	@param[out] r_s_line is output string, containing one line read from a file
+ *	@param[in] p_fr is pointer to a file
+ *
+ *	@return Returns true on success, false on failure (not enough memory / input error).
+ *
+ *	@note In case file is at it's end, output lines are empty, but the function still succeeds.
+ *	@note Output lines may contain carriage-return character(s), for example if the file
+ *		is opened for binary reading. Line-feed character marks end of line and is never
+ *		included.
+ */
 static bool ReadLine(std::string &r_s_line, FILE *p_fr)
 {
 	r_s_line.erase();
@@ -8688,7 +8841,8 @@ bool CUberBlockMatrix::Load_MatrixMarket(const char *p_s_filename, size_t n_bloc
 
 			if(s_line.find("matrix") == std::string::npos ||
 			   s_line.find("coordinate") == std::string::npos ||
-			   s_line.find("real") == std::string::npos) {
+			   (s_line.find("real") == std::string::npos &&
+			   s_line.find("integer") == std::string::npos)) { // integer matrices are not real, but have values and are loadable
 				fclose(p_fr);
 				return false;
 			}
@@ -8821,7 +8975,8 @@ bool CUberBlockMatrix::Load_MatrixMarket_Layout(const char *p_s_filename) // thr
 
 			if(s_line.find("matrix") == std::string::npos ||
 			   s_line.find("coordinate") == std::string::npos ||
-			   s_line.find("real") == std::string::npos) {
+			   (s_line.find("real") == std::string::npos &&
+			   s_line.find("integer") == std::string::npos)) {
 				fclose(p_fr);
 				return false;
 			}
@@ -9046,7 +9201,7 @@ bool CUberBlockMatrix::Save_MatrixMarket(const char *p_s_filename,
 		return false;
 	fprintf(p_fw, "%%%%MatrixMarket matrix coordinate real general\n"); // t_odo - maybe here should also be some keywords
 	fprintf(p_fw, "%%-------------------------------------------------------------------------------\n");
-	fprintf(p_fw, "%% ÜberBlockMatrix matrix dump\n");
+	fprintf(p_fw, "%% UberBlockMatrix matrix dump\n");
 	if(p_s_kind)
 		fprintf(p_fw, "%% kind: %s\n", p_s_kind);
 	fprintf(p_fw, "%%-------------------------------------------------------------------------------\n");
@@ -9064,7 +9219,7 @@ bool CUberBlockMatrix::Save_MatrixMarket(const char *p_s_filename,
 			size_t n_row_base = n_BlockRow_Base(n_row);
 			size_t n_row_height = n_BlockRow_Row_Num(n_row);
 
-			CUberBlockMatrix::_TyMatrixXdRef t_block = t_Block_AtColumn(n_col, j);
+			CUberBlockMatrix::_TyConstMatrixXdRef t_block = t_Block_AtColumn(n_col, j);
 			_ASSERTE(t_block.rows() == n_row_height && t_block.cols() == n_col_width);
 			// get a block
 
