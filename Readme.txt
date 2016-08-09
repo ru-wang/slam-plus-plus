@@ -15,14 +15,38 @@ There is a CMakeFile. To be able to change the code and commit back
 to the svn, do an out-of-source build, like this:
 
 $ cd build
-$ cmake -i ..
-$ <press enter 100x, real fast>
-$ make
-$ ../bin/slam_plus_plus -i ../data/manhattanOlson3500.txt --pose-only
+$ cmake ..
+
+This will configure the project without any configuration. To change
+configuration, run cmake -i .. instead of the last line above (or at
+a later time, should a change in the configuration be needed). One
+interesting option is to specify the default linear solver. Supernodal
+CHOLMOD or block Cholesky are the fastest, CSparse is slightly slower
+and simplical CHOLMOD is the slowest. Another option is to enable GPU
+acceleration support, which currently applies to the Schur complement
+solver only (specify -us when running SLAM ++; requires CUDA and CULA
+toolkits).
+
+On Mac, you might want to configure your C and C++ compilers to be the
+GNU ones (e.g. from the MacPorts project) rather than Clang which does
+not support OpenMP nowadays and your code will be somewhat slower. You
+can do that by using:
+
+$ cmake -D CMAKE_C_COMPILER=/opt/local/bin/gcc-mp-4.7 \
+$	-D CMAKE_CXX_COMPILER=/opt/local/bin/g++-mp-4.7 ..
+
+Where you might want to change the version to the latest one that you
+have installed. But it will build and run correctly even without that.
+
+$ make 
+
+Will finish the building process. You should now be able to run by typing:
+
+$ ../bin/SLAM_plus_plus --help 
 
 You can also use fast parallel build, like this:
 
-$ make -j 8
+$ make -j
 
 And that should take care of the build. Don't use CMake for Visual Studio,
 there is a link conflict in eigen, there are some files in different

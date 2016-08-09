@@ -47,7 +47,7 @@
  *
  */
 
-#if defined(_WIN32) || defined (_WIN64)
+#if defined(_WIN32) || defined(_WIN64)
 #define NOMINMAX
 #include <windows.h>
 #else // _WIN32 || _WIN64
