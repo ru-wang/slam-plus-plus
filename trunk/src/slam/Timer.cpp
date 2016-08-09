@@ -34,7 +34,7 @@
  *
  *	@date 2008-08-02
  *
- *	cleared up code arround n_MaxIntValue() a bit, removed MAX_VALUE_FUNCTION and MAX_VALUE_CONST
+ *	cleared up code around n_MaxIntValue() a bit, removed MAX_VALUE_FUNCTION and MAX_VALUE_CONST
  *	and moved all the stuff to Integer.h
  *
  *	@date 2008-08-08
@@ -59,15 +59,17 @@
 #include "slam/Timer.h"
 
 /*
- *								=== CTimer ===
+ *								=== CDeltaTimer ===
  */
 
 /*
- *	CTimer::CTimer()
+ *	CDeltaTimer::CDeltaTimer()
  *		- default constructor
  */
-CTimer::CTimer()
+CDeltaTimer::CDeltaTimer()
 {
+	//__FuncGuard("CDeltaTimer::CDeltaTimer");
+
 #if defined(TIMER_USE_QPC)
 	LARGE_INTEGER t_freq;
 	QueryPerformanceFrequency(&t_freq);
@@ -77,18 +79,23 @@ CTimer::CTimer()
 
 #ifdef _DEBUG
 	LARGE_INTEGER t_tmp = {0};
-	_ASSERTE(sizeof(t_tmp.QuadPart) == sizeof(int64_t));
+	_ASSERTE(n_MaxIntValue(t_tmp.QuadPart) == INT64_MAX);
 	// make sure max value of QPC's counter is INT64_MAX
 #endif // _DEBUG
 #elif defined(TIMER_USE_GETTICKCOUNT)
 	m_n_freq = 1000; // one milisecond
 
-#ifdef _DEBUG
 	_ASSERTE(n_MaxIntValue(GetTickCount()) == UINT32_MAX);
 	// make sure max value of GetTickCount's counter is UINT32_MAX
-#endif // _DEBUG
-#elif defined(TIMER_USE_READREALTIME)
+#elif defined(TIMER_USE_CLOCKGETTIME)
 	m_n_freq = 1000000000; // one nanosecond
+
+#ifdef _DEBUG
+	timespec t_tmp_time = {0, 0};
+	//_ASSERTE(n_MaxIntValue(t_tmp_time.tv_sec) < UINT64_MAX / 1000000000);
+	//_ASSERTE(n_MaxIntValue(t_tmp_time.tv_sec) * 1000000000 <= UINT64_MAX - 999999999); // these are broken on 64-bit OS'
+	// make sure we fit into int64_t
+#endif // _DEBUG
 #elif defined(TIMER_USE_GETTIMEOFDAY)
 	m_n_freq = 1000000; // one microsecond
 
@@ -101,132 +108,140 @@ CTimer::CTimer()
 #else // clock
 	m_n_freq = CLOCKS_PER_SEC;
 #endif
-	ResetTimer();
+	Reset();
 }
 
 /*
- *	int64_t CTimer::n_Frequency() const
+ *	int64_t CDeltaTimer::n_Frequency() const
  *		- returns timer frequency (inverse of smallest time step)
  */
-int64_t CTimer::n_Frequency() const
+int64_t CDeltaTimer::n_Frequency() const
 {
+	//__FuncGuard("CDeltaTimer::n_Frequency");
+
 	return m_n_freq;
 }
 
 /*
- *	static inline int64_t CTimer::n_SampleTimer()
+ *	static inline int64_t CDeltaTimer::n_SampleTimer()
  *		- returns time counter sample
  */
-inline int64_t CTimer::n_SampleTimer()
+inline int64_t CDeltaTimer::n_SampleTimer()
 {
+	//__FuncGuard("CDeltaTimer::n_SampleTimer");
+
 #if defined(TIMER_USE_QPC)
 	LARGE_INTEGER t_time;
 	QueryPerformanceCounter(&t_time);
-	_ASSERTE(t_time.QuadPart < INT64_MAX);
+	_ASSERTE(t_time.QuadPart <= INT64_MAX); // it can equal
 	return t_time.QuadPart;
 #elif defined(TIMER_USE_GETTICKCOUNT)
 	return GetTickCount();
-#elif defined(TIMER_USE_READREALTIME)
-	timebasestruct_t t_time;
-	read_real_time(&t_time, TIMEBASE_SZ);
-	time_base_to_time(&t_time, TIMEBASE_SZ);
-	return t_time.tb_high * int64_t(1000000000) + t_time.tb_low;
+#elif defined(TIMER_USE_CLOCKGETTIME)
+	timespec t_tmp_time;
+    clock_gettime(CLOCK_MONOTONIC, &t_tmp_time);
+	// could use CLOCK_PROCESS_CPUTIME_ID for higher precision, but that has problems
+	// with systems with more CPUs (when the process migrates, a different timer with
+	// a different value might be sampled)
+
+	_ASSERTE((t_tmp_time.tv_sec >= 0 && t_tmp_time.tv_nsec >= 0) ||
+		t_tmp_time.tv_sec > t_tmp_time.tv_nsec / 1000000000 ||
+		(t_tmp_time.tv_sec >= t_tmp_time.tv_nsec / 1000000000 &&
+		!(t_tmp_time.tv_nsec % 1000000000))); // make sure that the time will be positive
+	// otherwise madness ensues
+
+	return (t_tmp_time.tv_sec * int64_t(1000000000) + t_tmp_time.tv_nsec) & INT64_MAX; // make sure this does not overflow to negative values; implement by dropping the top bit as the value might have already overflown before the and-ing and doing a modulo with a non-power-of-two would give a bad result
+	// returns values in [0, INT64_MAX] (inclusive)
 #elif defined(TIMER_USE_GETTIMEOFDAY)
 	timeval t_tmp_time;
     gettimeofday(&t_tmp_time, NULL);
-	return t_tmp_time.tv_sec * int64_t(1000000) + t_tmp_time.tv_usec;
+
+	_ASSERTE((t_tmp_time.tv_sec >= 0 && t_tmp_time.tv_usec >= 0) ||
+		t_tmp_time.tv_sec > t_tmp_time.tv_usec / 1000000 ||
+		(t_tmp_time.tv_sec >= t_tmp_time.tv_nsec / 1000000 &&
+		!(t_tmp_time.tv_nsec % 1000000))); // make sure that the time will be positive
+	// otherwise madness ensues
+
+	return (t_tmp_time.tv_sec * int64_t(1000000) + t_tmp_time.tv_usec) & INT64_MAX; // make sure this does not overflow to negative values; implement by dropping the top bit as the value might have already overflown before the and-ing and doing a modulo with a non-power-of-two would give a bad result
+	// returns values in [0, INT64_MAX] (inclusive)
 #else // clock
 	return clock();
 #endif
 }
 
 /*
- *	void CTimer::Reset()
+ *	void CDeltaTimer::Reset()
  *		- resets timer (sets time to zero)
  */
-void CTimer::Reset()
+void CDeltaTimer::Reset()
 {
-	m_f_time = 0;
-#ifdef TIMER_USE_READREALTIME
-	read_real_time(&m_t_time, TIMEBASE_SZ);
-	time_base_to_time(&m_t_time, TIMEBASE_SZ);
-#else // TIMER_USE_READREALTIME
+	//__FuncGuard("CDeltaTimer::ResetTimer");
+
+	//m_f_time = 0;
 	m_n_time = n_SampleTimer();
-#endif // TIMER_USE_READREALTIME
 }
 
 /*
- *	double CTimer::f_Time() const
+ *	double CDeltaTimer::f_Time() const
  *		- returns time in seconds
  *		- should cope nicely with counter overflows
  */
-double CTimer::f_Time() const
+double CDeltaTimer::f_Time() const
 {
-#ifdef TIMER_USE_READREALTIME
-	timebasestruct_t t_cur_time;
-	read_real_time(&t_cur_time, TIMEBASE_SZ);
-	time_base_to_time(&t_cur_time, TIMEBASE_SZ);
+	//__FuncGuard("CDeltaTimer::f_Time");
+
+	const int64_t n_cur_time = n_SampleTimer(); // this will be remembered, will not be 
 	// determine current time
 
-	uint64_t secs = t_cur_time.tb_high - m_t_time.tb_high;
-	int64_t n_secs = t_cur_time.tb_low - m_t_time.tb_low;
-	if(n_secs < 0) {
-		-- secs;
-		_ASSERTE(n_secs >= -1000000000); // shouldn't underflow more than that
-		n_secs += 1000000000;
-	}
-	// calculate delta time
-
-	_ASSERTE(UINT64_MAX / 1000000000 >= n_secs);
-	if(secs >= UINT64_MAX / 1000000000 - n_secs)
-		m_f_time += secs + double(n_secs) / 1000000000; // possibly loose a bit of precision on this one
-	else {
-		int64_t n_delta_time = secs * 1000000000 + n_secs; // the safe way
-		m_f_time += double(n_delta_time) / 1000000000;
-	}
-	m_t_time = t_time;
-	// integrate time
-#else // TIMER_USE_READREALTIME
-	int64_t n_cur_time = n_SampleTimer();
-	// determine current time
+	double f_time = 0;
 
 	int64_t n_delta_time;
 	if(n_cur_time >= m_n_time)
 		n_delta_time = n_cur_time - m_n_time;
 	else {
 #if defined(TIMER_USE_QPC)
-		int64_t n_max_time_value = INT64_MAX;
+		const int64_t n_max_time_value = INT64_MAX;
 #elif defined(TIMER_USE_GETTICKCOUNT)
-		int64_t n_max_time_value = UINT32_MAX;
+		const int64_t n_max_time_value = UINT32_MAX;
+#elif defined(TIMER_USE_CLOCKGETTIME)
+		const timespec t_tmp_time = {0, 0};
+		const int64_t n_max_secs = n_MaxIntValue(t_tmp_time.tv_sec);
+		const int64_t n_max_time_value = (n_max_secs > INT64_MAX / 1000000000 ||
+			n_max_secs * 1000000000 > INT64_MAX - 999999999)? INT64_MAX :
+			n_max_secs * 1000000000 + 999999999;
+		// the samples are in [0, INT64_MAX] (inclusive) or less if t_tmp_time.tv_sec is a 32-bit number
 #elif defined(TIMER_USE_GETTIMEOFDAY)
-		timeval t_tmp_time = {0, 0};
-		int64_t n_max_time_value = n_MaxIntValue(t_tmp_time.tv_sec) * 1000000 + 999999;
-		//_ASSERTE(n_MaxIntValue(t_tmp_time.tv_sec) < UINT64_MAX / 1000000);
-		//_ASSERTE(n_MaxIntValue(t_tmp_time.tv_sec) * 1000000 <= UINT64_MAX - 999999);
-#else // clock
-		int64_t n_max_time_value = CMaxIntValue<clock_t>::result();
-#endif
+		const timeval t_tmp_time = {0, 0};
+		const int64_t n_max_secs = n_MaxIntValue(t_tmp_time.tv_sec);
+		const int64_t n_max_time_value = (n_max_secs > INT64_MAX / 1000000 ||
+			n_max_secs * 1000000 > INT64_MAX - 999999)? INT64_MAX :
+			n_max_secs * 1000000 + 999999;
+		// the samples are in [0, INT64_MAX] (inclusive) or less if t_tmp_time.tv_sec is a 32-bit number
+#else // TIMER_USE_QPC
+		const int64_t n_max_time_value = CMaxIntValue<clock_t>::result();
+#endif // TIMER_USE_QPC
 		// determine maximal time value, based on used counter
 
 		n_delta_time = n_max_time_value - m_n_time;
+		// time until overflow
+
 		if(n_delta_time <= INT64_MAX - n_cur_time)
 			n_delta_time += n_cur_time;
 		else {
-			m_f_time += double(n_cur_time) / m_n_freq;
-			// adding n_cur_time would cause overflow ... so add it this way
+			f_time = double(n_cur_time) / m_n_freq;
+			// adding n_cur_time would cause another overflow ... so add it this way
 		}
-		// calculate proper difference time
+		// time after overflow
 	}
 	// calculate delta time
 
-	m_f_time += double(n_delta_time) / m_n_freq;
+	f_time += double(n_delta_time) / m_n_freq;
 	m_n_time = n_cur_time;
 	// integrate time
-#endif // TIMER_USE_READREALTIME
 
-	return m_f_time;
+	return f_time;
 }
 
 /*
- *								=== ~CTimer ===
+ *								=== ~CDeltaTimer ===
  */

@@ -1,6 +1,6 @@
 /**
  *	@file cxsparse/cxs.hpp
- *	@brief this small file adds namespace arround cxsparse to avoid collisions with csparse.
+ *	@brief this small file adds namespace around cxsparse to avoid collisions with csparse.
  *	@note The CXSparse library was not modified in any way, with the exception of addition of this file.
  */
 

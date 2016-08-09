@@ -56,9 +56,8 @@ public:
  *
  *	@tparam CSystem is the system type (unused)
  *	@tparam CLinearSolver is a linear solver (unused)
- *	@tparam CBlockSizes is a list of matrix block sizes (unused)
  */
-template <class CSystem, class CLinearSolver, class CBlockSizes>
+template <class CSystem, class CLinearSolver/*, class CBlockSizes*/> // *	@tparam CBlockSizes is a list of matrix block sizes (unused)
 class CSolverNotIncluded {};
 
 /**
@@ -67,9 +66,9 @@ class CSolverNotIncluded {};
  *
  *	@tparam CSystem is the system type (unused)
  *	@tparam CLinearSolver is a linear solver (unused)
- *	@tparam CBlockSizes is a list of matrix block sizes (unused)
+
  */
-template <class CSystem, class CLinearSolver, class CBlockSizes>
+template <class CSystem, class CLinearSolver/*, class CBlockSizes*/> // *	@tparam CBlockSizes is a list of matrix block sizes (unused)
 class CSolverNotSupported {};
 
 /**
@@ -79,7 +78,7 @@ class CSolverNotSupported {};
  *	@tparam CNonlinearSolverType is nonlinear solver template name
  */
 template <const int n_solver_type_id,
-	template <class, class, class> class CNonlinearSolverType>
+	template <class, class> class CNonlinearSolverType>
 class CSolverTypeIdPair {
 public:
 	/**
@@ -195,4 +194,32 @@ public:
 	}
 };
 
-#endif // __SOLVER_TRAITS_INCLUDED
+/**
+ *	@brief specialzies nonlinear solver template arguments using the defaults
+ *
+ *	@tparam CSystem is optimization system type
+ *	@tparam CLinearSolver is linear solver type
+ */
+template <class CSystem, class CLinearSolver>
+class CNonlinearSolver_Dummmy_Specializer { // this is here only for the documentation
+public:
+	/**
+	 *	@brief constructor; initializes the nonlinear solver
+	 *
+	 *	@param[in] r_system is the system to be optimized
+	 *		(it is only referenced, not copied - must not be deleted)
+	 *	@param[in] t_incremental_config is incremental solving configuration
+	 *	@param[in] t_marginals_config is marginal covariance calculation configuration
+	 *	@param[in] b_verbose is verbosity flag
+	 *	@param[in] linear_solver is linear solver instance
+	 *	@param[in] b_use_schur is Schur complement trick flag
+	 */
+	inline CNonlinearSolver_Dummmy_Specializer(CSystem &r_system,
+		TIncrementalSolveSetting t_incremental_config = TIncrementalSolveSetting(),
+		TMarginalsComputationPolicy t_marginals_config = TMarginalsComputationPolicy(),
+		bool b_verbose = false,
+		CLinearSolver linear_solver = CLinearSolver(), bool b_use_schur = false)
+	{}
+};
+
+#endif // !__SOLVER_TRAITS_INCLUDED

@@ -73,7 +73,7 @@
 /**
  *	@brief helper classes for TGA codec
  */
-namespace __tga__ {
+namespace targa {
 
 /**
  *	@brief function for reading run-length compressed scanlines
@@ -420,7 +420,7 @@ static const uint32_t *_p_Write_RLE_Scanline(FILE *p_fw,
 }
 
 }
-using namespace __tga__;
+using namespace targa;
 
 bool CTgaCodec::Get_ImageInfo(TTGAInfo &r_t_info, const char *p_s_filename)
 {
@@ -573,10 +573,10 @@ TBmp *CTgaCodec::p_Load_TGA(const char *p_s_filename)
 	p_bitmap->n_width = t_header.n_image_width;
 	p_bitmap->n_height = t_header.n_image_height;
 	p_bitmap->b_grayscale = (t_header.n_image_type & tga_ImageType_Mask) == tga_Grayscale;
-	p_bitmap->n_former_bpp = (p_bitmap->b_grayscale)? 8 :
+	p_bitmap->n_former_bpc = (p_bitmap->b_grayscale)? 8 :
 		(((t_header.n_image_type & tga_ImageType_Mask) == tga_RGB)?
 		t_header.n_bpp : t_header.n_palette_entry_size);
-	p_bitmap->b_alpha = p_bitmap->n_former_bpp == 32;
+	p_bitmap->b_alpha = p_bitmap->n_former_bpc == 32;
 	// alloc bitmap
 
 	const int n_step = (t_header.n_descriptor_bits & 0x20)? t_header.n_image_width :

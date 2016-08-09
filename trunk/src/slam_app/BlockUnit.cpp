@@ -219,7 +219,7 @@ void CBlockMatrixUnitTests::Simple_UFLSMC_CholTest(const char *p_s_filename)
 
 	CUberBlockMatrix R;
 	R.CholeskyOf(A);
-	// calculate decomposition
+	// calculate factorization
 
 	CUberBlockMatrix RT;
 	RT.TransposeOf(R);
@@ -257,7 +257,7 @@ void CBlockMatrixUnitTests::Simple_UFLSMC_CholTest(const char *p_s_filename)
 }
 
 /**
- *	@brief unit test for block matrix decomposition functions (Cholesky)
+ *	@brief unit test for block matrix factorization functions (Cholesky)
  *	@todo Add rectangular block tests.
  */
 void CBlockMatrixUnitTests::MatrixDecomposition_UnitTest()
@@ -2506,10 +2506,14 @@ void CBlockMatrixUnitTests::Test_Add(CUberBlockMatrix &r_A, CUberBlockMatrix &r_
 	r_C.Rasterize("2_C.tga");
 #endif // __BLOCK_ADD_UNIT_TEST_DUMP_MATRIX_IMAGES
 
-	typedef MakeTypelist_Safe((Eigen::Matrix<double, block_Size, block_Size>,
-		Eigen::Matrix<double, block_Size2, block_Size>,
-		Eigen::Matrix<double, block_Size, block_Size2>,
-		Eigen::Matrix<double, block_Size2, block_Size2>)) two_typelist;
+	typedef MakeTypelist_Safe((Eigen::Matrix<double, block_Size, block_Size, Eigen::DontAlign>,
+		Eigen::Matrix<double, block_Size2, block_Size, Eigen::DontAlign>,
+		Eigen::Matrix<double, block_Size, block_Size2, Eigen::DontAlign>,
+		Eigen::Matrix<double, block_Size2, block_Size2, Eigen::DontAlign>)) two_typelist;
+	// VS 2013 has problems with the matrices not being aligned in MakeTypelist_Safe dummy function
+	// the alignment flag is ignored by SLAM++ so may as well go the easy way for now
+	// will have to make a binary list with ref / const ref flags, slap references on everything
+	// and only then substitute in a function
 
 	if(b_polarity) {
 		switch(n_method) {
@@ -2591,10 +2595,14 @@ void CBlockMatrixUnitTests::Test_AddFailure(CUberBlockMatrix &r_A, CUberBlockMat
 	B.Rasterize("1_B.tga");
 #endif // __BLOCK_ADD_UNIT_TEST_DUMP_MATRIX_IMAGES
 
-	typedef MakeTypelist_Safe((Eigen::Matrix<double, block_Size, block_Size>,
-		Eigen::Matrix<double, block_Size2, block_Size>,
-		Eigen::Matrix<double, block_Size, block_Size2>,
-		Eigen::Matrix<double, block_Size2, block_Size2>)) two_typelist;
+	typedef MakeTypelist_Safe((Eigen::Matrix<double, block_Size, block_Size, Eigen::DontAlign>,
+		Eigen::Matrix<double, block_Size2, block_Size, Eigen::DontAlign>,
+		Eigen::Matrix<double, block_Size, block_Size2, Eigen::DontAlign>,
+		Eigen::Matrix<double, block_Size2, block_Size2, Eigen::DontAlign>)) two_typelist;
+	// VS 2013 has problems with the matrices not being aligned in MakeTypelist_Safe dummy function
+	// the alignment flag is ignored by SLAM++ so may as well go the easy way for now
+	// will have to make a binary list with ref / const ref flags, slap references on everything
+	// and only then substitute in a function
 
 	if(b_polarity) {
 		switch(n_method) {

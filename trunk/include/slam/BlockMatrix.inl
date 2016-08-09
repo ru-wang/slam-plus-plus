@@ -21,7 +21,7 @@
  *	@brief the überblockmatrix inline and template function definitions
  */
 
-#include "slam/BlockMatrixBase.h"
+#include "slam/BlockMatrix.h"
 
 inline size_t CUberBlockMatrix::n_Find_BlockColumn(size_t n_column, size_t &r_n_block_column_num) const
 {
@@ -65,14 +65,48 @@ inline size_t CUberBlockMatrix::n_Find_BlockColumn(size_t n_column, size_t &r_n_
 	// resolve column reference (essentially the same code as for the row reference)
 }
 
-inline CUberBlockMatrix::_TyMatrixXdRef CUberBlockMatrix::t_Block_AtColumn(size_t n_column_index, size_t n_block_index) const
+inline CUberBlockMatrix::_TyConstMatrixXdRef CUberBlockMatrix::t_Block_AtColumn(size_t n_column_index, size_t n_block_index) const
 {
 	_ASSERTE(n_column_index < m_block_cols_list.size()); // make sure n_column_index points to a valid column
 	_ASSERTE(n_block_index < m_block_cols_list[n_column_index].block_list.size()); // make sure n_block_index selects a block in this column
 	const TColumn::TBlockEntry &r_block = m_block_cols_list[n_column_index].block_list[n_block_index];
 	size_t n_block_row_num = m_block_rows_list[r_block.first].n_height,
 		n_block_column_num = m_block_cols_list[n_column_index].n_width;
+	return _TyConstMatrixXdRef(r_block.second, n_block_row_num, n_block_column_num);
+}
+
+inline CUberBlockMatrix::_TyMatrixXdRef CUberBlockMatrix::t_Block_AtColumn(size_t n_column_index, size_t n_block_index)
+{
+	_ASSERTE(n_column_index < m_block_cols_list.size()); // make sure n_column_index points to a valid column
+	_ASSERTE(n_block_index < m_block_cols_list[n_column_index].block_list.size()); // make sure n_block_index selects a block in this column
+	TColumn::TBlockEntry &r_block = m_block_cols_list[n_column_index].block_list[n_block_index];
+	size_t n_block_row_num = m_block_rows_list[r_block.first].n_height,
+		n_block_column_num = m_block_cols_list[n_column_index].n_width;
 	return _TyMatrixXdRef(r_block.second, n_block_row_num, n_block_column_num);
+}
+
+template <const int n_block_row_num, const int n_block_column_num>
+inline typename CUberBlockMatrix::CMakeMatrixRef<n_block_row_num, n_block_column_num>::_TyConst
+	CUberBlockMatrix::t_Block_AtColumn(size_t n_column_index, size_t n_block_index) const
+{
+	_ASSERTE(n_column_index < m_block_cols_list.size()); // make sure n_column_index points to a valid column
+	_ASSERTE(n_block_index < m_block_cols_list[n_column_index].block_list.size()); // make sure n_block_index selects a block in this column
+	const TColumn::TBlockEntry &r_block = m_block_cols_list[n_column_index].block_list[n_block_index];
+	_ASSERTE(n_block_row_num == m_block_rows_list[r_block.first].n_height &&
+		n_block_column_num == m_block_cols_list[n_column_index].n_width);
+	return typename CMakeMatrixRef<n_block_row_num, n_block_column_num>::_TyConst(r_block.second);
+}
+
+template <const int n_block_row_num, const int n_block_column_num>
+inline typename CUberBlockMatrix::CMakeMatrixRef<n_block_row_num, n_block_column_num>::_Ty
+	CUberBlockMatrix::t_Block_AtColumn(size_t n_column_index, size_t n_block_index)
+{
+	_ASSERTE(n_column_index < m_block_cols_list.size()); // make sure n_column_index points to a valid column
+	_ASSERTE(n_block_index < m_block_cols_list[n_column_index].block_list.size()); // make sure n_block_index selects a block in this column
+	const TColumn::TBlockEntry &r_block = m_block_cols_list[n_column_index].block_list[n_block_index];
+	_ASSERTE(n_block_row_num == m_block_rows_list[r_block.first].n_height &&
+		n_block_column_num == m_block_cols_list[n_column_index].n_width);
+	return typename CMakeMatrixRef<n_block_row_num, n_block_column_num>::_Ty(r_block.second);
 }
 
 inline size_t CUberBlockMatrix::n_Row_Num() const
@@ -121,23 +155,46 @@ inline CUberBlockMatrix::_TyMatrixXdRef CUberBlockMatrix::t_FindBlock(size_t n_r
 		return _TyMatrixXdRef(0, 0, 0); // fixme - does this throw an exception or what?
 }
 
-inline CUberBlockMatrix::_TyMatrixXdRef CUberBlockMatrix::t_FindBlock(size_t n_row, size_t n_column) const
+inline CUberBlockMatrix::_TyMatrixXdRef CUberBlockMatrix::t_FindBlock(size_t n_row, size_t n_column)
 {
 	size_t n_block_row_num, n_block_column_num;
-	double *p_data = (double*)p_FindBlock_ResolveSize(n_row, n_column, n_block_row_num, n_block_column_num);
+	double *p_data = p_FindBlock_ResolveSize(n_row, n_column, n_block_row_num, n_block_column_num);
 	if(p_data)
 		return _TyMatrixXdRef(p_data, n_block_row_num, n_block_column_num);
 	else
 		return _TyMatrixXdRef(0, 0, 0); // fixme - does this throw an exception or what?
 }
 
-inline CUberBlockMatrix::_TyMatrixXdRef CUberBlockMatrix::t_GetBlock_Log(size_t n_row_index, size_t n_column_index) const
+inline CUberBlockMatrix::_TyConstMatrixXdRef CUberBlockMatrix::t_FindBlock(size_t n_row, size_t n_column) const
+{
+	size_t n_block_row_num, n_block_column_num;
+	const double *p_data = p_FindBlock_ResolveSize(n_row, n_column, n_block_row_num, n_block_column_num);
+	if(p_data)
+		return _TyConstMatrixXdRef(p_data, n_block_row_num, n_block_column_num);
+	else
+		return _TyConstMatrixXdRef(0, 0, 0); // fixme - does this throw an exception or what?
+}
+
+inline CUberBlockMatrix::_TyConstMatrixXdRef CUberBlockMatrix::t_GetBlock_Log(size_t n_row_index, size_t n_column_index) const
 {
 	_ASSERTE(n_row_index < m_block_rows_list.size());
 	_ASSERTE(n_column_index < m_block_cols_list.size());
 	size_t n_block_row_num = m_block_rows_list[n_row_index].n_height;
 	size_t n_block_column_num = m_block_cols_list[n_column_index].n_width;
-	double *p_data = (double*)p_GetBlockData(n_row_index, n_column_index);
+	const double *p_data = p_GetBlockData(n_row_index, n_column_index);
+	if(p_data)
+		return _TyConstMatrixXdRef(p_data, n_block_row_num, n_block_column_num);
+	else
+		return _TyConstMatrixXdRef(0, 0, 0); // fixme - does this throw an exception or what?
+}
+
+inline CUberBlockMatrix::_TyMatrixXdRef CUberBlockMatrix::t_GetBlock_Log(size_t n_row_index, size_t n_column_index)
+{
+	_ASSERTE(n_row_index < m_block_rows_list.size());
+	_ASSERTE(n_column_index < m_block_cols_list.size());
+	size_t n_block_row_num = m_block_rows_list[n_row_index].n_height;
+	size_t n_block_column_num = m_block_cols_list[n_column_index].n_width;
+	double *p_data = p_GetBlockData(n_row_index, n_column_index);
 	if(p_data)
 		return _TyMatrixXdRef(p_data, n_block_row_num, n_block_column_num);
 	else
@@ -522,7 +579,7 @@ bool CUberBlockMatrix::Append_Block_Log(const Eigen::Matrix<double, n_compile_ti
 	memcpy(p_data, &r_t_block(0, 0), r_t_block.rows() * r_t_block.cols() * sizeof(double));
 	// copy the dense data
 
-	return false;
+	return true; // success
 }
 
 template <class _TyFixedSizeMatrixOrMap>
@@ -1234,4 +1291,4 @@ inline bool CUberBlockMatrix::CholeskyOf(const CUberBlockMatrix &r_lambda, size_
 	return CholeskyOf(r_lambda, etree, ereach_stack, bitfield, n_start_on_column);
 }
 
-#endif // __UBER_BLOCK_MATRIX_INLINES_INCLUDED
+#endif // !__UBER_BLOCK_MATRIX_INLINES_INCLUDED

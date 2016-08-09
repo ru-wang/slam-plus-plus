@@ -76,8 +76,42 @@ public:
 	 */
 	~CLinearSolver_UberBlock()
 	{
-		if(m_p_block_structure)
+		Free_Memory();
+	}
+
+	/**
+	 *	@brief deletes memory for all the auxiliary buffers and matrices, if allocated
+	 */
+	void Free_Memory()
+	{
+		{
+			CUberBlockMatrix empty;
+			m_R.Swap(empty);
+		}
+		{
+			CUberBlockMatrix empty;
+			m_perm.Swap(empty);
+		}
+		{
+			std::vector<size_t> empty;
+			m_etree.swap(empty);
+		}
+		{
+			std::vector<size_t> empty;
+			m_workspace.swap(empty);
+		}
+		{
+			std::vector<size_t> empty;
+			m_zeroes.swap(empty);
+		}
+		{
+			std::vector<double> empty;
+			m_workspace_double.swap(empty);
+		}
+		if(m_p_block_structure) {
 			cs_spfree(m_p_block_structure);
+			m_p_block_structure = 0;
+		}
 		// don't free m_p_inv_order, it is referencing std::vector
 	}
 
@@ -155,7 +189,7 @@ public:
 		// just use the other function, don't repeat the code twice
 
 		Clear_SymbolicDecomposition();
-		// make sure that the symbolic decomposition is not reused
+		// make sure that the symbolic factorization is not reused
 #endif // 0
 
 		return b_result;
@@ -216,8 +250,8 @@ public:
 	}
 
 	/**
-	 *	@brief deletes symbolic decomposition, if calculated (forces a symbolic
-	 *		decomposition update in the next call to Solve_PosDef_Blocky())
+	 *	@brief deletes symbolic factorization, if calculated (forces a symbolic
+	 *		factorization update in the next call to Solve_PosDef_Blocky())
 	 */
 	inline void Clear_SymbolicDecomposition()
 	{
@@ -226,7 +260,7 @@ public:
 	}
 
 	/**
-	 *	@brief calculates symbolic decomposition of a block
+	 *	@brief calculates symbolic factorization of a block
 	 *		matrix for later (re)use in solving it
 	 *	@param[in] r_lambda is positive-definite matrix
 	 *	@return Returns true on success, false on failure.
@@ -234,7 +268,7 @@ public:
 	bool SymbolicDecomposition_Blocky(const CUberBlockMatrix &r_lambda) // throw(std::bad_alloc)
 	{
 		Clear_SymbolicDecomposition();
-		// forget symbolic decomposition, if it had one
+		// forget symbolic factorization, if it had one
 
 #ifdef __USE_CS_AMD
 		if(!(m_p_block_structure = r_lambda.p_BlockStructure_to_Sparse(m_p_block_structure)))
@@ -266,7 +300,7 @@ public:
 	 *	@return Returns true on success, false on failure.
 	 *
 	 *	@note This function throws std::bad_alloc.
-	 *	@note This enables a reuse of previously calculated symbolic decomposition,
+	 *	@note This enables a reuse of previously calculated symbolic factorization,
 	 *		it can be either calculated in SymbolicDecomposition_Blocky(), or it is
 	 *		calculated automatically after the first call to this function,
 	 *		or after Clear_SymbolicDecomposition() was called (preferred).
@@ -388,4 +422,4 @@ public:
 	}
 };
 
-#endif // __LINEAR_SOLVER_UBERBLOCK_INCLUDED
+#endif // !__LINEAR_SOLVER_UBERBLOCK_INCLUDED

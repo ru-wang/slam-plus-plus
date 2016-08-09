@@ -1,4 +1,3 @@
-
 ADD_SUBDIRECTORY(csparse)
 ADD_SUBDIRECTORY(eigen)
 ADD_SUBDIRECTORY(cholmod)
@@ -7,3 +6,4 @@ ADD_SUBDIRECTORY(slam)
 ADD_SUBDIRECTORY(slam_app)
 ADD_SUBDIRECTORY(slam_simple_example)
 ADD_SUBDIRECTORY(slam_online_example)
+ADD_SUBDIRECTORY(slam_dataassoc_example)

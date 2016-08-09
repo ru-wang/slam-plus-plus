@@ -53,13 +53,13 @@ protected:
 	cs *m_p_lambda; /**< @brief memory for lambda matrix, in order to avoid reallocation */
 
 #if defined (__CSPARSE_LINEAR_SOLVER_REUSE_WORKSPACE) || defined(__CSPARSE_BLOCKY_LINEAR_SOLVER)
-	size_t m_n_workspace_size; /**< @brief size of workspace for Cholesky decomposition */
-	double *m_p_workspace_double; /**< @brief reusable workspace for Cholesky decomposition */
-	csi *m_p_workspace_int; /**< @brief reusable workspace for Cholesky decomposition */
+	size_t m_n_workspace_size; /**< @brief size of workspace for Cholesky factorization */
+	double *m_p_workspace_double; /**< @brief reusable workspace for Cholesky factorization */
+	csi *m_p_workspace_int; /**< @brief reusable workspace for Cholesky factorization */
 #endif // __CSPARSE_LINEAR_SOLVER_REUSE_WORKSPACE || __CSPARSE_BLOCKY_LINEAR_SOLVER
 
 #ifdef __CSPARSE_BLOCKY_LINEAR_SOLVER
-	css *m_p_symbolic_decomposition; /**< @brief symbolic decomposition of lambda matrix */
+	css *m_p_symbolic_decomposition; /**< @brief symbolic factorization of lambda matrix */
 	cs *m_p_block_structure; /**< @brief memory for block structure of the lambda matrix */
 	std::vector<csi> m_v_permutation; /**< @brief memory for (scalar) permutation of the lambda matrix */
 #endif // __CSPARSE_BLOCKY_LINEAR_SOLVER
@@ -83,6 +83,11 @@ public:
 	 *	@brief destructor (deletes memory for lambda, if allocated)
 	 */
 	~CLinearSolver_CSparse();
+
+	/**
+	 *	@brief deletes memory for all the auxiliary buffers and matrices, if allocated
+	 */
+	void Free_Memory();
 
 	/**
 	 *	@brief copy operator (has no effect; memory for lambda not copied)
@@ -124,8 +129,8 @@ public:
 		size_t n_dest_column_id = 0, bool b_upper_factor = true); // throw(std::bad_alloc)
 
 	/**
-	 *	@brief deletes symbolic decomposition, if calculated (forces a symbolic
-	 *		decomposition update in the next call to Solve_PosDef_Blocky())
+	 *	@brief deletes symbolic factorization, if calculated (forces a symbolic
+	 *		factorization update in the next call to Solve_PosDef_Blocky())
 	 */
 	inline void Clear_SymbolicDecomposition()
 	{
@@ -136,7 +141,7 @@ public:
 	}
 
 	/**
-	 *	@brief calculates symbolic decomposition of a block
+	 *	@brief calculates symbolic factorization of a block
 	 *		matrix for later (re)use in solving it
 	 *	@param[in] r_lambda is positive-definite matrix
 	 *	@return Returns true on success, false on failure.
@@ -152,7 +157,7 @@ public:
 	 *	@return Returns true on success, false on failure.
 	 *
 	 *	@note This function throws std::bad_alloc.
-	 *	@note This enables a reuse of previously calculated symbolic decomposition,
+	 *	@note This enables a reuse of previously calculated symbolic factorization,
 	 *		it can be either calculated in SymbolicDecomposition_Blocky(), or it is
 	 *		calculated automatically after the first call to this function,
 	 *		or after Clear_SymbolicDecomposition() was called (preferred).
@@ -213,7 +218,7 @@ protected:
 	static cs *fast_transpose(cs *C, const cs *A, csi *p_workspace);
 
 	/**
-	 *	@brief solves a system using cholesky decomposition
+	 *	@brief solves a system using cholesky factorization
 	 *
 	 *	@param[in] A is the matrix
 	 *	@param[in,out] b is the right-side vector (overwritten with solution)
@@ -245,4 +250,4 @@ protected:
 	static csn *cs_chol_workspace (const cs *A, const css *S, csi *cin, double *xin);
 };
 
-#endif // __LINEAR_SOLVER_CS_INCLUDED
+#endif // !__LINEAR_SOLVER_CS_INCLUDED

@@ -17,15 +17,17 @@
  *	@date 2013-06-14
  */
 
-#include "slam_app/Main.h"
-#include "slam/ConfigSolvers.h" // only included in files that actually need the solvers (slow to compile)
-#include "slam/SE2_Types.h"
-
 /**
  *	@def __SE2_POSE_ONLY_ENABLED
  *	@brief if defined, the solver specializations for pose-only SE(2) are compiled
  */
 #define __SE2_POSE_ONLY_ENABLED
+
+#include "slam_app/Main.h"
+#ifdef __SE2_POSE_ONLY_ENABLED
+#include "slam/ConfigSolvers.h" // only included in files that actually need the solvers (slow to compile)
+#include "slam/SE2_Types.h"
+#endif // __SE2_POSE_ONLY_ENABLED
 
 int n_Run_SE2PoseOnly_Solver(TCommandLineArgs t_args) // throw(std::runtime_error, std::bad_alloc)
 {

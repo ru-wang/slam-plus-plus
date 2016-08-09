@@ -53,7 +53,7 @@
  *	Will finish the building process. You can also use fast parallel build, like this:
  *
  *	@code{.sh}
- *	$ make -j 8
+ *	$ make -j
  *	@endcode
  *
  *	You should now be able to run by typing:
@@ -92,8 +92,10 @@
  *	--no-flags|-nf    doesn't show compiler flags
  *	--no-detailed-timing    doesn't show detailed timing breakup (use this, you'll
  *					  get confused)
- *	--no-bitmaps      doesn't write bitmaps initial.tga and solution.tga (neither
+ *	--no-bitmaps|-nb  doesn't write bitmaps initial.tga and solution.tga (neither
  *					  the text files)
+ *	--dump-system-matrix|-dsm    writes system matrix as system.mtx (matrix market)
+ *					  and system.bla (block layout)
  *	--pose-only|-po   enables optimisation for pose-only slam (will warn and ignore
  *					  on datasets with landmarks (only the first 1000 lines checked
  *					  in case there are landmarks later, it would segfault))
@@ -139,13 +141,14 @@
  *
  *	@section next_sec Next Steps
  *
- *	Some baasic topics are covered here:
+ *	Some basic topics are covered here:
  *	* \ref simpleexample shows how to use SLAM++ for batch solving
  *	* \ref onlineexample shows how to implement a simple online solver
  *
  *	@section adv_sec Advanced
  *
  *	Some advanced topics are covered in the following pages:
+ *	* \ref facades shows how to access edges and vertices stored in the optimized graph
  *	* \ref ownsolvers shows how to implement solver for a custom problem
  */
 
@@ -177,12 +180,12 @@
  *
  *	@code{.cpp}
  *	struct CParseEntity_XYT_Edge_2D : public CParseEntity { // change name here (and also below)
- *	    int m_n_node_0;
- *	    int m_n_node_1;
+ *	    size_t m_n_node_0;
+ *	    size_t m_n_node_1;
  *	    Eigen::Vector3d m_v_delta;
  *	    Eigen::Matrix3d m_t_inv_sigma; // don't change names of variables unless you must, just change the types from 3d to whatever you need
  *
- *	    inline CParseEntity_XYT_Edge_2D(int n_node_0, int n_node_1,
+ *	    inline CParseEntity_XYT_Edge_2D(size_t n_node_0, size_t n_node_1,
  *	        double f_delta_x, double f_delta_y, double f_delta_theta,
  *	        const double *p_upper_matrix_3x3) // you can change the parameters as you wish
  *	        :m_n_node_0(n_node_0), m_n_node_1(n_node_1), // fill the indices of edge vertices (these should be zero-based)
@@ -373,10 +376,12 @@
  *	CEdgePose2D from SE2_Types.h to your Something_Types.h:
  *
  *	@code{.cpp}
- *	class CEdgePose2D : public CSEBaseEdgeImpl<CEdgePose2D, CVertexPose2D, CVertexPose2D, 3> { // again, this tells that base implementation for base edge for type that will be called
+ *	class CEdgePose2D : public CBaseEdgeImpl<CEdgePose2D, MakeTypelist(CVertexPose2D, CVertexPose2D), 3> { // again, this tells that base implementation for base edge for type that will be called
  *	CEdgePose2D, and it will be an edge between two vertices of type CVertexPose2D, and the measurement will have 3 dimensions (in order to have hyperedges, you need to provide your own
- *	version of CSEBaseEdgeImpl, that is an advanced topic)
+ *	version of CBaseEdgeImpl, that is an advanced topic)
  *	public:
+ *		typedef CBaseEdgeImpl<CEdgePose2D, MakeTypelist(CVertexPose2D, CVertexPose2D), 3> _TyBase; // base type
+ *
  *	    class CRelative_to_Absolute_XYT_Initializer { // this is an object which is used to lazy initialize vertices (copy it)
  *	    protected:
  *	        const Eigen::Vector3d &m_r_v_pose1; // this is a reference to the first vertex state (change the dimensions if required)
@@ -404,17 +409,16 @@
  *
  *	    template <class CSystem>
  *	    CEdgePose2D(const CParserBase::CParseEntity_XYT_Edge_2D &r_t_edge, CSystem &r_system) // this is edge constructor how it is called in the parse loop; you need to change type of the edge
- *	        :CSEBaseEdgeImpl<CEdgePose2D, CVertexPose2D, CVertexPose2D, 3>(r_t_edge.m_n_node_0,
- *	        r_t_edge.m_n_node_1, r_t_edge.m_v_delta, r_t_edge.m_t_inv_sigma) // this just calls the base edge implementation, you need to change types and maintain the parameters if
+ *	        :_TyBase(r_t_edge.m_n_node_0,  r_t_edge.m_n_node_1, r_t_edge.m_v_delta, r_t_edge.m_t_inv_sigma) // this just calls the base edge implementation, you need to change types and maintain the parameters if
  *	        required (these are: index of first and of second vertex, the measurement vector and the inverse sigma matrix)
  *	    {
- *	        m_p_vertex0 = &r_system.template r_Get_Vertex<CVertexPose2D>(r_t_edge.m_n_node_0, CInitializeNullVertex());
- *	        m_p_vertex1 = &r_system.template r_Get_Vertex<CVertexPose2D>(r_t_edge.m_n_node_1, CRelative_to_Absolute_XYT_Initializer(m_p_vertex0->v_State(), r_t_edge)); // rename your initializer if required
+ *	        m_p_vertex0 = &r_system.template r_Get_Vertex<CVertexPose2D>(r_t_edge.m_n_node_0, CInitializeNullVertex<>());
+ *	        m_p_vertex1 = &r_system.template r_Get_Vertex<CVertexPose2D>(r_t_edge.m_n_node_1, CRelative_to_Absolute_XYT_Initializer(m_p_vertex0->r_v_State(), r_t_edge)); // rename your initializer if required
  *	        // get vertices (initialize if required)
- *			// the strange syntax with "template" is required by g++, otherwise gives "expected primary-expression before '>' token"
+ *	        // the strange syntax with "template" is required by g++, otherwise gives "expected primary-expression before '>' token"
  *
- *	        _ASSERTE(((CSEBaseVertex*)m_p_vertex0)->n_Dimension() == 3);
- *	        _ASSERTE(((CSEBaseVertex*)m_p_vertex1)->n_Dimension() == 3); // change the dimensionality here, if required (full type control currently not possible to make sure that the indices in the edge really point to vertices that are of the expected type. e.g. the edge might expect both vertices to be poses, but if the dataset is not "nice", one of the vertices can very well be a landmark)
+ *	        _ASSERTE(r_system.r_Vertex_Pool()[r_t_edge.m_n_node0].n_Dimension() == 3); // get the vertices from the vertex pool to ensure a correct type is used, do not use m_p_vertex0 / m_p_vertex1 for this
+ *	        _ASSERTE(r_system.r_Vertex_Pool()[r_t_edge.m_n_node1].n_Dimension() == 3); // change the dimensionality here, if required (full type control currently not possible to make sure that the indices in the edge really point to vertices that are of the expected type. e.g. the edge might expect both vertices to be poses, but if the dataset is not "nice", one of the vertices can very well be a landmark)
  *	        // make sure the dimensionality is correct (might not be)
  *	    }
  *
@@ -422,8 +426,8 @@
  *	        Eigen::Matrix3d &r_t_jacobian1, Eigen::Vector3d &r_v_expectation,
  *	        Eigen::Vector3d &r_v_error) const // change dimensionality of eigen types, if required
  *	    {
- *	        C2DJacobians::Absolute_to_Relative(m_p_vertex0->v_State(),
- *	            m_p_vertex1->v_State(), r_v_expectation, r_t_jacobian0, r_t_jacobian1); // write your jacobian calculation code here (vertex state vectors are inputs, the rest are the outputs
+ *	        C2DJacobians::Absolute_to_Relative(m_p_vertex0->r_v_State(),
+ *	            m_p_vertex1->r_v_State(), r_v_expectation, r_t_jacobian0, r_t_jacobian1); // write your jacobian calculation code here (vertex state vectors are inputs, the rest are the outputs
  *	            that you need to fill)
  *	        // calculates the expectation and the jacobians
  *
@@ -439,7 +443,7 @@
  *	        Calculate_Jacobians_Expectation_Error(p_jacobi[0], p_jacobi[1], v_expectation, v_error);
  *	        // calculates the expectation, error and the jacobians
  *
- *	        return (v_error.transpose() * m_t_sigma_inv).dot(v_error); // ||h_i(O_i) - z_i||^2 lambda_i
+ *	        return (v_error.transpose() * m_t_sigma_inv).dot(v_error); // ||z_i - h_i(O_i)||^2 lambda_i
  *	    }
  *	};
  *	@endcode
@@ -521,8 +525,8 @@
  *	@code{.cpp}
  *	typedef MakeTypelist_Safe((CVertexPose2D, CVertexLandmark2D)) TVertexTypelist; // just put your vertex types in the list (note the double parentheses are required)
  *	typedef MakeTypelist_Safe((CEdgePose2D, CEdgePoseLandmark2D)) TEdgeTypelist; // just put your edge types in the list (note the double parentheses are required)
- *	typedef CFlatSystem<CSEBaseVertex, TVertexTypelist,
- *		CSEBaseEdge, TEdgeTypelist> CSystemType; // the Base types can be your types in case you are not using CBaseSEVertexImpl / CBaseSEEdgeImpl
+ *	typedef CFlatSystem<CBaseVertex, TVertexTypelist,
+ *		CBaseEdge, TEdgeTypelist> CSystemType; // the Base types can be your types in case you are not using CBaseSEVertexImpl / CBaseSEEdgeImpl
  *	// make a system permitting SE(2) vertex and edge types
  *	@endcode
  *
@@ -581,7 +585,7 @@
  *	@section sec8 Modifying Main.cpp to use your new code via commandline
  *
  *	In case you want to update the SLAM_plus_plus program with your new types then you don't have
- *	to write all this, you just find the variable b_10k_opts and follow it arround, mirroring
+ *	to write all this, you just find the variable b_10k_opts and follow it around, mirroring
  *	everything that is done for it - that should also include declaring new system type with your
  *	list of vertices and edges per every solver type you want to support (you might e.g. want to
  *	write b_bundle_adjustment).
@@ -608,13 +612,18 @@ struct TDatasetPeeker : public CParserBase::CParserAdaptor {
 	bool b_has_edge3d; /**< @brief set, if 3D edge (odometry) token was found in the file */
 	bool b_has_vertex3d; /**< @brief set, if 3D vertex token was found in the file */
 	bool b_has_ba; /**< @brief set, if BA token was found in the file */
+	bool b_has_ba_stereo; /**< @brief set, if BA token was found in the file */
+	bool b_has_ba_intrinsics; /**< @brief set, if BA token was found in the file and also intrinsic camera params */
+	bool b_has_spheron; /**< @brief set, if Spheron BA token was found in the file */
+	bool b_has_rocv; /**< @brief set, if ROCV token was found in the file */
 
 	/**
 	 *	@brief peeks at the dataset
 	 */
 	TDatasetPeeker(const char *p_s_input_file, size_t n_max_lines_to_process = 0)
 		:b_has_odometry(false), b_has_landmark(false), b_has_edge2d(false),
-		b_has_vertex(false), b_has_edge3d(false), b_has_vertex3d(false), b_has_ba(false)
+		b_has_vertex(false), b_has_edge3d(false), b_has_vertex3d(false), b_has_ba(false),
+		b_has_ba_stereo(false), b_has_ba_intrinsics(false), b_has_spheron(false), b_has_rocv(false)
 	{
 		CStandardParser p;
 		if(!p.Parse(p_s_input_file, *this, (n_max_lines_to_process > 0)?
@@ -642,7 +651,16 @@ struct TDatasetPeeker : public CParserBase::CParserAdaptor {
 	 *	@brief appends the system with a landmark measurement
 	 *	@param[in] r_t_landmark is the measurement to be appended
 	 */
-	virtual void AppendSystem(const CParserBase::TLandmark2D &UNUSED(r_t_landmark))
+	virtual void AppendSystem(const CParserBase::TLandmark2D_RB &UNUSED(r_t_landmark))
+	{
+		b_has_landmark = true;
+	}
+
+	/**
+	 *	@brief appends the system with a landmark measurement
+	 *	@param[in] r_t_landmark is the measurement to be appended
+	 */
+	virtual void AppendSystem(const CParserBase::TLandmark2D_XY &UNUSED(r_t_landmark))
 	{
 		b_has_landmark = true;
 	}
@@ -664,6 +682,24 @@ struct TDatasetPeeker : public CParserBase::CParserAdaptor {
 	virtual void AppendSystem(const CParserBase::TEdge3D &UNUSED(r_t_edge))
 	{
 		b_has_edge3d = true;
+	}
+
+	/**
+	 *	@brief appends the system with an landmark 3d xyz measurement
+	 *	@param[in] r_t_edge is the measurement to be appended
+	 */
+	virtual void AppendSystem(const CParserBase::TLandmark3D_XYZ &UNUSED(r_t_edge))
+	{
+		b_has_landmark = true;
+	}
+
+	/**
+	 *	@brief appends the system with a projection measurement
+	 *	@param[in] r_t_edge is the measurement to be appended
+	 */
+	virtual void AppendSystem(const CParserBase::TEdgeSpheronXYZ &UNUSED(r_t_edge))
+	{
+		b_has_spheron = true;
 	}
 
 	/**
@@ -697,6 +733,36 @@ struct TDatasetPeeker : public CParserBase::CParserAdaptor {
 	}
 
 	/**
+	 *	@brief appends the system with intrinsics
+	 *	@param[in] r_t_vertex is the vertex to be appended
+	 *	@note The vertices can be ignored in most of the solvers.
+	 */
+	virtual void InitializeVertex(const CParserBase::TVertexIntrinsics &UNUSED(r_t_vertex))
+	{
+		b_has_ba_intrinsics = true;
+	}
+
+	/**
+	 *	@brief appends the system with camera position and parameters
+	 *	@param[in] r_t_vertex is the vertex to be appended
+	 *	@note The vertices can be ignored in most of the solvers.
+	 */
+	virtual void InitializeVertex(const CParserBase::TVertexSCam3D &UNUSED(r_t_vertex))
+	{
+		b_has_ba_stereo = true;
+	}
+
+	/**
+	 *	@brief appends the system with camera position and parameters
+	 *	@param[in] r_t_vertex is the vertex to be appended
+	 *	@note The vertices can be ignored in most of the solvers.
+	 */
+	virtual void InitializeVertex(const CParserBase::TVertexSpheron &UNUSED(r_t_vertex))
+	{
+		b_has_spheron = true;
+	}
+
+	/**
 	 *	@brief appends the system with a projection measurement
 	 *	@param[in] r_t_edge is the measurement to be appended
 	 */
@@ -706,12 +772,58 @@ struct TDatasetPeeker : public CParserBase::CParserAdaptor {
 	}
 
 	/**
-	 *	@brief appends the system with an camera measurement
+	 *	@brief appends the system with a projection measurement
+	 *	@param[in] r_t_edge is the measurement to be appended
+	 */
+	virtual void AppendSystem(const CParserBase::TEdgeP2CI3D &UNUSED(r_t_edge))
+	{
+		b_has_ba_intrinsics = true;
+	}
+
+	/**
+	 *	@brief appends the system with a camera measurement
 	 *	@param[in] r_t_edge is the measurement to be appended
 	 */
 	virtual void AppendSystem(const CParserBase::TEdgeP2SC3D &UNUSED(r_t_edge))
 	{
-		// todo
+		b_has_ba_stereo = true;
+	}
+
+	/**
+	 *	@brief appends the system with a reference 3D pose
+	 *	@param[in] r_t_vertex is the vertex to be appended
+	 *	@note The vertices can be ignored in most of the solvers.
+	 */
+	virtual void InitializeVertex(const CParserBase::TVertex3D_Reference &UNUSED(r_t_vertex))
+	{
+		b_has_rocv = true;
+	}
+
+	/**
+	 *	@brief appends the system with a delta-time edge
+	 *	@param[in] r_t_edge is the measurement to be appended
+	 */
+	virtual void AppendSystem(const CParserBase::TROCV_DeltaTimeEdge &UNUSED(r_t_edge))
+	{
+		b_has_rocv = true;
+	}
+
+	/**
+	 *	@brief appends the system with a range measurement edge
+	 *	@param[in] r_t_edge is the measurement to be appended
+	 */
+	virtual void AppendSystem(const CParserBase::TROCV_RangeEdge &UNUSED(r_t_edge))
+	{
+		b_has_rocv = true;
+	}
+
+	/**
+	 *	@brief appends the system with a range measurement edge
+	 *	@param[in] r_t_edge is the measurement to be appended
+	 */
+	virtual void AppendSystem(const CParserBase::TUnaryFactor3D &UNUSED(r_t_edge))
+	{
+		// no vote, could be used in many situations
 	}
 };
 
@@ -728,7 +840,7 @@ struct TDatasetPeeker : public CParserBase::CParserAdaptor {
  *	@tparam CParseLoopType is parse loop template name
  */
 template <class CSystemType,
-	template <class, class, class> class CNonlinearSolverType,
+	template <class, class/*, class*/> class CNonlinearSolverType,
 	template <class> class CEdgeTraitsType,
 	template <class> class CVertexTraitsType,
 	template <class, class, template <class> class, template <class> class> class CParseLoopType>
@@ -749,6 +861,52 @@ public:
 #endif // __USE_CXSPARSE
 #endif // __USE_NATIVE_CHOLESKY
 
+	/**
+	 *	@brief utility for saving the system matrix
+	 *
+	 *	@tparam CSolverType is specialized nonlinear solver type
+	 *	@tparam b_can_dump is solver dump capability flag (extracted from solver traits)
+	 */
+	template <class CSolverType, const bool b_can_dump>
+	class CDumpSystemMatrix {
+	public:
+		/**
+		 *	@brief saves the system matrix
+		 *
+		 *	@param[in] r_solver is solver to save the matrix
+		 *	@param[in] p_s_name is output file name (will be saved in matrix market format)
+		 *
+		 *	@return Returns true on success, false on failure.
+		 */
+		static bool Dump(const CSolverType &r_solver, const char *p_s_name = "system.mtx")
+		{
+			return r_solver.Save_SystemMatrix_MM(p_s_name);
+		}
+	};
+
+	/**
+	 *	@brief utility for saving the system matrix (specialization
+	 *		for solvers that do not support system matrix saving)
+	 *	@tparam CSolverType is specialized nonlinear solver type
+	 */
+	template <class CSolverType>
+	class CDumpSystemMatrix<CSolverType, false> {
+	public:
+		/**
+		 *	@brief saves the system matrix (this only writes a warning that it cant save)
+		 *
+		 *	@param[in] r_solver is solver to save the matrix
+		 *	@param[in] p_s_name is output file name (will be saved in matrix market format)
+		 *
+		 *	@return Returns false.
+		 */
+		static bool Dump(const CSolverType &r_solver, const char *p_s_name = "system.mtx")
+		{
+			fprintf(stderr, "warning: the selected solver cannot save the system matrix\n");
+			return false;
+		}
+	};
+
 public:
 	/**
 	 *	@brief runs optimization of system stored in a file, measures timing
@@ -765,6 +923,7 @@ public:
 	 *	@param[in] b_use_schur is Schur complement flag
 	 *	@param[in] b_show_detailed_timing is detailed timing flag
 	 *	@param[in] b_write_bitmaps is flag for writing (2D) bitmaps of initial and optimized system
+	 *	@param[in] b_write_system_matrix is flag for writing the system matrix (at unspecified state; this is solver dependent)
 	 *
 	 *	@return Returns true on success, false on failure.
 	 */
@@ -772,16 +931,23 @@ public:
 		size_t n_max_lines_to_process, TIncrementalSolveSetting t_incremental_cfg,
 		size_t n_max_final_optimization_iteration_num, double f_final_optimization_threshold,
 		TMarginalsComputationPolicy t_marginals_cfg, bool b_verbose, bool b_use_schur,
-		bool b_show_detailed_timing, bool b_write_bitmaps)
+		bool b_show_detailed_timing, bool b_write_bitmaps, bool b_write_system_matrix)
 	{
 		CSystemType system;
 
 		CLinearSolverType linear_solver;
 		// prepare a linear solver
 
-		typedef typename CSystemType::_TyJacobianMatrixBlockList CMatrixTypelist; // use the default from the system
-		typedef CNonlinearSolverType<CSystemType, CLinearSolverType, CMatrixTypelist> // have to supply CMatrixTypelist because in CTester template there is no default param for CNonlinearSolverType :(
+		//typedef typename CSystemType::_TyJacobianMatrixBlockList CMatrixTypelist; // use the default from the system
+		typedef CNonlinearSolverType<CSystemType, CLinearSolverType/*, CMatrixTypelist*/> // have to supply CMatrixTypelist because in CTester template there is no default param for CNonlinearSolverType :(
 			CSpecializedNonlinearSolverType;
+
+		enum {
+			b_solver_can_save = CSpecializedNonlinearSolverType::solver_ExportsJacobian ||
+				CSpecializedNonlinearSolverType::solver_ExportsHessian ||
+				CSpecializedNonlinearSolverType::solver_ExportsFactor
+		};
+		// see whether the solver can dump a matrix
 
 		CSpecializedNonlinearSolverType nonlinear_solver(system, t_incremental_cfg,
 			t_marginals_cfg, b_verbose, linear_solver, b_use_schur);
@@ -794,8 +960,12 @@ public:
 
 		if(b_verbose && b_use_schur)
 			printf("using Schur complement\n");
-		if(b_verbose && t_marginals_cfg.b_calculate)
-			printf("marginals will be calculated\n");
+		if(b_verbose && t_marginals_cfg.b_calculate) {
+			printf("marginals will be calculated (inc: 0x%x, relin: 0x%x, miss: 0x%x)\n",
+				t_marginals_cfg.n_incremental_policy, t_marginals_cfg.n_relinearize_policy,
+				t_marginals_cfg.n_cache_miss_policy);
+			// print also which parts were selected for update (0xc = diagonal + last column, 0x8 = diagonal, 0x0 = nothing)
+		}
 		// verbose
 
 		CTimer t;
@@ -812,6 +982,10 @@ public:
 		// run the parser, solver incremental function is called
 
 		if(!t_incremental_cfg.t_linear_freq.n_period && !t_incremental_cfg.t_nonlinear_freq.n_period) {
+			if(b_show_detailed_timing) {
+				double f_error = nonlinear_solver.f_Chi_Squared_Error_Denorm();
+				printf("initial denormalized chi2 error: %.2f\n", f_error);
+			}
 			if(b_verbose)
 				fprintf(stderr, "warning: running in batch mode. ignoring time spent in parser\n");
 			t.ResetTimer();
@@ -828,6 +1002,11 @@ public:
 			/*double f_error = nonlinear_solver.f_Chi_Squared_Error_Denorm();
 			printf("denormalized initial chi2 error: %.2lf\n", f_error);*/
 			// need to calculate jacobians & errors first, don't do it ...
+		}
+		if(b_write_system_matrix) {
+			nonlinear_solver.Optimize(0); // force the solver to build the matrices
+			CDumpSystemMatrix<CSpecializedNonlinearSolverType, b_solver_can_save>::Dump(nonlinear_solver);
+			// calls solver.Save_SystemMatrix_MM("system.mtx"); but only if the solver supports it
 		}
 		double f_time_initial_save_end = t.f_Time();
 
@@ -998,6 +1177,7 @@ void DisplaySwitches();
 struct TCommandLineArgs {
 	ENonlinearSolverType n_solver_choice; /**< @brief nonlinear solver selector */
 	bool b_write_bitmaps; /**< @brief bitmaps write flag */
+	bool b_write_system_matrix; /**< @brief matrix write flag */
 	bool b_no_show; /**< @brief bitmaps show flag (only on windows) */
 	bool b_show_commandline; /**< @brief commandline repeat flag */
 	bool b_show_flags; /**< @brief show build flags flag */
@@ -1007,9 +1187,13 @@ struct TCommandLineArgs {
 	bool b_run_matrix_benchmarks; /**< @brief run block matrix benchmarks flag */
 	bool b_run_matrix_unit_tests; /**< @brief run block matrix unit tests flag */
 	bool b_use_old_system; /**< @brief old system flag (deprecated) */
-	bool b_10k_opts; /**< @brief optimize pose-only problems */
+	bool b_pose_only; /**< @brief optimize pose-only problems */
+	bool b_use_spheron; /**< @brief process Spheron SLAM system (stereo spherical camera alignment) @note This is not overriden in commandline but detected in peek-parsing. */
+	bool b_use_rocv; /**< @brief process range-only constant velocity system (triangulated navigation prototype) @note This is not overriden in commandline but detected in peek-parsing. */
 	bool b_use_SE3; /**< @brief process SE3 system @note This is not overriden in commandline but detected in peek-parsing. */
 	bool b_use_BA; /**< @brief process bundle adjustment system @note This is not overriden in commandline but detected in peek-parsing. */
+	bool b_use_BAS; /**< @brief process stereo bundle adjustment system @note This is not overriden in commandline but detected in peek-parsing. */
+	bool b_use_BAI; /**< @brief process bundle adjustment system with intrinsic cam parameters @note This is not overriden in commandline but detected in peek-parsing. */
 	const char *p_s_input_file; /**< @brief path to the data file */
 	int n_max_lines_to_process; /**< @brief maximal number of lines to process */
 	size_t n_linear_solve_each_n_steps; /**< @brief linear solve period, in steps (0 means disabled) */
@@ -1033,6 +1217,7 @@ struct TCommandLineArgs {
 		// solver selection
 
 		b_write_bitmaps = true;
+		b_write_system_matrix = false;
 		b_no_show = false;
 		b_show_commandline = true;
 		b_show_flags = true;
@@ -1045,9 +1230,13 @@ struct TCommandLineArgs {
 		b_run_matrix_benchmarks = false;
 		b_run_matrix_unit_tests = false;
 		b_use_old_system = false; // t_odo - make this commandline
-		b_10k_opts = false;
+		b_pose_only = false;
 		b_use_SE3 = false; // note this is not overriden in commandline but detected in peek-parsing
 		b_use_BA = false; // note this is not overriden in commandline but detected in peek-parsing
+		b_use_BAS = false; // note this is not overriden in commandline but detected in peek-parsing
+		b_use_BAI = false; // note this is not overriden in commandline but detected in peek-parsing
+		b_use_spheron = false;
+		b_use_rocv = false;
 
 		p_s_input_file = 0; /** <@brief path to the data file */
 		n_max_lines_to_process = 0; /** <@brief maximal number of lines to process */
@@ -1098,6 +1287,8 @@ struct TCommandLineArgs {
 				b_do_marginals = true;
 			else if(!strcmp(p_arg_list[i], "--lambda") || !strcmp(p_arg_list[i], "-,\\"))
 				n_solver_choice = nlsolver_Lambda;
+			else if(!strcmp(p_arg_list[i], "--lambda-lm") || !strcmp(p_arg_list[i], "-,\\lm"))
+				n_solver_choice = nlsolver_LambdaLM;
 			else if(!strcmp(p_arg_list[i], "--no-flags") || !strcmp(p_arg_list[i], "-nf"))
 				b_show_flags = false;
 			else if(!strcmp(p_arg_list[i], "--run-matrix-unit-tests") || !strcmp(p_arg_list[i], "-rmut"))
@@ -1106,11 +1297,13 @@ struct TCommandLineArgs {
 				b_show_detailed_timing = false;
 			else if(!strcmp(p_arg_list[i], "--use-old-code") || !strcmp(p_arg_list[i], "-uogc"))
 				b_use_old_system = true;
+			else if(!strcmp(p_arg_list[i], "--dump-system-matrix") || !strcmp(p_arg_list[i], "-dsm"))
+				b_write_system_matrix = true;
 			else if(!strcmp(p_arg_list[i], "--no-bitmaps") || !strcmp(p_arg_list[i], "-nb")) {
 				b_write_bitmaps = false;
 				b_no_show = true; // no bitmaps ... what can it show?
 			} else if(!strcmp(p_arg_list[i], "--pose-only") || !strcmp(p_arg_list[i], "-po"))
-				b_10k_opts = true;
+				b_pose_only = true;
 			else if(!strcmp(p_arg_list[i], "--a-slam") || !strcmp(p_arg_list[i], "-A"))
 				n_solver_choice = nlsolver_A;
 			else if(!strcmp(p_arg_list[i], "--l-slam") || !strcmp(p_arg_list[i], "-L"))
@@ -1176,7 +1369,7 @@ struct TCommandLineArgs {
 	 *
 	 *	@return Returns true on success, false on failure.
 	 */
-	template <class CSystemType, template <class, class, class> class CNonlinearSolverType,
+	template <class CSystemType, template <class, class/*, class*/> class CNonlinearSolverType,
 		template <class> class CEdgeTraitsType, template <class> class CVertexTraitsType,
 		template <class, class, template <class> class vcneedsnamehere,
 		template <class> class vcneedsnamehereaswell> class CParseLoopType>
@@ -1188,15 +1381,20 @@ struct TCommandLineArgs {
 		// todo - assemble this earlier, simplify Run_and_Shout() arglist
 
 		TMarginalsComputationPolicy t_marginals_cfg((b_do_marginals)?
-			marginals::do_calculate : marginals::do_not_calculate);
-		// enable marginals: todo - control it from commandline
+			marginals::do_calculate : marginals::do_not_calculate,
+			frequency::Every((n_nonlinear_solve_each_n_steps)?
+			n_nonlinear_solve_each_n_steps : n_linear_solve_each_n_steps),
+			EBlockMatrixPart(mpart_Diagonal | mpart_LastColumn),
+			EBlockMatrixPart(mpart_Diagonal | mpart_LastColumn), mpart_Nothing);
+		// enable marginals, set the same freq as solver and set mpart_Diagonal | mpart_LastColumn
+		// for both increment / relin, and nothing for miss
 
 		return CTester<CSystemType, CNonlinearSolverType, CEdgeTraitsType,
 			CVertexTraitsType, CParseLoopType>::Run_and_Shout(
 			p_s_input_file, n_max_lines_to_process, t_incremental_cfg, 
 			n_max_final_optimization_iteration_num,
 			f_final_optimization_threshold, t_marginals_cfg, b_verbose, b_use_schur,
-			b_show_detailed_timing, b_write_bitmaps);
+			b_show_detailed_timing, b_write_bitmaps, b_write_system_matrix);
 		// run with parameters
 	}
 };
@@ -1259,11 +1457,46 @@ public:
 int n_Run_BA_Solver(TCommandLineArgs t_args); // throw(std::runtime_error, std::bad_alloc)
 
 /**
- *	@brief runs (pose-only) 3D SLAM with a specified solver
+ *	@brief runs bundle adjustment with a specified solver
+ *	@param[in] t_args is a copy of parsed commandline arguments
+ *	@return Returns 0 on success, -1 on failure.
+ */
+int n_Run_BA_Intrinsics_Solver(TCommandLineArgs t_args); // throw(std::runtime_error, std::bad_alloc)
+
+/**
+ *	@brief runs bundle adjustment with a specified solver
+ *	@param[in] t_args is a copy of parsed commandline arguments
+ *	@return Returns 0 on success, -1 on failure.
+ */
+int n_Run_Spheron_Solver(TCommandLineArgs t_args); // throw(std::runtime_error, std::bad_alloc)
+
+/**
+ *	@brief runs stereo bundle adjustment with a specified solver
+ *	@param[in] t_args is a copy of parsed commandline arguments
+ *	@return Returns 0 on success, -1 on failure.
+ */
+int n_Run_BA_Stereo_Solver(TCommandLineArgs t_args); // throw(std::runtime_error, std::bad_alloc)
+
+/**
+ *	@brief runs range-only constant velocity with a specified solver
+ *	@param[in] t_args is a copy of parsed commandline arguments
+ *	@return Returns 0 on success, -1 on failure.
+ */
+int n_Run_ROCV_Solver(TCommandLineArgs t_args); // throw(std::runtime_error, std::bad_alloc)
+
+/**
+ *	@brief runs pose-landmark 3D SLAM with a specified solver
  *	@param[in] t_args is a copy of parsed commandline arguments
  *	@return Returns 0 on success, -1 on failure.
  */
 int n_Run_SE3_Solver(TCommandLineArgs t_args); // throw(std::runtime_error, std::bad_alloc)
+
+/**
+ *	@brief runs (pose-only) 3D SLAM with a specified solver
+ *	@param[in] t_args is a copy of parsed commandline arguments
+ *	@return Returns 0 on success, -1 on failure.
+ */
+int n_Run_SE3PoseOnly_Solver(TCommandLineArgs t_args); // throw(std::runtime_error, std::bad_alloc)
 
 /**
  *	@brief runs 2D SLAM with a specified solver
@@ -1279,4 +1512,4 @@ int n_Run_SE2_Solver(TCommandLineArgs t_args); // throw(std::runtime_error, std:
  */
 int n_Run_SE2PoseOnly_Solver(TCommandLineArgs t_args); // throw(std::runtime_error, std::bad_alloc)
 
-#endif // __SLAMPP_MAIN_INCLUDED
+#endif // !__SLAMPP_MAIN_INCLUDED

@@ -253,4 +253,4 @@ protected:
 	static inline uint8_t n_Red(uint32_t n_rgba);
 };
 
-#endif // __TARGA_INCLUDED
+#endif // !__TARGA_INCLUDED

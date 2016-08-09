@@ -22,7 +22,6 @@
 #include "slam/LinearSolver_CholMod.h" // linear solvers (only one is required)
 #include "slam/ConfigSolvers.h" // nonlinear graph solvers
 #include "slam/SE2_Types.h" // SE(2) types
-#include "slam/Marginals.h" // covariance calculation
 
 #if defined(_WIN32) || defined(_WIN64)
 #define NOMINMAX
@@ -81,16 +80,6 @@ int main(int UNUSED(n_arg_num), const char **UNUSED(p_arg_list))
 
 	solver.Optimize();
 	// optimize the system
-
-	/*const CUberBlockMatrix &lambda = solver.r_Lambda();
-	// get system matrix
-
-	CUberBlockMatrix R;
-	R.CholeskyOf(lambda);
-	// take Cholesky
-
-	CMarginals::Marginals_Test(R, 3);*/
-	// test the marginals
 
 	system.Plot2D("result.tga", plot_quality::plot_Printing); // plot in print quality
 	solver.Dump(); // show some stats
@@ -262,11 +251,11 @@ void Add_More_ManhattanEdges(CSystemType &system, Eigen::Matrix3d information)
  *	Once we have the lists, we can specialize our system (will contain graph of vertices and measurements):
  *
  *	@code
- *	typedef CFlatSystem<CSEBaseVertex, TVertexTypelist,
- *		CSEBaseEdge, TEdgeTypelist> CSystemType;
+ *	typedef CFlatSystem<CBaseVertex, TVertexTypelist,
+ *		CBaseEdge, TEdgeTypelist> CSystemType;
  *	@endcode
  *
- *	Here, CSEBaseVertex is base class of all the vertices, CSEBaseEdge is base clas of all the edges.
+ *	Here, CBaseVertex is base class of all the vertices, CBaseEdge is base clas of all the edges.
  *	In case only a single type of vertex or edge is used, it can be its own base type (it is ever so slightly
  *	faster as the compiler can inline some of the function calls which would otherwise need to be virtual).
  *	Now an instance of the CSystemType can hold our system.

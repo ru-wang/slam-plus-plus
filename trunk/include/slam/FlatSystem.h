@@ -36,7 +36,7 @@
  *
  *	t_odo - figure out what else the edge needs to implement and add it, implement ASLAM solver
  *		and test it with the new structure
- *	@todo - describe the "virtual call evasion" technique used here
+ *	t_odo - describe the "virtual call evasion" technique used here
  *	t_odo - figure out what operations can be possibly offloaded to solver to simplify the edge
  *			(and vertex) classes // created base edge and vertex implementation templates
  *	t_odo - handle the unary factor bussiness nicely
@@ -71,6 +71,7 @@
 #include "slam/TypeList.h"
 #include "slam/Segregated.h"
 #include "slam/BlockMatrix.h"
+#include "slam/BaseInterface.h"
 
 /**
  *	@def __BASE_TYPES_USE_ID_ADDRESSING
@@ -83,9 +84,9 @@
 /**
  *	@def __FLAT_SYSTEM_USE_SIZE2D_FOR_BLOCK_SIZE
  *	@brief if defined, CFlatSystem::_TyJacobianMatrixBlockList and
- *		CFlatSystem::_TyHessianMatrixBlockList will contain lists of __fbs_ut::CCTSize2D
+ *		CFlatSystem::_TyHessianMatrixBlockList will contain lists of fbs_ut::CCTSize2D
  *		instead of Eigen::Matrix specializazions
- *	@note This speeds up compilation as __fbs_ut::CCTSize2D is easier to resolve.
+ *	@note This speeds up compilation as fbs_ut::CCTSize2D is easier to resolve.
  */
 #define __FLAT_SYSTEM_USE_SIZE2D_FOR_BLOCK_SIZE
 
@@ -93,6 +94,94 @@
 #define __USE_ALIGNED_MULTIPOOL
 #endif // !_WIN32 && !_WIN64*/ // aligned SE(2) types do not work, don't align, it's slower
 // decide whether to align pool data // todo - document it and add manual overrides
+
+/**
+ *	@brief basic implementation of null unary factor initializer 
+ *	@note An explicit UF needsto be provided to make the system matrix positive definite.
+ */
+class CNullUnaryFactorFactory {
+public:
+	/**
+	 *	@brief initializes unary factor, based on the first edge introduced to the system
+	 *
+	 *	@tparam CEdge is edge type
+	 *
+	 *	@param[out] r_t_unary_factor is the unary factor matrix
+	 *	@param[out] r_v_unary_error is the error vector associated with the first vertex
+	 *	@param[in] r_edge is the first edge in the system
+	 */
+	template <class CEdge>
+	inline void operator ()(Eigen::MatrixXd &r_t_unary_factor,
+		Eigen::VectorXd &r_v_unary_error, const CEdge &r_edge)
+	{
+		typedef typename CEdge::template CVertexTraits<0> VT; // g++
+		size_t n_edge_dimension = VT::n_dimension;
+		r_t_unary_factor.resize(n_edge_dimension, n_edge_dimension); // unary factor is a unit matrix
+		r_t_unary_factor.setZero();
+		r_v_unary_error = Eigen::VectorXd(n_edge_dimension);
+		r_v_unary_error.setZero(); // no error on the first vertex
+	}
+
+	/**
+	 *	@brief determines dimension of the first vertex (assumed to be in the edge)
+	 *	@tparam CEdge is edge type
+	 *	@param[in] r_edge is the first edge in the system
+	 *	@return Returns the dimension of the first vertex in the system.
+	 *	@note This is currently unused.
+	 */
+	template <class CEdge>
+	static size_t n_FirstVertex_Dimension(const CEdge &r_edge)
+	{
+		int p_vertex_dimension[CEdge::n_vertex_num];
+		Get_VertexDimensions(p_vertex_dimension, r_edge, fbs_ut::CCTSize<0>());
+		size_t n_first_vertex_dimension = size_t(-1);
+		for(int i = 0; i < int(CEdge::n_vertex_num); ++ i) {
+			if(!r_edge.n_Vertex_Id(i)) {
+				n_first_vertex_dimension = p_vertex_dimension[i];
+				break;
+			}
+		}
+		_ASSERTE(n_first_vertex_dimension != size_t(-1)); // if this triggers, this edge does not have vertex with id 0, and is therefore not the first edge in the system
+		// need to use the dimension of vertex 0
+		// complicated, complicated ...
+
+		return n_first_vertex_dimension;
+	}
+
+protected:
+	/**
+	 *	@brief copy vertex dimensions to an array
+	 *
+	 *	@tparam CEdge is edge type
+	 *	@tparam n_index is zero-based vertex index (inside the edge)
+	 *
+	 *	@param[out] p_vertex_dimension is destination array for the vertex dimensions (must be allocated by the caller)
+	 *	@param[in] r_edge is edge instance (value unused, only here to deduce type)
+	 *	@param[in] tag is tag for tag based dispatch (value unused)
+	 */
+	template <class CEdge, const int n_index>
+	static inline void Get_VertexDimensions(int *p_vertex_dimension,
+		const CEdge &r_edge, fbs_ut::CCTSize<n_index> UNUSED(tag))
+	{
+		typedef typename CEdge::template CVertexTraits<n_index> VT; // g++
+		p_vertex_dimension[n_index] = VT::n_dimension;
+		Get_VertexDimensions(p_vertex_dimension, r_edge, fbs_ut::CCTSize<n_index + 1>());
+	}
+
+	/**
+	 *	@brief copy vertex dimensions to an array (specialization for the end of the array)
+	 *
+	 *	@tparam CEdge is edge type
+	 *
+	 *	@param[out] p_vertex_dimension is destination array for the vertex dimensions (unused here)
+	 *	@param[in] r_edge is edge instance (value unused, only here to deduce type)
+	 *	@param[in] tag is tag for tag based dispatch (value unused)
+	 */
+	template <class CEdge>
+	static inline void Get_VertexDimensions(int *UNUSED(p_vertex_dimension), const CEdge &UNUSED(r_edge),
+		fbs_ut::CCTSize<CEdge::n_vertex_num> UNUSED(tag))
+	{}
+};
 
 /**
  *	@brief very basic implementation of unary factor initialization that uses unit UF
@@ -108,9 +197,10 @@ public:
 	 */
 	template <class CEdge>
 	inline void operator ()(Eigen::MatrixXd &r_t_unary_factor,
-		Eigen::VectorXd &r_v_unary_error, const CEdge &UNUSED(r_edge))
+		Eigen::VectorXd &r_v_unary_error, const CEdge &r_edge)
 	{
-		size_t n_edge_dimension = CEdge::n_vertex0_dimension;
+		typedef typename CEdge::template CVertexTraits<0> VT; // g++
+		size_t n_edge_dimension = VT::n_dimension;
 		r_t_unary_factor.resize(n_edge_dimension, n_edge_dimension); // unary factor is a unit matrix
 		r_t_unary_factor.setIdentity();
 		r_v_unary_error = Eigen::VectorXd(n_edge_dimension);
@@ -146,7 +236,24 @@ public:
  *	@brief multiple data type (heterogenous), yet statically typed pools
  *	@todo - put this to multipool.h or something
  */
-namespace __multipool {
+namespace multipool {
+
+/**
+ *	@brief static assertion helper
+ *	@brief b_expression is expression being asserted
+ */
+template <const bool b_expression>
+class CStaticAssert {
+public:
+	typedef void BASE_TYPE_MUST_MATCH_THE_ONLY_TYPE_IN_THE_LIST; /**< @brief static assertion tag; when defining multipools with just a single type, the base type is required to be the same as that type */
+	typedef void REQUESTED_TYPE_MISMATCH; /**< @brief static assertion tag; when calling CMultiPool::r_At(), the requested type must match one of the types in the list the CMultiPool was specialized with */
+};
+
+/**
+ *	@brief static assertion helper (specialization for assertion failed)
+ */
+template <>
+class CStaticAssert<false> {};
 
 /**
  *	@brief list of pools per every data type in the list
@@ -169,14 +276,16 @@ public:
 	 *	@param[out] r_p_storage is pointer to the place where the element is stored
 	 *	@param[in] t_payload is initialization value for the new element
 	 *
+	 *	@return Returns index of the pool the element was added to.
+	 *
 	 *	@note This function throws std::bad_alloc.
 	 */
 	template <class CGenericPalyoadType>
-	inline void AddElement(CGenericPalyoadType *&r_p_storage, CGenericPalyoadType t_payload)
+	inline int n_AddElement(CGenericPalyoadType *&r_p_storage, CGenericPalyoadType t_payload)
 	{
-		m_recurse.AddElement(r_p_storage, t_payload); // not this type of payload, perhaps recurse can contain it
+		return 1 + m_recurse.n_AddElement(r_p_storage, t_payload); // not this type of payload, perhaps recurse can contain it
 		// note that if the compiler generates errors here, the type geing inserted is most likely not on the list
-		// @todo - make static assertion here that would print a human-readable message as well
+		// t_odo - make static assertion here that would print a human-readable message as well
 	}
 
 	/**
@@ -185,12 +294,15 @@ public:
 	 *	@param[out] r_p_storage is pointer to the place where the element is stored
 	 *	@param[in] t_payload is initialization value for the new element
 	 *
+	 *	@return Returns index of the pool the element was added to.
+	 *
 	 *	@note This function throws std::bad_alloc.
 	 */
-	inline void AddElement(TPayloadType *&r_p_storage, TPayloadType t_payload)
+	inline int n_AddElement(TPayloadType *&r_p_storage, TPayloadType t_payload)
 	{
 		m_pool.push_back(t_payload); // our type of payload
 		r_p_storage = &*(m_pool.end() - 1); // return pointer to the payload
+		return 0;
 	}
 
 	/**
@@ -210,13 +322,34 @@ public:
 	{
 		return m_pool;
 	}
+
+	/**
+	 *	@brief calculates the size of this object in memory
+	 *	@return Returns the size of this object (and of all associated
+	 *		arrays or buffers) in memory, in bytes.
+	 */
+	size_t n_Allocation_Size() const
+	{
+		return sizeof(CPoolList<CListType, n_pool_page_size, n_pool_memory_align>) -
+			sizeof(m_recurse) + m_pool.capacity() * sizeof(TPayloadType) +
+			m_pool.page_num() * sizeof(TPayloadType*);
+	}
 };
 
 /**
  *	@brief list of pools per every data type in the list (the list terminator specialization)
  */
 template <const int n_pool_page_size, const int n_pool_memory_align>
-class CPoolList<CTypelistEnd, n_pool_page_size, n_pool_memory_align> {};
+class CPoolList<CTypelistEnd, n_pool_page_size, n_pool_memory_align> {
+public:
+	/**
+	 *	@copydoc CPoolList::n_Allocation_Size()
+	 */
+	inline size_t n_Allocation_Size() const
+	{
+		return 0;
+	}
+};
 
 /**
  *	@brief heterogenous (but static) pool container
@@ -243,9 +376,33 @@ public:
 	typedef CBaseType _TyBaseType; /**< @brief base type of items being stored in the multipool */
 	typedef CTypelist _TyTypelist; /**< @brief list of types being stored in the multipool */
 
-protected:
+#ifndef __FLAT_SYSTEM_USE_THUNK_TABLE
+	typedef _TyBaseType &_TyBaseRef; /**< @brief base type reference */
+	typedef const _TyBaseType &_TyConstBaseRef; /**< @brief base type const */
+#else // !__FLAT_SYSTEM_USE_THUNK_TABLE
+	typedef CFacadeTraits<CBaseType> _TyFacade; /**< @brief facade traits */
+	typedef typename _TyFacade::_TyReference _TyBaseRef; /**< @brief base type reference (wrapped in a facade interface) */
+	typedef typename _TyFacade::_TyConstReference _TyConstBaseRef; /**< @brief base type const (wrapped in a facade interface) */
+#endif // !__FLAT_SYSTEM_USE_THUNK_TABLE
 
-	std::vector<_TyBaseType*> m_uniform_list;  /**< @brief list of pointers with uniform data types (use virtual functions) */
+protected:
+#ifdef __FLAT_SYSTEM_USE_THUNK_TABLE
+	/**
+	 *	@brief intermediates, stored as enum
+	 */
+	enum {
+		type_Count = CTypelistLength<CTypelist>::n_result, /**< @brief number of data types in the pool */
+		type_Id_Bit_Num = n_Log2_Static(n_Make_POT_Static(type_Count - 1)), /**< @brief number of bits required to store a type id */
+		type_Id_Byte_Num = (type_Id_Bit_Num + 7) / 8 /**< @brief number of bytes required to store a type id */
+	};
+
+	typedef MakeTypelist(uint8_t, uint8_t, uint16_t, int32_t, uint32_t,
+		int64_t, int64_t, int64_t, uint64_t) CIntList; /**< @brief helper list of integer types that can handle a given number of types (zero-based index) */
+	typedef typename CTypelistItemAt<CIntList, type_Id_Byte_Num>::_TyResult CTypeIdIntType; /**< @brief integral type, able to store a type id */
+
+	std::vector<CTypeIdIntType> m_type_id_list; /**< @brief list of type ids (zero-based index in _TyTypelist) */
+#endif // __FLAT_SYSTEM_USE_THUNK_TABLE
+	std::vector<_TyBaseType*> m_uniform_list; /**< @brief list of pointers with uniform data types (use virtual functions) */
 	CPoolList<_TyTypelist, pool_PageSize, pool_MemoryAlign> m_pool_list;  /**< @brief list of all the pools for all the data types */
 
 	/**
@@ -288,27 +445,6 @@ protected:
 		}
 	};
 
-	/*template <class COp>
-	class CConstDereference {
-	protected:
-		COp m_op;
-
-	public:
-		inline CConstDereference(COp op)
-			:m_op(op)
-		{}
-
-		inline void operator ()(const _TyBaseType *p_elem)
-		{
-			m_op(*p_elem);
-		}
-
-		inline operator COp() const
-		{
-			return m_op;
-		}
-	};*/
-
 public:
 	/**
 	 *	@brief adds an element to the multipool (at the end)
@@ -323,7 +459,12 @@ public:
 	CGenericPalyoadType &r_Add_Element(CGenericPalyoadType t_payload) // throw(std::bad_alloc)
 	{
 		CGenericPalyoadType *p_storage;
-		m_pool_list.AddElement(p_storage, t_payload);
+		int n_type_id = m_pool_list.n_AddElement(p_storage, t_payload);
+#ifdef __FLAT_SYSTEM_USE_THUNK_TABLE
+		_ASSERTE(n_type_id >= 0 && n_type_id < type_Count);
+		_ASSERTE(CTypeIdIntType(n_type_id) == n_type_id);
+		m_type_id_list.push_back(CTypeIdIntType(n_type_id));
+#endif // __FLAT_SYSTEM_USE_THUNK_TABLE
 		m_uniform_list.push_back(static_cast<CBaseType*>(p_storage));
 		return *p_storage;
 	}
@@ -347,23 +488,97 @@ public:
 	}
 
 	/**
-	 *	@brief gets an element
+	 *	@brief calculates the size of this object in memory
+	 *	@return Returns the size of this object (and of all associated
+	 *		arrays or buffers) in memory, in bytes.
+	 */
+	size_t n_Allocation_Size() const
+	{
+		return m_uniform_list.capacity() * sizeof(_TyBaseType*) +
+#ifdef __FLAT_SYSTEM_USE_THUNK_TABLE
+			m_type_id_list.capacity() * sizeof(CTypeIdIntType) +
+#endif // __FLAT_SYSTEM_USE_THUNK_TABLE
+			sizeof(CMultiPool<CBaseType, CTypelist, n_pool_page_size>) -
+			sizeof(m_pool_list) + m_pool_list.n_Allocation_Size();
+	}
+
+	/**
+	 *	@brief gets an element with a specified type
+	 *	@tparam CRequestedType is type of the element (must be one of types in
+	 *		_TyTypelist and must match the type the specified element was created as)
 	 *	@param[in] n_index is zero-based element index
 	 *	@return Returns a reference to the selected element.
 	 */
-	inline _TyBaseType &operator [](size_t n_index)
+	template <class CRequestedType>
+	inline CRequestedType &r_At(size_t n_index)
 	{
-		return *m_uniform_list[n_index];
+		typedef typename CStaticAssert<CFindTypelistItem<_TyTypelist,
+			CRequestedType>::b_result>::REQUESTED_TYPE_MISMATCH CAssert0; // if this triggers, either the type you request is not in the system, or you are confusing vertex pool with edge pool
+		// the type requested must be one of the types in the list
+
+#ifdef __FLAT_SYSTEM_USE_THUNK_TABLE
+		enum {
+			compiletime_TypeId = CFindTypelistItem<_TyTypelist, CRequestedType>::n_index
+		};
+		_ASSERTE(compiletime_TypeId == m_type_id_list[n_index]);
+		// make sure that the requested type matches the type id at runtime
+#endif // __FLAT_SYSTEM_USE_THUNK_TABLE
+
+		return *static_cast<CRequestedType*>(m_uniform_list[n_index]);
+	}
+
+	/**
+	 *	@brief gets an element with a specified type
+	 *	@tparam CRequestedType is type of the element (must be one of types in
+	 *		_TyTypelist and must match the type the specified element was created as)
+	 *	@param[in] n_index is zero-based element index
+	 *	@return Returns a const reference to the selected element.
+	 */
+	template <class CRequestedType>
+	inline const CRequestedType &r_At(size_t n_index) const
+	{
+		typedef typename CStaticAssert<CFindTypelistItem<_TyTypelist,
+			CRequestedType>::b_result>::REQUESTED_TYPE_MISMATCH CAssert0; // if this triggers, either the type you request is not in the system, or you are confusing vertex pool with edge pool
+		// the type requested must be one of the types in the list
+
+#ifdef __FLAT_SYSTEM_USE_THUNK_TABLE
+		enum {
+			compiletime_TypeId = CFindTypelistItem<_TyTypelist, CRequestedType>::n_index
+		};
+		_ASSERTE(compiletime_TypeId == m_type_id_list[n_index]);
+		// make sure that the requested type matches the type id at runtime
+#endif // __FLAT_SYSTEM_USE_THUNK_TABLE
+
+		return *static_cast<const CRequestedType*>(m_uniform_list[n_index]);
 	}
 
 	/**
 	 *	@brief gets an element
 	 *	@param[in] n_index is zero-based element index
-	 *	@return Returns a const reference to the selected element.
+	 *	@return Returns a polymorphic wrapper of the selected element.
 	 */
-	inline const _TyBaseType &operator [](size_t n_index) const
+	inline _TyBaseRef operator [](size_t n_index)
 	{
+#ifdef __FLAT_SYSTEM_USE_THUNK_TABLE
+		return _TyFacade::template H<_TyTypelist>::MakeRef(*m_uniform_list[n_index], m_type_id_list[n_index]);
+#else // __FLAT_SYSTEM_USE_THUNK_TABLE
 		return *m_uniform_list[n_index];
+		// this is a problem, as even vertex state accessor is virtual, need to make a thunkinterface
+#endif // __FLAT_SYSTEM_USE_THUNK_TABLE
+	}
+
+	/**
+	 *	@brief gets an element
+	 *	@param[in] n_index is zero-based element index
+	 *	@return Returns a polymorphic wrapper of the selected element.
+	 */
+	inline _TyConstBaseRef operator [](size_t n_index) const
+	{
+#ifdef __FLAT_SYSTEM_USE_THUNK_TABLE
+		return _TyFacade::template H<_TyTypelist>::MakeRef(*m_uniform_list[n_index], m_type_id_list[n_index]);
+#else // __FLAT_SYSTEM_USE_THUNK_TABLE
+		return *m_uniform_list[n_index];
+#endif // __FLAT_SYSTEM_USE_THUNK_TABLE
 	}
 
 	/**
@@ -376,8 +591,38 @@ public:
 	template <class COp>
 	COp For_Each(COp op)
 	{
+#ifdef __FLAT_SYSTEM_USE_THUNK_TABLE
+		base_iface::CThunkTable<_TyBaseType, _TyTypelist, COp&> &thunk_table =
+			base_iface::CFacadeAgglomerator<base_iface::CThunkTable<_TyBaseType, _TyTypelist, COp&> >::r_Get();
+		for(size_t i = 0, n = m_uniform_list.size(); i < n; ++ i)
+			thunk_table[m_type_id_list[i]](m_uniform_list[i], op);
+		return op;
+#else // __FLAT_SYSTEM_USE_THUNK_TABLE
 		return std::for_each(m_uniform_list.begin(),
 			m_uniform_list.end(), CDereference<COp>(op));
+#endif // __FLAT_SYSTEM_USE_THUNK_TABLE
+	}
+
+	/**
+	 *	@brief iterates over all the elements in this multipool and performs operation on each
+	 *	@tparam COp is client function object
+	 *	@param[in] op is instance of the client function object
+	 *	@return Returns instance of the client function object,
+	 *		after performing all the operations (can e.g. perform reduction).
+	 */
+	template <class COp>
+	COp For_Each(COp op) const
+	{
+#ifdef __FLAT_SYSTEM_USE_THUNK_TABLE
+		base_iface::CThunkTable<_TyBaseType, _TyTypelist, COp&> &thunk_table =
+			base_iface::CFacadeAgglomerator<base_iface::CThunkTable<_TyBaseType, _TyTypelist, COp&> >::r_Get();
+		for(size_t i = 0, n = m_uniform_list.size(); i < n; ++ i)
+			thunk_table[m_type_id_list[i]](m_uniform_list[i], op);
+		return op;
+#else // __FLAT_SYSTEM_USE_THUNK_TABLE
+		return std::for_each(m_uniform_list.begin(),
+			m_uniform_list.end(), CDereference<COp>(op));
+#endif // __FLAT_SYSTEM_USE_THUNK_TABLE
 	}
 
 	/**
@@ -395,6 +640,15 @@ public:
 	template <class COp>
 	void For_Each_Parallel(COp op, const int n_parallel_thresh = 50)
 	{
+#ifdef __FLAT_SYSTEM_USE_THUNK_TABLE
+		base_iface::CThunkTable<_TyBaseType, _TyTypelist, COp> &thunk_table =
+			base_iface::CFacadeAgglomerator<base_iface::CThunkTable<_TyBaseType, _TyTypelist, COp> >::r_Get();
+		_ASSERTE(m_uniform_list.size() <= INT_MAX);
+		const int n = int(m_uniform_list.size());
+		#pragma omp parallel for default(shared) if(n >= n_parallel_thresh)
+		for(int i = 0; i < n; ++ i)
+			thunk_table[m_type_id_list[i]](m_uniform_list[i], op);
+#else // __FLAT_SYSTEM_USE_THUNK_TABLE
 #ifdef _OPENMP
 		_ASSERTE(m_uniform_list.size() <= INT_MAX);
 		const int n = int(m_uniform_list.size());
@@ -404,6 +658,43 @@ public:
 #else // _OPENMP
 		std::for_each(m_uniform_list.begin(), m_uniform_list.end(), CDereference<COp>(op));
 #endif // _OPENMP
+#endif // __FLAT_SYSTEM_USE_THUNK_TABLE
+	}
+
+	/**
+	 *	@brief iterates over all the elements in this multipool and performs operation on each
+	 *
+	 *	@tparam COp is client function object
+	 *
+	 *	@param[in] op is instance of the client function object
+	 *	@param[in] n_parallel_thresh is threshold for parallelized processing
+	 *
+	 *	@note This performs the iteration in parallel, the function object must be reentrant.
+	 *	@note This does not return the function object (avoids synchronization
+	 *		and explicit reduction).
+	 */
+	template <class COp>
+	void For_Each_Parallel(COp op, const int n_parallel_thresh = 50) const
+	{
+#ifdef __FLAT_SYSTEM_USE_THUNK_TABLE
+		base_iface::CThunkTable<_TyBaseType, _TyTypelist, COp> &thunk_table =
+			base_iface::CFacadeAgglomerator<base_iface::CThunkTable<_TyBaseType, _TyTypelist, COp> >::r_Get();
+		_ASSERTE(m_uniform_list.size() <= INT_MAX);
+		const int n = int(m_uniform_list.size());
+		#pragma omp parallel for default(shared) if(n >= n_parallel_thresh)
+		for(int i = 0; i < n; ++ i)
+			thunk_table[m_type_id_list[i]](m_uniform_list[i], op);
+#else // __FLAT_SYSTEM_USE_THUNK_TABLE
+#ifdef _OPENMP
+		_ASSERTE(m_uniform_list.size() <= INT_MAX);
+		const int n = int(m_uniform_list.size());
+		#pragma omp parallel for default(shared) if(n >= n_parallel_thresh)
+		for(int i = 0; i < n; ++ i)
+			op(*m_uniform_list[i]);
+#else // _OPENMP
+		std::for_each(m_uniform_list.begin(), m_uniform_list.end(), CDereference<COp>(op));
+#endif // _OPENMP
+#endif // __FLAT_SYSTEM_USE_THUNK_TABLE
 	}
 
 	/**
@@ -424,8 +715,46 @@ public:
 	{
 		_ASSERTE(n_first <= n_last);
 		_ASSERTE(n_last <= m_uniform_list.size());
+#ifdef __FLAT_SYSTEM_USE_THUNK_TABLE
+		base_iface::CThunkTable<_TyBaseType, _TyTypelist, COp&> &thunk_table =
+			base_iface::CFacadeAgglomerator<base_iface::CThunkTable<_TyBaseType, _TyTypelist, COp&> >::r_Get();
+		for(size_t i = n_first; i < n_last; ++ i)
+			thunk_table[m_type_id_list[i]](m_uniform_list[i], op);
+		return op;
+#else // __FLAT_SYSTEM_USE_THUNK_TABLE
 		return std::for_each(m_uniform_list.begin() + n_first,
 			m_uniform_list.begin() + n_last, CDereference<COp>(op));
+#endif // __FLAT_SYSTEM_USE_THUNK_TABLE
+	}
+
+	/**
+	 *	@brief iterates over a selected range of elements
+	 *		in this multipool and performs operation on each
+	 *
+	 *	@tparam COp is client function object
+	 *
+	 *	@param[in] n_first is zero-based index of the first element to be processed
+	 *	@param[in] n_last is zero-based index of one after the last element to be processed
+	 *	@param[in] op is instance of the client function object
+	 *
+	 *	@return Returns instance of the client function object,
+	 *		after performing all the operations (can e.g. perform reduction).
+	 */
+	template <class COp>
+	COp For_Each(size_t n_first, size_t n_last, COp op) const
+	{
+		_ASSERTE(n_first <= n_last);
+		_ASSERTE(n_last <= m_uniform_list.size());
+#ifdef __FLAT_SYSTEM_USE_THUNK_TABLE
+		base_iface::CThunkTable<_TyBaseType, _TyTypelist, COp&> &thunk_table =
+			base_iface::CFacadeAgglomerator<base_iface::CThunkTable<_TyBaseType, _TyTypelist, COp&> >::r_Get();
+		for(size_t i = n_first; i < n_last; ++ i)
+			thunk_table[m_type_id_list[i]](m_uniform_list[i], op);
+		return op;
+#else // __FLAT_SYSTEM_USE_THUNK_TABLE
+		return std::for_each(m_uniform_list.begin() + n_first,
+			m_uniform_list.begin() + n_last, CDereference<COp>(op));
+#endif // __FLAT_SYSTEM_USE_THUNK_TABLE
 	}
 
 	/**
@@ -448,6 +777,15 @@ public:
 	{
 		_ASSERTE(n_first <= n_last);
 		_ASSERTE(n_last <= m_uniform_list.size());
+#ifdef __FLAT_SYSTEM_USE_THUNK_TABLE
+		base_iface::CThunkTable<_TyBaseType, _TyTypelist, COp> &thunk_table =
+			base_iface::CFacadeAgglomerator<base_iface::CThunkTable<_TyBaseType, _TyTypelist, COp> >::r_Get();
+		_ASSERTE(n_last <= INT_MAX);
+		const int n = int(n_last);
+		#pragma omp parallel for default(shared) if(n - int(n_first) >= n_parallel_thresh)
+		for(int i = int(n_first); i < n; ++ i)
+			thunk_table[m_type_id_list[i]](m_uniform_list[i], op);
+#else // __FLAT_SYSTEM_USE_THUNK_TABLE
 #ifdef _OPENMP
 		_ASSERTE(n_last <= INT_MAX);
 		const int n = int(n_last);
@@ -457,21 +795,49 @@ public:
 #else // _OPENMP
 		std::for_each(m_uniform_list.begin() + n_first, m_uniform_list.begin() + n_last, CDereference<COp>(op));
 #endif // _OPENMP
+#endif // __FLAT_SYSTEM_USE_THUNK_TABLE
 	}
 
-	/*template <class COp>
-	void For_Each(COp op) const
-	{
-		std::for_each(m_uniform_list.begin(), m_uniform_list.end(), CConstDereference<COp>(op));
-	}
-
+	/**
+	 *	@brief iterates over a selected range of elements
+	 *		in this multipool and performs operation on each
+	 *
+	 *	@tparam COp is client function object
+	 *	@param[in] n_parallel_thresh is threshold for parallelized processing
+	 *
+	 *	@param[in] n_first is zero-based index of the first element to be processed
+	 *	@param[in] n_last is zero-based index of one after the last element to be processed
+	 *	@param[in] op is instance of the client function object
+	 *
+	 *	@note This performs the iteration in parallel, the function object must be reentrant.
+	 *	@note This does not return the function object (avoids synchronization
+	 *		and explicit reduction).
+	 */
 	template <class COp>
-	void For_Each(size_t n_first, size_t n_last, COp op) const
+	void For_Each_Parallel(size_t n_first, size_t n_last, COp op, const int n_parallel_thresh = 50) const
 	{
 		_ASSERTE(n_first <= n_last);
 		_ASSERTE(n_last <= m_uniform_list.size());
-		std::for_each(m_uniform_list.begin() + n_first, m_uniform_list.begin() + n_last, CConstDereference<COp>(op));
-	}*/
+#ifdef __FLAT_SYSTEM_USE_THUNK_TABLE
+		base_iface::CThunkTable<_TyBaseType, _TyTypelist, COp> &thunk_table =
+			base_iface::CFacadeAgglomerator<base_iface::CThunkTable<_TyBaseType, _TyTypelist, COp> >::r_Get();
+		_ASSERTE(n_last <= INT_MAX);
+		const int n = int(n_last);
+		#pragma omp parallel for default(shared) if(n - int(n_first) >= n_parallel_thresh)
+		for(int i = int(n_first); i < n; ++ i)
+			thunk_table[m_type_id_list[i]](m_uniform_list[i], op);
+#else // __FLAT_SYSTEM_USE_THUNK_TABLE
+#ifdef _OPENMP
+		_ASSERTE(n_last <= INT_MAX);
+		const int n = int(n_last);
+		#pragma omp parallel for default(shared) if(n - int(n_first) >= n_parallel_thresh)
+		for(int i = int(n_first); i < n; ++ i)
+			op(*m_uniform_list[i]);
+#else // _OPENMP
+		std::for_each(m_uniform_list.begin() + n_first, m_uniform_list.begin() + n_last, CDereference<COp>(op));
+#endif // _OPENMP
+#endif // __FLAT_SYSTEM_USE_THUNK_TABLE
+	}
 };
 
 /**
@@ -504,7 +870,14 @@ public:
 	typedef CBaseType _TyBaseType; /**< @brief base type of items being stored in the multipool */
 	typedef CDerivedType _TyDerivedType; /**< @brief the only type of items being stored in the multipool */
 
+	typedef _TyBaseType &_TyBaseRef; /**< @brief base type reference */
+	typedef const _TyBaseType &_TyConstBaseRef; /**< @brief base type const */
+
 protected:
+	typedef typename CStaticAssert<CEqualType<_TyBaseType,
+		_TyDerivedType>::b_result>::BASE_TYPE_MUST_MATCH_THE_ONLY_TYPE_IN_THE_LIST CAssert0; /**< @brief static assertion */
+	// this is required so that this class can be made much simpler (and faster)
+
 	forward_allocated_pool<_TyDerivedType, pool_PageSize, pool_MemoryAlign> m_pool; /**< @brief pool for the single type being handled */
 	// (static function binding, no space wasted for base type pointers)
 
@@ -539,19 +912,57 @@ public:
 	}
 
 	/**
+	 *	@brief calculates the size of this object in memory
+	 *	@return Returns the size of this object (and of all associated
+	 *		arrays or buffers) in memory, in bytes.
+	 */
+	size_t n_Allocation_Size() const
+	{
+		return m_pool.capacity() * sizeof(_TyDerivedType) +
+			m_pool.page_num() * sizeof(_TyDerivedType*) +
+			sizeof(CMultiPool<CBaseType, CTypelist<CDerivedType, CTypelistEnd>, n_pool_page_size>);
+	}
+
+	/**
+	 *	@copydoc CMultiPool::r_At(size_t)
+	 */
+	template <class CRequestedType>
+	inline _TyDerivedType &r_At(size_t n_index)
+	{
+		typedef typename CStaticAssert<CEqualType<CRequestedType,
+			_TyDerivedType>::b_result>::REQUESTED_TYPE_MISMATCH CAssert0; // if this triggers, either the type you request is not in the system, or you are confusing vertex pool with edge pool
+		// the type requested must be the derived type, there is no other type
+
+		return m_pool[n_index];
+	}
+
+	/**
+	 *	@copydoc CMultiPool::r_At(size_t)
+	 */
+	template <class CRequestedType>
+	inline const _TyDerivedType &r_At(size_t n_index) const
+	{
+		typedef typename CStaticAssert<CEqualType<CRequestedType,
+			_TyDerivedType>::b_result>::REQUESTED_TYPE_MISMATCH CAssert0; // if this triggers, either the type you request is not in the system, or you are confusing vertex pool with edge pool
+		// the type requested must be the derived type, there is no other type
+
+		return m_pool[n_index];
+	}
+
+	/**
 	 *	@copydoc CMultiPool::operator [](size_t)
 	 */
-	inline _TyBaseType &operator [](size_t n_index)
+	inline _TyBaseRef operator [](size_t n_index)
 	{
-		return static_cast<_TyBaseType&>(m_pool[n_index]);
+		return m_pool[n_index];
 	}
 
 	/**
 	 *	@copydoc CMultiPool::operator [](size_t) const
 	 */
-	inline const _TyBaseType &operator [](size_t n_index) const
+	inline _TyConstBaseRef operator [](size_t n_index) const
 	{
-		return static_cast<const _TyBaseType&>(m_pool[n_index]);
+		return m_pool[n_index];
 	}
 
 	/**
@@ -559,6 +970,15 @@ public:
 	 */
 	template <class COp>
 	COp For_Each(COp op)
+	{
+		return std::for_each(m_pool.begin(), m_pool.end(), op);
+	}
+
+	/**
+	 *	@copydoc CMultiPool::For_Each(COp)
+	 */
+	template <class COp>
+	COp For_Each(COp op) const
 	{
 		return std::for_each(m_pool.begin(), m_pool.end(), op);
 	}
@@ -581,10 +1001,38 @@ public:
 	}
 
 	/**
+	 *	@copydoc CMultiPool::For_Each_Parallel(COp,const int)
+	 */
+	template <class COp>
+	void For_Each_Parallel(COp op, const int n_parallel_thresh = 50) const
+	{
+#ifdef _OPENMP
+		_ASSERTE(m_pool.size() <= INT_MAX);
+		const int n = int(m_pool.size());
+		#pragma omp parallel for default(shared) if(n >= n_parallel_thresh)
+		for(int i = 0; i < n; ++ i)
+			op(m_pool[i]); // todo - write pool::parallel_for_each that would simplify it's pointer arithmetic
+#else // _OPENMP
+		std::for_each(m_pool.begin(), m_pool.end(), op);
+#endif // _OPENMP
+	}
+
+	/**
 	 *	@copydoc CMultiPool::For_Each(size_t,size_t,COp)
 	 */
 	template <class COp>
 	COp For_Each(size_t n_first, size_t n_last, COp op)
+	{
+		_ASSERTE(n_first <= n_last);
+		_ASSERTE(n_last <= m_pool.size());
+		return std::for_each(m_pool.begin() + n_first, m_pool.begin() + n_last, op);
+	}
+
+	/**
+	 *	@copydoc CMultiPool::For_Each(size_t,size_t,COp)
+	 */
+	template <class COp>
+	COp For_Each(size_t n_first, size_t n_last, COp op) const
 	{
 		_ASSERTE(n_first <= n_last);
 		_ASSERTE(n_last <= m_pool.size());
@@ -610,22 +1058,27 @@ public:
 #endif // _OPENMP
 	}
 
-	/*template <class COp>
-	void For_Each(COp op) const
-	{
-		std::for_each(m_pool.begin(), m_pool.end(), op);
-	}
-
+	/**
+	 *	@copydoc CMultiPool::For_Each_Parallel(size_t,size_t,COp,const int)
+	 */
 	template <class COp>
-	void For_Each(size_t n_first, size_t n_last, COp op) const
+	void For_Each_Parallel(size_t n_first, size_t n_last, COp op, const int n_parallel_thresh = 50) const
 	{
 		_ASSERTE(n_first <= n_last);
 		_ASSERTE(n_last <= m_pool.size());
+#ifdef _OPENMP
+		_ASSERTE(n_last <= INT_MAX);
+		const int n = int(n_last);
+		#pragma omp parallel for default(shared) if(n - int(n_first) >= n_parallel_thresh)
+		for(int i = int(n_first); i < n; ++ i)
+			op(m_pool[i]); // todo - write pool::parallel_for_each that would simplify it's pointer arithmetic
+#else // _OPENMP
 		std::for_each(m_pool.begin() + n_first, m_pool.begin() + n_last, op);
-	}*/
+#endif // _OPENMP
+	}
 };
 
-} // ~__multipool
+} // ~multipool
 
 namespace plot_quality {
 
@@ -644,78 +1097,78 @@ enum EQualityProfile {
 /**
  *	@brief optimization system, customized for work with different primitives
  *
- *	@tparam CBaseVertex is base vertex type (all vertex types must be derived from it)
+ *	@tparam CBaseVertexType is base vertex type (all vertex types must be derived from it)
  *	@tparam CVertexTypelist is list of vertex types permitted in the system
- *	@tparam CBaseEdge is base edge type (all edge types must be derived from it)
+ *	@tparam CBaseEdgeType is base edge type (all edge types must be derived from it)
  *	@tparam CEdgeTypelist is list of edge types permitted in the system
  *	@tparam CUnaryFactorFactory is class, responsible for the initialization of unary factor
  *	@tparam b_allow_fixed_vertices is fixed vertex enable flag (fixed vertices need special processing)
  *	@tparam n_pool_page_size is edge or vertex pool page size, in elements
  */
-template <class CBaseVertex, class CVertexTypelist, /*template <class> class CVertexTypeTraits,*/ // unused
-	class CBaseEdge, class CEdgeTypelist, class CUnaryFactorFactory = CBasicUnaryFactorFactory,
+template <class CBaseVertexType, class CVertexTypelist, /*template <class> class CVertexTypeTraits,*/ // unused
+	class CBaseEdgeType, class CEdgeTypelist, class CUnaryFactorFactory = CBasicUnaryFactorFactory,
 	const bool b_allow_fixed_vertices = false, const int n_pool_page_size = 1024>
 class CFlatSystem {
 protected:
 	/**
-	 *	@brief extracts the first jacobian matrix block type from a binary edge
+	 *	@brief extracts sizes of the jacobian matrices from a generic n-ary edge
 	 *	@tparam CEdgeType is an edge type name
 	 */
 	template <class CEdgeType>
-	class CEdgeTypeToFirstAJacobianType {
+	class CEdgeTypeToJacobianSizes {
+	protected:
+		typedef typename CEdgeType::_TyVertices VertexList; /**< @brief list of edge vertices */
+
+		/**
+		 *	@brief gets jacobian dimension for a given vertex
+		 *	@tparam CVertex is vertex type
+		 */
+		template <class CVertex>
+		class CGetDimension {
+		public:
+			typedef fbs_ut::CCTSize2D<CEdgeType::n_measurement_dimension,
+				CVertex::n_dimension> _TyResult; /**< @brief jacobian block size */
+		};
+
 	public:
-		typedef __fbs_ut::CCTSize2D<CEdgeType::n_measurement_dimension,
-			CEdgeType::n_vertex0_dimension> _TyResult; /**< @brief matrix block size */
+		typedef typename CTransformTypelist<VertexList, CGetDimension>::_TyResult _TyResult; /**< @brief list of sizes of vertex blocks */
 	};
 
 	/**
-	 *	@brief extracts the second jacobian matrix block type from a binary edge
+	 *	@brief extracts sizes of the unary factor matrices from a generic n-ary edge
 	 *	@tparam CEdgeType is an edge type name
 	 */
 	template <class CEdgeType>
-	class CEdgeTypeToSecondAJacobianType {
-	public:
-		typedef __fbs_ut::CCTSize2D<CEdgeType::n_measurement_dimension,
-			CEdgeType::n_vertex1_dimension> _TyResult; /**< @brief matrix block size */
-	};
+	class CEdgeTypeToUnaryFactorSizes {
+	protected:
+		typedef typename CEdgeType::_TyVertices VertexList; /**< @brief list of edge vertices */
 
-	/**
-	 *	@brief extracts the first unary factor matrix block type from a binary edge
-	 *	@tparam CEdgeType is an edge type name
-	 */
-	template <class CEdgeType>
-	class CEdgeTypeToFirstUnaryFactorType { // needed if the measurement dimension is different from either vertex dimensions
-	public:
-		typedef __fbs_ut::CCTSize2D<CEdgeType::n_vertex0_dimension,
-			CEdgeType::n_vertex0_dimension> _TyResult; /**< @brief matrix block size */
-	};
+		/**
+		 *	@brief gets unary factor dimension for a given vertex
+		 *	@tparam CVertex is vertex type
+		 */
+		template <class CVertex>
+		class CGetDimension {
+		public:
+			typedef fbs_ut::CCTSize2D<CVertex::n_dimension, CVertex::n_dimension> _TyResult; /**< @brief UF block size */
+		};
 
-	/**
-	 *	@brief extracts the second unary factor matrix block type from a binary edge
-	 *	@tparam CEdgeType is an edge type name
-	 */
-	template <class CEdgeType>
-	class CEdgeTypeToSecondUnaryFactorType { // needed if the measurement dimension is different from either vertex dimensions
 	public:
-		typedef __fbs_ut::CCTSize2D<CEdgeType::n_vertex1_dimension,
-			CEdgeType::n_vertex1_dimension> _TyResult; /**< @brief matrix block size */
+		typedef typename CTransformTypelist<VertexList, CGetDimension>::_TyResult _TyResult; /**< @brief list of sizes of vertex blocks */
 	};
 
 	typedef typename CTransformTypelist<CEdgeTypelist,
-		CEdgeTypeToFirstAJacobianType>::_TyResult TFirstAJacobianList; /**< @brief list of jacobian matrix block types per all the first vertices in all edges (some of the blocks in A) */
+		CEdgeTypeToJacobianSizes>::_TyResult TJacobianLists; /**< @brief list of lists of jacobian matrix block types in all edges (some of the blocks in A) */
 	typedef typename CTransformTypelist<CEdgeTypelist,
-		CEdgeTypeToSecondAJacobianType>::_TyResult TSecondAJacobianList; /**< @brief list of jacobian matrix block types per all the second vertices in all edges (some of the blocks in A) */
-	typedef typename CTransformTypelist<CEdgeTypelist,
-		CEdgeTypeToFirstUnaryFactorType>::_TyResult TFirstAUnaryFactorList; /**< @brief list of unary factor matrix block types per all the first vertices in all edges (some of the blocks in A) */
-	typedef typename CTransformTypelist<CEdgeTypelist,
-		CEdgeTypeToSecondUnaryFactorType>::_TyResult TSecondAUnaryFactorList; /**< @brief list of unary factor matrix block types per all the second vertices in all edges (some of the blocks in A) */
+		CEdgeTypeToUnaryFactorSizes>::_TyResult TUnaryFactorLists; /**< @brief list of lists of unary factor matrix block types in all edges (some of the blocks in A) */
+	// note that UFs don't contribute new dimensions to lambda.
 
-	typedef typename CUniqueTypelist<typename CConcatTypelist<typename
-		CConcatTypelist<TFirstAJacobianList, TFirstAUnaryFactorList>::_TyResult,
-		typename CConcatTypelist<TSecondAJacobianList,
-		TSecondAUnaryFactorList>::_TyResult>::_TyResult>::_TyResult TJacobianMatrixBlockList; /**< @brief list of jacobian and UF matrix block sizes as __fbs_ut::CCTSize2D (blocks in A) */
-	typedef typename __fbs_ut::CBlockSizesAfterPreMultiplyWithSelfTranspose<
-		TJacobianMatrixBlockList>::_TyResult THessianMatrixBlockList; /**< @brief list of hessian matrix block sizes as __fbs_ut::CCTSize2D (blocks in Lambda and L) */
+	typedef typename CUniqueTypelist<typename
+		CConcatListOfTypelists<typename CConcatTypelist<TJacobianLists,
+		TUnaryFactorLists>::_TyResult>::_TyResult>::_TyResult TJacobianMatrixBlockList; /**< @brief list of jacobian and UF matrix block sizes as fbs_ut::CCTSize2D (blocks in A) */
+	typedef typename fbs_ut::CBlockSizesAfterPreMultiplyWithSelfTranspose<
+		TJacobianMatrixBlockList>::_TyResult THessianMatrixBlockList; /**< @brief list of hessian matrix block sizes as fbs_ut::CCTSize2D (blocks in Lambda and L) */
+	// t_odo - this is not good in BA! there are 6x2x3 blocks in A, but only 6x6, 6x3, 3x6 or 3x3 in lambda. this needs to be fixed. now it is fixed (for BA, only 6x6, 6x3, 3x6 and 3x3 are used).
 
 	/**
 	 *	@brief void pool type
@@ -726,7 +1179,7 @@ protected:
 	template <class _TyBase>
 	struct TVoidPool {
 		/**
-		 *	@copydoc __multipool::CMultiPool::n_Size()
+		 *	@copydoc multipool::CMultiPool::n_Size()
 		 */
 		inline size_t n_Size() const
 		{
@@ -734,12 +1187,28 @@ protected:
 		}
 
 		/**
-		 *	@copydoc __multipool::CMultiPool::operator []()
+		 *	@copydoc multipool::CMultiPool::operator []()
 		 */
 		inline _TyBase &operator [](size_t UNUSED(n_index)) const
 		{
 			throw std::runtime_error("attempted element access on void pool");
 			return *((_TyBase*)0);
+		}
+
+		/**
+		 *	@copydoc multipool::CMultiPool::n_Allocation_Size()
+		 */
+		inline size_t n_Allocation_Size() const
+		{
+			return sizeof(TVoidPool<_TyBase>);
+		}
+
+		/**
+		 *	@brief a dummy function to support calculation of allocation size of _TyVertexLookup
+		 */
+		inline size_t capacity() const
+		{
+			return 0;
 		}
 	};
 
@@ -751,33 +1220,39 @@ public:
 	 */
 	enum {
 		pool_PageSize = n_pool_page_size, /**< @brief data storage page size */
-		allow_FixedVertices = (b_allow_fixed_vertices)? 1 : 0 /**< @brief allows / disallows fixed vertices */
+		allow_FixedVertices = (b_allow_fixed_vertices)? 1 : 0, /**< @brief allows / disallows fixed vertices */
+		null_UnaryFactor = CEqualType<CNullUnaryFactorFactory, CUnaryFactorFactory>::b_result /**< @brief explicit unary factor flag */
 	};
 
-	typedef CBaseVertex _TyBaseVertex; /**< @brief the data type for storing vertices */
+	typedef CBaseVertexType _TyBaseVertex; /**< @brief the data type for storing vertices */
 	typedef CVertexTypelist _TyVertexTypelist; /**< @brief list of vertex types */
-	typedef CBaseEdge _TyBaseEdge; /**< @brief the data type for storing measurements */
+	typedef CBaseEdgeType _TyBaseEdge; /**< @brief the data type for storing measurements */
 	typedef CEdgeTypelist _TyEdgeTypelist; /**< @brief list of edge types */
 
 #ifdef __FLAT_SYSTEM_USE_SIZE2D_FOR_BLOCK_SIZE
 	typedef TJacobianMatrixBlockList _TyJacobianMatrixBlockList; /**< @brief list of jacobian and UF matrix block sizes (blocks in A) */
 	typedef THessianMatrixBlockList _TyHessianMatrixBlockList; /**< @brief list of hessian block sizes (blocks in Lambda and L) */
-	// note that these are not Eigen matrix types, but rather __fbs_ut::CCTsize2D, which are easier to resolve for the compiler
+	// note that these are not Eigen matrix types, but rather fbs_ut::CCTsize2D, which are easier to resolve for the compiler
 #else // __FLAT_SYSTEM_USE_SIZE2D_FOR_BLOCK_SIZE
 	typedef typename CTransformTypelist<TJacobianMatrixBlockList,
-		__fbs_ut::CDimensionToEigen>::_TyResult _TyJacobianMatrixBlockList; /**< @brief list of jacobian and UF matrix block types (blocks in A) */
+		fbs_ut::CDimensionToEigen>::_TyResult _TyJacobianMatrixBlockList; /**< @brief list of jacobian and UF matrix block types (blocks in A) */
 	typedef typename CTransformTypelist<THessianMatrixBlockList,
-		__fbs_ut::CDimensionToEigen>::_TyResult _TyHessianMatrixBlockList; /**< @brief list of hessian block types (blocks in Lambda and L) */
+		fbs_ut::CDimensionToEigen>::_TyResult _TyHessianMatrixBlockList; /**< @brief list of hessian block types (blocks in Lambda and L) */
 #endif // __FLAT_SYSTEM_USE_SIZE2D_FOR_BLOCK_SIZE
 
-	typedef __multipool::CMultiPool<_TyBaseVertex, _TyVertexTypelist, pool_PageSize> _TyVertexMultiPool; /**< @brief vertex multipool type */
+	typedef multipool::CMultiPool<_TyBaseVertex, _TyVertexTypelist, pool_PageSize> _TyVertexMultiPool; /**< @brief vertex multipool type */
 	typedef typename CTypelistItemAt<CTypelist<TVoidPool<_TyBaseVertex>, CTypelist<_TyVertexMultiPool,
 		CTypelistEnd> >, allow_FixedVertices>::_TyResult _TyFixVertexMultiPool; /**< @brief fixed vertex multipool type (same as vertex multipool if enabled, otherwise a void type) */
-	typedef __multipool::CMultiPool<_TyBaseEdge, _TyEdgeTypelist, pool_PageSize> _TyEdgeMultiPool; /**< @brief edge multipool type */
+	typedef multipool::CMultiPool<_TyBaseEdge, _TyEdgeTypelist, pool_PageSize> _TyEdgeMultiPool; /**< @brief edge multipool type */
+
+	typedef typename _TyVertexMultiPool::_TyBaseRef _TyVertexRef; /**< @brief reference to base vertex type */
+	typedef typename _TyVertexMultiPool::_TyConstBaseRef _TyConstVertexRef; /**< @brief const reference to base vertex type */
+	typedef typename _TyEdgeMultiPool::_TyBaseRef _TyEdgeRef; /**< @brief reference to base edge type */
+	typedef typename _TyEdgeMultiPool::_TyConstBaseRef _TyConstEdgeRef; /**< @brief const reference to base edge type */
 
 protected:
-	typedef typename CTypelistItemAt<CTypelist<TVoidPool<_TyBaseVertex*>, CTypelist<std::vector<_TyBaseVertex*>,
-		CTypelistEnd> >, allow_FixedVertices>::_TyResult _TyVertexLookup; /**< @brief lookup table for the vertices (only used if fixed vertices are enabled) */
+	typedef typename CChooseType<std::vector<_TyBaseVertex*>, TVoidPool<_TyBaseVertex*>,
+		allow_FixedVertices>::_TyResult _TyVertexLookup; /**< @brief lookup table for the vertices (only used if fixed vertices are enabled) */
 
 	/**
 	 *	@brief code for vertex insertion, based on whether the fixed vertices are allowed
@@ -824,7 +1299,7 @@ protected:
 				return r_t_new_vert;
 			} else {
 				if(n_id < r_vertex_pool.n_Size())
-					return *(CVertexType*)&r_vertex_pool[n_id]; // a bit of dirty casting
+					return r_vertex_pool.template r_At<CVertexType>(n_id);
 				throw std::runtime_error("vertices must be accessed in incremental manner");
 
 				// if we want to support fixed vertices, we need vertex map for this
@@ -845,7 +1320,7 @@ protected:
 	 */
 #if defined(_MSC_VER) && !defined(__MWERKS__)
 	template <> // avoid partial specialization as that is unnecessary and breaks Intellisense
-	class CGetVertexImpl<CBaseVertex, CVertexTypelist, CBaseEdge,
+	class CGetVertexImpl<CBaseVertexType, CVertexTypelist, CBaseEdgeType,
 		CEdgeTypelist, CUnaryFactorFactory, true, n_pool_page_size> {
 #else // _MSC_VER) && !__MWERKS__
 	template <class _CBaseVertex, class _CVertexTypelist, class _CBaseEdge,
@@ -918,7 +1393,7 @@ protected:
 		}
 	};
 
-	typedef CGetVertexImpl<CBaseVertex, CVertexTypelist, CBaseEdge, CEdgeTypelist,
+	typedef CGetVertexImpl<CBaseVertexType, CVertexTypelist, CBaseEdgeType, CEdgeTypelist,
 		CUnaryFactorFactory, b_allow_fixed_vertices, n_pool_page_size> _TyGetVertexImpl; /**< @brief type with specialized implementation of GetVertex function */
 
 protected:
@@ -942,6 +1417,22 @@ public:
 	inline CFlatSystem(CUnaryFactorFactory unary_factor_factory = CUnaryFactorFactory())
 		:m_n_vertex_element_num(0), m_n_edge_element_num(0), m_unary_factor_factory(unary_factor_factory)
 	{}
+
+	/**
+	 *	@brief calculates the size of this object in memory
+	 *	@return Returns the size of this object (and of all associated
+	 *		arrays or buffers) in memory, in bytes.
+	 */
+	size_t n_Allocation_Size() const
+	{
+		return sizeof(CFlatSystem<CBaseVertexType, CVertexTypelist, CBaseEdgeType,
+			CEdgeTypelist, CUnaryFactorFactory, b_allow_fixed_vertices, n_pool_page_size>) +
+			m_vertex_pool.n_Allocation_Size() - sizeof(m_vertex_pool) +
+			m_edge_pool.n_Allocation_Size() - sizeof(m_edge_pool) +
+			m_fixed_vertex_pool.n_Allocation_Size() - sizeof(m_fixed_vertex_pool) +
+			m_vertex_lookup.capacity() * sizeof(_TyBaseVertex*) +
+			(m_v_unary_error.size() + m_t_unary_factor.size()) * sizeof(double);
+	}
 
 	/**
 	 *	@brief gets the unary factor matrix
@@ -1142,6 +1633,11 @@ public:
 		bool b_was_empty;
 		if((b_was_empty = m_edge_pool.b_Empty())) {
 			m_unary_factor_factory(m_t_unary_factor, m_v_unary_error, t_edge);
+			// should not add if r_edge does not contain vertex 0 (can occur if the vertex is initialized explicitly)
+			// actually should construct unary factors from vertices, that would solve the problem, only the vertices
+			// do not come with information matrices
+			// on the other hand cannot wait, as the edge could trigger incremental optimization
+
 			m_n_edge_element_num += m_t_unary_factor.rows();
 		}
 		// in case it is the first edge, gets the unary factor and the error associated with it
@@ -1195,9 +1691,9 @@ public:
 	 *	@param[in] n_landmark_edge_line_width is pose-landmark edge line width, in pixels (advanced settings)
 	 *	@param[in] b_dark_landmark_edges is pose-landmark color selector; if set,
 	 *		it is black, otherwise it is light gray (advanced settings)
-	 *	@param[in] b_draw_frame is flag for drawing a frame arround the image
-	 *		(the frame is fit tightly arround the image)
-	 *	@param[in] n_padding is padding arround the image (arround the frame, if rendered)
+	 *	@param[in] b_draw_frame is flag for drawing a frame around the image
+	 *		(the frame is fit tightly around the image)
+	 *	@param[in] n_padding is padding around the image (around the frame, if rendered)
 	 *	@param[in] b_landmark_ticks_only is vertex rendering flag (if set, only landmarks are rendered,
 	 *		otherwise all vertices are rendered)
 	 *
@@ -1211,16 +1707,17 @@ public:
 	{
 		Eigen::Vector2d v_min(-1, -1), v_max(1, 1);
 		if(!m_vertex_pool.b_Empty()) {
-			const Eigen::VectorXd &r_v_state = m_vertex_pool[0].v_State();
-			_ASSERTE(r_v_state.rows() >= 2);
-			v_min(0) = v_max(0) = r_v_state(0);
-			v_min(1) = v_max(1) = r_v_state(1);
+			Eigen::VectorXd v_state = m_vertex_pool[0].v_State();
+			_ASSERTE(v_state.rows() >= 2);
+			v_min(0) = v_max(0) = v_state(0);
+			v_min(1) = v_max(1) = v_state(1);
 			for(size_t i = 0, n = m_vertex_pool.n_Size(); i < n; ++ i) {
-				const _TyBaseVertex &r_t_vert = m_vertex_pool[i];
-				const Eigen::VectorXd &r_v_state = r_t_vert.v_State();
+				Eigen::VectorXd v_state = m_vertex_pool[i].v_State();
+				if(v_state.rows() < 2)
+					continue;
 				for(int j = 0; j < 2; ++ j) {
-					v_min(j) = std::min(v_min(j), r_v_state(j));
-					v_max(j) = std::max(v_max(j), r_v_state(j));
+					v_min(j) = std::min(v_min(j), v_state(j));
+					v_max(j) = std::max(v_max(j), v_state(j));
 				}
 			}
 		}
@@ -1260,14 +1757,16 @@ public:
 		// black borders
 
 		for(size_t i = 0, n = m_edge_pool.n_Size(); i < n; ++ i) {
-			const _TyBaseEdge &r_edge = m_edge_pool[i];
+			typename _TyEdgeMultiPool::_TyConstBaseRef r_edge = m_edge_pool[i];
 
-			if(r_edge.n_Dimension() != 2)
+			if(r_edge.n_Dimension() != 2 || r_edge.n_Vertex_Num() < 2)
 				continue;
 			// only landmarks
 
 			const Eigen::VectorXd &r_t_vert0 = m_vertex_pool[r_edge.n_Vertex_Id(0)].v_State();
 			const Eigen::VectorXd &r_t_vert1 = m_vertex_pool[r_edge.n_Vertex_Id(1)].v_State();
+			if(r_t_vert0.rows() < 2 || r_t_vert1.rows() < 2)
+				continue;
 			_ASSERTE(r_t_vert0.rows() >= 2 && r_t_vert1.rows() >= 2);
 
 			float f_x0 = float((r_t_vert0(0) - v_min(0)) * f_scale);
@@ -1290,14 +1789,15 @@ public:
 		// draw edges
 
 		for(size_t i = 0, n = m_vertex_pool.n_Size(); i < n; ++ i) {
-			const _TyBaseVertex &r_t_vert = m_vertex_pool[i];
-			const Eigen::VectorXd &r_v_state = r_t_vert.v_State();
+			Eigen::VectorXd v_state = m_vertex_pool[i].v_State();
 
-			if(b_landmark_ticks_only && r_t_vert.n_Dimension() != 2)
+			if(b_landmark_ticks_only && v_state.rows() != 2)
+				continue;
+			if(v_state.rows() < 2)
 				continue;
 
-			float f_x = float((r_v_state(0) - v_min(0)) * f_scale);
-			float f_y = float((r_v_state(1) - v_min(1)) * f_scale);
+			float f_x = float((v_state(0) - v_min(0)) * f_scale);
+			float f_y = float((v_state(1) - v_min(1)) * f_scale);
 			f_x = f_x + n_padding;
 			f_y = n_height - f_y + n_padding; // the origin is at the top left corner, flip y
 
@@ -1311,14 +1811,16 @@ public:
 		// todo - support fixed vertices
 
 		for(size_t i = 0, n = m_edge_pool.n_Size(); i < n; ++ i) {
-			const _TyBaseEdge &r_edge = m_edge_pool[i];
+			typename _TyEdgeMultiPool::_TyConstBaseRef r_edge = m_edge_pool[i];
 
-			if(r_edge.n_Dimension() == 2)
+			if(r_edge.n_Dimension() == 2 || r_edge.n_Vertex_Num() < 2)
 				continue;
 			// only edges
 
 			const Eigen::VectorXd &r_t_vert0 = m_vertex_pool[r_edge.n_Vertex_Id(0)].v_State();
 			const Eigen::VectorXd &r_t_vert1 = m_vertex_pool[r_edge.n_Vertex_Id(1)].v_State();
+			if(r_t_vert0.rows() < 2 || r_t_vert1.rows() < 2)
+				continue;
 			_ASSERTE(r_t_vert0.rows() >= 2 && r_t_vert1.rows() >= 2);
 
 			float f_x0 = float((r_t_vert0(0) - v_min(0)) * f_scale);
@@ -1359,9 +1861,9 @@ public:
 	 *	@param[in] n_landmark_edge_line_width is pose-landmark edge line width, in pixels (advanced settings)
 	 *	@param[in] b_dark_landmark_edges is pose-landmark color selector; if set,
 	 *		it is black, otherwise it is light gray (advanced settings)
-	 *	@param[in] b_draw_frame is flag for drawing a frame arround the image
-	 *		(the frame is fit tightly arround the image)
-	 *	@param[in] n_padding is padding arround the image (arround the frame, if rendered)
+	 *	@param[in] b_draw_frame is flag for drawing a frame around the image
+	 *		(the frame is fit tightly around the image)
+	 *	@param[in] n_padding is padding around the image (around the frame, if rendered)
 	 *	@param[in] b_landmark_ticks_only is vertex rendering flag (if set, only landmarks are rendered,
 	 *		otherwise all vertices are rendered)
 	 *
@@ -1375,16 +1877,15 @@ public:
 	{
 		Eigen::Vector2d v_min(-1, -1), v_max(1, 1);
 		if(!m_vertex_pool.b_Empty()) {
-			const Eigen::VectorXd &r_v_state = m_vertex_pool[0].v_State();
-			_ASSERTE(r_v_state.rows() >= 3);
-			v_min(0) = v_max(0) = r_v_state(0);
-			v_min(1) = v_max(1) = r_v_state(2);
+			Eigen::VectorXd v_state = m_vertex_pool[0].v_State();
+			_ASSERTE(v_state.rows() >= 3);
+			v_min(0) = v_max(0) = v_state(0);
+			v_min(1) = v_max(1) = v_state(2);
 			for(size_t i = 0, n = m_vertex_pool.n_Size(); i < n; ++ i) {
-				const _TyBaseVertex &r_t_vert = m_vertex_pool[i];
-				const Eigen::VectorXd &r_v_state = r_t_vert.v_State();
+				Eigen::VectorXd v_state = m_vertex_pool[i].v_State();
 				for(int j = 0; j < 2; ++ j) {
-					v_min(j) = std::min(v_min(j), r_v_state((j)? 2 : 0));
-					v_max(j) = std::max(v_max(j), r_v_state((j)? 2 : 0));
+					v_min(j) = std::min(v_min(j), v_state((j)? 2 : 0));
+					v_max(j) = std::max(v_max(j), v_state((j)? 2 : 0));
 				}
 			}
 		}
@@ -1424,7 +1925,7 @@ public:
 		// black borders
 
 		/*for(size_t i = 0, n = m_edge_pool.n_Size(); i < n; ++ i) {
-			const _TyBaseEdge &r_edge = m_edge_pool[i];
+			_TyEdgeMultiPool::_TyConstBaseRef r_edge = m_edge_pool[i];
 
 			if(r_edge.n_Dimension() != 2)
 				continue;
@@ -1454,14 +1955,13 @@ public:
 		// draw edges
 
 		for(size_t i = 0, n = m_vertex_pool.n_Size(); i < n; ++ i) {
-			const _TyBaseVertex &r_t_vert = m_vertex_pool[i];
-			const Eigen::VectorXd &r_v_state = r_t_vert.v_State();
+			const Eigen::VectorXd &v_state = m_vertex_pool[i].v_State();
 
-			if(b_landmark_ticks_only && r_t_vert.n_Dimension() != 2)
+			if(b_landmark_ticks_only && v_state.rows() != 2)
 				continue;
 
-			float f_x = float((r_v_state(0) - v_min(0)) * f_scale);
-			float f_y = float((r_v_state(2) - v_min(1)) * f_scale);
+			float f_x = float((v_state(0) - v_min(0)) * f_scale);
+			float f_y = float((v_state(2) - v_min(1)) * f_scale);
 			f_x = f_x + n_padding;
 			f_y = n_height - f_y + n_padding; // the origin is at the top left corner, flip y
 
@@ -1475,7 +1975,7 @@ public:
 		// todo - support fixed vertices
 
 		for(size_t i = 0, n = m_edge_pool.n_Size(); i < n; ++ i) {
-			const _TyBaseEdge &r_edge = m_edge_pool[i];
+			typename _TyEdgeMultiPool::_TyConstBaseRef r_edge = m_edge_pool[i];
 
 			if(r_edge.n_Dimension() == 2)
 				continue;
@@ -1521,10 +2021,9 @@ public:
 		}
 
 		for(size_t i = 0, n = m_vertex_pool.n_Size(); i < n; ++ i) {
-			const _TyBaseVertex &r_vert = m_vertex_pool[i];
-			const Eigen::VectorXd &r_v_state = r_vert.v_State();
-			for(size_t j = 0, m = r_v_state.rows(); j < m; ++ j)
-				fprintf(p_fw, (j)? ((j + 1 == m)? " %f\n" : " %f") : ((j + 1 == m)? "%f\n" : "%f"), r_v_state(j)); // t_odo - support any dimensionality
+			Eigen::VectorXd v_state = m_vertex_pool[i].v_State();
+			for(size_t j = 0, m = v_state.rows(); j < m; ++ j)
+				fprintf(p_fw, (j)? ((j + 1 == m)? " %f\n" : " %f") : ((j + 1 == m)? "%f\n" : "%f"), v_state(j)); // t_odo - support any dimensionality
 		}
 
 		// todo - support const vertices
@@ -1540,4 +2039,4 @@ public:
 	}
 };
 
-#endif // __FLAT_SYSTEM_TEMPLATE_INCLUDED
+#endif // !__FLAT_SYSTEM_TEMPLATE_INCLUDED

@@ -43,20 +43,42 @@ CLinearSolver_CXSparse::CLinearSolver_CXSparse(const CLinearSolver_CXSparse &UNU
 #endif // __CXSPARSE_BLOCKY_LINEAR_SOLVER
 {}
 
+void CLinearSolver_CXSparse::Free_Memory()
+{
+#if defined (__CXSPARSE_LINEAR_SOLVER_REUSE_WORKSPACE) || defined(__CXSPARSE_BLOCKY_LINEAR_SOLVER)
+	if(m_p_workspace_double) {
+		delete[] m_p_workspace_double;
+		m_p_workspace_double = 0;
+	}
+	if(m_p_workspace_int) {
+		delete[] m_p_workspace_int;
+		m_p_workspace_int = 0;
+	}
+	m_n_workspace_size = 0;
+#endif // __CXSPARSE_LINEAR_SOLVER_REUSE_WORKSPACE || __CXSPARSE_BLOCKY_LINEAR_SOLVER
+#ifdef __CXSPARSE_BLOCKY_LINEAR_SOLVER
+	if(m_p_symbolic_decomposition) {
+		cx::cxs_sfree(m_p_symbolic_decomposition);
+		m_p_symbolic_decomposition = 0;
+	}
+	if(m_p_block_structure) {
+		cs_spfree(m_p_block_structure);
+		m_p_block_structure = 0;
+	}
+	{
+		std::vector<_TyPerm> empty;
+		m_v_permutation.swap(empty);
+	}
+#endif // __CXSPARSE_BLOCKY_LINEAR_SOLVER
+	if(m_p_lambda) {
+		cs_spfree(m_p_lambda);
+		m_p_lambda = 0;
+	}
+}
+
 CLinearSolver_CXSparse::~CLinearSolver_CXSparse()
 {
-#ifdef __CXSPARSE_BLOCKY_LINEAR_SOLVER
-	if(m_p_workspace_double)
-		delete[] m_p_workspace_double;
-	if(m_p_workspace_int)
-		delete[] m_p_workspace_int;
-	if(m_p_symbolic_decomposition)
-		cx::cxs_sfree(m_p_symbolic_decomposition);
-	if(m_p_block_structure)
-		cs_spfree(m_p_block_structure);
-#endif // __CXSPARSE_BLOCKY_LINEAR_SOLVER
-	if(m_p_lambda)
-		cs_spfree(m_p_lambda);
+	Free_Memory();
 }
 
 CLinearSolver_CXSparse &CLinearSolver_CXSparse::operator =(const CLinearSolver_CXSparse &UNUSED(r_other))
@@ -222,7 +244,7 @@ bool CLinearSolver_CXSparse::Factorize_PosDef_Blocky(CUberBlockMatrix &r_factor,
 bool CLinearSolver_CXSparse::SymbolicDecomposition_Blocky(const CUberBlockMatrix &r_lambda) // throw(std::bad_alloc)
 {
 	Clear_SymbolicDecomposition();
-	// forget symbolic decomposition, if it had one
+	// forget symbolic factorization, if it had one
 
 #ifdef __CXSPARSE_x64_BUT_SHORT
 	m_p_block_structure = r_lambda.p_BlockStructure_to_Sparse32(m_p_block_structure);
@@ -313,7 +335,7 @@ bool CLinearSolver_CXSparse::SymbolicDecomposition_Blocky(const CUberBlockMatrix
 		m_p_symbolic_decomposition = 0;
 		return false;
 	}
-	// apply the scalar permutation to finish symbolic decomposition
+	// apply the scalar permutation to finish symbolic factorization
 
 	return true;
 }
@@ -336,7 +358,7 @@ bool CLinearSolver_CXSparse::Solve_PosDef_Blocky(const CUberBlockMatrix &r_lambd
 			throw std::bad_alloc();
 		// lambda is otherwise calculated in SymbolicDecomposition_Blocky()
 	}
-	// (re)calculate symbolic decomposition
+	// (re)calculate symbolic factorization
 
 	cx::cxs t_cx_lambda;
 	t_cx_lambda.nzmax = _TyPerm(m_p_lambda->nzmax);

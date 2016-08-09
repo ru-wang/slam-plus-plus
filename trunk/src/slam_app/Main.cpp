@@ -52,12 +52,12 @@ int main(int n_arg_num, const char **p_arg_list)
 		if(n_all_mons_width > n_pri_mon_width + n_pri_mon_width / 2) {
 			RECT t_rect;
 			GetWindowRect(h_console, &t_rect);
-			if(t_rect.left < n_pri_mon_width) // running batch job? don't float away
+			if(t_rect.left < n_pri_mon_width) // running a batch job? don't float away
 				SetWindowPos(h_console, HWND_TOP, t_rect.left + n_pri_mon_width, t_rect.top, 0, 0, SWP_NOSIZE);
 		} else if(n_all_mons_height > n_pri_mon_height + n_pri_mon_height / 2) {
 			RECT t_rect;
 			GetWindowRect(h_console, &t_rect);
-			if(t_rect.top < n_pri_mon_height) // running batch job? don't float away
+			if(t_rect.top < n_pri_mon_height) // running a batch job? don't float away
 				SetWindowPos(h_console, HWND_TOP, t_rect.left, t_rect.top + n_pri_mon_height, 0, 0, SWP_NOSIZE);
 		}
 	}
@@ -72,7 +72,7 @@ int main(int n_arg_num, const char **p_arg_list)
 
 #ifdef _OPENMP
 	if(t_cmd_args.n_omp_threads != size_t(-1))
-		omp_set_num_threads(t_cmd_args.n_omp_threads); // can use this to set no. of threads
+		omp_set_num_threads(int(t_cmd_args.n_omp_threads)); // can use this to set no. of threads
 	if(t_cmd_args.b_omp_dynamic)
 		omp_set_dynamic(true); // dynamically allocate threads
 #endif // _OPENMP
@@ -113,7 +113,6 @@ int main(int n_arg_num, const char **p_arg_list)
 		for(int i = 1; i < n_arg_num; ++ i)
 			printf(" %s", p_arg_list[i]);
 		printf("\n");
-
 	}
 	// display commandline
 
@@ -121,23 +120,61 @@ int main(int n_arg_num, const char **p_arg_list)
 		DisplaySwitches();
 	// display switches
 
-	TDatasetPeeker peek(t_cmd_args.p_s_input_file, t_cmd_args.n_max_lines_to_process);
-	if(t_cmd_args.b_10k_opts && (peek.b_has_landmark || peek.b_has_ba)) { // BA implies landmarks
-		fprintf(stderr, "error: --pose-only flag detected, but the system has landmarks (flag cleared)\n");
-		t_cmd_args.b_10k_opts = false;
-	} else if(!t_cmd_args.b_10k_opts && !peek.b_has_landmark && !peek.b_has_ba) { // BA implies landmarks
-		fprintf(stderr, "warning: the system doesn't seem to have landmarks"
-			" and --pose-only flag not present: could run faster\n");
+	{
+		FILE *p_fr;
+		if((p_fr = fopen(t_cmd_args.p_s_input_file, "rb")))
+			fclose(p_fr);
+		else {
+			fprintf(stderr, "error: can't open input file \'%s\'\n", t_cmd_args.p_s_input_file);
+			return -1;
+		}
 	}
-	if(peek.b_has_edge3d || peek.b_has_vertex3d) {
+	// see if the input is there; otherwise will get some misleading errors about peek-parsing
+	// and potentially about SE(2) (or other default solver) being disabled (if unlucky)
+
+	TDatasetPeeker peek(t_cmd_args.p_s_input_file, t_cmd_args.n_max_lines_to_process);
+	if(peek.b_has_rocv) {
+		t_cmd_args.b_use_rocv = true;
+		if(t_cmd_args.b_verbose)
+			fprintf(stderr, "detected ROCV dataset\n");
+	}
+	if(!peek.b_has_rocv) { // ROCV reuses 3D landmarks for parsing
+		if(t_cmd_args.b_pose_only && (peek.b_has_landmark || peek.b_has_ba)) { // BA implies landmarks
+			fprintf(stderr, "error: --pose-only flag detected, but the system has landmarks (flag cleared)\n");
+			t_cmd_args.b_pose_only = false;
+		} else if(!t_cmd_args.b_pose_only && !peek.b_has_landmark && !peek.b_has_ba && !peek.b_has_ba_stereo && !peek.b_has_ba_intrinsics) { // BA implies landmarks
+			fprintf(stderr, "warning: the system doesn't seem to have landmarks"
+				" and --pose-only flag not present: could run faster\n");
+		}
+	}
+	if(!peek.b_has_rocv && (peek.b_has_edge3d || peek.b_has_vertex3d)) { // ROCV reuses 3D landmarks for parsing
 		t_cmd_args.b_use_SE3 = true;
 		if(t_cmd_args.b_verbose)
 			fprintf(stderr, "detected SE3\n");
+		if(peek.b_has_landmark) {
+			if(t_cmd_args.b_verbose)
+				fprintf(stderr, "detected 3D landmarks\n");
+		}
 	}
-	if(peek.b_has_ba) {
+	if(!peek.b_has_rocv && peek.b_has_ba) { // ROCV reuses 3D landmarks for parsing
 		t_cmd_args.b_use_BA = true;
 		if(t_cmd_args.b_verbose)
 			fprintf(stderr, "detected BA\n");
+	}
+	if(peek.b_has_ba_stereo) {
+		t_cmd_args.b_use_BAS = true;
+		if(t_cmd_args.b_verbose)
+			fprintf(stderr, "detected BA stereo\n");
+	}
+	if(peek.b_has_spheron) {
+		t_cmd_args.b_use_spheron = true;
+		if(t_cmd_args.b_verbose)
+			fprintf(stderr, "detected Spheron dataset\n");
+	}
+	if(!peek.b_has_rocv && peek.b_has_ba_intrinsics) { // ROCV reuses 3D landmarks for parsing
+		t_cmd_args.b_use_BAI = true;
+		if(t_cmd_args.b_verbose)
+			fprintf(stderr, "detected BA with optimized intrinsic camera parameters\n");
 	}
 	// detect landmarks, clear b_10k_opts where it would cause the code to crash
 
@@ -146,18 +183,40 @@ int main(int n_arg_num, const char **p_arg_list)
 		return -1;
 	} else {
 		try {
-			if(t_cmd_args.b_use_BA) {
-				if(n_Run_BA_Solver(t_cmd_args))
+			if(t_cmd_args.b_use_BA || t_cmd_args.b_use_BAS || t_cmd_args.b_use_BAI) { // BA mono / stereo
+				if(t_cmd_args.b_use_BAI && !t_cmd_args.b_use_BAS) {
+					if(n_Run_BA_Intrinsics_Solver(t_cmd_args)) // mono + intrinsics
+						return -1;
+				} else if(t_cmd_args.b_use_BA && !t_cmd_args.b_use_BAS) {
+					if(n_Run_BA_Solver(t_cmd_args)) // mono
+						return -1;
+				} else {
+					_ASSERTE(t_cmd_args.b_use_BAS);
+					if(n_Run_BA_Stereo_Solver(t_cmd_args)) // stereo
+						return -1;
+				}
+			} else if(t_cmd_args.b_use_spheron) { // Spheron
+				if(n_Run_Spheron_Solver(t_cmd_args))
 					return -1;
-			} else if(t_cmd_args.b_use_SE3) {
-				if(n_Run_SE3_Solver(t_cmd_args))
+			} else if(t_cmd_args.b_use_rocv) { // ROCV
+				if(n_Run_ROCV_Solver(t_cmd_args))
 					return -1;
-			} else if(t_cmd_args.b_10k_opts) {
-				if(n_Run_SE2PoseOnly_Solver(t_cmd_args))
-					return -1;
-			} else {
-				if(n_Run_SE2_Solver(t_cmd_args))
-					return -1;
+			} else if(t_cmd_args.b_use_SE3) { // SE(3)
+				if(t_cmd_args.b_pose_only) {
+					if(n_Run_SE3PoseOnly_Solver(t_cmd_args)) // pose-only
+						return -1;
+				} else {
+					if(n_Run_SE3_Solver(t_cmd_args)) // pose-landmarks
+						return -1;
+				}
+			} else { // SE(2)
+				if(t_cmd_args.b_pose_only) {
+					if(n_Run_SE2PoseOnly_Solver(t_cmd_args)) // pose-only
+						return -1;
+				} else {
+					if(n_Run_SE2_Solver(t_cmd_args)) // pose-landmarks
+						return -1;
+				}
 			}
 			// a simple selection of solver and problem type, without all the ifdef mess
 		} catch(std::runtime_error &r_exc) {
@@ -313,6 +372,9 @@ void DisplaySwitches()
 #ifdef __MATRIX_ORDERING_USE_AMD_AAT
 	printf("%s\n", "__MATRIX_ORDERING_USE_AMD_AAT");
 #endif // __MATRIX_ORDERING_USE_AMD_AAT
+#ifdef __MATRIX_ORDERING_USE_MMD
+	printf("%s\n", "__MATRIX_ORDERING_USE_MMD");
+#endif // __MATRIX_ORDERING_USE_MMD
 
 #ifdef __SEGREGATED_MAKE_CHECKED_ITERATORS
 	printf("%s\n", "__SEGREGATED_MAKE_CHECKED_ITERATORS");
@@ -320,6 +382,13 @@ void DisplaySwitches()
 #ifdef __SEGREGATED_COMPILE_FAP_TESTS
 	printf("%s\n", "__SEGREGATED_COMPILE_FAP_TESTS");
 #endif // __SEGREGATED_COMPILE_FAP_TESTS
+
+#ifdef __FLAT_SYSTEM_USE_THUNK_TABLE
+	printf("%s\n", "__FLAT_SYSTEM_USE_THUNK_TABLE");
+#ifdef __FLAT_SYSTEM_STATIC_THUNK_TABLE
+	printf("%s\n", "__FLAT_SYSTEM_STATIC_THUNK_TABLE");
+#endif // __FLAT_SYSTEM_STATIC_THUNK_TABLE
+#endif // __FLAT_SYSTEM_USE_THUNK_TABLE
 
 #ifdef __SE_TYPES_SUPPORT_A_SOLVERS
 	printf("%s\n", "__SE_TYPES_SUPPORT_A_SOLVERS");
@@ -334,6 +403,9 @@ void DisplaySwitches()
 #ifdef __NONLINEAR_SOLVER_LAMBDA_DUMP_CHI2
 	printf("%s\n", "__NONLINEAR_SOLVER_LAMBDA_DUMP_CHI2");
 #endif // __NONLINEAR_SOLVER_LAMBDA_DUMP_CHI2
+#ifdef __LAMBDA_USE_V2_REDUCTION_PLAN
+	printf("%s\n", "__LAMBDA_USE_V2_REDUCTION_PLAN");
+#endif // __LAMBDA_USE_V2_REDUCTION_PLAN
 
 #ifdef __NONLINEAR_SOLVER_L_DUMP_TIMESTEPS
 	printf("%s\n", "__NONLINEAR_SOLVER_L_DUMP_TIMESTEPS");
@@ -421,8 +493,10 @@ void PrintHelp()
 		"--no-flags|-nf    doesn't show compiler flags\n"
 		"--no-detailed-timing    doesn't show detailed timing breakup (use this, you'll\n"
 		"                  get confused)\n"
-		"--no-bitmaps      doesn't write bitmaps initial.tga and solution.tga (neither\n"
+		"--no-bitmaps|-nb  doesn't write bitmaps initial.tga and solution.tga (neither\n"
 		"                  the text files)\n"
+		"--dump-system-matrix|-dsm    writes system matrix as system.mtx (matrix market)\n"
+		"                  and system.bla (block layout)\n"
 		"--pose-only|-po   enables optimisation for pose-only slam (will warn and ignore\n"
 		"                  on datasets with landmarks (only the first 1000 lines checked\n"
 		"                  in case there are landmarks later, it would segfault))\n"

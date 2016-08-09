@@ -132,7 +132,7 @@ bool CParser::Parse(const char *p_s_filename, CParserAdaptor *p_callback,
 			token_name_map["EQUIV"] = token_NoParse; // this is found in 10k.graph (don't know what that means)
 			// ignore names
 
-			// @todo - names of 3D primitives
+			// t_odo - names of 3D primitives
 			token_name_map["VERTEX3"] = token_Vertex3D;
 			token_name_map["VERTEX_SE3"] = token_Vertex3D;
 			token_name_map["EDGE3"] = token_Edge3D;
@@ -286,18 +286,18 @@ bool CParser::Parse(const char *p_s_filename, CParserAdaptor *p_callback,
 						};
 						/*
 						 *	it should be this:
-						 *@code
+						 *	@code
 						 *	|0 1 2|
 						 *	|  3 4|
 						 *	|    5|
-						 *@endcode
+						 *	@endcode
 						 *
 						 *	but it is like this:
-						 *@code
+						 *	@code
 						 *	|0 1 5|
 						 *	|  2 4|
 						 *	|    3|
-						 *@endcode
+						 *	@endcode
 						 *	(not sure about 1, 4 and 5 but they are null anyway)
 						 */
 
@@ -418,7 +418,7 @@ bool CParser::Parse(const char *p_s_filename, CParserAdaptor *p_callback,
 						 cos_y*sin_x, cos_z*cos_x + sin_z*sin_y*sin_x, -sin_z*cos_x + cos_z*sin_y*sin_x,
 						 -sin_y, sin_z*cos_y, cos_z*cos_y;
 
-					Eigen::Vector3d axis = C3DJacobians::Operator_arot(Q);
+					Eigen::Vector3d axis = C3DJacobians::v_RotMatrix_to_AxisAngle(Q);
 
 					TVertex3D vert(n_pose_id, p_vertex[0], p_vertex[1], p_vertex[2], axis(0), axis(1), axis(2));
 					// process the measurement
@@ -476,7 +476,7 @@ bool CParser::Parse(const char *p_s_filename, CParserAdaptor *p_callback,
 							 cos_y*sin_x, cos_z*cos_x + sin_z*sin_y*sin_x, -sin_z*cos_x + cos_z*sin_y*sin_x,
 							 -sin_y, sin_z*cos_y, cos_z*cos_y;
 
-						Eigen::Vector3d axis = C3DJacobians::Operator_arot(Q);
+						Eigen::Vector3d axis = C3DJacobians::v_RotMatrix_to_AxisAngle(Q);
 
 						TEdge3D edge(p_pose_idx[0], p_pose_idx[1],
 							p_measurement[0], p_measurement[1], p_measurement[2], axis(0), axis(1), axis(2), p_matrix);

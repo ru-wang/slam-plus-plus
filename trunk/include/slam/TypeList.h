@@ -720,6 +720,48 @@ public:
 };
 
 /**
+ *	@brief selects one of two types, based on compile-time constant boolean condition
+ *
+ *	@tparam CFirstType is the first type
+ *	@tparam CSecondType is the first type
+ *	@tparam b_select_first_type is the value of the conditiom
+ */
+template <class CFirstType, class CSecondType, const bool b_select_first_type>
+class CChooseType {
+public:
+	typedef CFirstType _TyResult; /**< @brief the selected type */
+};
+
+/**
+ *	@brief selects one of two types, based on compile-time constant boolean condition
+ *		(specialization for the condition being false)
+ *
+ *	@tparam CFirstType is the first type
+ *	@tparam CSecondType is the first type
+ */
+template <class CFirstType, class CSecondType>
+class CChooseType<CFirstType, CSecondType, false> {
+public:
+	typedef CSecondType _TyResult; /**< @brief the selected type */
+};
+
+/**
+ *	@brief conditionally inherits from a type
+ *
+ *	@tparam CBase is the base type
+ *	@tparam b_inherit is inheritance flag (if set, this will be derived from CBase)
+ */
+template <class CBase, const bool b_inherit>
+class CInheritIf {};
+
+/**
+ *	@brief conditionally inherits from a type (specialization for inheritance)
+ *	@tparam CBase is the base type
+ */
+template <class CBase>
+class CInheritIf<CBase, true> : public CBase {};
+
+/**
  *	@brief finds type in a typelist
  *
  *	@tparam CList is typelist type
@@ -752,6 +794,50 @@ public:
  */
 template <class CItemType, const int _n_index>
 class CFindTypelistItem<CTypelistEnd, CItemType, _n_index> {
+public:
+	/**
+	 *	@brief results, stored as enums
+	 */
+	enum {
+		b_result = false, /**< @brief search result (true if found, otherwise false) */
+		n_index = -1 /**< @brief index of the first occurence of the type in the list (or -1 if not found) */
+	};
+};
+
+/**
+ *	@brief finds type in a typelist
+ *
+ *	@tparam CList is typelist type
+ *	@tparam CReference is type of the item being searched
+ *	@tparam CPredicate is predicate getting the reference type and the item type (in this order)
+ *	@tparam _n_index is index of the item in the list
+ *		(being incremented in template expansions - do not change)
+ */
+template <class CList, class CReference, template <class, class> class CPredicate, const int _n_index = 0>
+class CFindTypelistItem_If {
+protected:
+	typedef CPredicate<typename CList::_TyHead, CReference> CCompareHead; /**< @brief head comparison class */
+	typedef CFindTypelistItem_If<typename CList::_TyTail, CReference, CPredicate, _n_index + 1> CSearchTail; /**< @brief tail search class */
+
+public:
+	/**
+	 *	@brief results, stored as enums
+	 */
+	enum {
+		b_result = CCompareHead::b_result || CSearchTail::b_result, /**< @brief search result (true if found, otherwise false) */
+		n_index = (CCompareHead::b_result)? _n_index : CSearchTail::n_index /**< @brief index of the first occurence of the type in the list (or -1 if not found) */
+	};
+};
+
+/**
+ *	@brief finds type in a typelist (specialization for the end of the list, or an empty list)
+ *
+ *	@tparam CItemType is type of the item being searched
+ *	@tparam _n_index is index of the item in the list
+ *		(being incremented in template expansions - do not change)
+ */
+template <class CReference, template <class, class> class CPredicate, const int _n_index>
+class CFindTypelistItem_If<CTypelistEnd, CReference, CPredicate, _n_index> {
 public:
 	/**
 	 *	@brief results, stored as enums
@@ -1268,6 +1354,89 @@ public:
 };
 
 /**
+ *	@brief splits a typelist in two halves
+ *
+ *	@tparam CList is input typelist
+ *	@tparam n_split is length of the first half of the split (must be
+ *		nonnegative and less or equal to the list length)
+ */
+template <class CList, const int n_split>
+class CSplitTypelist {
+public:
+	typedef CTypelist<typename CList::_TyHead,
+		typename CSplitTypelist<typename CList::_TyTail, n_split - 1>::_TyFirst> _TyFirst; /**< @brief the first half of the split */
+	typedef typename CSplitTypelist<typename CList::_TyTail, n_split - 1>::_TySecond _TySecond; /**< @brief the second half of the split */
+};
+
+/**
+ *	@brief splits a typelist in two halves (specialization)
+ *	@tparam CList is input typelist
+ */
+template <class CTypeList>
+class CSplitTypelist<CTypeList, 0> {
+public:
+	typedef CTypelistEnd _TyFirst; /**< @brief the first half of the split */
+	typedef CTypeList _TySecond; /**< @brief the second half of the split */
+};
+
+/**
+ *	@brief gets a span of a typelist
+ *
+ *	@tparam CList is input typelist
+ *	@tparam n_begin is zero-based index of the first item in the resulting list
+ *	@tparam n_end is zero-based index of one past the last item in the resulting list
+ */
+template <class CList, const int n_begin, const int n_end>
+class CTypelistSpan {
+public:
+	typedef typename CSplitTypelist<typename CSplitTypelist<CList, n_begin>::_TySecond,
+		n_end - n_begin>::_TyFirst _TyResult; /**< @brief the result */
+	// this first cuts begin and then end, it takes O(n_begin) + O(n_end - n_begin) of recursions
+	// the other split order would be O(n_end) + O(n_begin) which is clearly more costly
+};
+
+/**
+ *	@brief concatenates a list of typelists
+ *	@tparam CListOfLists is a list of typelists (a 2D jagged list) to be concatenated
+ */
+template <class CListOfLists>
+class CConcatListOfTypelists {
+protected:
+	typedef typename CListOfLists::_TyHead CFirstList; /**< @brief the first list */
+	typedef typename CListOfLists::_TyTail CRestOfLists; /**< @brief the rest of the lists */
+
+	// it may be better if we could have some divide and conquer - split
+	// the list to two lists and concatenate them, then concatenate the results
+
+	// for n list with m elements each, this takes O(mn^2 / 2)
+	// to split it in two first, it would take O(n / 2) for the split and then O(mn^2 / 8) + O(mn / 2)
+	// not so sure if that is better and also how the compiler would deal with it
+
+public:
+	typedef typename CConcatTypelist<CFirstList, typename
+		CConcatListOfTypelists<CRestOfLists>::_TyResult>::_TyResult _TyResult; /**< @brief the concatenated list */
+};
+
+/**
+ *	@brief concatenates a list of typelists (specialization for a list, containing a single list)
+ *	@tparam CSingleList is a single typelist to be concatenated
+ */
+template <class CSingleList>
+class CConcatListOfTypelists<CTypelist<CSingleList, CTypelistEnd> > {
+public:
+	typedef CSingleList _TyResult; /**< @brief the concatenated list */
+};
+
+/**
+ *	@brief concatenates a list of typelists (specialization for an empty list)
+ */
+template <>
+class CConcatListOfTypelists<CTypelistEnd> {
+public:
+	typedef CTypelistEnd _TyResult; /**< @brief the concatenated list */
+};
+
+/**
  *	@brief calculates cartesian product of a scalar on left side and a type list on right side
  *
  *	@tparam _TLeft is a scalar type
@@ -1523,6 +1692,83 @@ public:
 };
 
 /**
+ *	@brief calculates typelist reduction using a binary function
+ *
+ *	The functor is applied to pairs of (typelist item, tail reduction)
+ *	and at the end to a pair of the last two typelist items. Lists with
+ *	a single item in them are left unchanged.
+ *
+ *	@tparam CList is input typelist
+ *	@tparam CFunctor is binary functor
+ */
+template <class CList, template <class, class> class CFunctor>
+class CTypelistReduce {
+protected:
+	typedef typename CList::_TyHead _TyHead; /**< @brief the current list item */
+	typedef typename CList::_TyTail _TyTail; /**< @brief list tail */
+	typedef typename CTypelistReduce<_TyTail,
+		CFunctor>::_TyResult _TyTailReduction; /**< @brief reduction of the tail */
+
+public:
+	typedef typename CFunctor<_TyHead, _TyTailReduction>::_TyResult _TyResult; /**< @brief reduction result */
+};
+
+/**
+ *	@brief calculates typelist reduction using a binary function
+ *		(specialization for lists of length 1 or the end of the list)
+ */
+template <class CLastItem, template <class, class> class CFunctor>
+class CTypelistReduce<CTypelist<CLastItem, CTypelistEnd>, CFunctor> {
+public:
+	typedef CLastItem _TyResult; /**< @brief reduction result */
+};
+
+/**
+ *	@brief calculates typelist reduction using a binary function (specialization for empty list)
+ */
+template <template <class, class> class CFunctor>
+class CTypelistReduce<CTypelistEnd, CFunctor> {
+public:
+	typedef CTypelistEnd _TyResult; /**< @brief reduction result */
+};
+
+/**
+ *	@brief calculates typelist reduction using a binary function
+ *
+ *	The functor is applied to pairs of (typelist item, tail reduction)
+ *	and at the end to a pair of (typelist item, initial value).
+ *
+ *	@tparam CList is input typelist
+ *	@tparam CFunctor is binary functor
+ *	@tparam CInitialValue is initial reduction result type
+ *
+ *	@note This generates the same result as CTypelistReduce using the same
+ *		functor, but executed on a list with CInitialValue appended at the end:
+ *		CTypelistReduce<CConcatTypelist<CList, MakeTypelist(CInitialValue)>::_TyResult, CFunctor>.
+ */
+template <class CList, template <class, class> class CFunctor, class CInitialValue>
+class CTypelistReduce2 {
+protected:
+	typedef typename CList::_TyHead _TyHead; /**< @brief the current list item */
+	typedef typename CList::_TyTail _TyTail; /**< @brief list tail */
+	typedef typename CTypelistReduce2<_TyTail, CFunctor,
+		CInitialValue>::_TyResult _TyTailReduction; /**< @brief reduction of the tail */
+
+public:
+	typedef typename CFunctor<_TyHead, _TyTailReduction>::_TyResult _TyResult; /**< @brief reduction result */
+};
+
+/**
+ *	@brief calculates typelist reduction using a binary function
+ *		(specialization for an empty list or the end of the list)
+ */
+template <template <class, class> class CFunctor, class CInitialValue>
+class CTypelistReduce2<CTypelistEnd, CFunctor, CInitialValue> {
+public:
+	typedef CInitialValue _TyResult; /**< @brief reduction result */
+};
+
+/**
  *	@brief iterates typelist entries and passes them to a template functor
  *		(specialization for the end of the list, or an empty list)
  *
@@ -1655,6 +1901,68 @@ public:
 };
 
 /**
+ *	@brief predicate inverse type
+ *	@tparam CPredicate is a binary predicate type
+ */
+template <template <class, class> class CPredicate>
+class CPredicateInversion {
+public:
+	/**
+	 *	@brief inverted predicate type
+	 *
+	 *	@tparam A is the first predicate argument
+	 *	@tparam B is the second predicate argument
+	 *
+	 *	@note This needs to be inside a container since it is an incomplete type and can't
+	 *		be passed as a template argument otherwise.
+	 */
+	template <class A, class B>
+	class CInverse {
+	public:
+		/**
+		 *	@brief result, stored as enum
+		 */
+		enum {
+			b_result = !CPredicate<A, B>::b_result /**< @brief inverted predicate result */
+		};
+	};
+};
+
+/**
+ *	@brief predicate for presence of an item in a typelist
+ *
+ *	@tparam CItemType is an item
+ *	@tparam CList is a typelist
+ */
+template <class CItemType, class CList>
+class CTypelistItemPresencePredicate { // unfortunately CFindTypelistItem cannot be directly used as a predicate
+public:
+	/**
+	 *	@brief result, stored as enum
+	 */
+	enum {
+		b_result = CFindTypelistItem<CList, CItemType>::b_result /**< @brief predicate result; true if the item was found in the typelist, false otherwise */
+	};
+};
+
+/**
+ *	@brief calculates typelist difference; constructs a typelist with items in the first list
+ *		which are not present in the second list
+ *
+ *	@tparam CListA is the first list
+ *	@tparam CListB is the second list
+ */
+template <class CListA, class CListB>
+class CTypelistDifference {
+protected:
+	//typedef typename CPredicateInversion<CTypelistItemPresencePredicate>::CInverse CPredicate; // cant typedef an incomplete type
+
+public:
+	typedef typename CFilterTypelist<CListA, CListB, /*typename*/ // not a type name, it is incomplete!
+		CPredicateInversion<CTypelistItemPresencePredicate>::CInverse>::_TyResult _TyResult; /**< @brief the resulting typelist difference */
+};
+
+/**
  *	@brief finds an item in a sorted typelist by a reference value using binary search
  *		(at runtime) and calls a functor on the type found
  *
@@ -1707,12 +2015,14 @@ public:
 		 */
 		static inline CFunctor FindExisting(const CReference reference_value, CFunctor f)
 		{
-			if(CComparator<_TyPivot>::b_LessThan(reference_value)) { // compares "_TyPivot < reference_value"
+			//if(CComparator<_TyPivot>::b_GreaterThan(reference_value)) { // compares "_TyPivot > reference_value"
+			if(!CComparator<_TyPivot>::b_LessThan(reference_value) &&
+			   !CComparator<_TyPivot>::b_Equal(reference_value)) { // compares "_TyPivot > reference_value"
 				return CDecissionTree</*_CList, _CComparator, _CReference,
-					_CFunctor,*/ n_begin, n_half>::FindAlways(reference_value, f);
+					_CFunctor,*/ n_begin, n_half>::FindExisting(reference_value, f);
 			} else {
 				return CDecissionTree</*_CList, _CComparator, _CReference,
-					_CFunctor,*/ n_pivot, n_rest>::FindAlways(reference_value, f);
+					_CFunctor,*/ n_pivot, n_rest>::FindExisting(reference_value, f); // contains pivot
 			}
 		}
 
@@ -1728,12 +2038,14 @@ public:
 		 */
 		static inline CFunctor Find(const CReference reference_value, CFunctor f)
 		{
-			if(CComparator<_TyPivot>::b_LessThan(reference_value)) { // compares "_TyPivot < reference_value"
+			//if(CComparator<_TyPivot>::b_GreaterThan(reference_value)) { // compares "_TyPivot > reference_value"
+			if(!CComparator<_TyPivot>::b_LessThan(reference_value) &&
+			   !CComparator<_TyPivot>::b_Equal(reference_value)) { // compares "_TyPivot > reference_value"
 				return CDecissionTree</*_CList, _CComparator, _CReference,
 					_CFunctor,*/ n_begin, n_half>::Find(reference_value, f);
 			} else {
 				return CDecissionTree</*_CList, _CComparator, _CReference,
-					_CFunctor,*/ n_pivot, n_rest>::Find(reference_value, f);
+					_CFunctor,*/ n_pivot, n_rest>::Find(reference_value, f); // contains pivot
 			}
 		}
 	};
@@ -1852,6 +2164,90 @@ public:
 	}
 };
 
+/**
+ *	@brief binary search result, to be used with CTypelistItemBFind::Find()
+ */
+class CBinarySearchResult {
+protected:
+	bool m_b_found; /**< @brief found flag (raised if the specified item is found) */
+
+public:
+	/**
+	 *	@brief default constructor; clears the found flag
+	 */
+	CBinarySearchResult()
+		:m_b_found(false)
+	{}
+
+	/**
+	 *	@brief function operator; raises the found flag if the type is not CTypelistEnd
+	 *	@tparam CType is pivot type, passed by CTypelistItemBFind
+	 */
+	template <class CType>
+	void operator ()()
+	{
+		m_b_found = !CEqualType<CType, CTypelistEnd>::b_result; // or could use function specialization to do the same
+	}
+
+	/**
+	 *	@brief conversion to bool
+	 *	@return Returns the result of a found flag.
+	 */
+	inline operator bool() const
+	{
+		return m_b_found;
+	}
+};
+
+/**
+ *	@brief binary search result, to be used with CTypelistItemBFind::Find()
+ *	@tparam CList is the typelist being searched through
+ */
+template <class CList>
+class CBinarySearchResultWithIndex {
+protected:
+	bool m_b_found; /**< @brief found flag (raised if the specified item is found) */
+	size_t m_n_index; /**< @brief index of the item found */
+
+public:
+	/**
+	 *	@brief default constructor; clears the found flag
+	 */
+	CBinarySearchResultWithIndex()
+		:m_b_found(false), m_n_index(size_t(-1))
+	{}
+
+	/**
+	 *	@brief function operator; raises the found flag and calculates the index if the type is found
+	 *	@tparam CType is pivot type, passed by CTypelistItemBFind
+	 */
+	template <class CType>
+	void operator ()()
+	{
+		typedef CFindTypelistItem<CList, CType> CFindResult;
+		m_b_found = CFindResult::b_result;
+		m_n_index = CFindResult::n_index;
+	}
+
+	/**
+	 *	@brief gets index of the item
+	 *	@return Returns zero-based index of the item in the typelist, or -1 in case the item was not found.
+	 */
+	inline size_t n_Index() const
+	{
+		return m_n_index;
+	}
+
+	/**
+	 *	@brief conversion to bool
+	 *	@return Returns the result of a found flag.
+	 */
+	inline operator bool() const
+	{
+		return m_b_found;
+	}
+};
+
 #endif // !__TYPE_LIST_OMIT_OPS
 
-#endif // __TYPE_LIST_INCLUDED
+#endif // !__TYPE_LIST_INCLUDED

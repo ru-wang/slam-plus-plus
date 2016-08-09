@@ -37,7 +37,7 @@
 #endif // _USE_MATH_DEFINES
 #include <math.h>
 #include <float.h>
-//#include "slam/BlockMatrix.h"
+#include "slam/BlockMatrix.h"
 #include "eigen/Eigen/Cholesky"
 #include "eigen/Eigen/Geometry" // quaternions
 
@@ -112,13 +112,40 @@ void CalculateD(double d[6][1], double theta, double omega,
  */
 class C3DJacobians {
 public:
+	typedef Eigen::Matrix<double, 6, 1> Vector6d; /**< @brief 6D vector type */
+	typedef Eigen::Matrix<double, 6, 6> Matrix6d; /**< @brief 6x6 matrix type */
+
+public:
 	/**
-	 *	@brief converts from axis angle rep to RPY
+	 *	@brief converts from axis angle rep to rotation matrix
 	 *	@param[in] v_vec is axis-angle rotation (angle is encoded as the magnitude of the axis)
 	 *	@return Returns rotation matrix, corresponding to the input.
+	 *	@deprecated This function is deprecated in favor of C3DJacobians::t_AxisAngle_to_RotMatrix(). Please, do not use it.
 	 */
 	static Eigen::Matrix3d Operator_rot(Eigen::Vector3d v_vec)
 	{
+		return t_AxisAngle_to_RotMatrix(v_vec); // no need for 2nd implementation
+	}
+
+	/**
+	 *	@brief converts from axis angle representation to rotation matrix
+	 *	@tparam Derived is Eigen derived matrix type for the first matrix argument
+	 *	@param[in] v_vec is axis-angle rotation (angle is encoded as the magnitude of the axis)
+	 *	@return Returns rotation matrix, corresponding to the input.
+	 *	@note Consider whether converting to a quaternion would not be faster: converting to a quaternion
+	 *		and transforming a single point will be faster than converting to a rotation matrix. Only when
+	 *		transforming two or more points, rotation matrix will be faster.
+	 */
+	template <class Derived>
+	static Eigen::Matrix3d t_AxisAngle_to_RotMatrix(const Eigen::MatrixBase<Derived> &v_vec)
+	{
+		DimensionCheck<Eigen::Vector3d>(v_vec);
+
+#if 1 // reuse conversion to quaternions, to avoid repeating code. recently improved numerical stability there.
+		Eigen::Quaternion<double> rot;
+		AxisAngle_to_Quat(v_vec, rot);
+		return rot.toRotationMatrix();
+#else // 1
 		double f_angle = v_vec.norm();//sqrt(x*x + y*y + z*z); // SSE
 		// this is really angle in radians
 
@@ -154,15 +181,37 @@ public:
 
 		return Q;
 #endif // 1
+#endif // 1
 	}
 
 	/**
-	 *	@brief converts from RYP rep to axis angle
+	 *	@brief converts from rotation matrix rep to axis angle
 	 *	@param[in] Q is the rotation matrix
 	 *	@return Returns axis-amgle rotation, where the angle is encoded as magnitude of the axis.
+	 *	@deprecated This function is deprecated in favor of C3DJacobians::v_RotMatrix_to_AxisAngle(). Please, do not use it.
 	 */
 	static Eigen::Vector3d Operator_arot(const Eigen::Matrix3d &Q) // note that Eigen probably implements this somewhere
 	{
+		return v_RotMatrix_to_AxisAngle(Q); // no need for 2nd implementation
+	}
+
+	/**
+	 *	@brief converts from a rotation matrix to axis anglerepresentation
+	 *	@tparam Derived is Eigen derived matrix type for the first matrix argument
+	 *	@param[in] Q is the rotation matrix
+	 *	@return Returns axis-amgle rotation, where the angle is encoded as magnitude of the axis.
+	 */
+	template <class Derived>
+	static Eigen::Vector3d v_RotMatrix_to_AxisAngle(const Eigen::MatrixBase<Derived> &Q)
+	{
+		DimensionCheck<Eigen::Matrix3d>(Q);
+
+#if 1 // reuse conversion to quaternions, to avoid repeating code. recently improved numerical stability there.
+		Eigen::Quaternion<double> quat(Q); // converts rotation matrix to quaternion (hopefully SSE)
+		Eigen::Vector3d v_aang;
+		Quat_to_AxisAngle(quat, v_aang); // reuse existing code
+		return v_aang;
+#else // 1
 #if 1
 		Eigen::Quaternion<double> quat(Q); // converts rotation matrix to quaternion (hopefully SSE)
 		double f_half_angle = acos(quat.w());
@@ -231,6 +280,123 @@ public:
 
 		return axis;
 #endif // 1
+#endif // 1
+	}
+
+	/**
+	 *	@brief converts axis-angle representation to quaternion
+	 *
+	 *	@tparam Derived is Eigen derived matrix type for the first matrix argument
+	 *
+	 *	@param[in] r_axis_angle is a vector where unit direction gives axis, and magnitude gives angle in radians
+	 *	@param[out] r_quat is quaternion representing the same rotation as r_axis_angle
+	 */
+	template <class Derived>
+	static void AxisAngle_to_Quat(const Eigen::MatrixBase<Derived> &r_axis_angle, Eigen::Quaterniond &r_quat)
+	{
+		DimensionCheck<Eigen::Vector3d>(r_axis_angle);
+
+		f_AxisAngle_to_Quat(r_axis_angle, r_quat); // ignore the return value, probably optimized away
+		/*double f_angle = r_axis_angle.norm();
+		if(f_angle < 1e-12)
+			r_quat = Eigen::Quaterniond(1, 0, 0, 0); // cos(0) = 1
+		else {
+			//_ASSERTE(f_angle <= M_PI); // sometimes broken
+			f_angle = fmod(f_angle, M_PI * 2);
+			double q = (sin(f_angle * .5) / f_angle);
+			r_quat = Eigen::Quaterniond(cos(f_angle * .5), r_axis_angle(0) * q,
+				r_axis_angle(1) * q, r_axis_angle(2) * q);
+			r_quat.normalize();
+		}*/
+	}
+
+	/**
+	 *	@brief converts axis-angle representation to quaternion
+	 *
+	 *	@tparam Derived is Eigen derived matrix type for the first matrix argument
+	 *
+	 *	@param[in] r_axis_angle is a vector where unit direction gives axis, and magnitude gives angle in radians
+	 *	@param[out] r_quat is quaternion representing the same rotation as r_axis_angle
+	 *
+	 *	@return Returns rotation angle in radians (after flushing small angles to zero).
+	 */
+	template <class Derived>
+	static double f_AxisAngle_to_Quat(const Eigen::MatrixBase<Derived> &r_axis_angle, Eigen::Quaterniond &r_quat)
+	{
+		DimensionCheck<Eigen::Vector3d>(r_axis_angle);
+
+		double f_angle = r_axis_angle.norm();
+		if(f_angle < 1e-12) { // increasing this does not help
+			r_quat = Eigen::Quaterniond(1, 0, 0, 0); // cos(0) = 1
+			return 0;//M_PI * 2;
+		} else {
+			//_ASSERTE(f_angle <= M_PI); // sometimes broken
+			double f_half_angle = fmod(f_angle, M_PI * 2) * .5;
+			double q = sin(f_half_angle) / f_angle; // sin is [0, 1], angle is about [-2pi, 2pi] but could be slightly more / less due to optimization incrementing / decrementing it
+			r_quat = Eigen::Quaterniond(cos(f_half_angle), r_axis_angle(0) * q,
+				r_axis_angle(1) * q, r_axis_angle(2) * q);
+			r_quat.normalize(); // should already be normalized unles there was a great roundoff in calculation of q; could detect that.
+		}
+		return f_angle;
+	}
+
+	/**
+	 *	@brief converts quaternion to axis-angle representation
+	 *
+	 *	@tparam Derived is Eigen derived matrix type for the second matrix argument
+	 *
+	 *	@param[in] r_quat is quaternion representing the same rotation as r_axis_angle
+	 *	@param[out] r_axis_angle is a vector where unit direction gives axis, and magnitude gives angle in radians
+	 */
+	template <class Derived>
+	static void Quat_to_AxisAngle(const Eigen::Quaterniond &r_quat, Eigen::MatrixBase<Derived> &r_axis_angle)
+	{
+		DimensionCheck<Eigen::Vector3d>(r_axis_angle);
+
+		f_Quat_to_AxisAngle(r_quat, r_axis_angle); // ignore the return value, probably optimized away
+		////double f_half_angle = /*(r_quat.w() <= 0)? asin(r_quat.vec().norm()) :*/ acos(r_quat.w()); // 0 .. pi
+		//double f_half_angle = (r_quat.w() == 1.0)? asin(r_quat.vec().norm()) : acos(r_quat.w()); // 0 .. pi // more numerically robust. normalization of quaternions sometimes yields (eps eps eps 1.0), the above line would calculate angle of 0.0, this line calculates angle of ~eps
+		//_ASSERTE(f_half_angle >= 0);
+		//if(f_half_angle < 1e-12)
+		//	r_axis_angle = Eigen::Vector3d(0, 0, 0); // lim(sin(x) / x) for x->0 equals 1, we're therefore multiplying a null vector by 1
+		//else {
+		//	double f_angle = 2 * ((r_quat.w() <= 0)? f_half_angle - M_PI : f_half_angle);
+		//	r_axis_angle = r_quat.vec() * (f_angle / sin(f_half_angle));
+		//}
+	}
+
+	/**
+	 *	@brief converts quaternion to axis-angle representation
+	 *
+	 *	@tparam Derived is Eigen derived matrix type for the second matrix argument
+	 *
+	 *	@param[in] r_quat is quaternion representing the same rotation as r_axis_angle
+	 *	@param[out] r_axis_angle is a vector where unit direction gives axis, and magnitude gives angle in radians
+	 *
+	 *	@return Returns rotation angle in radians (after flushing small angles to zero).
+	 */
+	template <class Derived>
+	static double f_Quat_to_AxisAngle(const Eigen::Quaterniond &r_quat, Eigen::MatrixBase<Derived> &r_axis_angle)
+	{
+		DimensionCheck<Eigen::Vector3d>(r_axis_angle);
+
+		//double f_half_angle = /*(r_quat.w() <= 0)? asin(r_quat.vec().norm()) :*/ acos(r_quat.w()); // 0 .. pi
+
+		double f_half_angle = (/*fabs*/(r_quat.w()) >= 1.0)? asin(r_quat.vec().norm()) : acos(r_quat.w()); // 0 .. pi
+		// more numerically robust. normalization of quaternions sometimes yields (eps eps eps 1.0)
+		// product of normalized quats sometimes yields (eps eps eps (1.0 + 1 ULP)),
+		// the above line would calculate angle of 0.0, this line calculates angle of ~eps
+		// note that r_quat.w() doesn't ever seem to be negative one, otherwise enable fabs()
+
+		_ASSERTE(f_half_angle >= 0); // detects NaNs
+		if(f_half_angle < 1e-12) {
+			r_axis_angle = Eigen::Vector3d(0, 0, 0); // lim(sin(x) / x) for x->0 equals 1, we're therefore multiplying a null vector by 1
+			return 0;
+		} else {
+			double f_angle = 2 * ((r_quat.w() <= 0)? f_half_angle - M_PI : f_half_angle);
+			r_axis_angle = r_quat.vec() * (f_angle / sin(f_half_angle));
+			return f_angle;
+		}
 	}
 
 	/**
@@ -239,11 +405,33 @@ public:
 	 *	@param[in] r_t_vertex1 is the vertex to be modified
 	 *	@param[in] r_t_vertex2 is the delta vector
 	 *	@param[out] r_t_dest is the result of the operation
+	 *
+	 *	@deprecated This is deprecated in favor of C3DJacobians::Relative_to_Absolute(). Please, do not use this function.
 	 */
-	static void Smart_Plus(const Eigen::Matrix<double, 6, 1> &r_t_vertex1,
-		const Eigen::Matrix<double, 6, 1> &r_t_vertex2, Eigen::Matrix<double, 6, 1> &r_t_dest)
+	static void Smart_Plus(const Vector6d &r_t_vertex1, const Vector6d &r_t_vertex2, Vector6d &r_t_dest)
 	{
-		_ASSERTE(r_t_vertex1.rows() == 6 && r_t_vertex2.rows() == 6);
+		Relative_to_Absolute(r_t_vertex1, r_t_vertex2, r_t_dest);
+		// 2nd implementation not required
+	}
+
+	/**
+	 *	@brief composes a pair of relative transformations to yield an aboslute transformation
+	 *
+	 *	@tparam Derived0 is Eigen derived matrix type for the first matrix argument
+	 *	@tparam Derived1 is Eigen derived matrix type for the second matrix argument
+	 *	@tparam Derived2 is Eigen derived matrix type for the third matrix argument
+	 *
+	 *	@param[in] r_t_vertex1 is the first transformation (in absolute coordinates)
+	 *	@param[in] r_t_vertex2 is the second transformation (relative to the first one)
+	 *	@param[out] r_t_dest is filled with the composed transformation
+	 */
+	template <class Derived0, class Derived1, class Derived2>
+	static inline void Relative_to_Absolute(const Eigen::MatrixBase<Derived0> &r_t_vertex1,
+		const Eigen::MatrixBase<Derived1> &r_t_vertex2, Eigen::MatrixBase<Derived2> &r_t_dest)
+	{
+		DimensionCheck<Vector6d>(r_t_vertex1);
+		DimensionCheck<Vector6d>(r_t_vertex2);
+		DimensionCheck<Vector6d>(r_t_dest);
 
 #if 0
 		/* TODO: make more efficient */
@@ -255,59 +443,46 @@ public:
 		r_t_dest.head<3>() = r_t_vertex1.head<3>() + r_t_vertex2.head<3>(); // accelerated using SSE
 
 		//sum the rotations
-		Eigen::Matrix3d pQ = Operator_rot(r_t_vertex1.tail<3>());
-		Eigen::Matrix3d dQ = Operator_rot(r_t_vertex2.tail<3>());
+		Eigen::Matrix3d pQ = t_AxisAngle_to_RotMatrix(r_t_vertex1.tail<3>());
+		Eigen::Matrix3d dQ = t_AxisAngle_to_RotMatrix(r_t_vertex2.tail<3>());
 
 		Eigen::Matrix3d QQ;// = pQ * dQ;
 		QQ.noalias() = pQ * dQ; // multiplication without intermediate storage
-		//Eigen::Vector3d axis = Operator_arot(QQ);
-		r_t_dest.tail<3>() = Operator_arot(QQ);
+		//Eigen::Vector3d axis = v_RotMatrix_to_AxisAngle(QQ);
+		r_t_dest.tail<3>() = v_RotMatrix_to_AxisAngle(QQ);
 
 		//r_t_dest(3) = axis(0);
 		//r_t_dest(4) = axis(1);
 		//r_t_dest(5) = axis(2);
 #else
-		Eigen::Vector3d p1 = r_t_vertex1.head<3>();
+		//Eigen::Vector3d p1 = r_t_vertex1.template head<3>();
 		Eigen::Quaterniond q1;
-		AxisAngle_to_Quat(r_t_vertex1.tail<3>(), q1);
+		AxisAngle_to_Quat(r_t_vertex1.template tail<3>(), q1);
 
-		Eigen::Vector3d p2 = r_t_vertex2.head<3>();
+		//Eigen::Vector3d p2 = r_t_vertex2.template head<3>();
 		Eigen::Quaterniond q2;
-		AxisAngle_to_Quat(r_t_vertex2.tail<3>(), q2);
+		AxisAngle_to_Quat(r_t_vertex2.template tail<3>(), q2);
 
-		r_t_dest.head<3>() = p1 + q1._transformVector(p2); // p2 rotates!
+		r_t_dest.template head<3>() = r_t_vertex1.template head<3>() +
+			q1._transformVector(r_t_vertex2.template head<3>()); // p2 rotates!
 		Eigen::Vector3d v_aang;
 		Quat_to_AxisAngle((q1 * q2)/*.normalized()*/, v_aang); // product doesn't denormalize
-		r_t_dest.tail<3>() = v_aang;
+		r_t_dest.template tail<3>() = v_aang;
 #endif
-	}
-
-	/**
-	 *	@brief converts xyzaxis angles coordinates from relative measurement to absolute measurement
-	 *
-	 *	@param[in] r_t_vertex1 is the first vertex, in absolute coordinates
-	 *	@param[in] r_t_vertex2 is the second vertex, relative to the first one
-	 *	@param[out] r_t_dest is filled with absolute coordinates of the second vertex
-	 */
-	static inline void Relative_to_Absolute(const Eigen::Matrix<double, 6, 1> &r_t_vertex1,
-		const Eigen::Matrix<double, 6, 1> &r_t_vertex2, Eigen::Matrix<double, 6, 1> &r_t_dest)
-	{
-		Smart_Plus(r_t_vertex1, r_t_vertex2, r_t_dest);
-		// 2nd implementation not required
 
 #if 0
 #if 0
 		/* TODO: make more efficient */
 		//r_t_dest.resize(6, 1); // no need to resize fixed size expressions
 		Eigen::Vector3d p = r_t_vertex1.head<3>();
-		Eigen::Matrix3d pQ = Operator_rot(r_t_vertex1.tail<3>());
+		Eigen::Matrix3d pQ = t_AxisAngle_to_RotMatrix(r_t_vertex1.tail<3>());
 		Eigen::Vector3d d = r_t_vertex2.head<3>();
-		Eigen::Matrix3d dQ = Operator_rot(r_t_vertex2.tail<3>());
+		Eigen::Matrix3d dQ = t_AxisAngle_to_RotMatrix(r_t_vertex2.tail<3>());
 		r_t_dest.head<3>() = p + pQ * d;
 
 		Eigen::Matrix3d QQ;// = pQ * dQ;
 		QQ.noalias() = pQ * dQ; // multiplication without intermediate storage
-		r_t_dest.tail<3>() = Operator_arot(QQ);
+		r_t_dest.tail<3>() = v_RotMatrix_to_AxisAngle(QQ);
 #else // 0
 		Eigen::Vector3d p1 = r_t_vertex1.head<3>();
 		Eigen::Quaterniond q1;
@@ -329,20 +504,29 @@ public:
 	 *	@brief converts xyz axis angle coordinates from absolute measurement to relative measurement
 	 *		and calculates the jacobians
 	 *
+	 *	@tparam Derived0 is Eigen derived matrix type for the first matrix argument
+	 *	@tparam Derived1 is Eigen derived matrix type for the second matrix argument
+	 *	@tparam Derived2 is Eigen derived matrix type for the third matrix argument
+	 *
 	 *	@param[in] r_t_vertex1 is the first vertex, in absolute coordinates
 	 *	@param[in] r_t_vertex2 is the second vertex, also in absolute coordinates
 	 *	@param[out] r_t_dest is filled with relative coordinates of the second vertex
 	 */
-	static void Absolute_to_Relative(const Eigen::Matrix<double, 6, 1> &r_t_vertex1,
-		const Eigen::Matrix<double, 6, 1> &r_t_vertex2, Eigen::Matrix<double, 6, 1> &r_t_dest)
+	template <class Derived0, class Derived1, class Derived2>
+	static void Absolute_to_Relative(const Eigen::MatrixBase<Derived0> &r_t_vertex1,
+		const Eigen::MatrixBase<Derived1> &r_t_vertex2, Eigen::MatrixBase<Derived2> &r_t_dest)
 	{
+		DimensionCheck<Vector6d>(r_t_vertex1);
+		DimensionCheck<Vector6d>(r_t_vertex2);
+		DimensionCheck<Vector6d>(r_t_dest);
+
 #if 0
 		/* TODO: make more efficient */
-		Eigen::Vector3d p1 = r_t_vertex1.head<3>();
-		Eigen::Matrix3d pQ1 = Operator_rot(r_t_vertex1.tail<3>());
+		Eigen::Vector3d p1 = r_t_vertex1.template head<3>();
+		Eigen::Matrix3d pQ1 = t_AxisAngle_to_RotMatrix(r_t_vertex1.template tail<3>());
 
-		Eigen::Vector3d p2 = r_t_vertex2.head<3>();
-		Eigen::Matrix3d pQ2 = Operator_rot(r_t_vertex2.tail<3>());
+		Eigen::Vector3d p2 = r_t_vertex2.template head<3>();
+		Eigen::Matrix3d pQ2 = t_AxisAngle_to_RotMatrix(r_t_vertex2.template tail<3>());
 
 		Eigen::Matrix3d pQ1_inv = pQ1.inverse();
 		//Eigen::Matrix3d pQ2_inv = pQ2.inverse();
@@ -351,122 +535,37 @@ public:
 		r_t_dest.head<3>() = pQ1_inv * (p2 - p1);
 
 		Eigen::Matrix3d QQ = pQ1_inv * pQ2;
-		r_t_dest.tail<3>() = Operator_arot(QQ);	//TODO: is this right??
+		r_t_dest.tail<3>() = v_RotMatrix_to_AxisAngle(QQ);	//TODO: is this right??
 #else
-		Eigen::Vector3d p1 = r_t_vertex1.head<3>();
+		//Eigen::Vector3d p1 = r_t_vertex1.template head<3>();
 		Eigen::Quaterniond q1;
-		AxisAngle_to_Quat(r_t_vertex1.tail<3>(), q1);
+		AxisAngle_to_Quat(r_t_vertex1.template tail<3>(), q1);
 
-		//Eigen::Matrix3d pQ1 = Operator_rot(r_t_vertex1.tail<3>());
+		//Eigen::Matrix3d pQ1 = t_AxisAngle_to_RotMatrix(r_t_vertex1.tail<3>());
 		//Eigen::Matrix3d pQ1_inv = pQ1.inverse();
 		// matrix not required after all
 
-		Eigen::Vector3d p2 = r_t_vertex2.head<3>();
+		//Eigen::Vector3d p2 = r_t_vertex2.template head<3>();
 		Eigen::Quaterniond q2;
-		AxisAngle_to_Quat(r_t_vertex2.tail<3>(), q2);
+		AxisAngle_to_Quat(r_t_vertex2.template tail<3>(), q2);
 
 		Eigen::Quaterniond q1_inv = q1.conjugate(); // the inverse rotation (also have .inverse() but that is not needed)
 
-		r_t_dest.head<3>() = q1_inv._transformVector(p2 - p1); // this is precise enough
+		r_t_dest.template head<3>() = q1_inv._transformVector(r_t_vertex2.template head<3>() -
+			r_t_vertex1.template head<3>()); // this is precise enough
 		//r_t_dest.head<3>() = pQ1_inv * (p2 - p1); // or can use matrix to transform position
 
-		Eigen::Quaterniond prod = (q1_inv * q2).normalized();
+		//Eigen::Quaterniond prod = (q1_inv * q2)/*.normalized()*/; // quaternion product does not denormalize
 		//if(1 || (prod.w()) >= 0) { //printf("bloop %f\n", prod.w());
 			Eigen::Vector3d v_aang;
-			Quat_to_AxisAngle(prod, v_aang); // use quaternion to calculate the rotation
-			r_t_dest.tail<3>() = v_aang;
+			Quat_to_AxisAngle(q1_inv * q2, v_aang); // use quaternion to calculate the rotation
+			r_t_dest.template tail<3>() = v_aang;
 		//} else { //printf("bleep %f\n", prod.w());
-		//	//r_t_dest.tail<3>() = Operator_arot(pQ1_inv * q2); // use quaternion to calculate the rotation
-		//	r_t_dest.tail<3>() = Operator_arot((q1_inv * q2).toRotationMatrix()); // use quaternion to calculate the rotation
+		//	//r_t_dest.tail<3>() = v_RotMatrix_to_AxisAngle(pQ1_inv * q2); // use quaternion to calculate the rotation
+		//	r_t_dest.tail<3>() = v_RotMatrix_to_AxisAngle((q1_inv * q2).toRotationMatrix()); // use quaternion to calculate the rotation
 		//}
 		// arot is needed, but toRotationMatrix() immediately followed by arot() can likely be optimized
 #endif
-	}
-
-	/**
-	 *	@brief converts axis-angle representation to quaternion
-	 *
-	 *	@param[in] r_axis_angle is a vector where unit direction gives axis, and magnitude gives angle in radians
-	 *	@param[out] r_quat is quaternion representing the same rotation as r_axis_angle
-	 */
-	static void AxisAngle_to_Quat(const Eigen::Vector3d &r_axis_angle, Eigen::Quaterniond &r_quat)
-	{
-		double f_angle = r_axis_angle.norm();
-		if(f_angle < 1e-12)
-			r_quat = Eigen::Quaterniond(1, 0, 0, 0); // cos(0) = 1
-		else {
-			//_ASSERTE(f_angle <= M_PI); // sometimes broken
-			f_angle = fmod(f_angle, M_PI * 2);
-			double q = (sin(f_angle * .5) / f_angle);
-			r_quat = Eigen::Quaterniond(cos(f_angle * .5), r_axis_angle(0) * q,
-				r_axis_angle(1) * q, r_axis_angle(2) * q);
-			r_quat.normalize();
-		}
-	}
-
-	/**
-	 *	@brief converts axis-angle representation to quaternion
-	 *
-	 *	@param[in] r_axis_angle is a vector where unit direction gives axis, and magnitude gives angle in radians
-	 *	@param[out] r_quat is quaternion representing the same rotation as r_axis_angle
-	 *
-	 *	@return Returns rotation angle in radians (after flushing small angles to zero).
-	 */
-	static double f_AxisAngle_to_Quat(const Eigen::Vector3d &r_axis_angle, Eigen::Quaterniond &r_quat)
-	{
-		double f_angle = r_axis_angle.norm();
-		if(f_angle < 1e-12) { // increasing this does not help
-			r_quat = Eigen::Quaterniond(1, 0, 0, 0); // cos(0) = 1
-			return 0;//M_PI * 2;
-		} else {
-			//_ASSERTE(f_angle <= M_PI); // sometimes broken
-			f_angle = fmod(f_angle, M_PI * 2);
-			double q = (sin(f_angle * .5) / f_angle);
-			r_quat = Eigen::Quaterniond(cos(f_angle * .5), r_axis_angle(0) * q,
-				r_axis_angle(1) * q, r_axis_angle(2) * q);
-			r_quat.normalize();
-		}
-		return f_angle;
-	}
-
-	/**
-	 *	@brief converts quaternion to axis-angle representation
-	 *
-	 *	@param[in] r_quat is quaternion representing the same rotation as r_axis_angle
-	 *	@param[out] r_axis_angle is a vector where unit direction gives axis, and magnitude gives angle in radians
-	 */
-	static void Quat_to_AxisAngle(const Eigen::Quaterniond &r_quat, Eigen::Vector3d &r_axis_angle)
-	{
-		double f_half_angle = /*(r_quat.w() <= 0)? asin(r_quat.vec().norm()) :*/ acos(r_quat.w()); // 0 .. pi
-		_ASSERTE(f_half_angle >= 0);
-		if(f_half_angle < 1e-12)
-			r_axis_angle = Eigen::Vector3d(0, 0, 0); // lim(sin(x) / x) for x->0 equals 1, we're therefore multiplying a null vector by 1
-		else {
-			double f_angle = 2 * ((r_quat.w() <= 0)? f_half_angle - M_PI : f_half_angle);
-			r_axis_angle = r_quat.vec() * (f_angle / sin(f_half_angle));
-		}
-	}
-
-	/**
-	 *	@brief converts quaternion to axis-angle representation
-	 *
-	 *	@param[in] r_quat is quaternion representing the same rotation as r_axis_angle
-	 *	@param[out] r_axis_angle is a vector where unit direction gives axis, and magnitude gives angle in radians
-	 *
-	 *	@return Returns rotation angle in radians (after flushing small angles to zero).
-	 */
-	static double f_Quat_to_AxisAngle(const Eigen::Quaterniond &r_quat, Eigen::Vector3d &r_axis_angle)
-	{
-		double f_half_angle = /*(r_quat.w() <= 0)? asin(r_quat.vec().norm()) :*/ acos(r_quat.w()); // 0 .. pi
-		_ASSERTE(f_half_angle >= 0);
-		if(f_half_angle < 1e-12) {
-			r_axis_angle = Eigen::Vector3d(0, 0, 0); // lim(sin(x) / x) for x->0 equals 1, we're therefore multiplying a null vector by 1
-			return 0;
-		} else {
-			double f_angle = 2 * ((r_quat.w() <= 0)? f_half_angle - M_PI : f_half_angle);
-			r_axis_angle = r_quat.vec() * (f_angle / sin(f_half_angle));
-			return f_angle;
-		}
 	}
 
 	/**
@@ -524,17 +623,33 @@ public:
 	 *	@brief converts xyz axis angle coordinates from absolute measurement to relative measurement
 	 *		and calculates the jacobians
 	 *
+	 *	@tparam Derived0 is Eigen derived matrix type for the first matrix argument
+	 *	@tparam Derived1 is Eigen derived matrix type for the second matrix argument
+	 *	@tparam Derived2 is Eigen derived matrix type for the third matrix argument
+	 *	@tparam Derived3 is Eigen derived matrix type for the fourth matrix argument
+	 *	@tparam Derived4 is Eigen derived matrix type for the fifth matrix argument
+	 *
 	 *	@param[in] r_t_vertex1 is the first vertex, in absolute coordinates
 	 *	@param[in] r_t_vertex2 is the second vertex, also in absolute coordinates
 	 *	@param[out] r_t_dest is filled with relative coordinates of the second vertex
 	 *	@param[out] r_t_pose3_pose1 is filled with the first jacobian
 	 *	@param[out] r_t_pose3_pose2 is filled with the second jacobian
 	 */
-	template <class _TyDestVector, class _TyDestMatrix0, class _TyDestMatrix1> // want to be able to call this with differnent dest types (sometimes generic VectorXd / MatrixXd, sometimes with Vector3d / Matrix3d)
-	static void Absolute_to_Relative(const Eigen::Matrix<double, 6, 1> &r_t_vertex1,
-		const Eigen::Matrix<double, 6, 1> &r_t_vertex2, _TyDestVector &r_t_dest,
-		_TyDestMatrix0 &r_t_pose3_pose1, _TyDestMatrix1 &r_t_pose3_pose2)
+	template <class Derived0, class Derived1, class Derived2, class Derived3, class Derived4> // want to be able to call this with differnent dest types (sometimes generic VectorXd / MatrixXd, sometimes with Vector3d / Matrix3d)
+	static void Absolute_to_Relative(const Eigen::MatrixBase<Derived0> &r_t_vertex1,
+		const Eigen::MatrixBase<Derived1> &r_t_vertex2, Eigen::MatrixBase<Derived2> &r_t_dest,
+		Eigen::MatrixBase<Derived3> &r_t_pose3_pose1, Eigen::MatrixBase<Derived4> &r_t_pose3_pose2)
 	{
+		DimensionCheck<Vector6d>(r_t_vertex1);
+		DimensionCheck<Vector6d>(r_t_vertex2);
+		DimensionCheck<Vector6d>(r_t_dest);
+		DimensionCheck<Matrix6d>(r_t_pose3_pose1);
+		DimensionCheck<Matrix6d>(r_t_pose3_pose2);
+
+		typedef Eigen::MatrixBase<Derived3> _TyDestMatrix0;
+		typedef Eigen::MatrixBase<Derived4> _TyDestMatrix1;
+		// used on multiple places below
+
 #if 0
 		// use the magical analytical jacobians (magobians)
 
@@ -553,7 +668,7 @@ public:
 		r_t_dest.template head<3>() = q1_inv._transformVector(p2 - p1); // this is precise enough
 
 		Eigen::Vector3d v_aang;
-		Eigen::Quaterniond qdest = (q1_inv * q2).normalized();
+		Eigen::Quaterniond qdest = (q1_inv * q2)/*.normalized()*/; // quaternion product does not denormalize
 		f_Quat_to_AxisAngle(qdest, v_aang); // use quaternion to calculate the rotation
 		r_t_dest.template tail<3>() = v_aang;
 
@@ -583,8 +698,8 @@ public:
 			const double scalar = 1.0 / (delta);
 
 
-			Eigen::Matrix<double, 6, 6> Eps;// = delta * Eigen::MatrixXd::Identity(6, 6); // MatrixXd needs to allocate storage on heap ... many milliseconds lost
-			Eps = Eigen::Matrix<double, 6, 6>::Identity() * delta; // faster, all memory on stack
+			Matrix6d Eps;// = delta * Eigen::MatrixXd::Identity(6, 6); // MatrixXd needs to allocate storage on heap ... many milliseconds lost
+			Eps = Matrix6d::Identity() * delta; // faster, all memory on stack
 
 			_TyDestMatrix0 &H1 = r_t_pose3_pose1;
 			_TyDestMatrix1 &H2 = r_t_pose3_pose2;
@@ -593,13 +708,13 @@ public:
 
 			//Absolute_to_Relative(r_t_vertex1, r_t_vertex2, r_t_dest);
 			for(int j = 0; j < 6; ++ j) {
-				Eigen::Matrix<double, 6, 1> d1, p_delta;
-				Smart_Plus(r_t_vertex1, Eps.col(j), p_delta);
+				Vector6d d1, p_delta;
+				Relative_to_Absolute(r_t_vertex1, Eps.col(j), p_delta);
 				Absolute_to_Relative(p_delta, r_t_vertex2, d1);
 				H1.col(j) = (d1 - r_t_dest) * scalar;
 
-				Eigen::Matrix<double, 6, 1> d2;
-				Smart_Plus(r_t_vertex2, Eps.col(j), p_delta);
+				Vector6d d2;
+				Relative_to_Absolute(r_t_vertex2, Eps.col(j), p_delta);
 				Absolute_to_Relative(r_t_vertex1, p_delta, d2);
 				H2.col(j) = (d2 - r_t_dest) * scalar;
 			}
@@ -638,30 +753,30 @@ public:
 		// get some "ground truth" for analytical jacobian debugging
 
 #ifdef _DEBUG
-		Eigen::Matrix<double, 6, 6> num_H1;
-		Eigen::Matrix<double, 6, 6> num_H2;
-		Eigen::Matrix<double, 6, 6> num_H1_skew;
-		Eigen::Matrix<double, 6, 6> num_H2_skew;
+		Matrix6d num_H1;
+		Matrix6d num_H2;
+		Matrix6d num_H1_skew;
+		Matrix6d num_H2_skew;
 		// can actually work inplace
 
 		{
 			const double delta = 1e-9;
 			const double scalar = 1.0 / (delta);
 
-			Eigen::Matrix<double, 6, 6> Eps;// = delta * Eigen::MatrixXd::Identity(6, 6); // MatrixXd needs to allocate storage on heap ... many milliseconds lost
-			Eps = Eigen::Matrix<double, 6, 6>::Identity() * delta; // faster, all memory on stack
+			Matrix6d Eps;// = delta * Eigen::MatrixXd::Identity(6, 6); // MatrixXd needs to allocate storage on heap ... many milliseconds lost
+			Eps = Matrix6d::Identity() * delta; // faster, all memory on stack
 
 			//Absolute_to_Relative(r_t_vertex1, r_t_vertex2, r_t_dest); // already did that
 			for(int j = 0; j < 6; ++ j) {
 				{
-					Eigen::Matrix<double, 6, 1> d1, p_delta;
-					Smart_Plus(r_t_vertex1, Eps.col(j), p_delta);
+					Vector6d d1, p_delta;
+					Relative_to_Absolute(r_t_vertex1, Eps.col(j), p_delta);
 					//p_delta = r_t_vertex1 + Eps.col(j);
 					Absolute_to_Relative(p_delta, r_t_vertex2, d1);
 					num_H1.col(j) = (d1 - r_t_dest) * scalar;
 
-					Eigen::Matrix<double, 6, 1> d2;
-					Smart_Plus(r_t_vertex2, Eps.col(j), p_delta);
+					Vector6d d2;
+					Relative_to_Absolute(r_t_vertex2, Eps.col(j), p_delta);
 					//p_delta = r_t_vertex2 + Eps.col(j);
 					Absolute_to_Relative(r_t_vertex1, p_delta, d2);
 					num_H2.col(j) = (d2 - r_t_dest) * scalar;
@@ -669,14 +784,14 @@ public:
 				// proper jacobians
 
 				/*{
-					Eigen::Matrix<double, 6, 1> d1, p_delta;
-					//Smart_Plus(r_t_vertex1, Eps.col(j), p_delta);
+					Vector6d d1, p_delta;
+					//Relative_to_Absolute(r_t_vertex1, Eps.col(j), p_delta);
 					p_delta = r_t_vertex1 + Eps.col(j);
 					Absolute_to_Relative(p_delta, r_t_vertex2, d1);
 					num_H1_skew.col(j) = (d1 - r_t_dest) * scalar;
 
-					Eigen::Matrix<double, 6, 1> d2;
-					//Smart_Plus(r_t_vertex2, Eps.col(j), p_delta);
+					Vector6d d2;
+					//Relative_to_Absolute(r_t_vertex2, Eps.col(j), p_delta);
 					p_delta = r_t_vertex2 + Eps.col(j);
 					Absolute_to_Relative(r_t_vertex1, p_delta, d2);
 					num_H2_skew.col(j) = (d2 - r_t_dest) * scalar;
@@ -690,7 +805,7 @@ public:
 		CalculateD(d, thetaMLVar, omega, 
 			ux, uy, uz, ua, ub, uc,
 			vx, vy, vz, va, vb, vc);
-		Eigen::Matrix<double, 6, 1> dv;
+		Vector6d dv;
 		for(int i = 0; i < 6; ++ i)
 			dv(i, 0) = d[i][0];
 		// convert to a vector
@@ -727,16 +842,16 @@ public:
 #elif 0
 		// use the new Hauke jacobians (not working at the moment)
 
-		Eigen::Vector3d tu = r_t_vertex1.head<3>();
-		Eigen::Matrix3d Ru = Operator_rot(r_t_vertex1.tail<3>());
-		Eigen::Vector3d tv = r_t_vertex2.head<3>();
-		Eigen::Matrix3d Rv = Operator_rot(r_t_vertex2.tail<3>());
+		Eigen::Vector3d tu = r_t_vertex1.template head<3>();
+		Eigen::Matrix3d Ru = t_AxisAngle_to_RotMatrix(r_t_vertex1.template tail<3>());
+		Eigen::Vector3d tv = r_t_vertex2.template head<3>();
+		Eigen::Matrix3d Rv = t_AxisAngle_to_RotMatrix(r_t_vertex2.template tail<3>());
 		// call RotMat
 
 		Eigen::Vector3d td = Ru.transpose() * (tv - tu);
 		Eigen::Matrix3d Rd = Ru.transpose() * Rv;
 
-		/*Eigen::Matrix<double, 6, 6> Mu, Mv, Md;
+		/*Matrix6d Mu, Mv, Md;
 
 		Mu.block<3, 3>(0, 0) = -v_SkewSym(r_t_vertex1.tail<3>());
 		Mu.block<3, 3>(0, 3) = -v_SkewSym(r_t_vertex1.head<3>());
@@ -760,7 +875,7 @@ public:
 		}
 		// debug
 
-		Eigen::Matrix<double, 6, 6> I6;
+		Matrix6d I6;
 		I6.setIdentity();
 
 		_TyDestMatrix0 &H1 = r_t_pose3_pose1;
@@ -770,23 +885,23 @@ public:
 		H2 = -(I6 + Mv * .5);*/
 		// eval jacobians
 
-		Eigen::Matrix<double, 6, 6> Mu, Mv;
+		Matrix6d Mu, Mv;
 
-		r_t_dest.head<3>() = td;
-		r_t_dest.tail<3>() = Operator_arot(Rd);
+		r_t_dest.template head<3>() = td;
+		r_t_dest.template tail<3>() = v_RotMatrix_to_AxisAngle(Rd);
 		// calculate distance
 
 		_TyDestVector &d = r_t_dest; // rename
 
-		Mu.block<3, 3>(0, 0) = -v_SkewSym(d.tail<3>());
-		Mu.block<3, 3>(0, 3) = -v_SkewSym(d.head<3>());
-		Mu.block<3, 3>(3, 0).setZero();
-		Mu.block<3, 3>(3, 3) = -v_SkewSym(d.tail<3>());
+		Mu.template block<3, 3>(0, 0) = -v_SkewSym(d.template tail<3>());
+		Mu.template block<3, 3>(0, 3) = -v_SkewSym(d.template head<3>());
+		Mu.template block<3, 3>(3, 0).setZero();
+		Mu.template block<3, 3>(3, 3) = -v_SkewSym(d.template tail<3>());
 
-		Mv.block<3, 3>(0, 0) = v_SkewSym(d.tail<3>());
-		Mv.block<3, 3>(0, 3) = v_SkewSym(d.head<3>());
-		Mv.block<3, 3>(3, 0).setZero();
-		Mv.block<3, 3>(3, 3) = v_SkewSym(d.tail<3>());
+		Mv.template block<3, 3>(0, 0) = v_SkewSym(d.template tail<3>());
+		Mv.template block<3, 3>(0, 3) = v_SkewSym(d.template head<3>());
+		Mv.template block<3, 3>(3, 0).setZero();
+		Mv.template block<3, 3>(3, 3) = v_SkewSym(d.template tail<3>());
 
 		if(0) {
 			std::cout << "Mu =" << Mu << std::endl;
@@ -794,7 +909,7 @@ public:
 		}
 		// debug
 
-		Eigen::Matrix<double, 6, 6> I6;
+		Matrix6d I6;
 		I6.setIdentity();
 
 		_TyDestMatrix0 &H1 = r_t_pose3_pose1;
@@ -816,10 +931,10 @@ public:
 		//double eps_ = sqrt(eps);
 		//double eps_2 = 7.45e-9;
 
-		Eigen::Matrix<double, 6, 6> Eps;// = delta * Eigen::MatrixXd::Identity(6, 6); // MatrixXd needs to allocate storage on heap ... many milliseconds lost
-		//Eigen::Matrix<double, 6, 6> H1;// = Eigen::MatrixXd::Zero(6, 6);
-		//Eigen::Matrix<double, 6, 6> H2;// = Eigen::MatrixXd::Zero(6, 6);
-		Eps = Eigen::Matrix<double, 6, 6>::Identity() * delta; // faster, all memory on stack
+		Matrix6d Eps;// = delta * Eigen::MatrixXd::Identity(6, 6); // MatrixXd needs to allocate storage on heap ... many milliseconds lost
+		//Matrix6d H1;// = Eigen::MatrixXd::Zero(6, 6);
+		//Matrix6d H2;// = Eigen::MatrixXd::Zero(6, 6);
+		Eps = Matrix6d::Identity() * delta; // faster, all memory on stack
 		//H1.setZero();
 		//H2.setZero(); // faster, no extra memory; actually not needed at all, the below code overwrites both H1 and H2
 
@@ -828,23 +943,77 @@ public:
 		_ASSERTE(H1.rows() == 6 && H1.cols() == 6 && H2.rows() == 6 && H2.cols() == 6); // just make sure the shape is right
 		// can actually work inplace
 
-#if 1
-		//Eigen::Matrix<double, 6, 1> d;
+		//Vector6d d;
 		Absolute_to_Relative(r_t_vertex1, r_t_vertex2, r_t_dest);
 		//r_t_dest = d; // possibly an unnecessary copy
 
 		for(int j = 0; j < 6; ++ j) {
-			Eigen::Matrix<double, 6, 1> d1, p_delta;
-			Smart_Plus(r_t_vertex1, Eps.col(j), p_delta);
+			Vector6d d1, p_delta;
+			Relative_to_Absolute(r_t_vertex1, Eps.col(j), p_delta);
 			Absolute_to_Relative(p_delta, r_t_vertex2, d1);
 			H1.col(j) = (d1 - r_t_dest) * scalar;
 
-			Eigen::Matrix<double, 6, 1> d2;
-			Smart_Plus(r_t_vertex2, Eps.col(j), p_delta);
+			Vector6d d2;
+			Relative_to_Absolute(r_t_vertex2, Eps.col(j), p_delta);
 			Absolute_to_Relative(r_t_vertex1, p_delta, d2);
 			H2.col(j) = (d2 - r_t_dest) * scalar;
 		}
 		// return jacobs
+
+#if 0
+		Eigen::Vector4d dist_4D;
+		dist_4D.head<3>() = r_t_dest.head<3>(); // dx, dy, dz
+		dist_4D(3) = r_t_dest.tail<3>().norm(); // a total angle of rotation
+		// the 4D distance
+
+		Eigen::Matrix<double, 4, 6> H1_4, H2_4;
+		for(int j = 0; j < 6; ++ j) {
+			Vector6d d1, p_delta;
+			Relative_to_Absolute(r_t_vertex1, Eps.col(j), p_delta);
+			Absolute_to_Relative(p_delta, r_t_vertex2, d1);
+			Eigen::Vector4d d1_4;
+			d1_4.head<3>() = d1.head<3>();
+			d1_4(3) = d1.tail<3>().norm();
+			H1_4.col(j) = (d1_4 - dist_4D) * scalar;
+
+			Vector6d d2;
+			Relative_to_Absolute(r_t_vertex2, Eps.col(j), p_delta);
+			Absolute_to_Relative(r_t_vertex1, p_delta, d2);
+			Eigen::Vector4d d2_4;
+			d2_4.head<3>() = d2.head<3>();
+			d2_4(3) = d2.tail<3>().norm();
+			H2_4.col(j) = (d2_4 - dist_4D) * scalar;
+		}
+		// the 4D jacobs
+
+		Eigen::Matrix<double, 4, 6> H1_transform = /*-*/Eigen::Matrix<double, 4, 6>::Identity(),
+			H2_transform = Eigen::Matrix<double, 4, 6>::Identity(); // start with identity
+		{
+			/*const double Aa = r_t_vertex1(3), Ab = r_t_vertex1(4), Ac = r_t_vertex1(5);
+			/const double Ba = r_t_vertex2(3), Bb = r_t_vertex2(4), Bc = r_t_vertex2(5);*/
+			const double invD = 1 / dist_4D(3);
+			/*H1_transform(3, 3) = 1 / 2 * invD * (2*Aa-2*Ba);
+			H1_transform(3, 4) = 1 / 2 * invD * (2*Ab-2*Bb);
+			H1_transform(3, 5) = 1 / 2 * invD * (2*Ac-2*Bc);
+			H2_transform(3, 3) = 1 / 2 * invD * (-2*Aa+2*Ba);
+			H2_transform(3, 4) = 1 / 2 * invD * (-2*Ab+2*Bb);
+			H2_transform(3, 5) = 1 / 2 * invD * (-2*Ac+2*Bc);*/
+			const double Aa = r_t_dest(3), Ab = r_t_dest(4), Ac = r_t_dest(5);
+			H1_transform(3, 3) = invD * Aa;
+			H1_transform(3, 4) = invD * Ab;
+			H1_transform(3, 5) = invD * Ac;
+			// matlab code
+		}
+		// get the projection function to go from 6D jacobians to 4D jacobians // this seems to work extremely well
+
+		double f_err_H1 = (H1_4 - H1_transform * H1).norm();
+		double f_err_H2 = (H2_4 - H1_transform/*H2_transform*/ * H2).norm();
+		f_err_H1 /= std::max(1.0, H1.norm());
+		f_err_H2 /= std::max(1.0, H2.norm());
+		fprintf(stderr, "error in jacobians is %g %g\n", f_err_H1, f_err_H2);
+		// evaluate precision
+#endif // 0
+		// debug - projection of the jacobian to a 4D quantity
 
 		/*FILE *p_fw = fopen("jacobs3d.m", "a");
 		if(p_fw) {
@@ -857,29 +1026,200 @@ public:
 			fclose(p_fw);
 		}*/
 		// get some "ground truth" for analytical jacobian debugging
-#else
-#pragma message("double-sided jacobians used: this code does not work especially well.")
-
-		const double _scalar = scalar * .5; // 1.0 / (2 * delta) since we move to both sides here
-		for(int j = 0; j < 6; ++ j) {
-			Eigen::Matrix<double, 6, 1> d1, dneg1, p_delta;
-			Smart_Plus(r_t_vertex1, Eps.col(j), p_delta);
-			Absolute_to_Relative(p_delta, r_t_vertex2, d1);
-			Smart_Plus(r_t_vertex1, -Eps.col(j), p_delta); // probably can't just negate
-			Absolute_to_Relative(p_delta, r_t_vertex2, dneg1);
-			H1.col(j) = (d1 - dneg1) * _scalar;
-
-			Eigen::Matrix<double, 6, 1> d2, dneg2;
-			Smart_Plus(r_t_vertex2, Eps.col(j), p_delta);
-			Absolute_to_Relative(r_t_vertex1, p_delta, d2);
-			Smart_Plus(r_t_vertex2, -Eps.col(j), p_delta); // probably can't just negate
-			Absolute_to_Relative(r_t_vertex1, p_delta, dneg2);
-			H2.col(j) = (d2 - dneg2) * _scalar;
-		}
-		// return double-sided jacobs
-#endif
 #endif // 0
+	}
+
+	/**
+	 *	@brief converts xyz axis angle coordinates from relative measurement to absolute measurement
+	 *		and calculates the jacobians
+	 *
+	 *	@tparam Derived0 is Eigen derived matrix type for the first matrix argument
+	 *	@tparam Derived1 is Eigen derived matrix type for the second matrix argument
+	 *	@tparam Derived2 is Eigen derived matrix type for the third matrix argument
+	 *	@tparam Derived3 is Eigen derived matrix type for the fourth matrix argument
+	 *	@tparam Derived4 is Eigen derived matrix type for the fifth matrix argument
+	 *
+	 *	@param[in] r_t_vertex1 is the first vertex, in absolute coordinates
+	 *	@param[in] r_t_vertex2 is the second vertex, also in absolute coordinates
+	 *	@param[out] r_t_dest is filled with relative coordinates of the second vertex
+	 *	@param[out] r_t_pose3_pose1 is filled with the first jacobian
+	 *	@param[out] r_t_pose3_pose2 is filled with the second jacobian
+	 */
+	template <class Derived0, class Derived1, class Derived2, class Derived3, class Derived4> // want to be able to call this with differnent dest types (sometimes generic VectorXd / MatrixXd, sometimes with Vector3d / Matrix3d)
+	static void Relative_to_Absolute(const Eigen::MatrixBase<Derived0> &r_t_vertex1,
+		const Eigen::MatrixBase<Derived1> &r_t_vertex2, Eigen::MatrixBase<Derived2> &r_t_dest,
+		Eigen::MatrixBase<Derived3> &r_t_pose3_pose1, Eigen::MatrixBase<Derived4> &r_t_pose3_pose2)
+	{
+		DimensionCheck<Vector6d>(r_t_vertex1);
+		DimensionCheck<Vector6d>(r_t_vertex2);
+		DimensionCheck<Vector6d>(r_t_dest);
+		DimensionCheck<Matrix6d>(r_t_pose3_pose1);
+		DimensionCheck<Matrix6d>(r_t_pose3_pose2);
+
+		//lets try it according to g2o
+		const double delta = 1e-9;
+		const double scalar = 1.0 / (delta);
+
+		//jacobians have to be computed here
+		//double eps = 1.e-9; //TODO: what is this???
+		//double eps_ = sqrt(eps);
+		//double eps_2 = 7.45e-9;
+
+		Matrix6d Eps;// = delta * Eigen::MatrixXd::Identity(6, 6); // MatrixXd needs to allocate storage on heap ... many milliseconds lost
+		//Matrix6d H1;// = Eigen::MatrixXd::Zero(6, 6);
+		//Matrix6d H2;// = Eigen::MatrixXd::Zero(6, 6);
+		Eps = Matrix6d::Identity() * delta; // faster, all memory on stack
+		//H1.setZero();
+		//H2.setZero(); // faster, no extra memory; actually not needed at all, the below code overwrites both H1 and H2
+
+		Eigen::MatrixBase<Derived3> &H1 = r_t_pose3_pose1;
+		Eigen::MatrixBase<Derived4> &H2 = r_t_pose3_pose2;
+		_ASSERTE(H1.rows() == 6 && H1.cols() == 6 && H2.rows() == 6 && H2.cols() == 6); // just make sure the shape is right
+		// can actually work inplace
+
+		//Vector6d d;
+		Relative_to_Absolute(r_t_vertex1, r_t_vertex2, r_t_dest);
+		//Absolute_to_Relative(r_t_vertex1, r_t_vertex2, r_t_dest);
+		//r_t_dest = d; // possibly an unnecessary copy
+
+		for(int j = 0; j < 6; ++ j) {
+			Vector6d d1, p_delta;
+			Relative_to_Absolute(r_t_vertex1, Eps.col(j), p_delta);
+			Relative_to_Absolute(p_delta, r_t_vertex2, d1);
+			H1.col(j) = (d1 - r_t_dest) * scalar;
+
+			Vector6d d2;
+			Relative_to_Absolute(r_t_vertex2, Eps.col(j), p_delta);
+			Relative_to_Absolute(r_t_vertex1, p_delta, d2);
+			H2.col(j) = (d2 - r_t_dest) * scalar;
+		}
+		// return jacobs
+	}
+
+	/**
+	 *	@brief converts xyz axis angle coordinates from absolute measurement to relative measurement
+	 *		and calculates the jacobians
+	 *
+	 *	@tparam Derived0 is Eigen derived matrix type for the first matrix argument
+	 *	@tparam Derived1 is Eigen derived matrix type for the second matrix argument
+	 *	@tparam Derived2 is Eigen derived matrix type for the third matrix argument
+	 *
+	 *	@param[in] r_t_vertex1 is the first 6DOF vertex, in absolute coordinates
+	 *	@param[in] r_t_vertex2 is the second 3DOF vertex, also in absolute coordinates
+	 *	@param[out] r_t_dest is filled with relative coordinates of the second vertex
+	 */
+	template <class Derived0, class Derived1, class Derived2>
+	static void Absolute_to_Relative_Landmark(const Eigen::MatrixBase<Derived0> &r_t_vertex1,
+		const Eigen::MatrixBase<Derived1> &r_t_vertex2, Eigen::MatrixBase<Derived2> &r_t_dest)
+	{
+		DimensionCheck<Vector6d>(r_t_vertex1);
+		DimensionCheck<Eigen::Vector3d>(r_t_vertex2);
+		DimensionCheck<Eigen::Vector3d>(r_t_dest);
+
+		Eigen::Vector3d p1 = r_t_vertex1.template head<3>();
+		Eigen::Quaterniond q1;
+		AxisAngle_to_Quat(r_t_vertex1.template tail<3>(), q1);
+
+		Eigen::Vector3d p2 = r_t_vertex2.template head<3>();
+
+		Eigen::Quaterniond q1_inv = q1.conjugate(); // the inverse rotation (also have .inverse() but that is not needed)
+
+		r_t_dest = q1_inv._transformVector(p2 - p1); // this is precise enough
+		//r_t_dest.head<3>() = pQ1_inv * (p2 - p1); // or can use matrix to transform position
+	}
+
+	/**
+	 *	@brief composes a relative transformation and a landmark position to yield
+	 *		an aboslute landmark position
+	 *
+	 *	@tparam Derived0 is Eigen derived matrix type for the first matrix argument
+	 *	@tparam Derived1 is Eigen derived matrix type for the second matrix argument
+	 *	@tparam Derived2 is Eigen derived matrix type for the third matrix argument
+	 *
+	 *	@param[in] r_t_vertex1 is the first 6DOF vertex, in absolute coordinates
+	 *	@param[in] r_t_vertex2 is the second 3DOF vertex, in relative coordinates
+	 *	@param[out] r_t_dest is filled with absolute coordinates of the composed vertex
+	 */
+	template <class Derived0, class Derived1, class Derived2>
+	static void Relative_to_Absolute_Landmark(const Eigen::MatrixBase<Derived0> &r_t_vertex1,
+		const Eigen::MatrixBase<Derived1> &r_t_vertex2, Eigen::MatrixBase<Derived2> &r_t_dest)
+	{
+		DimensionCheck<Vector6d>(r_t_vertex1);
+		DimensionCheck<Eigen::Vector3d>(r_t_vertex2);
+		DimensionCheck<Eigen::Vector3d>(r_t_dest);
+
+		Eigen::Vector3d p1 = r_t_vertex1.template head<3>();
+		Eigen::Quaterniond q1;
+		AxisAngle_to_Quat(r_t_vertex1.template tail<3>(), q1);
+		Eigen::Vector3d p2 = r_t_vertex2.template head<3>();
+		r_t_dest = p1 + q1._transformVector(p2);
+	}
+
+	/**
+	 *	@brief converts xyz axis angle coordinates from absolute measurement to relative measurement
+	 *		and calculates the jacobians
+	 *
+	 *	@tparam Derived0 is Eigen derived matrix type for the first matrix argument
+	 *	@tparam Derived1 is Eigen derived matrix type for the second matrix argument
+	 *	@tparam Derived2 is Eigen derived matrix type for the third matrix argument
+	 *	@tparam Derived3 is Eigen derived matrix type for the fourth matrix argument
+	 *	@tparam Derived4 is Eigen derived matrix type for the fifth matrix argument
+	 *
+	 *	@param[in] r_t_vertex1 is the first vertex, in absolute coordinates
+	 *	@param[in] r_t_vertex2 is the second vertex, also in absolute coordinates
+	 *	@param[out] r_t_dest is filled with relative coordinates of the second vertex
+	 *	@param[out] r_t_pose3_pose1 is filled with the first jacobian
+	 *	@param[out] r_t_pose3_pose2 is filled with the second jacobian
+	 */
+	template <class Derived0, class Derived1, class Derived2, class Derived3, class Derived4> // want to be able to call this with differnent dest types (sometimes generic VectorXd / MatrixXd, sometimes with Vector3d / Matrix3d)
+	static void Absolute_to_Relative_Landmark(const Eigen::MatrixBase<Derived0> &r_t_vertex1,
+		const Eigen::MatrixBase<Derived1> &r_t_vertex2, Eigen::MatrixBase<Derived2> &r_t_dest,
+		Eigen::MatrixBase<Derived3> &r_t_pose3_pose1, Eigen::MatrixBase<Derived4> &r_t_pose3_pose2)
+	{
+		DimensionCheck<Vector6d>(r_t_vertex1);
+		DimensionCheck<Eigen::Vector3d>(r_t_vertex2);
+		DimensionCheck<Eigen::Vector3d>(r_t_dest);
+		DimensionCheck<Eigen::Matrix<double, 3, 6> >(r_t_pose3_pose1);
+		DimensionCheck<Eigen::Matrix3d>(r_t_pose3_pose2);
+
+		//lets try it according to g2o
+		const double delta = 1e-9;
+		const double scalar = 1.0 / (delta);
+
+		//jacobians have to be computed here
+		//double eps = 1.e-9; //TODO: what is this???
+		//double eps_ = sqrt(eps);
+		//double eps_2 = 7.45e-9;
+
+		Matrix6d Eps;// = delta * Eigen::MatrixXd::Identity(6, 6); // MatrixXd needs to allocate storage on heap ... many milliseconds lost
+		//Matrix6d H1;// = Eigen::MatrixXd::Zero(6, 6);
+		//Matrix6d H2;// = Eigen::MatrixXd::Zero(6, 6);
+		Eps = Matrix6d::Identity() * delta; // faster, all memory on stack
+		//H1.setZero();
+		//H2.setZero(); // faster, no extra memory; actually not needed at all, the below code overwrites both H1 and H2
+
+		Eigen::MatrixBase<Derived3> &H1 = r_t_pose3_pose1;
+		Eigen::MatrixBase<Derived4> &H2 = r_t_pose3_pose2;
+		// can actually work inplace
+
+		Absolute_to_Relative_Landmark(r_t_vertex1, r_t_vertex2, r_t_dest);
+		//r_t_dest = d; // possibly an unnecessary copy
+
+		for(int j = 0; j < 6; ++ j) {
+			Vector6d p_delta;
+			Eigen::Vector3d d1;
+			Relative_to_Absolute(r_t_vertex1, Eps.col(j), p_delta);
+			Absolute_to_Relative_Landmark(p_delta, r_t_vertex2, d1);
+			H1.col(j) = (d1 - r_t_dest) * scalar;
+		}
+
+		for(int j = 0; j < 3; ++ j) {
+			Eigen::Vector3d p_delta, d1;
+			p_delta = r_t_vertex2 + Eps.col(j).template head<3>();//col(j);
+			Absolute_to_Relative_Landmark(r_t_vertex1, p_delta, d1);
+			H2.col(j) = (d1 - r_t_dest) * scalar;
+		}
 	}
 };
 
-#endif // __3D_SOLVER_BASE_INCLUDED
+#endif // !__3D_SOLVER_BASE_INCLUDED

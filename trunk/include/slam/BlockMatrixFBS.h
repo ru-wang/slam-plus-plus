@@ -35,16 +35,17 @@ public:
 	 *		matrices with known compile-time sizes
 	 */
 	template <class CBlockMatrixTypelistA, class CBlockMatrixTypelistB>
-	class CFBS_MatrixMultiply : public __fbs_ut::CFixedBlockSize_BinaryBase<
+	class CFBS_MatrixMultiply : public fbs_ut::CFixedBlockSize_BinaryBase<
 		CBlockMatrixTypelistA, CBlockMatrixTypelistB> {
 	public:
-		typedef typename __fbs_ut::CFixedBlockSize_BinaryBase<CBlockMatrixTypelistA, CBlockMatrixTypelistB>::_TyBlockMatrixTypelistA _TyBlockMatrixTypelistA; /**< @brief list of block sizes, represented as Eigen::Matrix (of the left-hand-side matrix) */
-		typedef typename __fbs_ut::CFixedBlockSize_BinaryBase<CBlockMatrixTypelistA, CBlockMatrixTypelistB>::_TyBlockMatrixTypelistB _TyBlockMatrixTypelistB; /**< @brief list of block sizes, represented as Eigen::Matrix (of the right-hand-side matrix) */
-		typedef typename __fbs_ut::CFixedBlockSize_BinaryBase<CBlockMatrixTypelistA, CBlockMatrixTypelistB>::CRowHeightsListB CRowHeightsListB; /**< @brief list of unique block row heights (of the right-hand-side matrix) */
-		typedef typename __fbs_ut::CFixedBlockSize_BinaryBase<CBlockMatrixTypelistA, CBlockMatrixTypelistB>::CColumnWidthsListB CColumnWidthsListB; /**< @brief list of unique block column widths (of the right-hand-side matrix) */
-		typedef typename __fbs_ut::CFixedBlockSize_BinaryBase<CBlockMatrixTypelistA, CBlockMatrixTypelistB>::CRowHeightsListA CRowHeightsListA; /**< @brief list of unique block row heights (of the left-hand-side matrix) */
-		typedef typename __fbs_ut::CFixedBlockSize_BinaryBase<CBlockMatrixTypelistA, CBlockMatrixTypelistB>::CColumnWidthsListA CColumnWidthsListA; /**< @brief list of unique block column widths (of the left-hand-side matrix) */
-		typedef typename __fbs_ut::CFixedBlockSize_BinaryBase<CBlockMatrixTypelistA, CBlockMatrixTypelistB>::CDimsList_UniqB CDimsList_UniqB; /**< @brief list of block sizes as CCTSize2D (of the right-hand-side matrix; duplicate records removed) */
+		typedef typename fbs_ut::CFixedBlockSize_BinaryBase<CBlockMatrixTypelistA, CBlockMatrixTypelistB>::_TyBlockMatrixTypelistA _TyBlockMatrixTypelistA; /**< @brief list of block sizes, represented as Eigen::Matrix (of the left-hand-side matrix) */
+		typedef typename fbs_ut::CFixedBlockSize_BinaryBase<CBlockMatrixTypelistA, CBlockMatrixTypelistB>::_TyBlockMatrixTypelistB _TyBlockMatrixTypelistB; /**< @brief list of block sizes, represented as Eigen::Matrix (of the right-hand-side matrix) */
+		typedef typename fbs_ut::CFixedBlockSize_BinaryBase<CBlockMatrixTypelistA, CBlockMatrixTypelistB>::CRowHeightsListB CRowHeightsListB; /**< @brief list of unique block row heights (of the right-hand-side matrix) */
+		typedef typename fbs_ut::CFixedBlockSize_BinaryBase<CBlockMatrixTypelistA, CBlockMatrixTypelistB>::CColumnWidthsListB CColumnWidthsListB; /**< @brief list of unique block column widths (of the right-hand-side matrix) */
+		typedef typename fbs_ut::CFixedBlockSize_BinaryBase<CBlockMatrixTypelistA, CBlockMatrixTypelistB>::CRowHeightsListA CRowHeightsListA; /**< @brief list of unique block row heights (of the left-hand-side matrix) */
+		typedef typename fbs_ut::CFixedBlockSize_BinaryBase<CBlockMatrixTypelistA, CBlockMatrixTypelistB>::CColumnWidthsListA CColumnWidthsListA; /**< @brief list of unique block column widths (of the left-hand-side matrix) */
+		typedef typename fbs_ut::CFixedBlockSize_BinaryBase<CBlockMatrixTypelistA, CBlockMatrixTypelistB>::CDimsList_UniqA CDimsList_UniqA; /**< @brief list of block sizes as CCTSize2D (of the left-hand-side matrix; duplicate records removed) */
+		typedef typename fbs_ut::CFixedBlockSize_BinaryBase<CBlockMatrixTypelistA, CBlockMatrixTypelistB>::CDimsList_UniqB CDimsList_UniqB; /**< @brief list of block sizes as CCTSize2D (of the right-hand-side matrix; duplicate records removed) */
 
 		/**
 		 *	@brief (outer) loop of the matrix-matrix multiplication kernel template
@@ -152,7 +153,7 @@ public:
 			CTypelist<CLastColumnWidthB, CTypelistEnd> > {
 		public:
 			typedef typename CFilterTypelist2<CRowHeightsListB, CLastColumnWidthB,
-				__fbs_ut::CHaveRowHeightForColumnWidth, CDimsList_UniqB>::_TyResult _CSelectedRowHeightsListB; /**< @brief row heights list, filtered by the selected column width */
+				fbs_ut::CHaveRowHeightForColumnWidth, CDimsList_UniqB>::_TyResult _CSelectedRowHeightsListB; /**< @brief row heights list, filtered by the selected column width */
 
 			/**
 			 *	@brief performs the outer loop of matrix-matrix multiplication
@@ -398,7 +399,8 @@ public:
 		protected:
 			typedef CLastRowHeightB CLastColumnWidthA; /**< @brief column width of the chosen block in the left-hand matrix (supposed to equal row height of the chosen block in the right-hand matrix if the matrix product is defined) */
 			typedef typename CFilterTypelist2<CRowHeightsListA, CLastColumnWidthA,
-				__fbs_ut::CHaveRowHeightForColumnWidth, CDimsList_UniqB>::_TyResult _CSelectedRowHeightsListA; /**< @brief left-hand matrix row heights list, filtered by the selected right-hand matrix column width */
+				fbs_ut::CHaveRowHeightForColumnWidth, CDimsList_UniqA/*2015-03-15 bug*/>::_TyResult _CSelectedRowHeightsListA; /**< @brief left-hand matrix row heights list, filtered by the selected right-hand matrix column width */
+			// todo - filter the list by possible B widths? will that work or will that force unmultipliable matrices to crash in release because the corresponding dimension is not found? would have to rewrite a bit, but should be faster in the end
 
 		public:
 			/**
@@ -747,14 +749,14 @@ public:
 	 *		matrices with known compile-time sizes
 	 */
 	template <class CBlockMatrixTypelist>
-	class CFBS_ElementwiseUnaryOp : public __fbs_ut::CFixedBlockSize_UnaryBase<CBlockMatrixTypelist> {
+	class CFBS_ElementwiseUnaryOp : public fbs_ut::CFixedBlockSize_UnaryBase<CBlockMatrixTypelist> {
 	public:
-		//typedef typename __fbs_ut::CFixedBlockSize_UnaryBase<CBlockMatrixTypelist>::CRowHeightsList CRowHeightsList; /**< @brief list of unique block row heights */
-		//typedef typename __fbs_ut::CFixedBlockSize_UnaryBase<CBlockMatrixTypelist>::CColumnWidthsList CColumnWidthsList; /**< @brief list of unique block column widths */
-		typedef typename __fbs_ut::CFixedBlockSize_UnaryBase<CBlockMatrixTypelist>::CDimsList_Uniq CDimsList_Uniq; /**< @brief list of block sizes as CCTSize2D (duplicate records removed) */
+		//typedef typename fbs_ut::CFixedBlockSize_UnaryBase<CBlockMatrixTypelist>::CRowHeightsList CRowHeightsList; /**< @brief list of unique block row heights */
+		//typedef typename fbs_ut::CFixedBlockSize_UnaryBase<CBlockMatrixTypelist>::CColumnWidthsList CColumnWidthsList; /**< @brief list of unique block column widths */
+		typedef typename fbs_ut::CFixedBlockSize_UnaryBase<CBlockMatrixTypelist>::CDimsList_Uniq CDimsList_Uniq; /**< @brief list of block sizes as CCTSize2D (duplicate records removed) */
 
 		typedef typename CUniqueTypelist<typename CTransformTypelist<CDimsList_Uniq,
-			__fbs_ut::CTransformDimensionToAreaSize>::_TyResult>::_TyResult CBlockAreasList; /**< @brief list of unique block areas (for elementwise ops) */
+			fbs_ut::CTransformDimensionToAreaSize>::_TyResult>::_TyResult CBlockAreasList; /**< @brief list of unique block areas (for elementwise ops) */
 		// create typelists to generate the decision tree for block sizes
 
 		// @todo - create blockwise operations (a variant to elementwise, using eigen map and aligned stuff)
@@ -915,14 +917,14 @@ public:
 	 *		matrices with known compile-time sizes
 	 */
 	template <class CBlockMatrixTypelist>
-	class CFBS_ElementwiseBinaryOp : public __fbs_ut::CFixedBlockSize_UnaryBase<CBlockMatrixTypelist> {
+	class CFBS_ElementwiseBinaryOp : public fbs_ut::CFixedBlockSize_UnaryBase<CBlockMatrixTypelist> {
 	public:
-		//typedef typename __fbs_ut::CFixedBlockSize_UnaryBase<CBlockMatrixTypelist>::CRowHeightsList CRowHeightsList; /**< @brief list of unique block row heights */
-		//typedef typename __fbs_ut::CFixedBlockSize_UnaryBase<CBlockMatrixTypelist>::CColumnWidthsList CColumnWidthsList; /**< @brief list of unique block column widths */
-		typedef typename __fbs_ut::CFixedBlockSize_UnaryBase<CBlockMatrixTypelist>::CDimsList_Uniq CDimsList_Uniq; /**< @brief list of block sizes as CCTSize2D (duplicate records removed) */
+		//typedef typename fbs_ut::CFixedBlockSize_UnaryBase<CBlockMatrixTypelist>::CRowHeightsList CRowHeightsList; /**< @brief list of unique block row heights */
+		//typedef typename fbs_ut::CFixedBlockSize_UnaryBase<CBlockMatrixTypelist>::CColumnWidthsList CColumnWidthsList; /**< @brief list of unique block column widths */
+		typedef typename fbs_ut::CFixedBlockSize_UnaryBase<CBlockMatrixTypelist>::CDimsList_Uniq CDimsList_Uniq; /**< @brief list of block sizes as CCTSize2D (duplicate records removed) */
 
 		typedef typename CUniqueTypelist<typename CTransformTypelist<CDimsList_Uniq,
-			__fbs_ut::CTransformDimensionToAreaSize>::_TyResult>::_TyResult CBlockAreasList; /**< @brief list of unique block areas (for elementwise ops) */
+			fbs_ut::CTransformDimensionToAreaSize>::_TyResult>::_TyResult CBlockAreasList; /**< @brief list of unique block areas (for elementwise ops) */
 		// create typelists to generate the decision tree for block sizes
 
 		/**
@@ -1293,11 +1295,11 @@ public:
 	 *		matrices with known compile-time sizes
 	 */
 	template <class CBlockMatrixTypelist>
-	class CFBS_PostMAD : public __fbs_ut::CFixedBlockSize_UnaryBase<CBlockMatrixTypelist> {
+	class CFBS_PostMAD : public fbs_ut::CFixedBlockSize_UnaryBase<CBlockMatrixTypelist> {
 	public:
-		typedef typename __fbs_ut::CFixedBlockSize_UnaryBase<CBlockMatrixTypelist>::CRowHeightsList CRowHeightsList; /**< @brief list of unique block row heights */
-		typedef typename __fbs_ut::CFixedBlockSize_UnaryBase<CBlockMatrixTypelist>::CColumnWidthsList CColumnWidthsList; /**< @brief list of unique block column widths */
-		typedef typename __fbs_ut::CFixedBlockSize_UnaryBase<CBlockMatrixTypelist>::CDimsList_Uniq CDimsList_Uniq; /**< @brief list of block sizes as CCTSize2D (duplicate records removed) */
+		typedef typename fbs_ut::CFixedBlockSize_UnaryBase<CBlockMatrixTypelist>::CRowHeightsList CRowHeightsList; /**< @brief list of unique block row heights */
+		typedef typename fbs_ut::CFixedBlockSize_UnaryBase<CBlockMatrixTypelist>::CColumnWidthsList CColumnWidthsList; /**< @brief list of unique block column widths */
+		typedef typename fbs_ut::CFixedBlockSize_UnaryBase<CBlockMatrixTypelist>::CDimsList_Uniq CDimsList_Uniq; /**< @brief list of block sizes as CCTSize2D (duplicate records removed) */
 
 		/**
 		 *	@brief inner loop of the post multiply add kernel
@@ -1501,7 +1503,7 @@ public:
 		public:
 			typedef typename CMakeRowVectorRef<CLastColumnWidth::n_size>::_Ty _TyDestVectorShape; /**< @brief destination vector Eigen::Map type (note it is unaligned) */
 			typedef typename CFilterTypelist2<CRowHeightsList, CLastColumnWidth,
-				__fbs_ut::CHaveRowHeightForColumnWidth, CDimsList_Uniq>::_TyResult _CSelectedRowHeightsList; /**< @brief row heights list, filtered by the selected column width */
+				fbs_ut::CHaveRowHeightForColumnWidth, CDimsList_Uniq>::_TyResult _CSelectedRowHeightsList; /**< @brief row heights list, filtered by the selected column width */
 
 			/**
 			 *	@brief iterates through all the blocks in the current
@@ -1602,11 +1604,11 @@ public:
 	 *		matrices with known compile-time sizes
 	 */
 	template <class CBlockMatrixTypelist>
-	class CFBS_PreMAD : public __fbs_ut::CFixedBlockSize_UnaryBase<CBlockMatrixTypelist> {
+	class CFBS_PreMAD : public fbs_ut::CFixedBlockSize_UnaryBase<CBlockMatrixTypelist> {
 	public:
-		typedef typename __fbs_ut::CFixedBlockSize_UnaryBase<CBlockMatrixTypelist>::CRowHeightsList CRowHeightsList; /**< @brief list of unique block row heights */
-		typedef typename __fbs_ut::CFixedBlockSize_UnaryBase<CBlockMatrixTypelist>::CColumnWidthsList CColumnWidthsList; /**< @brief list of unique block column widths */
-		typedef typename __fbs_ut::CFixedBlockSize_UnaryBase<CBlockMatrixTypelist>::CDimsList_Uniq CDimsList_Uniq; /**< @brief list of block sizes as CCTSize2D (duplicate records removed) */
+		typedef typename fbs_ut::CFixedBlockSize_UnaryBase<CBlockMatrixTypelist>::CRowHeightsList CRowHeightsList; /**< @brief list of unique block row heights */
+		typedef typename fbs_ut::CFixedBlockSize_UnaryBase<CBlockMatrixTypelist>::CColumnWidthsList CColumnWidthsList; /**< @brief list of unique block column widths */
+		typedef typename fbs_ut::CFixedBlockSize_UnaryBase<CBlockMatrixTypelist>::CDimsList_Uniq CDimsList_Uniq; /**< @brief list of block sizes as CCTSize2D (duplicate records removed) */
 
 		/**
 		 *	@brief inner loop of the post multiply add kernel
@@ -1809,7 +1811,7 @@ public:
 		public:
 			typedef typename CMakeVectorRef<CLastColumnWidth::n_size>::_Ty _TySrcVectorShape; /**< @brief source vector Eigen::Map type (note it is unaligned) */
 			typedef typename CFilterTypelist2<CRowHeightsList, CLastColumnWidth,
-				__fbs_ut::CHaveRowHeightForColumnWidth, CDimsList_Uniq>::_TyResult _CSelectedRowHeightsList; /**< @brief row heights list, filtered by the selected column width */
+				fbs_ut::CHaveRowHeightForColumnWidth, CDimsList_Uniq>::_TyResult _CSelectedRowHeightsList; /**< @brief row heights list, filtered by the selected column width */
 
 			/**
 			 *	@brief iterates through all the blocks in the current
@@ -1909,11 +1911,11 @@ public:
 	 *		matrices with known compile-time sizes
 	 */
 	template <class CBlockMatrixTypelist>
-	class CFBS_PreATA : public __fbs_ut::CFixedBlockSize_UnaryBase<CBlockMatrixTypelist> {
+	class CFBS_PreATA : public fbs_ut::CFixedBlockSize_UnaryBase<CBlockMatrixTypelist> {
 	public:
-		typedef typename __fbs_ut::CFixedBlockSize_UnaryBase<CBlockMatrixTypelist>::CRowHeightsList CRowHeightsList; /**< @brief list of unique block row heights */
-		typedef typename __fbs_ut::CFixedBlockSize_UnaryBase<CBlockMatrixTypelist>::CColumnWidthsList CColumnWidthsList; /**< @brief list of unique block column widths */
-		typedef typename __fbs_ut::CFixedBlockSize_UnaryBase<CBlockMatrixTypelist>::CDimsList_Uniq CDimsList_Uniq; /**< @brief list of block sizes as CCTSize2D (duplicate records removed) */
+		typedef typename fbs_ut::CFixedBlockSize_UnaryBase<CBlockMatrixTypelist>::CRowHeightsList CRowHeightsList; /**< @brief list of unique block row heights */
+		typedef typename fbs_ut::CFixedBlockSize_UnaryBase<CBlockMatrixTypelist>::CColumnWidthsList CColumnWidthsList; /**< @brief list of unique block column widths */
+		typedef typename fbs_ut::CFixedBlockSize_UnaryBase<CBlockMatrixTypelist>::CDimsList_Uniq CDimsList_Uniq; /**< @brief list of block sizes as CCTSize2D (duplicate records removed) */
 
 		/**
 		 *	@brief inner loop of the part part of the AtA kernel
@@ -2683,7 +2685,7 @@ public:
 		class CPreATA_UpperTri_OuterLoop<_TyGppContext, CTypelist<CTransposeColumnWidth, CTypelistEnd> > {
 		public:
 			typedef typename CFilterTypelist2<CColumnWidthsList, CTransposeColumnWidth,
-				__fbs_ut::CHaveColumnWidthForRowHeight, CDimsList_Uniq>::_TyResult _CSelectedTransposeRowHeightsList; /**< @brief transpose row heights list, filtered by the selected transpose column width */
+				fbs_ut::CHaveColumnWidthForRowHeight, CDimsList_Uniq>::_TyResult _CSelectedTransposeRowHeightsList; /**< @brief transpose row heights list, filtered by the selected transpose column width */
 
 			/**
 			 *	@brief iterates through all the first blocks in the current column
@@ -3006,7 +3008,7 @@ public:
 		public:
 			typedef typename CMakeMatrixRef<CColumnWidth::n_size, CColumnWidth::n_size>::_Ty _TyDestBlock; /**< @brief destination matrix block Eigen::Map type */
 			typedef typename CFilterTypelist2<CRowHeightsList, CColumnWidth,
-				__fbs_ut::CHaveRowHeightForColumnWidth, CDimsList_Uniq>::_TyResult _CSelectedRowHeightsList; /**< @brief row heights list, filtered by the selected column width */
+				fbs_ut::CHaveRowHeightForColumnWidth, CDimsList_Uniq>::_TyResult _CSelectedRowHeightsList; /**< @brief row heights list, filtered by the selected column width */
 
 			/**
 			 *	@brief iterates through all the blocks in the column
@@ -3228,13 +3230,13 @@ public:
 	 *	@todo write documentations for members, sort members, write debug functions
 	 */
 	template <class CBlockMatrixTypelist>
-	class CFBS_Cholesky : public __fbs_ut::CFixedBlockSize_UnaryBase<CBlockMatrixTypelist> {
+	class CFBS_Cholesky : public fbs_ut::CFixedBlockSize_UnaryBase<CBlockMatrixTypelist> {
 	public:
-		typedef typename __fbs_ut::CFixedBlockSize_UnaryBase<CBlockMatrixTypelist>::CColumnWidthsList CColumnWidthsList; /**< @brief list of unique block column widths */
-		typedef typename __fbs_ut::CFixedBlockSize_UnaryBase<CBlockMatrixTypelist>::CDimsList_Uniq CDimsList_Uniq; /**< @brief list of block sizes as CCTSize2D (duplicate records removed) */
+		typedef typename fbs_ut::CFixedBlockSize_UnaryBase<CBlockMatrixTypelist>::CColumnWidthsList CColumnWidthsList; /**< @brief list of unique block column widths */
+		typedef typename fbs_ut::CFixedBlockSize_UnaryBase<CBlockMatrixTypelist>::CDimsList_Uniq CDimsList_Uniq; /**< @brief list of block sizes as CCTSize2D (duplicate records removed) */
 
 		/**
-		 *	@brief off-diagonal loop of the Cholesky decomposition kernel
+		 *	@brief off-diagonal loop of the Cholesky factorization kernel
 		 *
 		 *	@param[out] p_dest_block is the (uninitialized) output block at L(j, k)
 		 *	@param[in] n_col_j_width is width of the j-th column, in elements
@@ -3259,7 +3261,7 @@ public:
 		}
 
 		/**
-		 *	@brief off-diagonal loop of the Cholesky decomposition kernel
+		 *	@brief off-diagonal loop of the Cholesky factorization kernel
 		 *
 		 *	Performs calculation of the off-diagonal elements in one column of Cholesky factor.
 		 *
@@ -3272,7 +3274,7 @@ public:
 			typedef typename _CColumnWidthList::_TyHead CCurrentColumnWidth; /**< @brief column width for this decision tree recursion */
 
 			/**
-			 *	@brief off-diagonal loop of the Cholesky decomposition kernel
+			 *	@brief off-diagonal loop of the Cholesky factorization kernel
 			 *
 			 *	Wraps the inside of the loop in a decision tree for j-th column width.
 			 *
@@ -3312,7 +3314,7 @@ public:
 		};
 
 		/**
-		 *	@brief off-diagonal loop of the Cholesky decomposition kernel
+		 *	@brief off-diagonal loop of the Cholesky factorization kernel
 		 *
 		 *	Performs calculation of the off-diagonal elements in one column of Cholesky factor.
 		 *
@@ -3325,7 +3327,7 @@ public:
 			typedef typename CMakeMatrixRef<CColumnWidth_j::n_size, CColumnWidth_j::n_size>::_TyMatrix _TyDiagMatrix; /**< @brief a dense matrix with the same shape as the diagonal block */
 
 			/**
-			 *	@brief off-diagonal loop of the Cholesky decomposition kernel
+			 *	@brief off-diagonal loop of the Cholesky factorization kernel
 			 *
 			 *	Just calls the next level of the decision tree.
 			 *
@@ -3362,7 +3364,7 @@ public:
 			}
 
 			/**
-			 *	@brief off-diagonal loop of the Cholesky decomposition kernel
+			 *	@brief off-diagonal loop of the Cholesky factorization kernel
 			 *
 			 *	Just calls the next level of the decision tree.
 			 *
@@ -3399,7 +3401,7 @@ public:
 		};
 
 		/**
-		 *	@brief off-diagonal loop of the Cholesky decomposition kernel
+		 *	@brief off-diagonal loop of the Cholesky factorization kernel
 		 *
 		 *	Performs calculation of the off-diagonal elements in one column of Cholesky factor.
 		 *
@@ -3414,7 +3416,7 @@ public:
 			typedef typename CMakeMatrixRef<CColumnWidth_j::n_size, CColumnWidth_j::n_size>::_TyMatrix _TyDiagMatrix; /**< @brief a dense matrix with the same shape as the diagonal block */
 
 			/**
-			 *	@brief off-diagonal loop of the Cholesky decomposition kernel
+			 *	@brief off-diagonal loop of the Cholesky factorization kernel
 			 *
 			 *	Wraps the inside of the loop in a decision tree for k-th column width.
 			 *
@@ -3452,7 +3454,7 @@ public:
 			}
 
 			/**
-			 *	@brief off-diagonal loop of the Cholesky decomposition kernel
+			 *	@brief off-diagonal loop of the Cholesky factorization kernel
 			 *
 			 *	Wraps the inside of the loop in a decision tree for k-th column width.
 			 *
@@ -3492,7 +3494,7 @@ public:
 		};
 
 		/**
-		 *	@brief off-diagonal loop of the Cholesky decomposition kernel
+		 *	@brief off-diagonal loop of the Cholesky factorization kernel
 		 *
 		 *	Performs calculation of the off-diagonal elements in one column of Cholesky factor.
 		 *
@@ -3526,16 +3528,16 @@ public:
 			};
 
 			typedef typename CFilterTypelist2<CColumnWidthsList, CColumnWidth_k,
-				__fbs_ut::CHaveRowHeightForColumnWidth, CDimsList_Uniq>::_TyResult
+				fbs_ut::CHaveRowHeightForColumnWidth, CDimsList_Uniq>::_TyResult
 				_CSelectedRowHeightsList_on_k; /**< @brief list of row heights in column k */
 			typedef typename CFilterTypelist2<CColumnWidthsList, CColumnWidth_j,
-				__fbs_ut::CHaveRowHeightForColumnWidth, CDimsList_Uniq>::_TyResult
+				fbs_ut::CHaveRowHeightForColumnWidth, CDimsList_Uniq>::_TyResult
 				_CSelectedRowHeightsList_on_j; /**< @brief list of row heights in column j */
 			typedef typename CFilterTypelist<_CSelectedRowHeightsList_on_k, _CSelectedRowHeightsList_on_j,
 				CContainsItem>::_TyResult _CSelectedRowHeightsList; /**< @brief list of row heights that can occur in both columns at the same time (optimization for matrices with >1 block sizes) */
 
 			/**
-			 *	@brief off-diagonal loop of the Cholesky decomposition kernel
+			 *	@brief off-diagonal loop of the Cholesky factorization kernel
 			 *
 			 *	Performs the actual loop.
 			 *
@@ -3620,7 +3622,7 @@ public:
 			}
 
 			/**
-			 *	@brief off-diagonal loop of the Cholesky decomposition kernel
+			 *	@brief off-diagonal loop of the Cholesky factorization kernel
 			 *
 			 *	Performs the actual loop.
 			 *
@@ -3715,7 +3717,7 @@ public:
 		};
 
 		/**
-		 *	@brief off-diagonal product, one step of the Cholesky decomposition kernel
+		 *	@brief off-diagonal product, one step of the Cholesky factorization kernel
 		 *
 		 *	Performs calculation of a product of two off-diagonal blocks in the same
 		 *	row at two different columns of Cholesky factor.
@@ -3732,7 +3734,7 @@ public:
 			typedef typename CMakeMatrixRef<CColumnWidth_k::n_size, CColumnWidth_j::n_size>::_Ty _TyDestBlock; /**< @brief destination block shape */
 
 			/**
-			 *	@brief off-diagonal loop of the Cholesky decomposition kernel
+			 *	@brief off-diagonal loop of the Cholesky factorization kernel
 			 *
 			 *	Wraps the product in a decision tree for k-th column width.
 			 *
@@ -3760,7 +3762,7 @@ public:
 		};
 
 		/**
-		 *	@brief off-diagonal product, one step of the Cholesky decomposition kernel
+		 *	@brief off-diagonal product, one step of the Cholesky factorization kernel
 		 *
 		 *	Performs calculation of a product of two off-diagonal blocks in the same
 		 *	row at two different columns of Cholesky factor.
@@ -3779,7 +3781,7 @@ public:
 			typedef typename CMakeMatrixRef<CRowHeight_i::n_size, CColumnWidth_k::n_size>::_Ty _TyBlock_ik; /**< @brief left-hand-side source block shape */
 
 			/**
-			 *	@brief off-diagonal loop of the Cholesky decomposition kernel
+			 *	@brief off-diagonal loop of the Cholesky factorization kernel
 			 *
 			 *	Performs the product.
 			 *
@@ -3808,7 +3810,7 @@ public:
 		};
 
 		/**
-		 *	@brief outer loop of the Cholesky decomposition
+		 *	@brief outer loop of the Cholesky factorization
 		 *
 		 *	@param[in] n_col_j_width is width of the j-th block column
 		 *	@param[in] j is zero-based index the j-th block column
@@ -3836,7 +3838,7 @@ public:
 		}
 
 		/**
-		 *	@brief column loop of cholesky decomposition
+		 *	@brief column loop of cholesky factorization
 		 *
 		 *	@tparam _TyGppContext is template instance context for g++ (compatibility workarround)
 		 *	@tparam _CColumnWidthList is list of possible column widths
@@ -3847,7 +3849,7 @@ public:
 			typedef typename _CColumnWidthList::_TyHead CCurrentColumnWidth; /**< @brief column width for this decision tree recursion */
 
 			/**
-			 *	@brief outer loop of the Cholesky decomposition
+			 *	@brief outer loop of the Cholesky factorization
 			 *
 			 *	Wraps the body of the loop in block column size decision tree.
 			 *
@@ -3887,7 +3889,7 @@ public:
 		};
 
 		/**
-		 *	@brief column loop of cholesky decomposition (specialization for the chosen column width)
+		 *	@brief column loop of cholesky factorization (specialization for the chosen column width)
 		 *
 		 *	@tparam _TyGppContext is template instance context for g++ (compatibility workarround)
 		 *	@tparam CColumnWidth_j is width of the current column
@@ -3899,7 +3901,7 @@ public:
 			typedef typename CMakeMatrixRef<CColumnWidth_j::n_size, CColumnWidth_j::n_size>::_TyMatrix _TyDiagMatrix; /**< @brief a dense matrix with the same shape as the diagonal block */
 
 			/**
-			 *	@brief outer loop of the Cholesky decomposition
+			 *	@brief outer loop of the Cholesky factorization
 			 *
 			 *	Contains a specialized instance the loop body for the given column width.
 			 *
@@ -4098,7 +4100,7 @@ public:
 		};
 
 		/**
-		 *	@brief diagonal loop of the Cholesky decomposition kernel
+		 *	@brief diagonal loop of the Cholesky factorization kernel
 		 *
 		 *	Performs calculation of the diagonal element in one column of Cholesky factor.
 		 *
@@ -4121,7 +4123,7 @@ public:
 		}
 
 		/**
-		 *	@brief diagonal loop of the Cholesky decomposition kernel
+		 *	@brief diagonal loop of the Cholesky factorization kernel
 		 *
 		 *	Performs calculation of the diagonal element in one column of Cholesky factor.
 		 *
@@ -4134,7 +4136,7 @@ public:
 			typedef typename _CColumnWidthList::_TyHead CCurrentColumnWidth; /**< @brief column width for this decision tree recursion */
 
 			/**
-			 *	@brief diagonal loop of the Cholesky decomposition kernel
+			 *	@brief diagonal loop of the Cholesky factorization kernel
 			 *
 			 *	Wraps the diagonal loop in column width decision tree.
 			 *
@@ -4167,7 +4169,7 @@ public:
 		};
 
 		/**
-		 *	@brief diagonal loop of the Cholesky decomposition kernel
+		 *	@brief diagonal loop of the Cholesky factorization kernel
 		 *
 		 *	Performs calculation of the diagonal element in one column of Cholesky factor.
 		 *
@@ -4178,12 +4180,12 @@ public:
 		class CCholesky_DiagonalLoop<_TyGppContext, CTypelist<CColumnWidth_j, CTypelistEnd> > {
 		public:
 			typedef typename CFilterTypelist2<CColumnWidthsList, CColumnWidth_j,
-				__fbs_ut::CHaveRowHeightForColumnWidth, CDimsList_Uniq>::_TyResult _CSelectedRowHeightsList_on_j; /**< @brief list of row heights in column j */
+				fbs_ut::CHaveRowHeightForColumnWidth, CDimsList_Uniq>::_TyResult _CSelectedRowHeightsList_on_j; /**< @brief list of row heights in column j */
 			typedef typename CMakeMatrixRef<CColumnWidth_j::n_size, CColumnWidth_j::n_size>::_Ty _TyDiagBlock; /**< @brief reference to the diagonal block */
 			typedef typename CMakeMatrixRef<CColumnWidth_j::n_size, CColumnWidth_j::n_size>::_TyMatrix _TyDiagMatrix; /**< @brief a dense matrix with the same shape as the diagonal block */
 
 			/**
-			 *	@brief diagonal loop of the Cholesky decomposition kernel
+			 *	@brief diagonal loop of the Cholesky factorization kernel
 			 *
 			 *	Performs calculation of the diagonal element in one column of Cholesky factor.
 			 *
@@ -4230,7 +4232,7 @@ public:
 		};
 
 		/**
-		 *	@brief diagonal product from the Cholesky decomposition kernel
+		 *	@brief diagonal product from the Cholesky factorization kernel
 		 *
 		 *	Performs calculation of the diagonal element in one column of Cholesky factor.
 		 *
@@ -4245,7 +4247,7 @@ public:
 			typedef typename CMakeMatrixRef<CColumnWidth_j::n_size, CColumnWidth_j::n_size>::_Ty _TyDestBlock; /**< @brief destination block shape */
 
 			/**
-			 *	@brief diagonal product from the Cholesky decomposition kernel
+			 *	@brief diagonal product from the Cholesky factorization kernel
 			 *
 			 *	Wraps the product in a row height decision tree.
 			 *
@@ -4272,7 +4274,7 @@ public:
 		};
 
 		/**
-		 *	@brief diagonal product from the Cholesky decomposition kernel
+		 *	@brief diagonal product from the Cholesky factorization kernel
 		 *
 		 *	Performs calculation of the diagonal element in one column of Cholesky factor.
 		 *
@@ -4288,7 +4290,7 @@ public:
 			typedef typename CMakeMatrixRef<CRowHeight_i::n_size, CColumnWidth_j::n_size>::_Ty _TyBlock_ij; /**< @brief source block shape */
 
 			/**
-			 *	@brief diagonal product from the Cholesky decomposition kernel
+			 *	@brief diagonal product from the Cholesky factorization kernel
 			 *
 			 *	Performs the product.
 			 *
@@ -4321,11 +4323,11 @@ public:
 	 *		matrices with known compile-time sizes
 	 */
 	template <class CBlockMatrixTypelist>
-	class CFBS_TriangularSolve : public __fbs_ut::CFixedBlockSize_UnaryBase<CBlockMatrixTypelist> {
+	class CFBS_TriangularSolve : public fbs_ut::CFixedBlockSize_UnaryBase<CBlockMatrixTypelist> {
 	public:
-		typedef typename __fbs_ut::CFixedBlockSize_UnaryBase<CBlockMatrixTypelist>::CRowHeightsList CRowHeightsList; /**< @brief list of unique block row heights */
-		typedef typename __fbs_ut::CFixedBlockSize_UnaryBase<CBlockMatrixTypelist>::CColumnWidthsList CColumnWidthsList; /**< @brief list of unique block column widths */
-		typedef typename __fbs_ut::CFixedBlockSize_UnaryBase<CBlockMatrixTypelist>::CDimsList_Uniq CDimsList_Uniq; /**< @brief list of block sizes as CCTSize2D (duplicate records removed) */
+		typedef typename fbs_ut::CFixedBlockSize_UnaryBase<CBlockMatrixTypelist>::CRowHeightsList CRowHeightsList; /**< @brief list of unique block row heights */
+		typedef typename fbs_ut::CFixedBlockSize_UnaryBase<CBlockMatrixTypelist>::CColumnWidthsList CColumnWidthsList; /**< @brief list of unique block column widths */
+		typedef typename fbs_ut::CFixedBlockSize_UnaryBase<CBlockMatrixTypelist>::CDimsList_Uniq CDimsList_Uniq; /**< @brief list of block sizes as CCTSize2D (duplicate records removed) */
 
 		/**
 		 *	@brief inner loop of the forward / back substitution kernels,
@@ -4627,7 +4629,7 @@ public:
 			typedef typename CMakeVectorRef<CColumnWidth::n_size>::_Ty _TyVector_ColPart; /**< @brief part of the vector, corresponding to this column */
 			typedef typename CMakeMatrixRef<CColumnWidth::n_size, CColumnWidth::n_size>::_Ty _TyDiagBlock; /**< @brief diagonal matrix block Eigen::Map type */
 			typedef typename CFilterTypelist2<CRowHeightsList, CColumnWidth,
-				__fbs_ut::CHaveRowHeightForColumnWidth, CDimsList_Uniq>::_TyResult _CSelectedRowHeightsList; /**< @brief row heights list, filtered by the selected column width */
+				fbs_ut::CHaveRowHeightForColumnWidth, CDimsList_Uniq>::_TyResult _CSelectedRowHeightsList; /**< @brief row heights list, filtered by the selected column width */
 
 			/**
 			 *	@brief performs forward-substitution on a single column
@@ -4781,7 +4783,7 @@ public:
 #endif // __UBER_BLOCK_MATRIX_FIXED_BLOCK_SIZE_DEBUGGING
 		};
 
-		// t_odo - distribute and document the below ifdef, add ifdef arround the whole FBS stuff
+		// t_odo - distribute and document the below ifdef, add ifdef around the whole FBS stuff
 		// t_odo - take the function above and put it in the matrix body
 		// t_odo - remove typedefs to CUberBlockMatrix_Base types at the beginning (especially the allocator type)
 
@@ -4840,11 +4842,11 @@ public:
 	 *		matrices with known compile-time sizes
 	 */
 	template <class CBlockMatrixTypelist>
-	class CFBS_BlockwiseUnaryOp : public __fbs_ut::CFixedBlockSize_UnaryBase<CBlockMatrixTypelist> {
+	class CFBS_BlockwiseUnaryOp : public fbs_ut::CFixedBlockSize_UnaryBase<CBlockMatrixTypelist> {
 	public:
-		typedef typename __fbs_ut::CFixedBlockSize_UnaryBase<CBlockMatrixTypelist>::CRowHeightsList CRowHeightsList; /**< @brief list of unique block row heights */
-		typedef typename __fbs_ut::CFixedBlockSize_UnaryBase<CBlockMatrixTypelist>::CColumnWidthsList CColumnWidthsList; /**< @brief list of unique block column widths */
-		typedef typename __fbs_ut::CFixedBlockSize_UnaryBase<CBlockMatrixTypelist>::CDimsList_Uniq CDimsList_Uniq; /**< @brief list of block sizes as CCTSize2D (duplicate records removed) */
+		typedef typename fbs_ut::CFixedBlockSize_UnaryBase<CBlockMatrixTypelist>::CRowHeightsList CRowHeightsList; /**< @brief list of unique block row heights */
+		typedef typename fbs_ut::CFixedBlockSize_UnaryBase<CBlockMatrixTypelist>::CColumnWidthsList CColumnWidthsList; /**< @brief list of unique block column widths */
+		typedef typename fbs_ut::CFixedBlockSize_UnaryBase<CBlockMatrixTypelist>::CDimsList_Uniq CDimsList_Uniq; /**< @brief list of block sizes as CCTSize2D (duplicate records removed) */
 
 		// todo - make loops with >1 blocks (like if i want to process all blocks of the matrix in a loop)
 		// todo - make loops with a single operand (src = dest), now it is unary operation, but where src != dest
@@ -4937,7 +4939,7 @@ public:
 		public:
 			typedef typename CMakeMatrixRef<CColumnWidth::n_size, CColumnWidth::n_size>::_Ty _TySquareBlock; /**< @brief  matrix diagonal block Eigen::Map type */
 			typedef typename CFilterTypelist2<CRowHeightsList, CColumnWidth,
-				__fbs_ut::CHaveRowHeightForColumnWidth, CDimsList_Uniq>::_TyResult _CSelectedRowHeightsList; /**< @brief row heights list, filtered by the selected column width */
+				fbs_ut::CHaveRowHeightForColumnWidth, CDimsList_Uniq>::_TyResult _CSelectedRowHeightsList; /**< @brief row heights list, filtered by the selected column width */
 
 			/**
 			 *	@brief wraps operation body in block size decision tree
@@ -5169,4 +5171,4 @@ public:
 	};
 };
 
-#endif // __UBER_BLOCK_MATRIX_FIXED_BLOCK_SIZE_OPS_IMPLEMENTATION_INCLUDED
+#endif // !__UBER_BLOCK_MATRIX_FIXED_BLOCK_SIZE_OPS_IMPLEMENTATION_INCLUDED

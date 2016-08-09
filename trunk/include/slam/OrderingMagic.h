@@ -27,6 +27,48 @@
  */
 
 /**
+ *	@def __MATRIX_ORDERING_USE_MMD
+ *	@brief if defined, METIS multiple minimum degree ordering is used instead
+ *		of AMD approximate minimum degree in CMatrixOrdering::p_BlockOrdering()
+ */
+//#define __MATRIX_ORDERING_USE_MMD
+
+#ifdef __MATRIX_ORDERING_USE_MMD
+
+/**
+ *	@def __MATRIX_ORDERING_MMD_DELTA
+ *
+ *	If the value of DELTA is greater than or equal to zero, multiple elimination will
+ *	be used in producing the ordering, and DELTA provides the tolerance factor as
+ *	described in Section 4.2. If DELTA is -1, the subroutine will produce the conventional
+ *	minimum-degree ordering (using external degree), that is, one degree update after each
+ *	mass elimination. In the results tabulated in this section, we have labeled this
+ *	the minimum-external-degree algorithm.
+ *
+ *	@brief value of the MMD DELTA parameter
+ *
+ *	@note This was seen using deltas of -1, 0, 1 and 5.
+ *
+ *	On the first 1000 edges of 10k, this yields the following
+ *	sizes of R (in allocated doubles reported by the data pool):
+ *		44735 = -1
+ *		36779 = 1
+ *		36286 = 0
+ *		36813 = 5
+ *		34008 = AMD
+ *
+ *	On venice871.g2o, this yields the following runtimes:
+ *		271.281028 = -1
+ *		196.979716 = 1
+ *		198.957934 = 0
+ *		190.020217 = 5
+ *		153.331193 = AMD
+ */
+#define __MATRIX_ORDERING_MMD_DELTA 5
+
+#endif // __MATRIX_ORDERING_USE_MMD
+
+/**
  *	@def __MATRIX_ORDERING_TWO_LEVEL_CONSTRAINT
  *	@brief if enabled, two-level ordering constraint is applied to lambda
  *		in CLastElementOrderingConstraint
@@ -195,6 +237,8 @@ public:
 	 */
 	inline const size_t *p_Get_InverseOrdering() const
 	{
+		_ASSERTE(m_ordering_invert.empty() ||
+			m_ordering_invert.size() == n_Ordering_Size()); // make sure contents will match in size
 		return (!m_ordering_invert.empty())? &m_ordering_invert[0] : 0;
 	}
 
@@ -678,4 +722,4 @@ public:
 	}
 };
 
-#endif // __MATRIX_ORDERING_UTILS_INCLUDED
+#endif // !__MATRIX_ORDERING_UTILS_INCLUDED

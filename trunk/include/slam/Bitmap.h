@@ -21,8 +21,7 @@
  *	@brief a simple, easy to use bitmap class
  *
  *	@todo allow for use of shaders (textures) for line and triangle rasterization (even without z-buffer)
- *	@todo write code for rendering axis-aligned rectangles (circles?)
- *	@todo write code for rendering antialiassed lines
+ *	@todo write code for rendering circles
  *
  *	@date 2012-06-19
  *
@@ -45,7 +44,8 @@
 
 #include <new> // nothrow_t
 #include <utility> // swap
-#include <algorithm> // std::min, std::max
+#include <vector>
+#include <algorithm> // std::std::min, std::std::max
 #include <string.h> // memcpy
 #include <math.h>
 #include "slam/Integer.h"
@@ -60,7 +60,7 @@
  *	the first pixel is in top left corner, there is no scanline padding.
  */
 struct TBmp {
-	char n_former_bpp; /**< @brief former bpp, before conversion to RGBA8 */
+	uint8_t n_former_bpc; /**< @brief former bits per channel, before conversion to RGBA8 */
 	bool b_grayscale; /**< @brief grayscale flag (if set, the bitmap is assumed
 		to contain grayscale image, stored as RGBA8) */
 	bool b_alpha; /**< @brief alpha channel flag (if set, the alpha channel is significant;
@@ -93,14 +93,15 @@ struct TBmp {
 	 *	@param[in] _n_height is height of the bitmap, in pixels
 	 *	@param[in] _b_grayscale is grayscale flag
 	 *	@param[in] _b_alpha is alpha channel flag
-	 *	@param[in] _n_former_bpp is number of bits of the intended contents
+	 *	@param[in] _n_former_bpc is number of bits of the intended contents
 	 *		of the bitmap, before conversion to RGBA8
 	 *
 	 *	@return Returns pointer to the new bitmap on success, or 0 on failure.
 	 */
 	static TBmp *p_Alloc(int _n_width, int _n_height,
-		bool _b_grayscale = false, bool _b_alpha = false, int _n_former_bpp = 8)
+		bool _b_grayscale = false, bool _b_alpha = false, int _n_former_bpc = 8)
 	{
+		_ASSERTE(_n_width >= 0 && _n_height >= 0);
 		TBmp *p_bmp;
 		if(!(p_bmp = new(std::nothrow) TBmp))
 			return 0;
@@ -108,7 +109,7 @@ struct TBmp {
 		p_bmp->n_height = _n_height;
 		p_bmp->b_grayscale = _b_grayscale;
 		p_bmp->b_alpha = _b_alpha;
-		p_bmp->n_former_bpp = _n_former_bpp;
+		p_bmp->n_former_bpc = _n_former_bpc;
 		if(!(p_bmp->p_buffer = new(std::nothrow) uint32_t[size_t(_n_width) * _n_height])) {
 			delete p_bmp;
 			return 0;
@@ -121,9 +122,9 @@ struct TBmp {
 	 *	@deprecated This is deprecated in favor of p_Alloc(), the effect is the same.
 	 */
 	static inline TBmp *p_CreateBitmap(int _n_width, int _n_height,
-		bool _b_grayscale = false, bool _b_alpha = false, int _n_former_bpp = 8)
+		bool _b_grayscale = false, bool _b_alpha = false, int _n_former_bpc = 8)
 	{
-		return p_Alloc(_n_width, _n_height, _b_grayscale, _b_alpha, _n_former_bpp);
+		return p_Alloc(_n_width, _n_height, _b_grayscale, _b_alpha, _n_former_bpc);
 	}
 
 	/**
@@ -134,10 +135,116 @@ struct TBmp {
 	 */
 	TBmp *p_Clone(bool b_ignore_contents = false) const
 	{
-		TBmp *p_clone = p_CreateBitmap(n_width, n_height, b_grayscale, b_alpha, n_former_bpp);
+		TBmp *p_clone = p_Alloc(n_width, n_height, b_grayscale, b_alpha, n_former_bpc);
 		if(p_buffer && p_clone && !b_ignore_contents)
 			memcpy(p_clone->p_buffer, p_buffer, size_t(n_width) * n_height * sizeof(uint32_t));
 		return p_clone;
+	}
+
+	/**
+	 *	@brief flips the image
+	 *	@param[in] b_vertical is flip direction (if set, flips vertical, if cleared, horizontal)
+	 */
+	void Flip(bool b_vertical)
+	{
+		if(b_vertical) {
+			const int h = n_height, n_half_h = n_height / 2, w = n_width;
+			uint32_t *p_top_scanline = p_buffer, *p_bottom_scanline =
+				p_buffer + (h - 1) * w;
+			for(int y = 0; y < n_half_h; ++ y, p_top_scanline += w, p_bottom_scanline -= w) {
+				for(int x = 0; x < w; ++ x)
+					std::swap(p_top_scanline[x], p_bottom_scanline[x]);
+			}
+		} else {
+			const int h = n_height, n_half_w = n_width / 2, w = n_width;
+			uint32_t *p_left = p_buffer, *p_right = p_buffer + (w - 1);
+			int y;
+			for(y = 0; y < h - 1; y += 2, p_left += w, p_right += w) {
+				for(int x = 0; x < n_half_w; ++ x, ++ p_left, -- p_right)
+					std::swap(*p_left, *p_right);
+				// do one line, shifting pointers towards the center of the scanline
+
+				p_left += w;
+				p_right += w;
+				// shift to the next line
+
+				for(int x = 0; x < n_half_w; ++ x, -- p_left, ++ p_right)
+					std::swap(*p_left, *p_right);
+				// do the other line, shifting the pointers back to the edges
+			}
+			if(y < h) {
+				for(int x = 0; x < n_half_w; ++ x, ++ p_left, -- p_right)
+					std::swap(*p_left, *p_right);
+				// do the last (even) line
+			}
+		}
+	}
+
+	/**
+	 *	@brief turns the image
+	 *	@param[in] n_multiples_pi_half_cw is angle in multiples of pi/2 (or 90°), clockwise
+	 *	@return Returns the rotated image on success, 0 on failure (not enough memory).
+	 */
+	TBmp *p_Turn(int n_multiples_pi_half_cw) const
+	{
+		int n_angle = n_multiples_pi_half_cw & 3;
+		// only four possible angles; make them positive
+
+		if(!n_angle)
+			return p_Clone(); // zero angle - just clone
+		else if(n_angle == 2) { // rotate 180, same as flip horizontal and vertical
+			TBmp *p_rotate = p_Clone();
+			if(!p_rotate)
+				return 0;
+			p_rotate->Flip(false);
+			p_rotate->Flip(true);
+			return p_rotate;
+		}
+		// handle simple cases
+
+		TBmp *p_rotate = p_Clone(false);
+		if(!p_rotate)
+			return 0;
+		std::swap(p_rotate->n_height, p_rotate->n_width);
+		// alloc bitmap of the same shape
+
+		const int sw = n_width, sh = n_height;
+		if(n_angle == 1) { // rotate 90 cw
+			for(int sy = 0; sy < sh; ++ sy) {
+				int dx = sh - 1 - sy;
+				for(int sx = 0; sx < sw; ++ sx) {
+					int dy = sx;
+					p_rotate->p_buffer[dx + sh * dy] = p_buffer[sx + sw * sy];
+				}
+			}
+			// x becomes y
+			// y becomes h - x
+		} else /*if(n_angle == 3)*/ { // rotate 270 cw
+			_ASSERTE(n_angle == 3);
+			for(int sy = 0; sy < sh; ++ sy) {
+				int dx = sy;
+				for(int sx = 0; sx < sw; ++ sx) {
+					int dy = sw - 1 - sx;
+					p_rotate->p_buffer[dx + sh * dy] = p_buffer[sx + sw * sy];
+				}
+			}
+			// x becomes w - y
+			// y becomes x
+		}
+
+		return p_rotate;
+	}
+
+	/**
+	 *	@brief swaps between RGB and BGR channel order
+	 *	@note The default order is ARGB, where A is in MSB and B is in LSB.
+	 */
+	void Swap_RGB_to_BGR()
+	{
+		for(uint32_t *p_dest = p_buffer, *p_end = p_buffer + size_t(n_width) * n_height; p_dest != p_end; ++ p_dest) {
+			uint32_t n_color = *p_dest;
+			*p_dest = (n_color & 0xff00ff00U) | ((n_color & 0xff0000) >> 16) | ((n_color & 0x0000ff) << 16);
+		}
 	}
 
 	/**
@@ -156,7 +263,7 @@ struct TBmp {
 	{
 		_ASSERTE(x >= 0 && y >= 0 && x + _n_width <= n_width && y + _n_height <= n_height);
 
-		TBmp *p_clone = p_CreateBitmap(_n_width, _n_height, b_grayscale, b_alpha, n_former_bpp);
+		TBmp *p_clone = p_Alloc(_n_width, _n_height, b_grayscale, b_alpha, n_former_bpc); // not quite a clone - has a different size
 		if(p_buffer && p_clone) {
 			for(int yy = 0; yy < _n_height; ++ yy) {
 				memcpy(p_clone->p_buffer + _n_width * yy,
@@ -164,6 +271,171 @@ struct TBmp {
 			}
 		}
 		return p_clone;
+	}
+
+	/**
+	 *	@brief general "canvas size" operation
+	 *
+	 *	@param[in] x is a coordinate of top-left corner of the crop rectangle
+	 *	@param[in] y is a coordinate of top-left corner of the crop rectangle
+	 *	@param[in] _n_width is width of the crop rectangle, in pixels
+	 *	@param[in] _n_height is height of the crop rectangle, in pixels
+	 *	@param[in] n_dest_x is a coordinate of top-left corner of the crop rectangle
+	 *	@param[in] n_dest_y is a coordinate of top-left corner of the crop rectangle
+	 *	@param[in] n_background_color is color of unspecified pixels if the crop rectangle is bigger
+	 *
+	 *	@return Returns pointer to the new bitmap on success, or 0 on failure.
+	 *
+	 *	@note The cropping rectangle is arbitrary.
+	 *
+	 *	@todo This is practically untested, debug this.
+	 */
+	TBmp *p_Crop(int x, int y, int _n_width, int _n_height,
+		int n_dest_x, int n_dest_y, uint32_t n_background_color) const
+	{
+		int n_src_width = n_width;
+		int n_src_height = n_height;
+		if(n_dest_x < 0) {
+			x -= n_dest_x;
+			n_src_width += n_dest_x;
+			n_dest_x = 0;
+		}
+		if(n_dest_y < 0) {
+			y -= n_dest_y;
+			n_src_height += n_dest_x;
+			n_dest_y = 0;
+		}
+		// destination x and y can be negative; fix it like this
+
+		TBmp *p_clone = p_Alloc(_n_width, _n_height, b_grayscale, b_alpha, n_former_bpc); // not quite a clone - has a different size
+		if(p_buffer && p_clone) {
+			//p_clone->Clear(n_background_color);
+			// sub-optimal, much of the background will be typically overwritten
+
+			int n_fill_height = std::min(_n_height - n_dest_y, n_src_height); // smaller one
+			int n_fill_width = std::min(_n_width - n_dest_x, n_src_width); // smaller one
+			if(n_fill_width < 0 || n_fill_height < 0) {
+				p_clone->Clear(n_background_color); // nothing of the original iamge is seen
+				return p_clone;
+			}
+			// calculate how much the images intersect
+
+			if(n_dest_y > 0) {
+				uint32_t *p_dest = p_clone->p_buffer;
+				for(int yy = 0; yy < n_dest_y; ++ yy)
+					for(int xx = 0; xx < _n_width; ++ xx, ++ p_dest)
+						*p_dest = n_background_color;
+				_ASSERTE(p_dest <= p_clone->p_buffer + _n_width * _n_height);
+			}
+			// fill upper half
+
+			{
+				uint32_t *p_dest = p_clone->p_buffer + _n_width * n_dest_y;
+				for(int yy = n_dest_y; yy < n_fill_height; ++ yy, p_dest += _n_width) {
+					for(int xx = 0; xx < n_dest_x; ++ xx)
+						p_dest[xx] = n_background_color;
+					// fill before
+
+					memcpy(p_dest + n_dest_x, p_buffer + (x + (y + yy) * n_width),
+						n_fill_width * sizeof(uint32_t));
+					// copy from the source image
+
+					for(int xx = n_dest_x + n_fill_width; xx < _n_width; ++ xx)
+						p_dest[xx] = n_background_color;
+					// fill after
+				}
+				_ASSERTE(p_dest <= p_clone->p_buffer + _n_width * _n_height);
+			}
+
+			if(n_dest_y + n_fill_height < _n_height) {
+				uint32_t *p_dest = p_clone->p_buffer + _n_width * (n_dest_y + n_fill_height);
+				_ASSERTE(p_dest < p_clone->p_buffer + _n_width * _n_height);
+				for(int yy = n_dest_y + n_fill_height; yy < _n_height; ++ yy)
+					for(int xx = 0; xx < _n_width; ++ xx, ++ p_dest)
+						*p_dest = n_background_color;
+				_ASSERTE(p_dest <= p_clone->p_buffer + _n_width * _n_height);
+			}
+			// fill lower half
+		}
+		return p_clone;
+	}
+
+	// todo - write a copy function that works like BitBlt()
+
+	/**
+	 *	@brief filter types for p_Upscale()
+	 */
+	enum {
+		filter_Nearest, /**< @brief nearest neighbor filter */
+		filter_Bilinear, /**< @brief bilinear filter */
+		filter_Bicubic /**< @brief bicubic filter */
+	};
+
+	/**
+	 *	@brief magnifies the image
+	 *
+	 *	@param[in] n_new_width is new width, in pixels
+	 *	@param[in] n_new_height is new height, in pixels
+	 *	@param[in] n_filter_type is one of filter_*, currently only filter_Nearest is supported
+	 *
+	 *	@return Returns the upscaled image on success, 0 on failure (not enough memory).
+	 *
+	 *	@note The dimensions do not generally need to be greater than the original image, but if
+	 *		they are lower, aliassing may occur and it is not a goal of this function to avoid it.
+	 */
+	TBmp *p_Upscale(int n_new_width, int n_new_height, int n_filter_type = filter_Bilinear) const
+	{
+		_ASSERTE(n_filter_type == filter_Nearest/* ||
+			n_filter_type == filter_Bilinear || n_filter_type == filter_Bicubic*/);  // others not implemented yet
+
+		TBmp *p_scaled;
+		if(!(p_scaled = p_Alloc(n_new_width, n_new_height, b_grayscale, b_alpha, n_former_bpc)))
+			return 0;
+		// alloc a new bitmap
+
+		if(n_new_width >= n_width && n_new_height >= n_height &&
+		   n_new_width / n_width == n_new_height / n_height &&
+		   n_new_width % n_width == 0 && n_new_height % n_height == 0) {
+			int n_factor = n_new_width / n_width;
+			// scaling by an integer factor
+
+			if(n_filter_type == filter_Nearest) {
+				const uint32_t *p_src = p_buffer;
+				uint32_t *const p_dest = p_scaled->p_buffer; // do not change address of dest
+				for(int y = 0, w = n_width, h = n_height; y < h; ++ y) {
+					for(int x = 0; x < w; ++ x, ++ p_src) {
+						uint32_t n_src = *p_src;
+						for(int dy = 0; dy < n_factor; ++ dy) {
+							for(int dx = 0; dx < n_factor; ++ dx)
+								p_dest[(x * n_factor + dx) + (y * n_factor + dy) * n_new_width] = n_src;
+						}
+					}
+				}
+				// could handle power-of-two factors with a shift instead of mul
+			} else {
+				// todo - implement other filters (precalc weights for the neighbors in a LUT,
+				// do the same loop as for nearest, handle border cases separately)
+			}
+		} else {
+			// general scaling
+
+			const uint32_t *const p_src = p_buffer; // do not change address of src
+			uint32_t *p_dest = p_scaled->p_buffer;
+			if(n_filter_type == filter_Nearest) {
+				for(int y = 0, w = n_width, h = n_height; y < n_new_height; ++ y) {
+					int sy = (y * h) / n_new_height; // the product is up to n_height * (n_new_height - 1), might need int64 for that
+					for(int x = 0; x < n_new_width; ++ x, ++ p_dest) {
+						int sx = (x * w) / n_new_width; // the product is up to n_width * (n_new_width - 1), might need int64 for that
+						*p_dest = p_src[sx + sy * w];
+					}
+				}
+			} else {
+				// todo - implement other filters (calculate how big is the period for the LUTs, if under thresh
+				// for both x and y, precalc and do blocked processing, otherwise do the same as for nearest)
+			}
+		}
+
+		return p_scaled;
 	}
 
 	/**
@@ -235,17 +507,17 @@ struct TBmp {
 		if(n_y0 >= 0 && n_y0 < n_height) {
 			_ASSERTE(n_y1 >= 0);
 			if(n_y1 < n_height) {
-				for(int x = std::max(0, n_x0); x < std::min(n_width - 1, n_x1); ++ x) {
+				for(int x = std::max(0, n_x0); x < std::min(n_width, n_x1 + 1); ++ x) {
 					p_buffer[x + n_y0 * n_width] = n_color;
 					p_buffer[x + n_y1 * n_width] = n_color;
 				}
 				// both are in
 			} else {
-				for(int x = std::max(0, n_x0); x < std::min(n_width - 1, n_x1); ++ x)
+				for(int x = std::max(0, n_x0); x < std::min(n_width, n_x1 + 1); ++ x)
 					p_buffer[x + n_y0 * n_width] = n_color;
 			}
 		} else if(n_y1 >= 0 && n_y1 < n_height) {
-			for(int x = std::max(0, n_x0); x < std::min(n_width - 1, n_x1); ++ x)
+			for(int x = std::max(0, n_x0); x < std::min(n_width, n_x1 + 1); ++ x)
 				p_buffer[x + n_y1 * n_width] = n_color;
 		}
 		// draw horizontal lines
@@ -253,17 +525,17 @@ struct TBmp {
 		if(n_x0 >= 0 && n_x0 < n_width) {
 			_ASSERTE(n_x1 >= 0);
 			if(n_x1 < n_width) {
-				for(int y = std::max(0, n_y0); y < std::min(n_height - 1, n_y1); ++ y) {
+				for(int y = std::max(0, n_y0); y < std::min(n_height, n_y1 + 1); ++ y) {
 					p_buffer[n_x0 + y * n_width] = n_color;
 					p_buffer[n_x1 + y * n_width] = n_color;
 				}
 				// both are in
 			} else {
-				for(int y = std::max(0, n_y0); y < std::min(n_height - 1, n_y1); ++ y)
+				for(int y = std::max(0, n_y0); y < std::min(n_height, n_y1 + 1); ++ y)
 					p_buffer[n_x0 + y * n_width] = n_color;
 			}
 		} else if(n_x1 >= 0 && n_x1 < n_width) {
-			for(int y = std::max(0, n_y0); y < std::min(n_height - 1, n_y1); ++ y)
+			for(int y = std::max(0, n_y0); y < std::min(n_height, n_y1 + 1); ++ y)
 				p_buffer[n_x1 + y * n_width] = n_color;
 		}
 		// draw vertical lines
@@ -306,6 +578,74 @@ struct TBmp {
 				*p_ptr = n_color;
 		}
 		// fill
+	}
+
+	/**
+	 *	@brief simple implementation of flood-fill
+	 *
+	 *	@param[in] n_seed_x is horizontal position of seed (must be inside the image)
+	 *	@param[in] n_seed_y is vertical position of seed (must be inside the image)
+	 *	@param[in] n_fill_color is color to fill with (if the color of the
+	 *		seed pixel equals this color, the function immediately succeeds)
+	 *	@param[in] n_connectivity is pixel connectivity (4 or 8)
+	 *
+	 *	@return Returns true on success, false on failure (not enough memory for backtracking).
+	 */
+	bool FloodFill(int n_seed_x, int n_seed_y, uint32_t n_fill_color, int n_connectivity = 4)
+	{
+		_ASSERTE(n_connectivity == 4 || n_connectivity == 8);
+		_ASSERTE(n_seed_x >= 0 && n_seed_x < n_width);
+		_ASSERTE(n_seed_y >= 0 && n_seed_y < n_height);
+
+		uint32_t n_bk_color = p_buffer[n_seed_x + n_seed_y * n_width];
+		if(n_bk_color == n_fill_color)
+			return true; // already filled / would loop indefinitely
+		// get background color
+
+		try {
+			std::vector<std::pair<int, int> > fill_path;
+			fill_path.push_back(std::make_pair(n_seed_x, n_seed_y));
+			// add the seed to the stack
+
+			while(!fill_path.empty()) {
+				std::pair<int, int> pt = fill_path.back();
+				int x = pt.first, y = pt.second;
+				// get position from the stack
+
+				p_buffer[x + y * n_width] = n_fill_color;
+				// mark this location as visited
+
+				if(x + 1 < n_width && p_buffer[x + 1 + y * n_width] == n_bk_color)
+					fill_path.push_back(std::make_pair(x + 1, y));
+				else if(x > 0 && p_buffer[x - 1 + y * n_width] == n_bk_color)
+					fill_path.push_back(std::make_pair(x - 1, y));
+				else if(y > 0 && p_buffer[x + (y - 1) * n_width] == n_bk_color)
+					fill_path.push_back(std::make_pair(x, y - 1));
+				else if(y + 1 < n_height && p_buffer[x + (y + 1) * n_width] == n_bk_color)
+					fill_path.push_back(std::make_pair(x, y + 1));
+				else {
+					if(n_connectivity == 4)
+						fill_path.erase(fill_path.end() - 1);
+					else if(x + 1 < n_width && y > 0 && p_buffer[x + 1 + (y - 1) * n_width] == n_bk_color)
+						fill_path.push_back(std::make_pair(x + 1, y - 1));
+					else if(x + 1 < n_width && y + 1 < n_height && p_buffer[x + 1 + (y + 1) * n_width] == n_bk_color)
+						fill_path.push_back(std::make_pair(x + 1, y + 1));
+					else if(x > 0 && y > 0 && p_buffer[x - 1 + (y - 1) * n_width] == n_bk_color)
+						fill_path.push_back(std::make_pair(x - 1, y - 1));
+					else if(x > 0 && y + 1 < n_height && p_buffer[x - 1 + (y + 1) * n_width] == n_bk_color)
+						fill_path.push_back(std::make_pair(x - 1, y + 1));
+					else
+						fill_path.erase(fill_path.end() - 1);
+					// 8-connectivity
+				}
+				// try to visit other unvisited adjacent positions
+			}
+			// use flood fill (naive implementation)
+		} catch(std::bad_alloc&) {
+			return false; // out of memory
+		}
+
+		return true;
 	}
 
 	/**
@@ -389,18 +729,18 @@ struct TBmp {
 	/**
 	 *	@brief a simple interpolator object for rasterizing lines
 	 */
-	class CInterpolator {
+    class CInterpolator {
 	public:
 		typedef int TFixedPoint; /**< @brief this interpolator should use fixed-point numbers for increased accuracy */
 
-	protected:
-		TFixedPoint m_y; /**< @brief current interpolated value */
-		int m_n_length; /**< @brief length of the interpolation domain */
-		TFixedPoint m_n_slope; /**< @brief interpolated line slope */
-		TFixedPoint m_n_error; /**< @brief error accumulator */
-		TFixedPoint m_n_remainder; /**< @brief error increase per interpolation step */
+    protected:
+        TFixedPoint m_y; /**< @brief current interpolated value */
+        int m_n_length; /**< @brief length of the interpolation domain */
+        TFixedPoint m_n_slope; /**< @brief interpolated line slope */
+        TFixedPoint m_n_error; /**< @brief error accumulator */
+        TFixedPoint m_n_remainder; /**< @brief error increase per interpolation step */
 
-	public:
+    public:
 		/**
 		 *	@brief default constructor
 		 *
@@ -408,42 +748,42 @@ struct TBmp {
 		 *	@param[in] n_y1 is the interpolated value at the end of the domain
 		 *	@param[in] n_length is length of the domain
 		 */
-		inline CInterpolator(TFixedPoint n_y0, TFixedPoint n_y1, int n_length)
+        inline CInterpolator(TFixedPoint n_y0, TFixedPoint n_y1, int n_length)
 			:m_y(n_y0), m_n_length(std::max(1, n_length)), m_n_slope((n_y1 - n_y0) / m_n_length),
-			m_n_error((n_y1 - n_y0) % m_n_length), m_n_remainder(m_n_error)
-		{
-			if(m_n_error <= 0) {
-				m_n_error += n_length;
-				m_n_remainder += n_length;
-				-- m_n_slope;
-			}
+            m_n_error((n_y1 - n_y0) % m_n_length), m_n_remainder(m_n_error)
+        {
+            if(m_n_error <= 0) {
+                m_n_error += n_length;
+                m_n_remainder += n_length;
+                -- m_n_slope;
+            }
 			// fix the rounding direction for negative values
 
-			m_n_error -= n_length; // !!
-		}
+            m_n_error -= n_length; // !!
+        }
 
 		/**
 		 *	@brief calculates interpolated value at the next position
 		 */
-		inline void operator ++()
-		{
-			m_y += m_n_slope;
-			if((m_n_error += m_n_remainder) > 0) {
-				m_n_error -= m_n_length;
-				++ m_y;
-			}
+        inline void operator ++()
+        {
+            m_y += m_n_slope;
+            if((m_n_error += m_n_remainder) > 0) {
+                m_n_error -= m_n_length;
+                ++ m_y;
+            }
 			// DDA
-		}
+        }
 
 		/**
 		 *	@brief gets interpolated value
 		 *	@return Returns the current interpolated value.
 		 */
-		inline TFixedPoint y() const
+        inline TFixedPoint y() const
 		{
 			return m_y;
 		}
-	};
+    };
 
 	/**
 	 *	@brief draws a solid-color line
@@ -514,7 +854,7 @@ struct TBmp {
 		}
 		if(n_line_width == 1) {
 			int n_len = abs(int(floor(f_x1) - floor(f_x0)));
-			CInterpolator lerp(int(f_y0 * 256), int(f_y1 * 256), n_len);
+            CInterpolator lerp(int(f_y0 * 256), int(f_y1 * 256), n_len);
 			// note this is not adjusted for fractional x
 
 			_ASSERTE(f_x0 <= f_x1);
@@ -536,7 +876,7 @@ struct TBmp {
 			float f_dx = fabs(f_x1 - f_x0);
 			float f_dy = fabs(f_y1 - f_y0);
 			float f_thickness_scale = sqrt(f_dx * f_dx + f_dy * f_dy) / std::max(1.0f, std::max(f_dx, f_dy));
-			n_line_width = int(n_line_width * f_thickness_scale + .5f);
+			n_line_width = std::max(n_line_width, int(n_line_width * f_thickness_scale + .5f));
 			// adjust line thickness based on line angle
 
 			int n_line_extent_top = (n_line_width - 1) / 2;
@@ -544,7 +884,7 @@ struct TBmp {
 			// calculate extent on top and bottom
 
 			int n_len = abs(int(floor(f_x1) - floor(f_x0)));
-			CInterpolator lerp(int(f_y0 * 256), int(f_y1 * 256), n_len);
+            CInterpolator lerp(int(f_y0 * 256), int(f_y1 * 256), n_len);
 			// note this is not adjusted for fractional n_x
 
 			if(b_steep) {
@@ -708,8 +1048,13 @@ struct TBmp {
 			std::swap(f_x0, f_x1);
 			std::swap(f_y0, f_y1);
 		}
+
+		const int n_FP_shift = 16;
+		const int n_FP_factor = 65536;
+		// added these in order to improve precission on large images
+
 		float f_dxdy = (fabs(f_x1 - f_x0) > 1e-5f)? (f_y1 - f_y0) / (f_x1 - f_x0) : 0;
-		int n_gradient = int(256 * f_dxdy);
+		int n_gradient = int(n_FP_factor * f_dxdy);
 		int n_end_x0 = int(floor(f_x0 + .5f));
 		int n_end_x1 = int(floor(f_x1 + .5f));
 		// note the .5 are important otherwise antialiassing discontinuities occur in the first quadrant
@@ -742,10 +1087,11 @@ struct TBmp {
 
 			float f_end_y0 = f_y0 + f_dxdy * (n_end_x0 - f_x0);
 			float f_cov_x0 = ceil(f_x0 + .5f) - (f_x0 + .5f); // how much of line is in the first pixel
-			int n_lerp_y = int((f_end_y0 + f_dxdy) * 256);
+			int n_lerp_y = int((f_end_y0 + f_dxdy) * n_FP_factor);
 			float f_end_y1 = f_y1 + f_dxdy * (n_end_x1 - f_x1);
 			float f_cov_x1 = 1 - (ceil(f_x1 + .5f) - (f_x1 + .5f)); // how much of line is in the last pixel
-			int n_alpha_y0 = 255 - int(255 * (ceil(f_end_y0) - f_end_y0));
+			//int n_alpha_y0 = 255 - int(255 * (ceil(f_end_y0) - f_end_y0));
+			int n_alpha_y0 = int(255 * (f_end_y0 - floor(f_end_y0)));
 			int n_alpha_y1 = int(255 * (f_end_y1 - floor(f_end_y1)));
 			// calculate aliassing on the end of the lines
 			// note the .5 are important otherwise antialiassing discontinuities occur in the first quadrant
@@ -753,10 +1099,10 @@ struct TBmp {
 			if(b_steep) {
 				if(n_end_x0 >= 0 && n_end_x0 < n_height) {
 					int n_y = n_end_x0, n_x = int(floor(f_end_y0));
+					if(n_x + 1 >= 0 && n_x + 1 < n_width)
+						AlphaBlend(p_buffer[n_x + 1 + n_y * n_width], n_color, int((n_alpha_y0) * f_cov_x0));
 					if(n_x >= 0 && n_x < n_width)
 						AlphaBlend(p_buffer[n_x + n_y * n_width], n_color, int((255 - n_alpha_y0) * f_cov_x0));
-					if(n_x + 1 >= 0 && n_x + 1 < n_width)
-						AlphaBlend(p_buffer[n_x + 1 + n_y * n_width], n_color, int(n_alpha_y0 * f_cov_x0));
 				}
 				// handle the first endpoint
 
@@ -770,9 +1116,9 @@ struct TBmp {
 				// handle the second endpoint
 
 				for(int n_y = n_end_x0 + 1; n_y < n_end_x1; ++ n_y) {
-					int n_x = n_lerp_y >> 8;
+					int n_x = n_lerp_y >> n_FP_shift;
 					_ASSERTE(n_x >= 0 && n_x < n_width && n_y >= 0 && n_y < n_height);
-					int n_alpha_0 = n_lerp_y & 0xff;
+					int n_alpha_0 = (n_lerp_y >> (n_FP_shift - 8)) & 0xff;
 					AlphaBlend(p_buffer[n_x + n_y * n_width], n_color, 0xff - n_alpha_0);
 					if(n_x + 1 < n_width)
 						AlphaBlend(p_buffer[n_x + 1 + n_y * n_width], n_color, n_alpha_0);
@@ -783,10 +1129,10 @@ struct TBmp {
 			} else {
 				if(n_end_x0 >= 0 && n_end_x0 < n_width) {
 					int n_x = n_end_x0, n_y = int(floor(f_end_y0));
+					if(n_y + 1 >= 0 && n_y + 1 < n_height)
+						AlphaBlend(p_buffer[n_x + (n_y + 1) * n_width], n_color, int((n_alpha_y0) * f_cov_x0));
 					if(n_y >= 0 && n_y < n_height)
 						AlphaBlend(p_buffer[n_x + n_y * n_width], n_color, int((255 - n_alpha_y0) * f_cov_x0));
-					if(n_y + 1 >= 0 && n_y + 1 < n_height)
-						AlphaBlend(p_buffer[n_x + (n_y + 1) * n_width], n_color, int(n_alpha_y0 * f_cov_x0));
 				}
 				// handle the first endpoint
 
@@ -800,9 +1146,9 @@ struct TBmp {
 				// handle the second endpoint
 
 				for(int n_x = n_end_x0 + 1; n_x < n_end_x1; ++ n_x) {
-					int n_y = n_lerp_y >> 8;
+					int n_y = n_lerp_y >> n_FP_shift;
 					_ASSERTE(n_x >= 0 && n_x < n_width && n_y >= 0 && n_y < n_height);
-					int n_alpha_0 = n_lerp_y & 0xff;
+					int n_alpha_0 = (n_lerp_y >> (n_FP_shift - 8)) & 0xff;
 					AlphaBlend(p_buffer[n_x + n_y * n_width], n_color, 0xff - n_alpha_0);
 					if(n_y + 1 < n_height)
 						AlphaBlend(p_buffer[n_x + (n_y + 1) * n_width], n_color, n_alpha_0);
@@ -815,7 +1161,7 @@ struct TBmp {
 			float f_dx = fabs(f_x1 - f_x0);
 			float f_dy = fabs(f_y1 - f_y0);
 			float f_thickness_scale = sqrt(f_dx * f_dx + f_dy * f_dy) / std::max(1.0f, std::max(f_dx, f_dy));
-			n_line_width = int(n_line_width * f_thickness_scale + .5f);
+			n_line_width = std::max(n_line_width, int(n_line_width * f_thickness_scale + .5f));
 			// adjust line thickness based on line angle
 
 			int n_line_extent_top = (n_line_width - 1) / 2;
@@ -824,10 +1170,11 @@ struct TBmp {
 
 			float f_end_y0 = f_y0 + f_dxdy * (n_end_x0 - f_x0);
 			float f_cov_x0 = ceil(f_x0 + .5f) - (f_x0 + .5f); // how much of line is in the first pixel
-			int n_lerp_y = int((f_end_y0 + f_dxdy) * 256);
+			int n_lerp_y = int((f_end_y0 + f_dxdy) * n_FP_factor);
 			float f_end_y1 = f_y1 + f_dxdy * (n_end_x1 - f_x1);
 			float f_cov_x1 = 1 - (ceil(f_x1 + .5f) - (f_x1 + .5f)); // how much of line is in the last pixel
-			int n_alpha_y0 = 255 - int(255 * (ceil(f_end_y0) - f_end_y0));
+			//int n_alpha_y0 = 255 - int(255 * (ceil(f_end_y0) - f_end_y0));
+			int n_alpha_y0 = int(255 * (f_end_y0 - floor(f_end_y0)));
 			int n_alpha_y1 = int(255 * (f_end_y1 - floor(f_end_y1)));
 			// calculate aliassing on the end of the lines
 			// note the .5 are important otherwise antialiassing discontinuities occur in the first quadrant
@@ -860,9 +1207,9 @@ struct TBmp {
 				// handle the second endpoint
 
 				for(int n_y = n_end_x0 + 1; n_y < n_end_x1; ++ n_y) {
-					int n_x = n_lerp_y >> 8;
+					int n_x = n_lerp_y >> n_FP_shift;
 					_ASSERTE(n_x >= 0 && n_x < n_width && n_y >= 0 && n_y < n_height);
-					int n_alpha_0 = n_lerp_y & 0xff;
+					int n_alpha_0 = (n_lerp_y >> (n_FP_shift - 8)) & 0xff;
 					if(n_x >= n_line_extent_top)
 						AlphaBlend(p_buffer[n_x - n_line_extent_top + n_y * n_width], n_color, 0xff - n_alpha_0);
 					for(int dy = n_line_extent_top - 1; dy > 0; -- dy) {
@@ -908,9 +1255,9 @@ struct TBmp {
 				// handle the second endpoint
 
 				for(int n_x = n_end_x0 + 1; n_x < n_end_x1; ++ n_x) {
-					int n_y = n_lerp_y >> 8;
+					int n_y = n_lerp_y >> n_FP_shift;
 					_ASSERTE(n_x >= 0 && n_x < n_width && n_y >= 0 && n_y < n_height);
-					int n_alpha_0 = n_lerp_y & 0xff;
+					int n_alpha_0 = (n_lerp_y >> (n_FP_shift - 8)) & 0xff;
 					if(n_y - n_line_extent_top >= 0)
 						AlphaBlend(p_buffer[n_x + (n_y - n_line_extent_top) * n_width], n_color, 0xff - n_alpha_0);
 					for(int dy = n_line_extent_top - 1; dy > 0; -- dy) {
@@ -1131,6 +1478,241 @@ struct TBmp {
 		}
 		// rasterize the triangle
 	}
+
+	/**
+	 *	@brief applies a simple convolution filter
+	 *
+	 *	@tparam CFilterInside is implementation of the filter for the interior pixels
+	 *		(can ommit out of bounds checking)
+	 *	@tparam CFilterBorder is implementation of the filter for the border pixels
+	 *
+	 *	@param[in] r_t_src is source image
+	 *	@param[in] n_filter_width is filter width, in pixels (a radius rather than diameter)
+	 *	@param[in] n_filter_height is filter height, in pixels (a radius rather than diameter)
+	 *	@param[in] filter_inside is instance of the filter for the interior pixels
+	 *	@param[in] filter_border is instance of the filter for the border pixels
+	 *
+	 *	@note Before calling, this bitmap must be allocated to the same size as r_t_src.
+	 *	@note This function is not cache friendly, as it does not perform any tiling.
+	 */
+	template <class CFilterInside, class CFilterBorder>
+	void FilterLoop(const TBmp &r_t_src, int n_filter_width, int n_filter_height,
+		CFilterInside filter_inside, CFilterBorder filter_border)
+	{
+		_ASSERTE(n_width == r_t_src.n_width && n_height == r_t_src.n_height);
+		if(n_width <= 2 * n_filter_width || n_height <= 2 * n_filter_height) {
+			uint32_t *p_dest = p_buffer;
+			const uint32_t *p_src = r_t_src.p_buffer;
+			for(int y = 0, w = n_width, h = n_height; y < h; ++ y) {
+				for(int x = 0; x < w; ++ x, ++ p_dest, ++ p_src)
+					*p_dest = filter_border(p_src, x, y, w, h);
+			}
+			// the image is small or the filter is big; all the pixels are on the border
+		} else {
+			const int w = n_width, h = n_height;
+			// antialiass
+
+			uint32_t *p_dest = p_buffer;
+			const uint32_t *p_src = r_t_src.p_buffer;
+
+			for(int y = 0; y < n_filter_height; ++ y) {
+				for(int x = 0; x < w; ++ x, ++ p_dest, ++ p_src)
+					*p_dest = filter_border(p_src, x, y, w, h);
+			}
+			// top of the border
+
+			for(int y = n_filter_height, ex = w - n_filter_width,
+			   ey = h - n_filter_height; y < ey; ++ y) {
+				for(int x = 0; x < n_filter_width; ++ x, ++ p_dest, ++ p_src)
+					*p_dest = filter_border(p_src, x, y, w, h);
+				// left side (border)
+
+				for(int x = n_filter_width; x < ex; ++ x, ++ p_dest, ++ p_src)
+					*p_dest = filter_inside(p_src, w);
+				// filter inside of the image
+
+				for(int x = ex; x < w; ++ x, ++ p_dest, ++ p_src)
+					*p_dest = filter_border(p_src, x, y, w, h);
+				// right side (border)
+			}
+
+			for(int y = h - n_filter_height; y < h; ++ y) {
+				for(int x = 0; x < w; ++ x, ++ p_dest, ++ p_src)
+					*p_dest = filter_border(p_src, x, y, w, h);
+			}
+			// bottom of the border
+
+			_ASSERTE(p_dest == p_buffer + w * h);
+			_ASSERTE(p_src == r_t_src.p_buffer + w * h);
+			// make sure we increment it correctly
+		}
+	}
+
+	/**
+	 *	@brief fixed size filter loop
+	 *
+	 *	@tparam n_filter_width is filter width, in pixels (a radius rather than diameter)
+	 *	@tparam n_filter_height is filter height, in pixels (a radius rather than diameter)
+	 */
+	template <int n_filter_width, int n_filter_height>
+	class CConstFilterLoop {
+	public:
+		/**
+		 *	@brief applies a simple convolution filter
+		 *
+		 *	@tparam CFilterInside is implementation of the filter for the interior pixels
+		 *		(can ommit out of bounds checking)
+		 *	@tparam CFilterBorder is implementation of the filter for the border pixels
+		 *
+		 *	@param[in] r_t_dest is destination image (must be the same size as r_t_src)
+		 *	@param[in] r_t_src is source image
+		 *	@param[in] filter_inside is instance of the filter for the interior pixels
+		 *	@param[in] filter_border is instance of the filter for the border pixels
+		 *
+		 *	@note Before calling, r_t_dest must be allocated to the same size as r_t_src.
+		 *	@note This function is not cache friendly, as it does not perform any tiling.
+		 */
+		template <class CFilterInside, class CFilterBorder>
+		static void FilterLoop(TBmp &r_t_dest, const TBmp &r_t_src,
+			CFilterInside filter_inside, CFilterBorder filter_border)
+		{
+			_ASSERTE(r_t_dest.n_width == r_t_src.n_width && r_t_dest.n_height == r_t_src.n_height);
+			if(r_t_dest.n_width <= 2 * n_filter_width || r_t_dest.n_height <= 2 * n_filter_height) {
+				uint32_t *p_dest = r_t_dest.p_buffer;
+				const uint32_t *p_src = r_t_src.p_buffer;
+				for(int y = 0, w = r_t_dest.n_width, h = r_t_dest.n_height; y < h; ++ y) {
+					for(int x = 0; x < w; ++ x, ++ p_dest, ++ p_src)
+						*p_dest = filter_border(p_src, x, y, w, h);
+				}
+				// the image is small or the filter is big; all the pixels are on the border
+			} else {
+				const int w = r_t_dest.n_width, h = r_t_dest.n_height;
+				// antialiass
+
+				uint32_t *p_dest = r_t_dest.p_buffer;
+				const uint32_t *p_src = r_t_src.p_buffer;
+
+				for(int y = 0; y < n_filter_height; ++ y) {
+					for(int x = 0; x < w; ++ x, ++ p_dest, ++ p_src)
+						*p_dest = filter_border(p_src, x, y, w, h);
+				}
+				// top of the border
+
+				for(int y = n_filter_height, ex = w - n_filter_width,
+				   ey = h - n_filter_height; y < ey; ++ y) {
+					for(int x = 0; x < n_filter_width; ++ x, ++ p_dest, ++ p_src)
+						*p_dest = filter_border(p_src, x, y, w, h);
+					// left side (border)
+
+					for(int x = n_filter_width; x < ex; ++ x, ++ p_dest, ++ p_src)
+						*p_dest = filter_inside(p_src, w);
+					// filter inside of the image
+
+					for(int x = ex; x < w; ++ x, ++ p_dest, ++ p_src)
+						*p_dest = filter_border(p_src, x, y, w, h);
+					// right side (border)
+				}
+
+				for(int y = h - n_filter_height; y < h; ++ y) {
+					for(int x = 0; x < w; ++ x, ++ p_dest, ++ p_src)
+						*p_dest = filter_border(p_src, x, y, w, h);
+				}
+				// bottom of the border
+			}
+		}
+	};
+
+	/**
+	 *	@brief common filter kernel implementations
+	 */
+	class CBasicFilterKernels {
+	public:
+		/**
+		 *	@brief dummy border filter implementation
+		 *
+		 *	@param[in] p_src is pointer to the current pixel (unused)
+		 *	@param[in] x is horizontal coordinate of the current pixel (unused)
+		 *	@param[in] y is vertical coordinate of the current pixel (unused)
+		 *	@param[in] w is width of the input image, in pixels (unused)
+		 *	@param[in] h is height of the input image, in pixels (unused)
+		 *
+		 *	@return Returns black, with full alpha.
+		 */
+		static uint32_t n_DummyFilterBorder(const uint32_t *UNUSED(p_src),
+			int UNUSED(x), int UNUSED(y), int UNUSED(w), int UNUSED(h))
+		{
+			return 0xff000000U;
+		}
+
+		/**
+		 *	@brief Roberts-Cross filter implementation
+		 *
+		 *	@param[in] p_src is pointer to the current pixel
+		 *	@param[in] w is width of the input image, in pixels
+		 *
+		 *	@return Returns the filtered grayscale values.
+		 */
+		static uint32_t n_RobertCross_Gray(const uint32_t *p_src, int w)
+		{
+			int n_horz = abs(int(*p_src & 0xff) - int(p_src[-1] & 0xff));
+			int n_vert = abs(int(*p_src & 0xff) - int(p_src[-w] & 0xff));
+			int n_gray = abs(n_horz) + abs(n_vert);
+			n_gray = std::min(255, n_gray);
+			return 0xff000000U | n_gray | (n_gray << 8) | (n_gray << 16);
+		}
+
+		/**
+		 *	@brief single-pass Sobel filter implementation
+		 *
+		 *	@param[in] p_src is pointer to the current pixel
+		 *	@param[in] w is width of the input image, in pixels
+		 *
+		 *	@return Returns the filtered grayscale values.
+		 */
+		static uint32_t n_Sobel_Gray(const uint32_t *p_src, int w)
+		{
+			int n_horz =
+				-1 * (p_src[-1 - w] & 0xff) +
+				-2 * (p_src[-1 - 0] & 0xff) +
+				-1 * (p_src[-1 + w] & 0xff) +
+				+1 * (p_src[+1 - w] & 0xff) +
+				+2 * (p_src[+1 - 0] & 0xff) +
+				+1 * (p_src[+1 + w] & 0xff);
+			int n_vert =
+				-1 * (p_src[-1 - w] & 0xff) +
+				-2 * (p_src[-0 - w] & 0xff) +
+				-1 * (p_src[+1 - w] & 0xff) +
+				+1 * (p_src[-1 + w] & 0xff) +
+				+2 * (p_src[-0 + w] & 0xff) +
+				+1 * (p_src[+1 + w] & 0xff);
+			int n_gray = abs(n_horz) + abs(n_vert);
+			n_gray = std::min(255, n_gray);
+			return 0xff000000U | n_gray | (n_gray << 8) | (n_gray << 16);
+		}
+
+		/**
+		 *	@brief 3x3 Gaussian-like filter implementation
+		 *
+		 *	@param[in] p_src is pointer to the current pixel
+		 *	@param[in] w is width of the input image, in pixels
+		 *
+		 *	@return Returns the filtered grayscale values.
+		 */
+		static uint32_t n_Unsharp_Mask33(const uint32_t *p_src, int w)
+		{
+			int n_gray =
+				(1 * (p_src[-1 - w] & 0xff) +
+				2 * (p_src[-1 - 0] & 0xff) +
+				1 * (p_src[-1 + w] & 0xff) +
+				2 * (p_src[ 0 - w] & 0xff) +
+				4 * (p_src[ 0 - 0] & 0xff) +
+				2 * (p_src[ 0 + w] & 0xff) +
+				1 * (p_src[+1 - w] & 0xff) +
+				2 * (p_src[+1 - 0] & 0xff) +
+				1 * (p_src[+1 + w] & 0xff)) / 16;
+			return 0xff000000U | n_gray | (n_gray << 8) | (n_gray << 16);
+		}
+	};
 };
 
-#endif // __BITMAP_STRUCTURE_INCLUDED
+#endif // !__BITMAP_STRUCTURE_INCLUDED

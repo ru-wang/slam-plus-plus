@@ -59,7 +59,7 @@ public:
 	static bool RunAll();
 
 	/**
-	 *	@brief unit test for block matrix decomposition functions (Cholesky)
+	 *	@brief unit test for block matrix factorization functions (Cholesky)
 	 *	@todo Add rectangular block tests.
 	 */
 	static void MatrixDecomposition_UnitTest();
@@ -685,4 +685,4 @@ protected:
 	static cs *p_LoadMM(const char *p_s_filename); // throw(std::bad_alloc)
 };
 
-#endif // __UBER_BLOCK_MATRIX_UNIT_TESTS_INCLUDED
+#endif // !__UBER_BLOCK_MATRIX_UNIT_TESTS_INCLUDED

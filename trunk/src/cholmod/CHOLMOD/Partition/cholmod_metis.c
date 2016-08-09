@@ -52,7 +52,7 @@
 /* METIS has its own ASSERT that it reveals to the user, so remove it here: */
 #undef ASSERT
 
-//typedef idx_t idxtype;
+typedef idx_t idxtype; // required for metis 5.*
 
 /* and redefine it back again */
 #ifndef NDEBUG
@@ -214,7 +214,7 @@ SuiteSparse_long CHOLMOD(metis_bisector)	/* returns separator size */
     Int *Ap, *Ai ;
     idxtype *Mp, *Mi, *Mnw, *Mew, *Mpart ;
     Int n, nleft, nright, j, p, csep, total_weight, lightest, nz ;
-    int Opt [8], nn, csp ;
+    idxtype Opt [8], nn, csp ;
     size_t n1 ;
     DEBUG (Int nsep) ;
 
@@ -512,7 +512,7 @@ int CHOLMOD(metis)
     idxtype *Mp, *Mi, *Mperm, *Miperm ;
     cholmod_sparse *B ;
     Int i, j, n, nz, p, identity, uncol ;
-    int Opt [8], nn, zero = 0 ;
+    idxtype Opt [8], nn, zero = 0 ;
     size_t n1, s ;
     int ok = TRUE ;
 

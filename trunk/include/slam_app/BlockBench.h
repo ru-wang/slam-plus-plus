@@ -286,7 +286,7 @@ protected:
 
 	
 	/**
-	 *	@brief matrix decomposition benchmarks
+	 *	@brief matrix factorization benchmarks
 	 *	@tparam COrderingType is ordering function for triplet entries
 	 *	@tparam n_block_size is matrix block size for the given benchmark
 	 */
@@ -2462,4 +2462,4 @@ public:
 	bool Load_Matrix(TRawMatrix &r_trip_matrix, const char *p_s_filename);
 };
 
-#endif // __UBER_BLOCK_MATRIX_BENCHMARK_INCLUDED
+#endif // !__UBER_BLOCK_MATRIX_BENCHMARK_INCLUDED
