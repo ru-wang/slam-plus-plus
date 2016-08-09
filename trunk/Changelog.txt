@@ -1,3 +1,8 @@
+Changes from 1.12 to 1.5 (2015-02-30):
+
+* The distortion parameter in BA (both mono and stereo) is scaled by focal
+  length in the internal representation. This is compensated for in the parser.
+
 Changes from 1.1 to 1.12 (2013-11-28):
 
 * Added small_online_example.

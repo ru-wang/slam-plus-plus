@@ -165,7 +165,7 @@
 //#define TIMER_METHOD_OVERRIDE
 
 #ifndef TIMER_METHOD_OVERRIDE
-#if defined(_WIN32) || defined (_WIN64)
+#if defined(_WIN32) || defined(_WIN64)
 #if defined(TIMER_ALLOW_QPC)
 /**
  *	@def TIMER_USE_QPC
@@ -185,7 +185,7 @@
  */
 #define TIMER_USE_CLOCK
 #endif
-#else // _WIN32, _WIN64
+#else // _WIN32 || _WIN64
 #if defined(TIMER_ALLOW_READREALTIME)
 /**
  *	@def TIMER_USE_READREALTIME
@@ -205,7 +205,7 @@
  */
 #define TIMER_USE_CLOCK
 #endif
-#endif // _WIN32, _WIN64
+#endif // _WIN32 || _WIN64
 #endif // TIMER_METHOD_OVERRIDE
 
 #include "slam/Integer.h"

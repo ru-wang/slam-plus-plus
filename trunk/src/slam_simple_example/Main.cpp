@@ -27,7 +27,7 @@
 #if defined(_WIN32) || defined(_WIN64)
 #define NOMINMAX
 #include <windows.h> // to show the result image, otherwise not required
-#endif // _WIN32) || _WIN64
+#endif // _WIN32 || _WIN64
 
 /**
  *	@brief a helper function that adds a bunch of edges
@@ -97,7 +97,7 @@ int main(int UNUSED(n_arg_num), const char **UNUSED(p_arg_list))
 
 #if defined(_WIN32) || defined(_WIN64)
 	ShellExecute(0, "open", "result.tga", 0, 0, SW_SHOW);
-#endif // _WIN32) || _WIN64
+#endif // _WIN32 || _WIN64
 	// on windows, we can open the file with the results in a window
 
 	return 0;

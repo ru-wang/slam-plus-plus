@@ -119,7 +119,7 @@
 	typedef unsigned long long int uint64_t; /**< 64 bit unsigned integer */
 #elif defined(_WIN32) && defined(__GNUC__) // MinGW
 	#include <stdint.h>
-#elif defined(_WIN32) || defined (_WIN64) // MSVC
+#elif defined(_WIN32) || defined(_WIN64) // MSVC
 	typedef signed __int8 int8_t; /**< 8 bit signed integer */
 	typedef signed __int16 int16_t; /**< 8 bit unsigned integer */
 	typedef signed __int32 int32_t; /**< 16 bit signed integer */
