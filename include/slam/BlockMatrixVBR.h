@@ -107,16 +107,23 @@ struct TBLAS_SparseBlockMatrix {
 		size_t n_bnnz = r_ubm.n_Block_Num();
 		// need to calculate those
 
-		Alloc(r_ubm.n_Column_Num(), r_ubm.n_Row_Num(), r_ubm.n_BlockColumn_Num(),
-			r_ubm.n_BlockRow_Num(), n_nnz, n_bnnz, true);
+		_ASSERTE(r_ubm.n_Row_Num() <= CMaxIntValue<Int>::n_result);
+		_ASSERTE(r_ubm.n_Column_Num() <= CMaxIntValue<Int>::n_result);
+		_ASSERTE(r_ubm.n_BlockRow_Num() <= CMaxIntValue<Int>::n_result);
+		_ASSERTE(r_ubm.n_BlockColumn_Num() <= CMaxIntValue<Int>::n_result);
+		_ASSERTE(n_nnz <= CMaxIntValue<Int>::n_result);
+		_ASSERTE(n_bnnz <= CMaxIntValue<Int>::n_result);
+
+		Alloc(Int(r_ubm.n_Column_Num()), Int(r_ubm.n_Row_Num()), Int(r_ubm.n_BlockColumn_Num()),
+			Int(r_ubm.n_BlockRow_Num()), Int(n_nnz), Int(n_bnnz), true);
 		// allocate transpose matrix
 
 		for(size_t i = 0, o = bm; i < o; ++ i)
 			rpntr[i] = Int(r_ubm.n_BlockColumn_Base(i) + n_index_base);
-		rpntr[bm] = m + n_index_base;
+		rpntr[bm] = Int(m + n_index_base);
 		for(size_t i = 0, o = bn; i < o; ++ i)
 			cpntr[i] = Int(r_ubm.n_BlockRow_Base(i) + n_index_base);
-		cpntr[bn] = n + n_index_base;
+		cpntr[bn] = Int(n + n_index_base);
 		// fill block row and block column origins (transpose!)
 
 		size_t n_blocks_rows = (r_ubm.n_BlockColumn_Num())? r_ubm.n_BlockColumn_Column_Num(0) : 0; // transpose!

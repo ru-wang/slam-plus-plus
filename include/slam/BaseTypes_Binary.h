@@ -182,7 +182,7 @@ public:
 	{
 		m_p_vertex_id[0] = n_vertex0_id;
 		m_p_vertex_id[1] = n_vertex1_id;
-		// get references to the vertices, initialize the vertices, if neccessary
+		// get references to the vertices, initialize the vertices, if necessary
 
 		// note that errors, expectations and jacobian matrices are not cleared
 	}
@@ -229,7 +229,7 @@ public:
 	{
 		m_p_vertex_id[0] = n_vertex0_id;
 		m_p_vertex_id[1] = n_vertex1_id;
-		// get references to the vertices, initialize the vertices, if neccessary
+		// get references to the vertices, initialize the vertices, if necessary
 
 		if(!(n_list_skip & 1)) {
 			if(!(n_list_disallow & 1))
@@ -285,7 +285,7 @@ public:
 	{
 		m_p_vertex_id[0] = n_vertex0_id;
 		m_p_vertex_id[1] = n_vertex1_id;
-		// get references to the vertices, initialize the vertices, if neccessary
+		// get references to the vertices, initialize the vertices, if necessary
 
 		if(!(n_list_skip & 1))
 			m_p_vertex0 = &r_system.template r_Get_Vertex<_TyVertex0>(n_vertex0_id, CInitializeVertex_Disallow<_TyVertex0>());
@@ -877,7 +877,7 @@ public:
 			// finally, the reduction needs to be carried out somehow
 
 			// each duplicate edge between two vertices can be processed by either of the vertices,
-			// in CSEBaseVertexImpl::Calculate_Hessians(). there are some problems with load balancing, but
+			// in CBaseVertexImpl::Calculate_Hessians(). there are some problems with load balancing, but
 			// it should generally work. there is a problem with matrix size, as the vertices do not have
 			// to be the same size, and each vertex does not know about the other vertex' dimension
 
@@ -988,7 +988,7 @@ public:
 						CUberBlockMatrix::map_Alignment> t_HtSiH(m_p_HtSiH), t_HtSiH_reduce(m_p_HtSiH_reduce);
 					t_HtSiH_reduce.noalias() += t_HtSiH;
 				}
-				// this is otherwise nicely ordered by the loop in CSEBaseVertexImpl::Calculate_Hessians()
+				// this is otherwise nicely ordered by the loop in CBaseVertexImpl::Calculate_Hessians()
 			}
 		}
 		// take care of Hessian reduction, kind of silently, but it is guaranteed

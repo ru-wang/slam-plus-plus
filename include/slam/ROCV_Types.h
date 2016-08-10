@@ -28,7 +28,7 @@
 /**
  *	@brief 3D position / velocity pose vertex type
  */
-class CVertexPositionVelocity3D : public CSEBaseVertexImpl<CVertexPositionVelocity3D, 6> {
+class CVertexPositionVelocity3D : public CBaseVertexImpl<CVertexPositionVelocity3D, 6> {
 public:
 	__GRAPH_TYPES_ALIGN_OPERATOR_NEW
 
@@ -43,7 +43,7 @@ public:
 	 *	@param[in] r_v_state is state vector initializer
 	 */
 	inline CVertexPositionVelocity3D(const Eigen::Matrix<double, 6, 1> &r_v_state)
-		:CSEBaseVertexImpl<CVertexPositionVelocity3D, 6>(r_v_state)
+		:CBaseVertexImpl<CVertexPositionVelocity3D, 6>(r_v_state)
 	{}
 
 	/**
@@ -51,7 +51,7 @@ public:
 	 *	@param[in] r_vertex is state vector initializer
 	 */
 	inline CVertexPositionVelocity3D(const CParserBase::TVertex3D &r_vertex)
-		:CSEBaseVertexImpl<CVertexPositionVelocity3D, 6>(r_vertex.m_v_position)
+		:CBaseVertexImpl<CVertexPositionVelocity3D, 6>(r_vertex.m_v_position)
 	{}
 
 	/**

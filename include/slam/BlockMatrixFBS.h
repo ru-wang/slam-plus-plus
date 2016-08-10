@@ -1694,7 +1694,7 @@ public:
 					// get block row ...
 
 					fbs_ut::CWrap3<>::In_RowHeight_DecisionTree_Given_ColumnWidth<CBlockMatrixTypelist,
-						CColWidth::n_size>(r_t_row.n_height, CPreMAD_InnerLoop<CColWidth>(r_t_block,
+						CColWidth::n_size>(int(r_t_row.n_height), CPreMAD_InnerLoop<CColWidth>(r_t_block,
 						r_t_row, /*r_t_col,*/ m_p_dest_vector, src));
 					// wrap the inner loop in a row height decision tree
 				}
@@ -1714,7 +1714,7 @@ public:
 			double *p_dest_vector, const double *p_src_vector,
 			const std::vector<TRow> &r_row_list)
 		{
-			fbs_ut::CWrap3<fbs_ut::CCallFnOp>::In_ColumnWidth_DecisionTree<CBlockMatrixTypelist>(r_t_col.n_width,
+			fbs_ut::CWrap3<fbs_ut::CCallFnOp>::In_ColumnWidth_DecisionTree<CBlockMatrixTypelist>(int(r_t_col.n_width),
 				CPreMAD_OuterLoop(r_t_col, p_dest_vector, p_src_vector, r_row_list), !r_t_col.block_list.empty()); // only mind mismatches if not empty
 			// use a decision tree
 		}

@@ -32,9 +32,9 @@
 /**
  *	@brief inverse depth 3D landmark
  */
-class CVertexInvDepth : public CSEBaseVertexImpl<CVertexInvDepth, 3> {
+class CVertexInvDepth : public CBaseVertexImpl<CVertexInvDepth, 3> {
 public:
-	typedef CSEBaseVertexImpl<CVertexInvDepth, 3> _TyBase; /**< @brief base class */
+	typedef CBaseVertexImpl<CVertexInvDepth, 3> _TyBase; /**< @brief base class */
 
 public:
     __GRAPH_TYPES_ALIGN_OPERATOR_NEW
@@ -81,9 +81,9 @@ public:
 /**
  *	@brief inverse distance 3D landmark
  */
-class CVertexInvDist : public CSEBaseVertexImpl<CVertexInvDist, 1> {
+class CVertexInvDist : public CBaseVertexImpl<CVertexInvDist, 1> {
 public:
-	typedef CSEBaseVertexImpl<CVertexInvDist, 1> _TyBase; /**< @brief base class */
+	typedef CBaseVertexImpl<CVertexInvDist, 1> _TyBase; /**< @brief base class */
 
 protected:
 	Eigen::Vector3d m_v_uvw;
@@ -157,9 +157,9 @@ public:
 /**
  *	@brief bundle adjustment camera pose
  */
-class CVertexCamSim3 : public CSEBaseVertexImpl<CVertexCamSim3, 7> {
+class CVertexCamSim3 : public CBaseVertexImpl<CVertexCamSim3, 7> {
 public:
-	typedef CSEBaseVertexImpl<CVertexCamSim3, 7> _TyBase; /**< @brief base class */
+	typedef CBaseVertexImpl<CVertexCamSim3, 7> _TyBase; /**< @brief base class */
 
 protected:
 	Eigen::Vector5d m_v_intrinsics; /**< @brief intrinsics vector (assumed to be constant, not optimized) */
@@ -1239,9 +1239,9 @@ public:
 /**
  *	@brief Sim(3) pose
  */
-class CVertexSim3 : public CSEBaseVertexImpl<CVertexSim3, 7> {
+class CVertexSim3 : public CBaseVertexImpl<CVertexSim3, 7> {
 public:
-	typedef CSEBaseVertexImpl<CVertexSim3, 7> _TyBase; /**< @brief base class */
+	typedef CBaseVertexImpl<CVertexSim3, 7> _TyBase; /**< @brief base class */
 
     __GRAPH_TYPES_ALIGN_OPERATOR_NEW
 

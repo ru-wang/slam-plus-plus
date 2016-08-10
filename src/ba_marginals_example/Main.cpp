@@ -1608,10 +1608,10 @@ int main(int n_arg_num, const char **p_arg_list)
  *
  *	Then run with a single argument, a path to the folder containing <tt>system.mtx</tt>.
  *
- *	The additional arguments -nSD and -nSDChol disable the computation of the schur
- *	complement of the landmarks or its factorization, respectively.
+ *	The additional arguments <tt>-nSD</tt> and <tt>-nSDChol</tt> disable the computation of the Schur
+ *	complement of the landmarks or its factorization, respectively (it can take vast amounts of memory).
  *
- *	The optional argument -tnCo tests factorization of the input matrix using several
+ *	The optional argument <tt>-tnCo</tt> tests factorization of the input matrix using several
  *	implementations and prints the timing.
  *
  */

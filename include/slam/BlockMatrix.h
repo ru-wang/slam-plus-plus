@@ -3897,7 +3897,7 @@ protected:
 	 *		of the same block matrix as this)
 	 *
 	 *	@note This function throws std::bad_alloc.
-	 *	@note This allocates new blocks where neccessary, otherwise the existing blocks will be
+	 *	@note This allocates new blocks where necessary, otherwise the existing blocks will be
 	 *		updated with sparse data (modified - but not pre-cleared!).
 	 *	@note This uses workspace to lookup row ids. The lookup is assumed never to fail
 	 *		(the matrix structure must be pre-allocated).
@@ -3928,7 +3928,7 @@ protected:
 	 *		of the same block matrix as this)
 	 *
 	 *	@note This function throws std::bad_alloc.
-	 *	@note This allocates new blocks where neccessary, otherwise the existing blocks will be
+	 *	@note This allocates new blocks where necessary, otherwise the existing blocks will be
 	 *		updated with sparse data (modified - but not pre-cleared!).
 	 *	@note This uses workspace to lookup row ids. The lookup is assumed never to fail
 	 *		(the matrix structure must be pre-allocated).

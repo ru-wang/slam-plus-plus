@@ -167,7 +167,7 @@ public:
 #endif // __SE_TYPES_SUPPORT_A_SOLVERS
 	{
 		m_p_vertex_id[0] = n_vertex_id;
-		// get references to the vertices, initialize the vertices, if neccessary
+		// get references to the vertices, initialize the vertices, if necessary
 
 		// note that errors, expectations and jacobian matrices are not cleared
 	}
@@ -211,7 +211,7 @@ public:
 #endif // __SE_TYPES_SUPPORT_A_SOLVERS
 	{
 		m_p_vertex_id[0] = n_vertex0_id;
-		// get references to the vertices, initialize the vertices, if neccessary
+		// get references to the vertices, initialize the vertices, if necessary
 
 		if(!b_disallow_implicit_init)
 			m_p_vertex0 = &r_system.template r_Get_Vertex<_TyVertex>(n_vertex0_id, CInitializeNullVertex<>());
@@ -252,7 +252,7 @@ public:
 #endif // __SE_TYPES_SUPPORT_A_SOLVERS
 	{
 		m_p_vertex_id[0] = n_vertex0_id;
-		// get references to the vertices, initialize the vertices, if neccessary
+		// get references to the vertices, initialize the vertices, if necessary
 
 		m_p_vertex0 = &r_system.template r_Get_Vertex<_TyVertex>(n_vertex0_id, CInitializeVertex_Disallow<>());
 		// initialize the vertex pointer, throw an exception if not initialized already

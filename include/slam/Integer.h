@@ -310,7 +310,7 @@
 /**
  *	@brief data type signedness predicate
  *
- *	Decides wheter a type is signed, or not. Value of CIsSigned<_Ty>::result
+ *	Decides wheter a type is signed, or not. Value of CIsSigned<_Ty>::b_result
  *		is true if type _Ty is signed, or false if it's unsigned.
  *
  *	@tparam _Ty is type tested for being signed
@@ -321,15 +321,15 @@ struct CIsSigned {
 	 *	@brief result, stored as enum
 	 */
 	enum {
-		result = _Ty(-1) < 1 /**< contains true if type _Ty is signed, or false if it's unsigned */
+		b_result = !(_Ty(-1) > 0) /**< contains true if type _Ty is signed, or false if it's unsigned */
 	};
-	// should be '_Ty(-1) < 0', using 1 to avoid g++ warning 'unsigned comparison < 0 is always false'
+	// should be '_Ty(-1) < 0', using negation to avoid g++ warning 'unsigned comparison < 0 is always false'
 };
 
 /**
  *	@brief integer type predicate
  *
- *	Decides wheter a type is integer, or floating point. Value of CIsInteger<_Ty>::result
+ *	Decides wheter a type is integer, or floating point. Value of CIsInteger<_Ty>::b_result
  *		is set to true if _Ty is integer type, otherwise it's false.
  *
  *	@tparam _Ty is type tested for being integer
@@ -340,7 +340,7 @@ struct CIsInteger {
 	 *	@brief result, stored as enum
 	 */
 	enum {
-		result = _Ty(.5) == 0 /**< is set to true if _Ty is integer type, otherwise it's false */
+		b_result = _Ty(.5) == 0 /**< is set to true if _Ty is integer type, otherwise it's false */
 	};
 };
 
@@ -361,7 +361,7 @@ private:
 	 */
 	enum {
 		n_bit_num = 8 * sizeof(_Ty),
-		b_unsigned = (CIsSigned<_Ty>::result)? 0 : 1
+		b_unsigned = (CIsSigned<_Ty>::b_result)? 0 : 1
 	};
 
 /**
@@ -394,10 +394,11 @@ public:
 	 */
 	static inline uint64_t result()
 	{
-		_ASSERTE(CIsInteger<_Ty>::result); // only works for integers
+		_ASSERTE(CIsInteger<_Ty>::b_result); // only works for integers
 		return (uint64_t(n_result_hi) << 32) | uint32_t(n_result_lo);
 	}
 #else // MSVC 6.0
+public:
 	static const uint64_t n_result = _Ty_max; // g++ allows this (preferable)
 
 public:
@@ -413,7 +414,7 @@ public:
 	 */
 	static inline uint64_t result()
 	{
-		_ASSERTE(CIsInteger<_Ty>::result); // only works for integers
+		_ASSERTE(CIsInteger<_Ty>::b_result); // only works for integers
 		return n_result;
 	}
 #endif // MSVC
@@ -608,7 +609,7 @@ public:
 			/**
 			 *	@brief equals n_x or-ed together with all power-of-two fractions of n_shift down to zero
 			 */
-			result = CShifter_Static<n_shift / 2>::result | (CShifter_Static<n_shift / 2>::result >> n_shift)
+			n_result = CShifter_Static<n_shift / 2>::n_result | (CShifter_Static<n_shift / 2>::n_result >> n_shift)
 		};
 	};
 
@@ -625,7 +626,7 @@ public:
 			/**
 			 *	@brief equals n_x
 			 */
-			result = n_x
+			n_result = n_x
 		};
 	};
 };
@@ -647,7 +648,7 @@ public:
 		/**
 		 *	@brief equals n_x or-ed together with all power-of-two fractions of n_shift down to zero
 		 */
-		result = CShifter_Static<n_x, n_shift / 2>::result | (CShifter_Static<n_x, n_shift / 2>::result >> n_shift)
+		n_result = CShifter_Static<n_x, n_shift / 2>::n_result | (CShifter_Static<n_x, n_shift / 2>::n_result >> n_shift)
 	};
 };
 
@@ -665,7 +666,7 @@ public:
 		/**
 		 *	@brief equals n_x
 		 */
-		result = n_x
+		n_result = n_x
 	};
 };
 #endif // _MSC_VER && !__MWERKS__ && _MSC_VER < 1400
@@ -802,7 +803,7 @@ public:
 		 *	@brief result, stored as enum
 		 */
 		enum {
-			result = (x & 1) + CBitCounter_Static<x >> 1>::CBitCounter2_Static<n - 1>::result /**< @brief contains the sum of bits set in x */
+			n_result = (x & 1) + CBitCounter_Static<x >> 1>::CBitCounter2_Static<n - 1>::n_result /**< @brief contains the sum of bits set in x */
 		};
 	};
 
@@ -816,7 +817,7 @@ public:
 		 *	@brief result, stored as enum
 		 */
 		enum {
-			result = 0; /**< @brief contains the sum of bits set in x */
+			n_result = 0; /**< @brief contains the sum of bits set in x */
 		};
 	};
 };
@@ -837,7 +838,7 @@ public:
 	 *	@brief result, stored as enum
 	 */
 	enum {
-		result = (x & 1) + CBitCounter_Static<x / 2, n - 1>::result /**< @brief contains the sum of bits set in x */
+		n_result = (x & 1) + CBitCounter_Static<x / 2, n - 1>::n_result /**< @brief contains the sum of bits set in x */
 	};
 };
 
@@ -852,7 +853,7 @@ public:
 	 *	@brief result, stored as enum
 	 */
 	enum {
-		result = 0 /**< @brief contains the sum of bits set in x */
+		n_result = 0 /**< @brief contains the sum of bits set in x */
 	};
 };
 
@@ -869,7 +870,7 @@ public:
 	 *	@brief result, stored as enum
 	 */
 	enum {
-		result = CLog2_Static<n / 2>::result + 1 /**< @brief result = log<sub>2</sub>(n) */
+		n_result = CLog2_Static<n / 2>::n_result + 1 /**< @brief result = log<sub>2</sub>(n) */
 	};
 };
 
@@ -883,7 +884,7 @@ public:
 	 *	@brief result, stored as enum
 	 */
 	enum {
-		result = 0 /**< @brief result = log<sub>2</sub>(n) */
+		n_result = 0 /**< @brief result = log<sub>2</sub>(n) */
 	};
 };
 
@@ -897,7 +898,7 @@ public:
 	 *	@brief result, stored as enum
 	 */
 	enum {
-		result = 0 /**< @brief result = log<sub>2</sub>(n) */
+		n_result = 0 /**< @brief result = log<sub>2</sub>(n) */
 	};
 };
 
@@ -955,9 +956,9 @@ inline _Ty n_Make_POT(_Ty n_x)
  *		are signed or unsigned), may return 0 or maximum negative value, respectively.
  */
 #if defined(_MSC_VER) && !defined(__MWERKS__) && _MSC_VER < 1400
-#define n_Make_POT_Static(n_x) (ul_bithacks::CMakePOT_Static<(n_x) - 1>::CShifter_Static<sizeof(n_x) * 8 / 2>::result + 1)
+#define n_Make_POT_Static(n_x) (ul_bithacks::CMakePOT_Static<(n_x) - 1>::CShifter_Static<sizeof(n_x) * 8 / 2>::n_result + 1)
 #else // _MSC_VER && !__MWERKS__ && _MSC_VER < 1400
-#define n_Make_POT_Static(n_x) (ul_bithacks::CShifter_Static<(n_x) - 1, sizeof(n_x) * 8 / 2>::result + 1)
+#define n_Make_POT_Static(n_x) (ul_bithacks::CShifter_Static<(n_x) - 1, sizeof(n_x) * 8 / 2>::n_result + 1)
 #endif // _MSC_VER && !__MWERKS__ && _MSC_VER < 1400
 
 /**
@@ -982,9 +983,9 @@ inline _Ty n_Make_Lower_POT(_Ty n_x)
  *	@return Returns power of two below or equal to n_x.
  */
 #if defined(_MSC_VER) && !defined(__MWERKS__) && _MSC_VER < 1400
-#define n_Make_Lower_POT_Static(n_x) (ul_bithacks::CMakePOT_Static<(n_x) >> 1>::CShifter_Static<sizeof(n_x) * 8 / 2>::result + 1)
+#define n_Make_Lower_POT_Static(n_x) (ul_bithacks::CMakePOT_Static<(n_x) >> 1>::CShifter_Static<sizeof(n_x) * 8 / 2>::n_result + 1)
 #else // _MSC_VER && !__MWERKS__ && _MSC_VER < 1400
-#define n_Make_Lower_POT_Static(n_x) (ul_bithacks::CShifter_Static<(n_x) / 2, sizeof(n_x) * 8 / 2>::result + 1)
+#define n_Make_Lower_POT_Static(n_x) (ul_bithacks::CShifter_Static<(n_x) / 2, sizeof(n_x) * 8 / 2>::n_result + 1)
 #endif // _MSC_VER && !__MWERKS__ && _MSC_VER < 1400
 
 /**
@@ -1068,9 +1069,9 @@ inline unsigned int n_SetBit_Num(_Ty n_x)
  *		values (some compilers limit maximum size of enum to 31 or 32 bits).
  */
 #if defined(_MSC_VER) && !defined(__MWERKS__) && _MSC_VER < 1400
-#define n_SetBit_Num_Static(n_x) (ul_bithacks::CBitCounter_Static<(n_x)>::CBitCounter2_Static<sizeof(n_x) * 8>::result)
+#define n_SetBit_Num_Static(n_x) (ul_bithacks::CBitCounter_Static<(n_x)>::CBitCounter2_Static<sizeof(n_x) * 8>::n_result)
 #else // _MSC_VER && !__MWERKS__ && _MSC_VER < 1400
-#define n_SetBit_Num_Static(n_x) (ul_bithacks::CBitCounter_Static<(n_x), sizeof(n_x) * 8>::result)
+#define n_SetBit_Num_Static(n_x) (ul_bithacks::CBitCounter_Static<(n_x), sizeof(n_x) * 8>::n_result)
 #endif // _MSC_VER && !__MWERKS__ && _MSC_VER < 1400
 
 /**
@@ -1095,7 +1096,7 @@ inline _Ty n_Log2(_Ty n_x)
  *	@note This uses templates and enums, and may therefore have limited range of input
  *		values (some compilers limit maximum size of enum to 31 or 32 bits).
  */
-#define n_Log2_Static(n_x) (ul_bithacks::CLog2_Static<(n_x)>::result)
+#define n_Log2_Static(n_x) (ul_bithacks::CLog2_Static<(n_x)>::n_result)
 
 /**
  *	@brief fill ones right of the highest one that is set
