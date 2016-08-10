@@ -324,7 +324,7 @@
  *	in case the persed type is a vertex. This also needs to be done in TDatasetPeeker in Main.cpp
  *	since it inherits from parser adaptor.
  *
- *	This is, however, not always neccessary. If you just want to solve your specific problem,
+ *	This is, however, not always necessary. If you just want to solve your specific problem,
  *	you can leave CStandardParsedPrimitives and CParserBase::CParserAdaptor as is.
  *
  *	@section sec1 Create a new header file for the new code
@@ -354,7 +354,7 @@
  *	Note that modifications to CMakeFiles.txt are not required since it is only a header file.
  *
  *	Also note that for SE2 and SE3 types there was the convention of making "xDSolverBase.h" file (such as 2DSolverBase.h and 3DSolverBase.h)
- *	with some common functions. This is not completely neccessary as it was only required by the legacy code
+ *	with some common functions. This is not completely necessary as it was only required by the legacy code
  *	and this file is not really needed for anything anymore.
  *
  *	@section sec2 Implement new vertex types
@@ -363,7 +363,7 @@
  *	is in slam/SE2_Types.h. Note the CVertexPose2D class:
  *
  *	@code{.cpp}
- *	class CVertexPose2D : public CSEBaseVertexImpl<CVertexPose2D, 3> { // this says to use base vertex implementation for class with name CVertexPose2D, while the vertex has 3 dimensions; this will generate member variable m_v_state ("member vector" state), which will be Eigen dense column vector with the given number of dimensions
+ *	class CVertexPose2D : public CBaseVertexImpl<CVertexPose2D, 3> { // this says to use base vertex implementation for class with name CVertexPose2D, while the vertex has 3 dimensions; this will generate member variable m_v_state ("member vector" state), which will be Eigen dense column vector with the given number of dimensions
  *	public:
  *	    __SE2_TYPES_ALIGN_OPERATOR_NEW // imposed by the use of eigen, copy this
  *
@@ -371,11 +371,11 @@
  *	    {}
  *
  *	    inline CVertexPose2D(const Eigen::Vector3d &r_v_state) // copy this, change the dimension of the vector to appropriate
- *	        :CSEBaseVertexImpl<CVertexPose2D, 3>(r_v_state) // change the dimension here as well
+ *	        :CBaseVertexImpl<CVertexPose2D, 3>(r_v_state) // change the dimension here as well
  *	    {}
  *
  *	    inline CVertexPose2D(const CParserBase::TVertex2D &r_v_vertex) // copy this, change the dimension of the vector to appropriate
- *	        :CSEBaseVertexImpl<CVertexPose2D, 3>(r_v_vertex.m_v_position) // change the dimension here as well
+ *	        :CBaseVertexImpl<CVertexPose2D, 3>(r_v_vertex.m_v_position) // change the dimension here as well
  *	    {}
  *
  *	    inline void Operator_Plus(const Eigen::VectorXd &r_v_delta) // "smart" plus

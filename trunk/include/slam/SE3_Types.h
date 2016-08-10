@@ -20,7 +20,7 @@
 /**
  *	@brief SE(3) pose vertex type
  */
-class CVertexPose3D : public CSEBaseVertexImpl<CVertexPose3D, 6> {
+class CVertexPose3D : public CBaseVertexImpl<CVertexPose3D, 6> {
 public:
 	__GRAPH_TYPES_ALIGN_OPERATOR_NEW
 
@@ -35,7 +35,7 @@ public:
 	 *	@param[in] r_v_state is state vector initializer
 	 */
 	inline CVertexPose3D(const Eigen::Matrix<double, 6, 1> &r_v_state)
-		:CSEBaseVertexImpl<CVertexPose3D, 6>(r_v_state)
+		:CBaseVertexImpl<CVertexPose3D, 6>(r_v_state)
 	{}
 
 	/**
@@ -78,7 +78,7 @@ public:
 /**
  *	@brief SE(3) landmark vertex type
  */
-class CVertexLandmark3D : public CSEBaseVertexImpl<CVertexLandmark3D, 3> {
+class CVertexLandmark3D : public CBaseVertexImpl<CVertexLandmark3D, 3> {
 public:
 	__GRAPH_TYPES_ALIGN_OPERATOR_NEW
 
@@ -93,7 +93,7 @@ public:
 	 *	@param[in] r_v_state is state vector initializer
 	 */
 	inline CVertexLandmark3D(const Eigen::Vector3d &r_v_state)
-		:CSEBaseVertexImpl<CVertexLandmark3D, 3>(r_v_state)
+		:CBaseVertexImpl<CVertexLandmark3D, 3>(r_v_state)
 	{}
 
 	/**
@@ -101,7 +101,7 @@ public:
 	 *	@param[in] r_vertex is parsed vertex initializer
 	 */
 	inline CVertexLandmark3D(const CParserBase::TVertexXYZ &r_vertex)
-		:CSEBaseVertexImpl<CVertexLandmark3D, 3>(r_vertex.m_v_position)
+		:CBaseVertexImpl<CVertexLandmark3D, 3>(r_vertex.m_v_position)
 	{}
 
 	/**

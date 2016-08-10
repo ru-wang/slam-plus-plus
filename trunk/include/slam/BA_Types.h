@@ -20,7 +20,7 @@
  *	@{
  */
 
-/*class CVertexIntrinsics : public CSEBaseVertexImpl<CVertexIntrinsics, 4> {
+/*class CVertexIntrinsics : public CBaseVertexImpl<CVertexIntrinsics, 4> {
 public:
     __GRAPH_TYPES_ALIGN_OPERATOR_NEW
 
@@ -35,7 +35,7 @@ public:
 	 *	@param[in] r_v_state is state of the vertex
 	 * /
     inline CVertexIntrinsics(const Eigen::VectorXd &r_v_state)
-        :CSEBaseVertexImpl<CVertexIntrinsics, 4>(r_v_state)
+        :CBaseVertexImpl<CVertexIntrinsics, 4>(r_v_state)
     {}
 
 	/ **
@@ -50,7 +50,7 @@ public:
 /**
  *	@brief bundle adjustment camera pose
  */
-class CVertexCam : public CSEBaseVertexImpl<CVertexCam, 6> {
+class CVertexCam : public CBaseVertexImpl<CVertexCam, 6> {
 protected:
     Eigen::Matrix<double, 5, 1, Eigen::DontAlign> m_v_intrinsics; /**< @brief vertex cam should hold own camera params (these are not being optimized) */
 
@@ -68,16 +68,16 @@ public:
 	 *	@param[in] r_v_state is state of the vertex
 	 */
     inline CVertexCam(const Eigen::Matrix<double, 11, 1> &r_v_state)
-        :CSEBaseVertexImpl<CVertexCam, 6>(r_v_state.head<6>()),
+        :CBaseVertexImpl<CVertexCam, 6>(r_v_state.head<6>()),
 		m_v_intrinsics(r_v_state.tail<5>())
     {}
 
 	/**
-	 *	@brief constructor from optimized vector type (because of CSEBaseVertexImpl<CVertexCam, 6>)
+	 *	@brief constructor from optimized vector type (because of CBaseVertexImpl<CVertexCam, 6>)
 	 *	@param[in] r_v_state is state of the vertex
 	 */
     inline CVertexCam(const Eigen::Matrix<double, 6, 1> &r_v_state)
-        :CSEBaseVertexImpl<CVertexCam, 6>(r_v_state.head<6>())
+        :CBaseVertexImpl<CVertexCam, 6>(r_v_state.head<6>())
     {
 		m_v_intrinsics.setZero(); // we did not get this information
 	}
@@ -87,7 +87,7 @@ public:
 	 *	@param[in] r_t_vertex is state of the vertex
 	 */
     inline CVertexCam(const CParserBase::TVertexCam3D &r_t_vertex)
-        :CSEBaseVertexImpl<CVertexCam, 6>(r_t_vertex.m_v_position.head<6>()),
+        :CBaseVertexImpl<CVertexCam, 6>(r_t_vertex.m_v_position.head<6>()),
 		m_v_intrinsics(r_t_vertex.m_v_position.tail<5>())
     {}
 
@@ -137,7 +137,7 @@ public:
 /**
  *	@brief bundle adjustment camera pose
  */
-class CVertexIntrinsics : public CSEBaseVertexImpl<CVertexIntrinsics, 5> {
+class CVertexIntrinsics : public CBaseVertexImpl<CVertexIntrinsics, 5> {
 public:
     __GRAPH_TYPES_ALIGN_OPERATOR_NEW
 
@@ -152,7 +152,7 @@ public:
 	 *	@param[in] r_v_state is state of the vertex
 	 */
     inline CVertexIntrinsics(const Eigen::Matrix<double, 5, 1> &r_v_state)
-        :CSEBaseVertexImpl<CVertexIntrinsics, 5>(r_v_state)
+        :CBaseVertexImpl<CVertexIntrinsics, 5>(r_v_state)
     {}
 
 	/**
@@ -160,7 +160,7 @@ public:
 	 *	@param[in] r_t_vertex is state of the vertex
 	 */
     inline CVertexIntrinsics(const CParserBase::TVertexIntrinsics &r_t_vertex)
-        :CSEBaseVertexImpl<CVertexIntrinsics, 5>(r_t_vertex.m_v_position)
+        :CBaseVertexImpl<CVertexIntrinsics, 5>(r_t_vertex.m_v_position)
     {}
 
 	/**
@@ -183,7 +183,7 @@ public:
 /**
  *	@brief bundle adjustment camera pose
  */
-class CVertexSCam : public CSEBaseVertexImpl<CVertexSCam, 6> {
+class CVertexSCam : public CBaseVertexImpl<CVertexSCam, 6> {
 protected:
     Eigen::Matrix<double, 6, 1, Eigen::DontAlign> m_v_intrinsics; /**< @brief vertex cam should hold own camera params (these are not being optimized) */
 
@@ -201,16 +201,16 @@ public:
 	 *	@param[in] r_v_state is state of the vertex
 	 */
     inline CVertexSCam(const Eigen::Matrix<double, 12, 1> &r_v_state)
-        :CSEBaseVertexImpl<CVertexSCam, 6>(r_v_state.head<6>()),
+        :CBaseVertexImpl<CVertexSCam, 6>(r_v_state.head<6>()),
 		m_v_intrinsics(r_v_state.tail<6>())
     {}
 
 	/**
-	 *	@brief constructor from optimized vector type (because of CSEBaseVertexImpl<CVertexCam, 6>)
+	 *	@brief constructor from optimized vector type (because of CBaseVertexImpl<CVertexCam, 6>)
 	 *	@param[in] r_v_state is state of the vertex
 	 */
     inline CVertexSCam(const Eigen::Matrix<double, 6, 1> &r_v_state)
-        :CSEBaseVertexImpl<CVertexSCam, 6>(r_v_state.head<6>())
+        :CBaseVertexImpl<CVertexSCam, 6>(r_v_state.head<6>())
     {
 		m_v_intrinsics.setZero(); // we did not get this information
 	}
@@ -220,7 +220,7 @@ public:
 	 *	@param[in] r_t_vertex is state of the vertex
 	 */
     inline CVertexSCam(const CParserBase::TVertexSCam3D &r_t_vertex)
-        :CSEBaseVertexImpl<CVertexSCam, 6>(r_t_vertex.m_v_position.head<6>()),
+        :CBaseVertexImpl<CVertexSCam, 6>(r_t_vertex.m_v_position.head<6>()),
 		m_v_intrinsics(r_t_vertex.m_v_position.tail<6>())
     {}
 
@@ -269,7 +269,7 @@ public:
 /**
  *	@brief bundle adjustment camera pose
  */
-class CVertexSpheron : public CSEBaseVertexImpl<CVertexSpheron, 6> {
+class CVertexSpheron : public CBaseVertexImpl<CVertexSpheron, 6> {
 public:
     __GRAPH_TYPES_ALIGN_OPERATOR_NEW
 
@@ -284,7 +284,7 @@ public:
 	 *	@param[in] r_v_state is state of the vertex
 	 */
     inline CVertexSpheron(const Eigen::Matrix<double, 6, 1> &r_v_state)
-        :CSEBaseVertexImpl<CVertexSpheron, 6>(r_v_state)
+        :CBaseVertexImpl<CVertexSpheron, 6>(r_v_state)
     {}
 
 	/**
@@ -292,7 +292,7 @@ public:
 	 *	@param[in] r_t_vertex is state of the vertex
 	 */
     inline CVertexSpheron(const CParserBase::TVertexSpheron &r_t_vertex)
-        :CSEBaseVertexImpl<CVertexSpheron, 6>(r_t_vertex.m_v_position)
+        :CBaseVertexImpl<CVertexSpheron, 6>(r_t_vertex.m_v_position)
     {}
 
 	/**
@@ -327,7 +327,7 @@ public:
 /**
  *	@brief bundle adjustment (observed) keypoint vertex
  */
-class CVertexXYZ : public CSEBaseVertexImpl<CVertexXYZ, 3> {
+class CVertexXYZ : public CBaseVertexImpl<CVertexXYZ, 3> {
 public:
     __GRAPH_TYPES_ALIGN_OPERATOR_NEW
 
@@ -342,7 +342,7 @@ public:
 	 *	@param[in] r_v_state is state of the vertex
 	 */
     inline CVertexXYZ(const Eigen::Vector3d &r_v_state)
-        :CSEBaseVertexImpl<CVertexXYZ, 3>(r_v_state)
+        :CBaseVertexImpl<CVertexXYZ, 3>(r_v_state)
     {}
 
 	/**
@@ -350,7 +350,7 @@ public:
 	 *	@param[in] r_t_vertex is state of the vertex
 	 */
     inline CVertexXYZ(const CParserBase::TVertexXYZ &r_t_vertex)
-        :CSEBaseVertexImpl<CVertexXYZ, 3>(r_t_vertex.m_v_position)
+        :CBaseVertexImpl<CVertexXYZ, 3>(r_t_vertex.m_v_position)
     {}
 
 	/**

@@ -996,7 +996,7 @@ typedef CFLOPCountingScalar<double> CFLOPCountingDouble; /**< @brief FLOP-counti
  *
  *	This example shows how to make use of \ref CFLOPCountingDouble and \ref CTSparse
  *	to count floating point operations (FLOPs) in arbitrary sparse operations. We begin
- *	by including the two neccessary files:
+ *	by including the two necessary files:
  *
  *	@code
  *	#include "sparse_flops/cts.hpp"
@@ -1022,7 +1022,7 @@ typedef CFLOPCountingScalar<double> CFLOPCountingDouble; /**< @brief FLOP-counti
  *	@endcode
  *
  *	Here, the functions \ref CTSparse::p_FromSparse() and \ref CTSparse::p_ToSparse()
- *	perform the neccessary checks to make sure that the conversion is safe, otherwise
+ *	perform the necessary checks to make sure that the conversion is safe, otherwise
  *	such code fails to compile. Note that the pointers `A` and `A_instrumented`
  *	point to the same memory location (equally as `B` and `B_instrumented` do) and
  *	no new memory is allocated.

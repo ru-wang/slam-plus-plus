@@ -1858,7 +1858,7 @@ public:
  *	fbs_ut::CDummyAlgSpecializer::CData<Specializations> specializer; // not a typedef!
  *	@endcode
  *
- *	Now assume there is a block matrix (e.g. loaded from a file) and it is neccessary
+ *	Now assume there is a block matrix (e.g. loaded from a file) and it is necessary
  *	to see if it is possible to select a specialization for it, from the list above:
  *
  *	@code

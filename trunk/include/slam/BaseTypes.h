@@ -943,7 +943,7 @@ public:
 #endif // __SE_TYPES_SUPPORT_A_SOLVERS
 	{
 		_CopyVertexIds(vertex_id_tuple, fbs_ut::CCTSize<0>()); // todo - make a loop, or a tuple to array binding; will need to support assignment of different types of tuples (like assignment of a tuple of ints to a tuple of references to ints)
-		// get references to the vertices, initialize the vertices, if neccessary
+		// get references to the vertices, initialize the vertices, if necessary
 
 		// note that errors, expectations and jacobian matrices are not cleared
 	}
@@ -995,7 +995,7 @@ public:
 #endif // __SE_TYPES_SUPPORT_A_SOLVERS
 	{
 		_CopyVertexIds(vertex_id_tuple, fbs_ut::CCTSize<0>()); // todo - make a loop, or a tuple to array binding; will need to support assignment of different types of tuples (like assignment of a tuple of ints to a tuple of references to ints)
-		// get references to the vertices, initialize the vertices, if neccessary
+		// get references to the vertices, initialize the vertices, if necessary
 
 		_InitializeVertexPtrs(r_system, t_list_skip, t_list_disallow, fbs_ut::CCTSize<0>());
 		// initialize vertex pointers
@@ -1039,7 +1039,7 @@ public:
 #endif // __SE_TYPES_SUPPORT_A_SOLVERS
 	{
 		_CopyVertexIds(vertex_id_tuple, fbs_ut::CCTSize<0>()); // todo - make a loop, or a tuple to array binding; will need to support assignment of different types of tuples (like assignment of a tuple of ints to a tuple of references to ints)
-		// get references to the vertices, initialize the vertices, if neccessary
+		// get references to the vertices, initialize the vertices, if necessary
 
 		_InitializeVertexPtrs(r_system, t_list_skip, CTypelistEnd(), fbs_ut::CCTSize<0>());
 		// initialize vertex pointers
@@ -1076,7 +1076,7 @@ public:
 #endif // __SE_TYPES_SUPPORT_A_SOLVERS
 	{
 		_CopyVertexIds(vertex_id_tuple, fbs_ut::CCTSize<0>()); // todo - make a loop, or a tuple to array binding; will need to support assignment of different types of tuples (like assignment of a tuple of ints to a tuple of references to ints)
-		// get references to the vertices, initialize the vertices, if neccessary
+		// get references to the vertices, initialize the vertices, if necessary
 
 		_InitializeVertexPtrs(r_system, CTypelistEnd(), CTypelistEnd(), fbs_ut::CCTSize<0>());
 		// initialize vertex pointers
@@ -1121,7 +1121,7 @@ public:
 #endif // __SE_TYPES_SUPPORT_A_SOLVERS
 	{
 		_CopyVertexIds(vertex_id_tuple, fbs_ut::CCTSize<0>()); // todo - make a loop, or a tuple to array binding; will need to support assignment of different types of tuples (like assignment of a tuple of ints to a tuple of references to ints)
-		// get references to the vertices, initialize the vertices, if neccessary
+		// get references to the vertices, initialize the vertices, if necessary
 
 		typedef typename fbs_ut::CTypelistIOTA<n_vertex_num>::_TyResult _TyAllVertsList;
 		// do not allow initialization of any vertex, except for those specified in t_list_skip
@@ -1168,7 +1168,7 @@ public:
 #endif // __SE_TYPES_SUPPORT_A_SOLVERS
 	{
 		_CopyVertexIds(vertex_id_tuple, fbs_ut::CCTSize<0>()); // todo - make a loop, or a tuple to array binding; will need to support assignment of different types of tuples (like assignment of a tuple of ints to a tuple of references to ints)
-		// get references to the vertices, initialize the vertices, if neccessary
+		// get references to the vertices, initialize the vertices, if necessary
 
 		typedef typename fbs_ut::CTypelistIOTA<n_vertex_num>::_TyResult _TyAllVertsList;
 		// do not allow initialization of any vertex, except for those specified in t_list_skip

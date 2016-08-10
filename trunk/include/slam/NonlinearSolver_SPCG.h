@@ -905,7 +905,7 @@ public:
 					cs_utsolve(R1, &v_s(0)); // R1' / (r2' * A2)'
 					//cs_ltsolve(R1t, &v_s(0)); // R1' / (r2' * A2)' // no better
 					//cs_spfree(R1t);
-					_ASSERTE(v_r1.norm() == 0); // otherwise the next line is neccessary
+					_ASSERTE(v_r1.norm() == 0); // otherwise the next line is necessary
 					//v_s += v_r1; // it is null
 				}
 				Eigen::VectorXd v_p = v_s; // p = s
