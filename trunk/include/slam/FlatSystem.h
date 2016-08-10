@@ -2206,9 +2206,11 @@ public:
 	 *
 	 *	@note This function throws std::bad_alloc.
 	 *	@note This function throws std::runtime_error (in case vertex ids aren't contiguous).
+	 *	@note 2016-08-09 - changed the initializer to be a const reference to be able to initialize
+	 *		vertices directly with Eigen types (on x86, Visual Studio fails to align function arguments properly).
 	 */
 	template <class CVertexType, class CInitializer>
-	inline CVertexType &r_Get_Vertex(_TyId n_id, CInitializer init) // throw(std::bad_alloc, std::runtime_error)
+	inline CVertexType &r_Get_Vertex(_TyId n_id, const CInitializer &init) // throw(std::bad_alloc, std::runtime_error)
 	{
 		if(n_id == m_vertex_pool.n_Size()) {
 			if(have_ConstVertices && SIZE_MAX - n_id == m_const_vertex_pool.n_Size()) // in case the next id could also belong to the const vertex pool
@@ -2265,10 +2267,12 @@ public:
 	 *
 	 *	@note This function throws std::bad_alloc.
 	 *	@note This function throws std::runtime_error (in case vertex ids aren't contiguous).
+	 *	@note 2016-08-09 - changed the initializer to be a const reference to be able to initialize
+	 *		vertices directly with Eigen types (on x86, Visual Studio fails to align function arguments properly).
 	 */
 	template <class CVertexType, class CInitializer>
 	inline typename CEnableIf<have_ConstVertices, CVertexType&>::T
-		r_Get_ConstVertex(_TyId n_id, CInitializer init) // throw(std::bad_alloc, std::runtime_error)
+		r_Get_ConstVertex(_TyId n_id, const CInitializer &init) // throw(std::bad_alloc, std::runtime_error)
 	{
 #ifndef __BASE_TYPES_ALLOW_CONST_VERTICES
 		throw std::runtime_error("__BASE_TYPES_ALLOW_CONST_VERTICES not defined but const vertex added");
@@ -2312,10 +2316,12 @@ public:
 	 *	@return Returns reference to the vertex, associated with id n_id.
 	 *
 	 *	@note This function throws std::runtime_error (const vertices not enabled).
+	 *	@note 2016-08-09 - changed the initializer to be a const reference to be able to initialize
+	 *		vertices directly with Eigen types (on x86, Visual Studio fails to align function arguments properly).
 	 */
 	template <class CVertexType, class CInitializer>
 	inline typename CEnableIf<!have_ConstVertices, CVertexType&>::T
-		r_Get_ConstVertex(_TyId UNUSED(n_id), CInitializer init) // throw(std::bad_alloc, std::runtime_error)
+		r_Get_ConstVertex(_TyId UNUSED(n_id), const CInitializer &init) // throw(std::bad_alloc, std::runtime_error)
 	{
 		// do not use static assert here, this is actually called from r_Get_Vertex(), although the code never gets there
 

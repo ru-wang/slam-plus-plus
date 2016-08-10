@@ -1748,10 +1748,10 @@ public:
 		}
 
 		/**
-		 *	@brief overwrites this pose by an exponent of a 7D vector
+		 *	@brief overwrites this pose by an exponent of a 6D vector
 		 *	@tparam Derived0 is Eigen derived matrix type for the first matrix argument
-		 *	@param[in] r_v_vec is a vector in sim(3), obtained e.g. by a call to v_Log()
-		 *	@deprecated It is preferable to use the constructor with \ref from_sim3_vector.
+		 *	@param[in] r_v_vec is a vector in sE(3), obtained e.g. by a call to v_Log()
+		 *	@deprecated It is preferable to use the constructor with \ref from_se3_vector.
 		 */
 		template <class Derived0>
 		void Exp(const Eigen::MatrixBase<Derived0> &r_v_vec)
@@ -1774,7 +1774,7 @@ public:
 		}
 
 		/**
-		 *	@brief calculates relative pose \f$this = this \ominus r\_t\_other = this^-1 * r\_t\_other\f$
+		 *	@brief calculates relative pose \f$this = this \ominus r\_t\_other = this^{-1} \cdot r\_t\_other\f$
 		 *	@param[in] r_t_other is the other pose to relate to
 		 */
 		void Inverse_Compose(const TSE3 &r_t_other)

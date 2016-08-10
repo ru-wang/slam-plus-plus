@@ -2800,7 +2800,7 @@ public:
 	 *
 	 *	CUberBlockMatrix prod;
 	 *	prod.ProductOf(A, A_inv);
-	 *	// multiply prod = A * A^-1
+	 *	// multiply prod = A * A^{-1}
 	 *
 	 *	CUberBlockMatrix identity;
 	 *	A.CopyLayoutTo(identity);
@@ -2811,7 +2811,7 @@ public:
 	 *	// subtract product from identity
 	 *
 	 *	double f_error = identity.f_Norm();
-	 *	// calculate error as ||I - A * A^-1||.
+	 *	// calculate error as ||I - A * A^{-1}||.
 	 *	@endcode
 	 *
 	 *	@param[in] r_A is the input matrix (must be invertible and full rank)
@@ -2855,7 +2855,7 @@ public:
 	 *
 	 *	CUberBlockMatrix prod;
 	 *	prod.ProductOf(A, A_inv);
-	 *	// multiply prod = A * A^-1
+	 *	// multiply prod = A * A^{-1}
 	 *
 	 *	CUberBlockMatrix identity;
 	 *	A.CopyLayoutTo(identity);
@@ -2866,7 +2866,7 @@ public:
 	 *	// subtract product from identity
 	 *
 	 *	double f_error = identity.f_Norm();
-	 *	// calculate error as ||I - A * A^-1||.
+	 *	// calculate error as ||I - A * A^{-1}||.
 	 *	@endcode
 	 *
 	 *	@tparam CBlockMatrixTypelist is list of Eigen::Matrix block sizes

@@ -866,7 +866,14 @@ size_t CUberBlockMatrix::n_Symmetric_NonZero_Num() const
 	return n_total;
 }
 
+/**
+ *	@brief a helper object for \ref CUberBlockMatrix::ExtendTopLeftTo()
+ */
 struct TIncrementAllRowIndices {
+	/**
+	 *	@brief increments row index of a block
+	 *	@param[in,out] r_block is reference to a block entry; the row index is incremented
+	 */
 	inline void operator ()(CUberBlockMatrix::TColumn::TBlockEntry &r_block) const
 	{
 		++ r_block.first;
@@ -9297,7 +9304,7 @@ void CUberBlockMatrix::InverseOf_Symmteric(const CUberBlockMatrix &r_A, bool b_u
 	const size_t n = m_block_cols_list.size();
 	// number of block columns (and rows) in both src and dest matrix
 
-	// inverse of a positive definite matrix = L^-TL^-1, which probably does not help too much
+	// inverse of a positive definite matrix = L^-TL^{-1}, which probably does not help too much
 
 	/*std::vector<size_t> supernode_memberships(n, size_t(-1));
 	std::vector<std::pair<size_t, size_t> > supernodes;

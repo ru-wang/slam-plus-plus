@@ -679,21 +679,59 @@
 /**
  *	@defgroup se2 SE(2)
  *	@brief Edges and vertices in the SE(2) group.
+ *
+ *	The Jacobians and pose composition functions are in \ref C2DJacobians.
+ *	The default pose vertex is \ref CVertexPose2D, the default landmark is \ref CVertexLandmark2D
+ *	and the default odometry function is \ref CEdgePose2D and the landmark observation
+ *	functions is \ref CEdgePoseLandmark2D.
+ *
  */
 
 /**
  *	@defgroup se3 SE(3)
  *	@brief Edges and vertices in the SE(3) group.
+ *
+ *	The Jacobians and pose composition functions are in \ref C3DJacobians.
+ *	There is also a reusable class for representing a pose in 3D, \ref C3DJacobians::TSE3.
+ *	The default pose vertex is \ref CVertexPose3D, the default landmark is \ref CVertexLandmark3D
+ *	and the default odometry function is \ref CEdgePose3D and the landmark observation
+ *	functions is \ref CEdgePoseLandmark3D.
+ *
+ *	There is also a description of \ref rot3d.
+ *
+ *	The original 3D code in SLAM++ was written without the use of Lie algebra and
+ *	exponential / logarithm functions. The optimizer simply converts the poses from
+ *	the internal representation to a vectorial form and optimizes that. Since the vectorial
+ *	form is 3D position and axis-angle rotation (which is close to what se(3) actually looks
+ *	like), it works. It is retained for backward compatibility. However, if implementing
+ *	new 3D solver, derivatives based on SE(3) and se(3) should be used (this feature will
+ *	be aviailable in SLAM++ 3.0).
  */
 
 /**
  *	@defgroup sim3 Sim(3)
  *	@brief Edges and vertices in the Sim(3) group.
+ *
+ *	The Jacobians and pose composition functions are in \ref CSim3Jacobians.
+ *	There is also a reusable class for representing a pose in 3D, \ref CSim3Jacobians::TSim3.
+ *	The default camera pose vertex is \ref CVertexCamSim3, the default landmark vertex is
+ *	\ref CVertexXYZ. The matching observation function is \ref CEdgeP2C_XYZ_Sim3_G. In our
+ *	2015 ACRA paper "The Effect of Different Parameterisations in Incremental Structure
+ *	from Motion", different parameterizations are described and those are all availavle in
+ *	\ref include/slam/Sim3_Types.h.
+ *
+ *	There is also a description of \ref rot3d.
  */
 
 /**
  *	@defgroup ba_group Bundle Adjustment
  *	@brief Edges and vertices for Bundle Adjustment.
+ *
+ *	The Jacobians and pose composition functions are in \ref CBAJacobians. The default
+ *	camera pose vertex is \ref CVertexCam, the default landmark vertex is \ref CVertexXYZ.
+ *	The matching observation function is \ref CEdgeP2C3D.
+ *
+ *	There is a description of \ref rot3d.
  */
 
 /**

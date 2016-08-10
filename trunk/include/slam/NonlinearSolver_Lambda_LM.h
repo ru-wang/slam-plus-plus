@@ -584,6 +584,15 @@ public:
 	}
 
 	/**
+	 *	@brief gets the last update vector (for debugging purposes)
+	 *	@return Returns const reference to the last update vector.
+	 */
+	const Eigen::VectorXd &r_v_LastDx() const
+	{
+		return m_v_dx;
+	}
+
+	/**
 	 *	@brief writes system matrix for art purposes
 	 *
 	 *	@param[in] p_s_filename is output file name (.tga)
