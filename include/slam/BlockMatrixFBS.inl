@@ -2044,7 +2044,8 @@ bool CUberBlockMatrix::Cholesky_Dense_FBS() // throw(std::bad_alloc)
 
 	if(m_n_col_num <= n_max_matrix_size) {
 		bool b_result;
-		fbs_ut::CWrap3<>::In_SquareMatrixSize_DecisionTree<CMatrixBlockSizeList, n_max_matrix_size>(m_n_col_num,
+		_ASSERTE(m_n_col_num <= INT_MAX);
+		fbs_ut::CWrap3<>::In_SquareMatrixSize_DecisionTree<CMatrixBlockSizeList, n_max_matrix_size>(int(m_n_col_num),
 			blockmatrix_detail::CUberBlockMatrix_FBS::CCallDenseCholesky(*this, b_result));
 		return b_result;
 	} else
