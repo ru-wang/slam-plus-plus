@@ -225,7 +225,7 @@ public:
 		}
 
 		/**
-		 *	@brief calculates relative pose \f$this = this \ominus r\_t\_other = this^-1 * r\_t\_other\f$
+		 *	@brief calculates relative pose \f$this = this \ominus r\_t\_other = this^{-1} \cdot r\_t\_other\f$
 		 *	@param[in] r_t_other is the other pose to relate to
 		 */
 		void Inverse_Compose(const TSim3 &r_t_other)
@@ -352,7 +352,7 @@ public:
 		// exp map
 
 		vert1.Inverse_Compose(vert2);
-		// absolute to relative (vert1^-1 * vert2)
+		// absolute to relative (vert1^{-1} * vert2)
 
 		r_v_difference = vert1.v_Log();
 		// log map
@@ -417,7 +417,7 @@ public:
 	template <class Derived0>
 	static inline Eigen::Vector3d v_InvDist_to_XYZ(const Eigen::MatrixBase<Derived0> &r_v_position)
 	{
-		DimensionCheck<Eigen::Vector4d>(r_v_position); // u v w q^-1
+		DimensionCheck<Eigen::Vector4d>(r_v_position); // u v w q^{-1}
 
 		double f_q = 1 / r_v_position(3);
 		return r_v_position.template head<3>() * f_q; // [x y z] = [u v w] * q
@@ -439,7 +439,7 @@ public:
 	template <class Derived0>
 	static inline Eigen::Vector3d v_InvDist_to_InvDepth(const Eigen::MatrixBase<Derived0> &r_v_position)
 	{
-		DimensionCheck<Eigen::Vector4d>(r_v_position); // u v w q^-1
+		DimensionCheck<Eigen::Vector4d>(r_v_position); // u v w q^{-1}
 
 		return v_XYZ_to_InvDepth(v_InvDist_to_XYZ(r_v_position));
 	}
@@ -721,7 +721,7 @@ public:
 
 		const TSim3 t_camera(r_v_vertex_observing_cam, TSim3::from_sim3_vector);
 		const TSim3 t_owner_camera(r_v_vertex_owner_cam, TSim3::from_sim3_vector);
-		TSim3 t_diff_transform = t_camera; t_diff_transform.Inverse_Compose(t_owner_camera); // calculate direct transform as inverse composition (camera^-1 * owner_camera)
+		TSim3 t_diff_transform = t_camera; t_diff_transform.Inverse_Compose(t_owner_camera); // calculate direct transform as inverse composition (camera^{-1} * owner_camera)
 		// get a Sim(3) pose
 
 		const Eigen::Vector3d &X = r_v_vertex_xyz; // just rename
@@ -1593,7 +1593,7 @@ private:
 				// make sure that something times its inverse is identity
 
 				TSim3 t_identity2 = t_pose_a;
-				t_identity2.Inverse_Compose(t_pose_a); // a^-1 * a
+				t_identity2.Inverse_Compose(t_pose_a); // a^{-1} * a
 				_ASSERTE(t_identity2.v_translation.norm() < 1e-10);
 				_ASSERTE(t_identity2.t_rotation.vec().norm() < 1e-10);
 				_ASSERTE(fabs(fabs(t_identity2.t_rotation.w()) - 1) < 1e-10);

@@ -368,7 +368,7 @@ public:
 			  0, r_t_intrinsics1(1), r_t_intrinsics1(3),
 			  0,  0,  1;
 
-		// normalize the points - x^hat = A^-1 * x
+		// normalize the points - x^hat = A^{-1} * x
 		Eigen::Vector3d x_0 = Eigen::Vector3d::Ones();
 		x_0.head<2>() << r_t_measurement(0), r_t_measurement(1);
 		x_0 = A0.inverse() * x_0;

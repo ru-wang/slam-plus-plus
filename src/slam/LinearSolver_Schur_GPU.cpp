@@ -61,7 +61,7 @@
 
 /**
  *	@def __GPU_SCHUR_EASY_PROD_ONLY
- *	@brief this only runs U*(C^-1) on the GPU, leaving U*(C^-1)*V to the CPU
+ *	@brief this only runs \f$U*(C^{-1})\f$ on the GPU, leaving \f$U*(C^{-1})*V\f$ to the CPU
  *
  *	Both branches are functional, but the full product on GPU will likely
  *	be slower than the SSE optimized implementation unless running

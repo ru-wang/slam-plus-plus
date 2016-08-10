@@ -23,6 +23,10 @@
 #include "slam/Marginals.h"
 
 //template <class CDestMatrix> // everything depends on Derived0, it is ok to be a subclass like this
+
+/**
+ *	@brief multiply add operation with a sparse matrix and a block vector
+ */
 class CBlockVectorMAD_Impl {
 public:
 	struct TInnerContext {
@@ -215,6 +219,9 @@ void Calculate_UpperTriangularTransposeSolve_Bases(CUberBlockMatrix &S_bases,
 	}
 }
 
+/**
+ *	@brief FBS implementation for the upper triangular transpose solve of the sparse bases matrix
+ */
 class CUTTSolve_Bases_Impl {
 public:
 	struct TInnerContext {

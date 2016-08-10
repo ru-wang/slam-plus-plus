@@ -1875,6 +1875,9 @@ public:
 	}
 };
 
+/**
+ *	@brief namespace with internal typelists implementation and helper objects
+ */
 namespace tl_detail {
 
 /**

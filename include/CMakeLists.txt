@@ -7,4 +7,4 @@ ADD_SUBDIRECTORY(slam_app)
 ADD_SUBDIRECTORY(cholmod)
 ADD_SUBDIRECTORY(ba_interface_example)
 ADD_SUBDIRECTORY(ba_marginals_example)
-
+ADD_SUBDIRECTORY(ba_parameter_acra)

@@ -58,7 +58,7 @@
 
 /**
  *	@def __GPU_SCHUR_NO_PRODS
- *	@brief if defined, GPU is not used to accelerate U(C^-1) and U(C^-1)V products
+ *	@brief if defined, GPU is not used to accelerate \f$U(C^{-1})\f$ and \f$U(C^{-1})V\f$ products
  *	@note This might yield faster code if running on a slower mobile GPU. cuSparse
  *		is barely faster than SSE ÜberBlockMatrix on Tesla GPUs.
  */
