@@ -119,14 +119,46 @@
  *
  *	Fixed intellisense (there was greater-than comparison as a template argument, which breaks it).
  *
+ *	@date 2016-02-13
+ *
+ *	Renamed CUberBlockMatrix::b_BlockSquare() to b_Square_BlockSquare() since it checks the matrix
+ *	for both having square dimensions and having the number of block rows equal to the number
+ *	of block columns. The old name was easily misunderstood.
+ *
+ *	Added some new matrix property functions, namely CUberBlockMatrix::b_UpperBlockTriangular(),
+ *	CUberBlockMatrix::b_StrictlyUpperBlockTriangular(), CUberBlockMatrix::b_LowerBlockTriangular(),
+ *	CUberBlockMatrix::b_StrictlyLowerBlockTriangular(), CUberBlockMatrix::b_No_Diagonal_Blocks(),
+ *	CUberBlockMatrix::b_All_Diagonal_Blocks(), CUberBlockMatrix::b_SymmetricBlockStructure() and
+ *	CUberBlockMatrix::b_SymmetricBlocksOnly().
+ *
+ *	Added an implementation of CUberBlockMatrix::TriangularViewOf() which makes a shallow (optionally
+ *	deep) copy of matrix triangles. Supports upper or lower triangle, including the diagonal.
+ *
+ *	@date 2016-08-05
+ *
+ *	Renamed CUberBlockMatrix::p_Convert_to_Sparse_UpperDiagonal_Debug() to the correct name
+ *	p_Convert_to_Sparse_UpperTriangular_Debug(). Backwards compatibility was not retained in this
+ *	case as it is a debugging function, presumably not used in production code.
+ *
+ */
+
+/** \addtogroup ubm
+ *	@{
  */
 
 #include "slam/BlockMatrixBase.h"
+#include <algorithm> // std::sort()
+#include <numeric> // std::accumulate()
+
+#if defined(_MSC_VER) && !defined(__MWERKS__)
+#pragma warning(disable: 4227) // disable MSVC varning "anachronism used : qualifiers on reference are ignored"
+// todo - compare timing in G++, see if it is worth it
+#endif // _MSC_VER && !__MWERKS__
 
 /**
  *	@brief the block matrix class
  */
-class CUberBlockMatrix : public CUberBlockMatrix_Base {
+class CUberBlockMatrix : public blockmatrix_detail::CUberBlockMatrix_Base {
 public:
 	/**
 	 *	@brief constructor with structure specification
@@ -147,7 +179,7 @@ public:
 	template <class CIterator>
 	inline CUberBlockMatrix(CIterator p_rows_cumsum_begin, CIterator p_rows_cumsum_end,
 		CIterator p_columns_cumsum_begin, CIterator p_columns_cumsum_end) // throw(std::bad_alloc)
-		:CUberBlockMatrix_Base(p_rows_cumsum_begin, p_rows_cumsum_end,
+		:blockmatrix_detail::CUberBlockMatrix_Base(p_rows_cumsum_begin, p_rows_cumsum_end,
 		p_columns_cumsum_begin, p_columns_cumsum_end)
 	{}
 
@@ -170,7 +202,7 @@ public:
 	template <class CIterator>
 	inline CUberBlockMatrix(CIterator p_rows_cumsum_begin,
 		CIterator p_rows_cumsum_end, size_t n_column_block_num) // throw(std::bad_alloc)
-		:CUberBlockMatrix_Base(p_rows_cumsum_begin, p_rows_cumsum_end, n_column_block_num)
+		:blockmatrix_detail::CUberBlockMatrix_Base(p_rows_cumsum_begin, p_rows_cumsum_end, n_column_block_num)
 	{}
 
 	/**
@@ -185,7 +217,7 @@ public:
 	 */
 	inline CUberBlockMatrix(size_t n_target_row_block_num = 0,
 		size_t n_target_column_block_num = 0) // throw(std::bad_alloc)
-		:CUberBlockMatrix_Base(n_target_row_block_num, n_target_column_block_num)
+		:blockmatrix_detail::CUberBlockMatrix_Base(n_target_row_block_num, n_target_column_block_num)
 	{}
 
 	/**
@@ -194,7 +226,7 @@ public:
 	 *	@note This function throws std::bad_alloc.
 	 */
 	inline CUberBlockMatrix(const CUberBlockMatrix &r_matrix)
-		:CUberBlockMatrix_Base(r_matrix)
+		:blockmatrix_detail::CUberBlockMatrix_Base(r_matrix)
 	{}
 
 	/**
@@ -306,7 +338,7 @@ public:
 	/**
 	 *	@brief gets number of rows of a block
 	 *	@param[in] n_row_index is (zero-based) index of a row (in blocks!)
-	 *	@return Returns number of rows of the specified block
+	 *	@return Returns number of rows of the specified block row.
 	 */
 	inline size_t n_BlockRow_Row_Num(size_t n_row_index) const
 	{
@@ -317,7 +349,7 @@ public:
 	/**
 	 *	@brief gets number of columns of a block
 	 *	@param[in] n_column_index is (zero-based) index of a column (in blocks!)
-	 *	@return Returns number of columns of the specified block
+	 *	@return Returns number of columns of the specified block column.
 	 */
 	inline size_t n_BlockColumn_Column_Num(size_t n_column_index) const
 	{
@@ -328,7 +360,7 @@ public:
 	/**
 	 *	@brief gets starting row of a block
 	 *	@param[in] n_row_index is (zero-based) index of a row (in blocks!)
-	 *	@return Returns starting row of the specified block
+	 *	@return Returns starting row of the specified block row.
 	 */
 	inline size_t n_BlockRow_Base(size_t n_row_index) const
 	{
@@ -339,7 +371,7 @@ public:
 	/**
 	 *	@brief gets starting column of a block
 	 *	@param[in] n_column_index is (zero-based) index of a column (in blocks!)
-	 *	@return Returns starting column of the specified block
+	 *	@return Returns starting column of the specified block column.
 	 */
 	inline size_t n_BlockColumn_Base(size_t n_column_index) const
 	{
@@ -399,6 +431,17 @@ public:
 	{
 		return m_block_cols_list[n_column_index].block_list[n_block_index].first;
 	}
+
+	/**
+	 *	@brief tries to find a block row by first element offset, fails if it doesn't exist
+	 *
+	 *	@param[in] n_row is (zero-based) index of row (in elements)
+	 *	@param[out] r_n_block_row_num is number of elements in the corresponding block-row
+	 *
+	 *	@return Returns (zero-based) index of block-row that contains
+	 *		the given row on success, or -1 on failure.
+	 */
+	inline size_t n_Find_BlockRow(size_t n_row, size_t &r_n_block_row_num) const;
 
 	/**
 	 *	@brief tries to find a block column by first element offset, fails if it doesn't exist
@@ -534,7 +577,16 @@ public:
 	 *	@brief calculates matrix norm
 	 *	@return Returns L2 norm of this matrix.
 	 */
-	double f_Norm() const;
+	inline double f_Norm() const
+	{
+		return sqrt(f_Squared_Norm());
+	}
+
+	/**
+	 *	@brief calculates squared matrix norm
+	 *	@return Returns squared L2 norm of this matrix.
+	 */
+	double f_Squared_Norm() const;
 
 	/**
 	 *	@brief determines whether the matrix is square
@@ -558,19 +610,72 @@ public:
 	 *		all the block rows and block columns are not empty. If this doesn't naturally
 	 *		apply to this matrix, use b_Square() instead.
 	 */
-	inline bool b_BlockSquare() const
+	inline bool b_Square_BlockSquare() const
 	{
-		return m_n_row_num == m_n_col_num && m_block_rows_list.size() == m_block_cols_list.size();
+		return b_Square() && m_block_rows_list.size() == m_block_cols_list.size();
 	}
 
 	/**
+	 *	@brief determines whether the matrix has symmetric layout and nonzero pattern
+	 *
+	 *	@return Returns true if the matrix is structurally symmetric, otherwise returns false.
+	 *
+	 *	@note This only determines structural symmetry, the matrix can still be numerically asymmetric,
+	 *	@note This function and throws std::bad_alloc (requires O(n) storage in the number of block columns).
+	 */
+	inline bool b_SymmetricBlockStructure() const // throw(std::bad_alloc)
+	{
+		return b_SymmetricLayout() && b_SymmetricBlocksOnly();
+	}
+
+	/**
+	 *	@brief determines whether the matrix has only blocks with symmetric
+	 *		counterparts on the other side of the block diagonal
+	 *
+	 *	@return Returns false if the matrix has some nonzero block <tt>(i, j)</tt> but
+	 *		does not have <tt>(j, i)</tt>, otherwise returns true.
+	 *
+	 *	@note This only determines structural symmetry, the matrix can still be numerically asymmetric,
+	 *	@note This does not imply the matrix being square, block square or having symmetric layout.
+	 *	@note The diagonal blocks are ignored in this function.
+	 *	@note This function and throws std::bad_alloc (requires O(n) storage in the number of block columns).
+	 */
+	bool b_SymmetricBlocksOnly() const; // throw(std::bad_alloc)
+
+	/**
 	 *	@brief determines whether the matrix has off-diagonal blocks
+	 *
 	 *	@return Returns true if the matrix has any has off-diagonal blocks, otherwise returns false.
 	 *
 	 *	@note This does not imply symmetric layout.
 	 *	@note See also b_BlockDiagonal(). Note that this function is not a simple negation of it.
 	 */
 	bool b_OffDiagonal_Blocks() const;
+
+	/**
+	 *	@brief determines whether the matrix has no diagonal blocks
+	 *
+	 *	@return Returns true if the matrix has any has no blocks at the diagonal, otherwise returns false.
+	 *
+	 *	@note This does not imply symmetric layout.
+	 *	@note This function only considers the upper/left square portion of the matrix in
+	 *		case it is rectangular (does not change the semantics of this function though).
+	 *	@note See also b_AllDiagonal_Blocks(). Note that this function is not a simple negation of it.
+	 */
+	bool b_No_Diagonal_Blocks() const;
+
+	/**
+	 *	@brief determines whether the matrix has all of the diagonal blocks
+	 *
+	 *	@return Returns true if the matrix has any has no blocks at the diagonal, otherwise returns false.
+	 *
+	 *	@note This does not imply symmetric layout.
+	 *	@note This does not imply the matrix being block diagonal; the presence of other off-diagonal blocks
+	 *		does not change the result either way.
+	 *	@note This function only considers the upper/left square portion of the matrix in case it is rectangular.
+	 *	@note See also b_No_Diagonal_Blocks(). Note that this function is not a simple negation of it.
+	 */
+	bool b_All_Diagonal_Blocks() const;
 
 	/**
 	 *	@brief determines whether the matrix is symmetric and has block diagonal
@@ -581,16 +686,105 @@ public:
 	 *	@note This returns false if the layout is not symmetric (but the matrix may
 	 *		still have blocks only on the diagonal). This also returns false if the
 	 *		matrix is rank deficient (some blocks of the diagonal are missing).
-	 *	@note See also b_HasOffDiagonalBlocks(). Note that this function is not
+	 *	@note See also b_OffDiagonalBlocks(). Note that this function is not
 	 *		a simple negation of it.
 	 */
 	bool b_BlockDiagonal() const;
+
+	/**
+	 *	@brief determines whether the matrix is upper block triangular
+	 *
+	 *	@return Returns true if the matrix has no blocks in the lower triangle,
+	 *		otherwise returns false.
+	 *
+	 *	@note A matrix with no off-diagonal blocks (diagonal, partial diagonal or empty)
+	 *		is also upper (and at the same time lower) triangular in this sense. Use in
+	 *		conjunction with \ref b_OffDiagonal_Blocks() if needed.
+	 *	@note This does *not* imply symmetric layout, full structural rank
+	 *		or the matrix being square.
+	 */
+	bool b_UpperBlockTriangular() const;
+
+	/**
+	 *	@brief determines whether the matrix is strictly upper block triangular
+	 *
+	 *	@return Returns true if the matrix has no blocks in the lower triangle
+	 *		or on the diagonal, otherwise returns false.
+	 *
+	 *	@note An empty matrix is also strictly upper (and at the same time lower)
+	 *		triangular in this sense. Use in conjunction with
+	 *		\ref b_OffDiagonal_Blocks() if needed.
+	 *	@note This does *not* imply symmetric layout, full structural rank
+	 *		or the matrix being square.
+	 */
+	bool b_StrictlyUpperBlockTriangular() const;
+
+	/**
+	 *	@brief determines whether the matrix is lower block triangular
+	 *
+	 *	@return Returns true if the matrix has no blocks in the upper triangle,
+	 *		otherwise returns false.
+	 *
+	 *	@note A matrix with no off-diagonal blocks (diagonal, partial diagonal or empty)
+	 *		is also lower (and at the same time upper) triangular in this sense. Use in
+	 *		conjunction with \ref b_OffDiagonal_Blocks() if needed.
+	 *	@note This does *not* imply symmetric layout, full structural rank
+	 *		or the matrix being square.
+	 */
+	bool b_LowerBlockTriangular() const;
+
+	/**
+	 *	@brief determines whether the matrix is strictly lower block triangular
+	 *
+	 *	@return Returns true if the matrix has no blocks in the upper triangle
+	 *		or on the diagonal, otherwise returns false.
+	 *
+	 *	@note An empty matrix is also strictly lower (and at the same time upper)
+	 *		triangular in this sense. Use in conjunction with
+	 *		\ref b_OffDiagonal_Blocks() if needed.
+	 *	@note This does *not* imply symmetric layout, full structural rank
+	 *		or the matrix being square.
+	 */
+	bool b_StrictlyLowerBlockTriangular() const;
+
+	/**
+	 *	@brief determines whether the matrix is upper triangular (elementwise)
+	 *
+	 *	@return Returns true if the matrix has no nonzeros in the (strictly) lower triangle,
+	 *		otherwise returns false.
+	 *
+	 *	@note This needs to visit elements of all the blocks which touch the diagonal
+	 *		or are below it. The worst-case complexity is O(nnz).
+	 *	@note A matrix with no off-diagonal nonzeros (elementwise diagonal, partial
+	 *		elementwise diagonal or zero) is also upper (and at the same time lower)
+	 *		triangular in this sense.
+	 *	@note This does *not* imply there are no blocks under the diagonal (they just
+	 *		need to be all zero).
+	 */
+	bool b_UpperTriangular() const;
+
+	/**
+	 *	@brief determines whether the matrix is lower triangular (elementwise)
+	 *
+	 *	@return Returns true if the matrix has no nonzeros in the (strictly) upper triangle,
+	 *		otherwise returns false.
+	 *
+	 *	@note This needs to visit elements of all the blocks which touch the diagonal
+	 *		or are above it. The worst-case complexity is O(nnz).
+	 *	@note A matrix with no off-diagonal nonzeros (elementwise diagonal, partial
+	 *		elementwise diagonal or zero) is also lower (and at the same time upper)
+	 *		triangular in this sense.
+	 *	@note This does *not* imply there are no blocks above the diagonal (they just
+	 *		need to be all zero).
+	 */
+	bool b_LowerTriangular() const;
 
 	/**
 	 *	@brief determines whether the matrix has symmetric layout
 	 *	@return Returns true if the matrix has symmetric row and column layout, false otherwise.
 	 *	@note Despite the layout being symmetric, the blocks might be present at places
 	 *		that are not at diagonal, or opposite, resulting in the matrix not being symmetric.
+	 *		See \ref b_SymmetricBlockStructure() to get structural symmetry.
 	 */
 	bool b_SymmetricLayout() const;
 
@@ -651,10 +845,11 @@ public:
 	bool b_Equal(const CUberBlockMatrix &r_other, double f_tolerance) const;
 
 	/**
-	 *	@brief gets number of non-zero elements
+	 *	@brief gets the number of non-zero elements
 	 *
 	 *	@return Returns number of non-zero elements.
 	 *
+	 *	@note This is calculated by elements (rather than by blocks).
 	 *	@note This takes O(blocks) time, where blocks is number of allocated blocks.
 	 *	@note This just merely counts blocks area, it ignores the fact that
 	 *		some of the block elements may, in fact, be zero.
@@ -662,16 +857,91 @@ public:
 	size_t n_NonZero_Num() const;
 
 	/**
-	 *	@brief extends the matrix to a given size by adding empty block row / column at the end
+	 *	@brief gets the number of non-zero elements in a symmetric matrix
+	 *		which only stores upper-triangular elements
+	 *
+	 *	This function takes care of not counting the diagonal twice.
+	 *
+	 *	@return Returns number of non-zero elements.
+	 *
+	 *	@note This is calculated by elements (rather than by blocks).
+	 *	@note This takes O(blocks) time, where blocks is number of allocated blocks.
+	 *	@note This just merely counts blocks area, it ignores the fact that
+	 *		some of the block elements may, in fact, be zero.
+	 */
+	size_t n_Symmetric_NonZero_Num() const;
+
+	/**
+	 *	@brief gets the ratio of the non-zero elements to the size of the matrix (the sparsity)
+	 *
+	 *	@return Returns the ratio of the non-zero elements to the size of the matrix (a number
+	 *		in the [0, 1] interval, 0 being a null matrix and 1 being fully dense).
+	 *
+	 *	@note This is calculated by elements (rather than by blocks).
+	 *	@note This takes O(blocks) time, where blocks is number of allocated blocks.
+	 *	@note This just merely counts blocks area, it ignores the fact that
+	 *		some of the block elements may, in fact, be zero.
+	 */
+	inline double f_NonZero_Ratio() const
+	{
+		if(!m_n_col_num || m_n_row_num <= SIZE_MAX / m_n_col_num)
+			return double(n_NonZero_Num()) / (m_n_row_num * m_n_col_num); // the area multiplication does not overflow
+		else
+			return (double(n_NonZero_Num()) / m_n_row_num) / m_n_col_num; // slightly less precise
+	}
+
+	/**
+	 *	@brief gets the ratio of the non-zero elements to the size of the matrix(the sparsity;
+	 *		version for symmetric matrices which only store the upper-triangular elements)
+	 *
+	 *	@return Returns the ratio of the non-zero elements to the size of the matrix (a number
+	 *		in the [0, 1] interval, 0 being a null matrix and 1 being fully dense).
+	 *
+	 *	@note This is calculated by elements (rather than by blocks).
+	 *	@note This takes O(blocks) time, where blocks is number of allocated blocks.
+	 *	@note This just merely counts blocks area, it ignores the fact that
+	 *		some of the block elements may, in fact, be zero.
+	 */
+	inline double f_Symmetric_NonZero_Ratio() const
+	{
+		if(!m_n_col_num || m_n_row_num <= SIZE_MAX / m_n_col_num)
+			return double(n_Symmetric_NonZero_Num()) / (m_n_row_num * m_n_col_num); // the area multiplication does not overflow
+		else
+			return (double(n_Symmetric_NonZero_Num()) / m_n_row_num) / m_n_col_num; // slightly less precise
+	}
+
+	/**
+	 *	@brief extends the matrix to a given size by adding empty block row / column at the bottom / right
 	 *
 	 *	@param[in] n_row_num is number of rows (must be greater or equal
 	 *		to the current number of rows; in elements)
 	 *	@param[in] n_column_num is number of columns (must be greater or equal
 	 *		to the current number of columns; in elements)
 	 *
+	 *	@note The empty block row / column is *always* added, even if the right-most
+	 *		column / bottom-most row are empty. Some implementation already relies
+	 *		on this behavior, won't change it.
 	 *	@note This function throws std::bad_alloc.
 	 */
 	void ExtendTo(size_t n_row_num, size_t n_column_num); // throw(std::bad_alloc)
+
+	/**
+	 *	@brief extends the matrix to a given size by adding empty block row / column at the top / left
+	 *
+	 *	Adding a new row is a potentially costy operation as all the block row indices need to be
+	 *	increased, leading to O(n) in the number of blocks rather than O(1) as might be expected.
+	 *
+	 *	@param[in] n_row_num is number of rows (must be greater or equal
+	 *		to the current number of rows; in elements)
+	 *	@param[in] n_column_num is number of columns (must be greater or equal
+	 *		to the current number of columns; in elements)
+	 *
+	 *	@note The empty block row / column is *always* added, even if the right-most
+	 *		column / bottom-most row are empty. Some implementation already relies
+	 *		on this behavior, won't change it.
+	 *	@note This function throws std::bad_alloc.
+	 */
+	void ExtendTopLeftTo(size_t n_row_num, size_t n_column_num); // throw(std::bad_alloc)
 
 	/**
 	 *	@brief finds a matrix block
@@ -1134,6 +1404,92 @@ public:
 
 #endif // __UBER_BLOCK_MATRIX_FIXED_BLOCK_SIZE_OPS
 
+	/**
+	 *	@brief calculates numbers of nonzeros in each column of \f$A+A^T\f$ where A is block structure of this matrix
+	 *
+	 *	@tparam b_upper_triangular is upper-triangular input flag (the presence of the diagonal
+	 *		does not matter either way; the function will fail if the input is not upper triangular)
+	 *	@tparam b_likely_upper_triangular is likely upper-triangular input flag (mutually exclusive
+	 *		with b_upper_triangular; the function will be slower but will not fail on non-upper input)
+	 *	@tparam b_output_diagonal is diagonal output flag (if set, the block diagonal structure of
+	 *		this matrix will be present in the output; otherwise only the off-diagonal blocks are processed)
+	 *	@tparam b_output_full_diagonal is diagonal output flag (mutually exclusive with
+	 *		b_output_diagonal; if set, the output will always contain a full diagonal spanning the
+	 *		entire \f$A+A^T\f$)
+	 *	@tparam CInt is integer data type for the column lengths array (can be signed or unsigned)
+	 *	@tparam CInt1 is integer data type for the workspace array (can be signed or unsigned)
+	 *
+	 *	@param[out] p_column_lengths is pointer to the array to store the numbers of nonzeros in each
+	 *		column of \f$A+A^T\f$ (must be allocated to the greater dimension of this matrix, in blocks)
+	 *	@param[in] n_length_num is size of the p_column_lengths array (must match the greater dimension
+	 *		of this matrix, in blocks)
+	 *	@param[out] p_workspace is pointer to a temporary array (must be allocated at least to the
+	 *		number of block columns of this matrix unless b_upper_triangular is set; may not reuse
+	 *		the same array as p_column_lengths)
+	 *	@param[in] n_workspace_size is size of the p_workspace array (must be at least the number
+	 *		of block columns of this matrix unless b_upper_triangular is set)
+	 *
+	 *	@return Returns the number of nonzero elements in \f$A+A^T\f$, possibly with the diagonal
+	 *		omitted (or extended) based on the template arguments.
+	 *
+	 *	@note In case b_upper_triangular is set, the workspace array is not needed.
+	 *	@note This is fast, allocation-free function. For convenience, use
+	 *		\ref p_BlockStructure_SumWithSelfTransposeNoDiag_to_Sparse().
+	 */
+	template <bool b_upper_triangular, bool b_likely_upper_triangular,
+		bool b_output_diagonal, bool b_output_full_diagonal, class CInt, class CInt1>
+	size_t n_BlockStructure_SumWithSelfTranspose_ColumnLengths(CInt *__restrict p_column_lengths,
+		size_t n_length_num, CInt1 *__restrict p_workspace, size_t n_workspace_size) const;
+
+	/**
+	 *	@brief calculates binary pattern of \f$A+A^T\f$ where A is block structure of this matrix
+	 *
+	 *	@tparam b_upper_triangular is upper-triangular input flag (the presence of the diagonal
+	 *		does not matter either way; the function will fail if the input is not upper triangular)
+	 *	@tparam b_likely_upper_triangular is likely upper-triangular input flag (mutually exclusive
+	 *		with b_upper_triangular; the function will be slower but will not fail on non-upper input)
+	 *	@tparam b_output_diagonal is diagonal output flag (if set, the block diagonal structure of
+	 *		this matrix will be present in the output; otherwise only the off-diagonal blocks are processed)
+	 *	@tparam b_output_full_diagonal is diagonal output flag (mutually exclusive with
+	 *		b_output_diagonal; if set, the output will always contain a full diagonal spanning the
+	 *		entire \f$A+A^T\f$)
+	 *	@tparam b_need_sorted_items is sorted output flag (if set, the row indices will be strictly
+	 *		ordered in each column; if not set, they may come in arbitrary order unless the input
+	 *		matrix is either symmetric or triangular; note that e.g. AMD does not require sorted rows)
+	 *	@tparam CInt is integer data type for the compressed column pointers array (can be signed or unsigned)
+	 *	@tparam CInt1 is integer data type for the column lengths array (can be signed or unsigned)
+	 *	@tparam CInt2 is integer data type for the workspace array (can be signed or unsigned)
+	 *
+	 *	@param[out] p_column_ptrs is pointer to the array to be filled with compressed column pointers
+	 *		(must be allocated to one plus the greater dimension of this matrix, in blocks)
+	 *	@param[in] n_column_ptr_num is size of the p_column_ptrs array (must equal one plus the greater
+	 *		dimension of this matrix, in blocks)
+	 *	@param[out] p_row_inds is pointer to the array to be filled with row indices of nonzero entries
+	 *		in \f$A+A^T\f$ (must be allocated to the total number of nonzeros, as computed e.g. by using
+	 *		\ref n_BlockStructure_SumWithSelfTranspose_ColumnLengths())
+	 *	@param[in] n_nnz_num is size of the p_row_inds array (must match the number of nonzeros of \f$A+A^T\f$,
+	 *		as returned by \ref n_BlockStructure_SumWithSelfTranspose_ColumnLengths(), which also equals
+	 *		the sum of all p_column_lengths elements)
+	 *	@param[in] p_column_lengths is pointer to the array with the numbers of nonzeros in each
+	 *		column of \f$A+A^T\f$ (as computed e.g. using \ref n_BlockStructure_SumWithSelfTranspose_ColumnLengths())
+	 *	@param[in] n_length_num is size of the p_column_lengths array (must match the greater dimension
+	 *		of this matrix, in blocks)
+	 *	@param[out] p_workspace is pointer to a temporary array (must be allocated at least to the
+	 *		number of block columns of this matrix unless b_upper_triangular is set; may not reuse
+	 *		the same array as p_column_lengths)
+	 *	@param[in] n_workspace_size is size of the p_workspace array (must be at least the number
+	 *		of block columns of this matrix unless b_upper_triangular is set)
+	 *
+	 *	@note In case b_upper_triangular is set, the workspace array is not needed.
+	 *	@note This is fast, allocation-free function. For convenience, use
+	 *		\ref p_BlockStructure_SumWithSelfTransposeNoDiag_to_Sparse().
+	 */
+	template <bool b_upper_triangular, bool b_likely_upper_triangular, bool b_output_diagonal,
+		bool b_output_full_diagonal, bool b_need_sorted_items, class CInt, class CInt1, class CInt2>
+	void BlockStructure_SumWithSelfTranspose(CInt *p_column_ptrs, size_t n_column_ptr_num,
+		CInt *__restrict p_row_inds, size_t n_nnz_num, const CInt1 *__restrict p_column_lengths,
+		size_t n_length_num, CInt2 *p_workspace, size_t n_workspace_size) const;
+
 #ifdef __UBER_BLOCK_MATRIX_HAVE_CSPARSE
 
 	/**
@@ -1155,6 +1511,27 @@ public:
 	 *	@todo Document what happens to the original matrix if it fails (and elsewhere).
 	 */
 	cs *p_BlockStructure_to_Sparse(cs *p_alloc = 0) const;
+
+	/**
+	 *	@brief calculates a sum of block structure of this matrix with the block
+	 *		structure of its transpose while omitting a diagonal (a binary sparse matrix)
+	 *
+	 *	@param[in] p_alloc is pointer to before-allocated sparse matrix
+	 *		(contents will be overwritten; can be null)
+	 *
+	 *	@return Returns pointer to sparse column-compressed matrix (equal to p_alloc
+	 *		if supplied) on success, 0 on failure (not enough memory).
+	 *
+	 *	@note The row indices of the output matrix are always sorted (not jumbled).
+	 *	@note If p_alloc is supplied, the pointer to the matrix structure is guaranteed
+	 *		to not change. However, the internal pointers in it may change.
+	 *	@note If p_alloc is supplied, it can be allocated to any number of nonzero elements.
+	 *		If needed, more space is added automatically.
+	 *	@note The resulting matrix is binary, and unless p_alloc contains array for values,
+	 *		no element values are generated.
+	 *	@note This function throws std::bad_alloc. In case it throws, p_alloc is not modified. 
+	 */
+	cs *p_BlockStructure_SumWithSelfTransposeNoDiag_to_Sparse(cs *p_alloc = 0) const; // throw(std::bad_alloc)
 
 	/**
 	 *	@brief converts block structure to a binary sparse matrix, with mini-skirt
@@ -1244,6 +1621,30 @@ public:
 	 *		no element values are generated.
 	 */
 	cs *p_BlockStructure_to_Sparse32(cs *p_alloc = 0) const;
+
+	/**
+	 *	@brief calculates a sum of block structure of this matrix with the block
+	 *		structure of its transpose while omitting a diagonal (a binary sparse matrix),
+	 *		forces 32-bit integers in the cs structure
+	 *
+	 *	@param[in] p_alloc is pointer to before-allocated sparse matrix
+	 *		(contents will be overwritten; can be null)
+	 *
+	 *	@return Returns pointer to sparse column-compressed matrix (equal to p_alloc
+	 *		if supplied) on success, 0 on failure (not enough memory).
+	 *
+	 *	@note This is potentially dangerous as it forces 32-bit integers in the cs structure,
+	 *		which may define integers as 64-bit and expect them to be so. Use with caution.
+	 *	@note The row indices of the output matrix are always sorted (not jumbled).
+	 *	@note If p_alloc is supplied, the pointer to the matrix structure is guaranteed
+	 *		to not change. However, the internal pointers in it may change.
+	 *	@note If p_alloc is supplied, it can be allocated to any number of nonzero elements.
+	 *		If needed, more space is added automatically.
+	 *	@note The resulting matrix is binary, and unless p_alloc contains array for values,
+	 *		no element values are generated.
+	 *	@note This function throws std::bad_alloc. In case it throws, p_alloc is not modified. 
+	 */
+	cs *p_BlockStructure_SumWithSelfTransposeNoDiag_to_Sparse32(cs *p_alloc = 0) const; // throw(std::bad_alloc)
 
 #endif // _M_X64 || _M_AMD64 || _M_IA64 || __x86_64 || __amd64 || __ia64
 
@@ -1416,12 +1817,12 @@ public:
 	cs *p_Convert_to_Sparse_Debug() const;
 
 	/**
-	 *	@brief converts the upper-diagonal part to sparse matrix using intermediate
+	 *	@brief converts the upper-triangular part to sparse matrix using intermediate
 	 *		triplet matrix (slower but easy to debug; kept for reference purposes)
 	 *	@return Returns pointer to sparse column-compressed matrix on success,
 	 *		or 0 on failure (not enough memory).
 	 */
-	cs *p_Convert_to_Sparse_UpperDiagonal_Debug() const;
+	cs *p_Convert_to_Sparse_UpperTriangular_Debug() const;
 
 #endif // __UBER_BLOCK_MATRIX_HAVE_CSPARSE
 
@@ -1498,6 +1899,7 @@ public:
 	 *		or the original(this), these are not mirrored in the other matrix)
 	 *
 	 *	@note This function throws std::bad_alloc.
+	 *
 	 *	@todo This is largerly untested; test this.
 	 */
 	void SliceTo(CUberBlockMatrix &r_dest, size_t n_block_row_num,
@@ -1540,7 +1942,7 @@ public:
 	 *	@note This function throws std::bad_alloc.
 	 *
 	 *	@note This is a version for full / symmetric matrices, it will not work on triangular
-	 *		matrices (will scatter data to the other diagonal half as well). See UpperPermuteTo().
+	 *		matrices (will scatter data to the other diagonal half as well). See Permute_UpperTriangular_To().
 	 */
 	void PermuteTo(CUberBlockMatrix &r_dest, const size_t *p_block_ordering,
 		size_t UNUSED(n_ordering_size), bool b_reorder_rows = true,
@@ -1562,7 +1964,6 @@ public:
 	 *	@note This matrix must be square, symmetric and upper triangular.
 	 *	@note This function throws std::bad_alloc.
 	 *
-	 *	@todo Make b_IsUpperTriangular() predicate.
 	 *	@todo This is a version for upper diagonal matrices, it is unable to efficiently
 	 *		share data (sometimes it needs to transpose and copy), make an incremental version
 	 *		(data changed / the original matrix grew while the permutation only extended
@@ -1570,6 +1971,69 @@ public:
 	 */
 	void Permute_UpperTriangular_To(CUberBlockMatrix &r_dest, const size_t *p_block_ordering,
 		size_t UNUSED(n_ordering_size), bool b_share_data = false) const; // throw(std::bad_alloc)
+
+	/**
+	 *	@brief creates a triangular view of another matrix
+	 *
+	 *	Use as follows:
+	 *	@code
+	 *	CUberBlockMatrix M = ...;
+	 *
+	 *	bool b_shallow_copy = true; // or false
+	 *
+	 *	CUberBlockMatrix upper; upper.TriangularViewOf(M, true, b_shallow_copy);
+	 *
+	 *	CUberBlockMatrix strictly_upper; strictly_upper.TriangularViewOf(M, true, b_shallow_copy, -1);
+	 *	// shift the diagonal one block up
+	 *
+	 *	CUberBlockMatrix upper_Hessenberg; upper_Hessenberg.TriangularViewOf(M, true, b_shallow_copy, +1);
+	 *	// shift the diagonal one block down to get a Hessenberg-like matrix
+	 *
+	 *	CUberBlockMatrix lower; lower.TriangularViewOf(M, false, b_shallow_copy);
+	 *
+	 *	CUberBlockMatrix strictly_lower; strictly_lower.TriangularViewOf(M, false, b_shallow_copy, +1);
+	 *	// shift the diagonal one block down
+	 *
+	 *	CUberBlockMatrix lower_Hessenberg; lower_Hessenberg.TriangularViewOf(M, false, b_shallow_copy, -1);
+	 *	// shift the diagonal one block up to get a Hessenberg-like matrix
+	 *
+	 *	CUberBlockMatrix tridiagonal; tridiagonal.TriangularViewOf(lower_Hessenberg, true, b_shallow_copy, +1);
+	 *	// get a view of only the three diagonals of M
+	 *	@endcode
+	 *
+	 *	@param[in] r_src is matrix to create a view of (must be square, with symmetric layout)
+	 *	@param[in] b_upper_triangular is upper triangular flag (if set, the upper triangle
+	 *		is viewed; if cleared, the lower triangle is viewed)
+	 *	@param[in] b_share_data is data sharing flag (if set, a shallow copy is made (default);
+	 *		if cleared, the data is copied and the input matrix can be changed or deleted)
+	 *	@param[in] n_block_diag_offset is diagonal offset in blocks (default 0; +1 selects one
+	 *		diagonal below the main one, -1 selects one above the main one, greater offsets
+	 *		are also possible)
+	 *
+	 *	@note Rectangular matrices are permitted, matrices with unsymmetric layout
+	 *		will be block triangular but the blocks may not be aligned with the main
+	 *		diagonal (layout symmetry is not checked here).
+	 *	@note This function throws std::bad_alloc.
+	 */
+	void TriangularViewOf(const CUberBlockMatrix &r_src, bool b_upper_triangular,
+		bool b_share_data = true, int n_block_diag_offset = 0); // throw(std::bad_alloc)
+
+	/**
+	 *	@brief creates a view of a full matrix from another (triangular) matrix
+	 *
+	 *	@param[in] r_src is matrix to create a view of (must be square, with symmetric layout)
+	 *	@param[in] b_upper_triangular is upper triangular flag (if set, the upper triangle
+	 *		is transposed to lower; if cleared, the lower triangle is transposed to upper)
+	 *	@param[in] b_share_data is data sharing flag (if set, a shallow copy is made (default);
+	 *		if cleared, the data is copied and the input matrix can be changed or deleted)
+	 *
+	 *	@note Since this is a real matrix, this is a self-transpose rather than self-adjoint
+	 *		but that term is rarely used in the literature.
+	 *	@note This can also work inplace but the matrix already needs to be triangular.
+	 *	@note This function throws std::bad_alloc.
+	 */
+	void SelfAdjointViewOf(const CUberBlockMatrix &r_src, bool b_upper_triangular,
+		bool b_share_data = true); // throw(std::bad_alloc)
 
 	/**
 	 *	@brief applies blockwise symbolic permutation to an upper triangular matrix
@@ -1586,12 +2050,11 @@ public:
 	 *	@param[in] n_min_block_row_column is zero-based index of minimal block row and
 	 *		block column to populate with blocks (the lower parts are kept null)
 	 *	@param[in] b_keep_upper_left_part is incremental reperm flag (if set, the part
-	 *		of the matrix, before n_min_block_row_column is kept intact)
+	 *		of the destination matrix, before n_min_block_row_column is kept intact)
 	 *
 	 *	@note This matrix must be square, symmetric and upper triangular.
 	 *	@note This function throws std::bad_alloc.
 	 *
-	 *	@todo Make b_IsUpperTriangular() predicate.
 	 *	@todo This is largerly untested - test it.
 	 */
 	void Permute_UpperTriangular_To(CUberBlockMatrix &r_dest, const size_t *p_block_ordering,
@@ -1669,14 +2132,30 @@ public:
 	size_t n_Get_UpperTriangular_BlockFrontline_Minimum(size_t n_order_lo, size_t n_order_hi) const;
 
 	/**
-	 *	@brief converts this matrix to Eigen dense matrix
-	 *	@tparam _TyFixedSizeMatrixOrMap is compile-time size of the matrix, in elements
-	 *		(must match dimensions of this matrix) or Eigen::Dynamic for allocation at run time
-	 *	@param[out] r_dest is the destination matrix (allocated by the caller, will be overwritten)
+	 *	@brief gets the diagonal of this matrix
+	 *
+	 *	@tparam CEigenMatrixType is Eigen vector type for storing the diagonal
+	 *
+	 *	@param[out] r_dest is the destination vector (will be overwritten, does not need to be allocated)
+	 *	@param[in] b_is_upper_triangular is the upper-triangular flag (if set, the matrix is expected
+	 *		to be upper-triangular - the last block in each column is the diagonal one)
+	 *
 	 *	@note This function throws std::bad_alloc.
 	 */
-	template <class _TyFixedSizeMatrixOrMap>
-	void Convert_to_Dense(_TyFixedSizeMatrixOrMap &r_dest) const; // throw(std::bad_alloc)
+	// *	@tparam Derived0 is Eigen derived matrix type for the first matrix argument
+	template <class CEigenMatrixType/*Derived0*/> // Eigen::MatrixBase doesn't allow .resize()
+	void Get_Diagonal(/*Eigen::MatrixBase<Derived0>*/CEigenMatrixType &r_dest,
+		bool b_is_upper_triangular = false) const; // throw(std::bad_alloc)
+
+	/**
+	 *	@brief converts this matrix to Eigen dense matrix
+	 *	@tparam Derived0 is Eigen derived matrix type for the first matrix argument
+	 *	@param[out] r_dest is the destination matrix (allocated by the caller
+	 *		(because Eigen::MatrixBase does not allow resize), will be overwritten)
+	 *	@note This function throws std::bad_alloc.
+	 */
+	template <class Derived0>
+	void Convert_to_Dense(Eigen::MatrixBase<Derived0> &r_dest) const; // throw(std::bad_alloc)
 
 	/**
 	 *	@brief converts this matrix to Eigen dense matrix
@@ -2094,6 +2573,26 @@ public:
 		return r_A.MultiplyToWith(*this, r_B);
 	}
 
+	/**
+	 *	@brief performs matrix multiplication
+	 *
+	 *	\f$this = r\_A \cdot r\_B\f$
+	 *
+	 *	@param[in] r_A is the left-side matrix
+	 *	@param[in] r_B is the right-side matrix
+	 *	@param[in] b_upper_diag_only is upper-triangular flag (if set, only the upper-triangular
+	 *		part of the product is calculated; otherwise MultiplyToWith() without the third
+	 *		argument is faster and gives identical result)
+	 *
+	 *	@return Returns true on success, false on failure (incompatible layout).
+	 *
+	 *	@note This function throws std::bad_alloc.
+	 */
+	inline bool ProductOf(const CUberBlockMatrix &r_A, const CUberBlockMatrix &r_B, bool b_upper_diag_only) // throw(std::bad_alloc)
+	{
+		return r_A.MultiplyToWith(*this, r_B, b_upper_diag_only);
+	}
+
 #ifdef __UBER_BLOCK_MATRIX_FIXED_BLOCK_SIZE_OPS
 
 	/**
@@ -2113,6 +2612,27 @@ public:
 	 */
 	template <class CBlockMatrixTypelistA, class CBlockMatrixTypelistB>
 	inline bool ProductOf_FBS(const CUberBlockMatrix &r_A, const CUberBlockMatrix &r_B); // throw(std::bad_alloc)
+
+	/**
+	 *	@brief performs matrix multiplication, this version uses fixed block size
+	 *
+	 *	\f$this = r\_A \cdot r\_B\f$
+	 *
+	 *	@tparam CBlockMatrixTypelistA is list of Eigen::Matrix block sizes found in r_A
+	 *	@tparam CBlockMatrixTypelistB is list of Eigen::Matrix block sizes found in r_B
+	 *
+	 *	@param[in] r_A is the left-side matrix
+	 *	@param[in] r_B is the right-side matrix
+	 *	@param[in] b_upper_diag_only is upper-triangular flag (if set, only the upper-triangular
+	 *		part of the product is calculated; otherwise MultiplyToWith() without the third
+	 *		argument is faster and gives identical result)
+	 *
+	 *	@return Returns true on success, false on failure (incompatible layout).
+	 *
+	 *	@note This function throws std::bad_alloc.
+	 */
+	template <class CBlockMatrixTypelistA, class CBlockMatrixTypelistB>
+	inline bool ProductOf_FBS(const CUberBlockMatrix &r_A, const CUberBlockMatrix &r_B, bool b_upper_diag_only); // throw(std::bad_alloc)
 
 #endif // __UBER_BLOCK_MATRIX_FIXED_BLOCK_SIZE_OPS
 
@@ -2295,6 +2815,8 @@ public:
 	 *	@endcode
 	 *
 	 *	@param[in] r_A is the input matrix (must be invertible and full rank)
+	 *	@param[in] b_upper_triangular_source is upper triangular source flag
+	 *		(set if only the upper triangular part of r_A is stored)
 	 *
 	 *	@note This function throws std::bad_alloc.
 	 *	@note In case the matrix is not invertible, the result
@@ -2304,11 +2826,11 @@ public:
 	 *		the content does not need to be symmetric at all.
 	 *
 	 *	@todo Test it on some data, it is largerly untested.
-	 *	@todo Often, symmetric matrices are only represented by the upper triangular,
-	 *		need to add parameter to mirror the blocks below the diagonal as well.
 	 */
 	// *	t_odo Implement InverseOf_SymmtericBlockDiagonal(), implement FBS versions of both.
-	void InverseOf_Symmteric(const CUberBlockMatrix &r_A); // throw(std::bad_alloc)
+	// *	t_odo Often, symmetric matrices are only represented by the upper triangular,
+	// *		need to add parameter to mirror the blocks below the diagonal as well.
+	void InverseOf_Symmteric(const CUberBlockMatrix &r_A, bool b_upper_triangular_source = false); // throw(std::bad_alloc)
 
 #ifdef __UBER_BLOCK_MATRIX_FIXED_BLOCK_SIZE_OPS
 
@@ -2350,6 +2872,8 @@ public:
 	 *	@tparam CBlockMatrixTypelist is list of Eigen::Matrix block sizes
 	 *
 	 *	@param[in] r_A is the input matrix (must be invertible and full rank)
+	 *	@param[in] b_upper_triangular_source is upper triangular source flag
+	 *		(set if only the upper triangular part of r_A is stored)
 	 *
 	 *	@note This function throws std::bad_alloc.
 	 *	@note In case the matrix is not invertible, the result
@@ -2359,11 +2883,11 @@ public:
 	 *		the content does not need to be symmetric at all.
 	 *
 	 *	@todo Test it on some data, it is largerly untested.
-	 *	@todo Often, symmetric matrices are only represented by the upper triangular,
-	 *		need to add parameter to mirror the blocks below the diagonal as well.
 	 */
+	// *	t_odo Often, symmetric matrices are only represented by the upper triangular,
+	// *		need to add parameter to mirror the blocks below the diagonal as well.
 	template <class CBlockMatrixTypelist>
-	void InverseOf_Symmteric_FBS(const CUberBlockMatrix &r_A); // throw(std::bad_alloc)
+	void InverseOf_Symmteric_FBS(const CUberBlockMatrix &r_A, bool b_upper_triangular_source = false); // throw(std::bad_alloc)
 
 	/**
 	 *	@brief calculates inverse of a sparse block diagonal matrix
@@ -2535,6 +3059,36 @@ public:
 	bool UpperTriangularTranspose_Solve_FBS(double *p_x, size_t UNUSED(n_vector_size), size_t n_skip_columns) const;
 
 	/**
+	 *	@brief solves a system given by transpose of upper triangular matrix and a right-hand side vector
+	 *
+	 *	Solves \f$this^T \cdot x = b\f$ (this matrix is just upper triangular, the transpose is calculated
+	 *	inside the function), where p_x is \f$b\f$ on input, \f$x\f$ on output. This is in fact forward substitution.
+	 *
+	 *	@tparam CBlockMatrixTypelist is typelist, containing Eigen
+	 *		matrices with known compile-time sizes
+	 *
+	 *	@param[in,out] p_x is the right-hand side vector (gets overwritten by the solution)
+	 *	@param[in] n_vector_size is the size of the right-hand side vector, in elements
+	 *		(must match size of this matrix)
+	 *	@param[in] p_dependent_column is pointer to the array of dependent column
+	 *		indices (must be in strictly ascending order)
+	 *	@param[in] n_dependent_column_num is number of the block columns that the result
+	 *		depends on (one to the size of this matrix)
+	 *
+	 *	@return Returns true on success, false on failure (no solution or infinite number of solutions).
+	 *
+	 *	@note This function requires the matrix to be square, have symmetric layout
+	 *		and to be upper triangular (all the blocks on the diagonal must be square).
+	 *	@note The transpose is not really being calculated, it is carried out using the indexing.
+	 *
+	 *	@todo Add support for block permutation (2nd function), should be faster than permuting
+	 *		p_x there and back again (measure, measure).
+	 */
+	template <class CBlockMatrixTypelist>
+	bool UpperTriangularTranspose_Solve_FBS(double *p_x, size_t UNUSED(n_vector_size),
+		const size_t *p_dependent_column, size_t n_dependent_column_num) const;
+
+	/**
 	 *	@brief solves a system given by upper triangular matrix and a right-hand side vector
 	 *
 	 *	Solves \f$this^T \cdot x = b\f$, where p_x is \f$b\f$ on input, \f$x\f$ on output. This is in fact back substitution.
@@ -2640,6 +3194,32 @@ public:
 	 *		p_x there and back again (measure, measure).
 	 */
 	bool UpperTriangularTranspose_Solve(double *p_x, size_t UNUSED(n_vector_size)) const;
+
+	/**
+	 *	@brief solves a system given by transpose of upper triangular matrix and a right-hand side vector
+	 *
+	 *	Solves \f$this^T \cdot x = b\f$ (this matrix is just upper triangular, the transpose is calculated
+	 *	inside the function), where p_x is \f$b\f$ on input, \f$x\f$ on output. This is in fact forward substitution.
+	 *
+	 *	@param[in,out] p_x is the right-hand side vector (gets overwritten by the solution)
+	 *	@param[in] n_vector_size is the size of the right-hand side vector, in elements
+	 *		(must match size of this matrix)
+	 *	@param[in] p_dependent_column is pointer to the array of dependent column
+	 *		indices (must be in strictly ascending order)
+	 *	@param[in] n_dependent_column_num is number of the block columns that the result
+	 *		depends on (one to the size of this matrix)
+	 *
+	 *	@return Returns true on success, false on failure (no solution or infinite number of solutions).
+	 *
+	 *	@note This function requires the matrix to be square, have symmetric layout
+	 *		and to be upper triangular (all the blocks on the diagonal must be square).
+	 *	@note The transpose is not really being calculated, it is carried out using the indexing.
+	 *
+	 *	@todo Add support for block permutation (2nd function), should be faster than permuting
+	 *		p_x there and back again (measure, measure).
+	 */
+	bool UpperTriangularTranspose_Solve(double *p_x, size_t UNUSED(n_vector_size),
+		const size_t *p_dependent_column, size_t n_dependent_column_num) const; // todo - add sparse sparse backsubsitution versions as well, think about vectorized versions (multiple right hand sides as an Eigen::Matrix)
 
 	/**
 	 *	@brief solves a system given by transpose of upper triangular matrix and a right-hand side vector
@@ -3007,12 +3587,21 @@ public:
 	 *		name for the block layout (.bla, can be null)
 	 *	@param[in] p_s_kind is comment in the file header, it is usual to specify
 	 *		what type of the matrix is in the file (symmetric, positive definite, etc)
+	 *	@param[in] p_s_mm_header is MatrixMarket specific header (will affect the
+	 *		parsing of the matrix, does not affect how the matrix is stored)
+	 *	@param[in] n_symmetry is symmetry option ('U' for symmetric, sourrce elements
+	 *		from the upper triangular, 'L' for elements from lower triangular part
+	 *		or 'N' for not symmetric matrices; this is case insensitive)
 	 *
 	 *	@return Returns true on success, false on failure.
+	 *
+	 *	@note Symmetric matrices should have header set to "symmetric", "skew-symmetric" or "Hermitian".
 	 */
 	bool Save_MatrixMarket(const char *p_s_filename,
 		const char *p_s_layout_filename = 0,
-		const char *p_s_kind = "general block matrix") const;
+		const char *p_s_kind = "general block matrix",
+		const char *p_s_mm_header = "matrix coordinate real general",
+		char n_symmetry = 'N') const;
 
 #endif // __UBER_BLOCK_MATRIX_IO
 
@@ -3370,5 +3959,7 @@ protected:
 // implementation of CUberBlockMatrix::*_FBS() functions
 
 #endif // __UBER_BLOCK_MATRIX_FIXED_BLOCK_SIZE_OPS
+
+/** @} */ // end of group
 
 #endif // !__UBER_BLOCK_MATRIX_INCLUDED

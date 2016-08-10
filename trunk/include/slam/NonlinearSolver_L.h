@@ -36,6 +36,10 @@
 #include "slam/FlatSystem.h"
 #include "slam/IncrementalPolicy.h"
 
+/** \addtogroup nlsolve
+ *	@{
+ */
+
 /**
  *	@def __NONLINEAR_SOLVER_L_DUMP_TIMESTEPS
  *	@brief enables writes of diagnostic data (timing samples, ...)
@@ -356,7 +360,7 @@ public:
 	 *	@param[in] linear_solver is linear solver instance
 	 *	@param[in] b_use_schur is Schur complement trick flag (not supported)
 	 */
-	CNonlinearSolver_L(CSystem &r_system, 
+	CNonlinearSolver_L(CSystem &r_system,
 		TIncrementalSolveSetting t_incremental_config = TIncrementalSolveSetting(),
 		TMarginalsComputationPolicy t_marginals_config = TMarginalsComputationPolicy(),
 		bool b_verbose = false,
@@ -470,8 +474,8 @@ public:
 	}
 
 	/**
-	 *	@brief calculates chi-squared error
-	 *	@return Returns chi-squared error.
+	 *	@brief calculates \f$\chi^2\f$d error
+	 *	@return Returns \f$\chi^2\f$d error.
 	 *	@note This only works with systems with edges of one degree of freedom
 	 *		(won't work for e.g. systems with both poses and landmarks).
 	 */
@@ -494,8 +498,8 @@ public:
 	}
 
 	/**
-	 *	@brief calculates denormalized chi-squared error
-	 *	@return Returns denormalized chi-squared error.
+	 *	@brief calculates denormalized \f$\chi^2\f$d error
+	 *	@return Returns denormalized \f$\chi^2\f$d error.
 	 *	@note This doesn't perform the final division by (number of edges - degree of freedoms).
 	 */
 	inline double f_Chi_Squared_Error_Denorm() const
@@ -533,8 +537,8 @@ public:
 				_ASSERTE(r_edge.n_Vertex_Id(0) != r_edge.n_Vertex_Id(1));
 				size_t n_first_vertex = std::min(r_edge.n_Vertex_Id(0), r_edge.n_Vertex_Id(1));
 				m_b_had_loop_closure = (n_first_vertex < n_vertex_num - 2);
-				_ASSERTE(m_b_had_loop_closure || std::max(r_edge.n_Vertex_Id(0),
-					r_edge.n_Vertex_Id(1)) == n_vertex_num - 1);
+				//_ASSERTE(m_b_had_loop_closure || std::max(r_edge.n_Vertex_Id(0),
+				//	r_edge.n_Vertex_Id(1)) == n_vertex_num - 1); // this won't work with const vertices
 			} else {
 				size_t n_first_vertex = r_edge.n_Vertex_Id(0);
 				m_b_had_loop_closure = (n_first_vertex < n_vertex_num - 1);
@@ -549,6 +553,9 @@ public:
 
 #ifdef __NONLINEAR_SOLVER_L_DUMP_TIMESTEPS
 		{
+			_ASSERTE(r_edge.n_Vertex_Num() == 2); // won't work with hyperedges, would have to modify
+			_ASSERTE(std::max(r_edge.n_Vertex_Id(0), r_edge.n_Vertex_Id(1)) <
+				m_r_system.r_Vertex_Pool().n_Size()); // won't work with const vertices, would have to modify if needed
 			FILE *p_fw = fopen("timeSteps_L.txt", (m_n_real_step > 0)? "a" : "w");
 			fprintf(p_fw, "" PRIsize ";%f;" PRIsize ";" PRIsize ";" PRIsize ";" PRIsize ";" PRIsize ";" PRIsize "\n", m_n_real_step, m_timer.f_Time(),
 				m_n_Lup_num, m_n_full_L_num, m_n_L_optim_num, m_n_lambda_optim_num,
@@ -1511,16 +1518,31 @@ protected:
 	/**
 	 *	@brief creates the lambda matrix from scratch
 	 */
-	inline void AddEntriesInSparseSystem() // throw(std::bad_alloc)
+	inline void AddEntriesInSparseSystem() // throw(std::bad_alloc, std::runtime_error)
 	{
 		// note: don't worry about very large matrices being built at once,
 		// this will most likely only be any good for incremental
 
 		m_lambda.Clear();
-		const Eigen::MatrixXd &r_t_uf = m_r_system.r_t_Unary_Factor();
-		if(!m_lambda.Append_Block(Eigen::MatrixXd(r_t_uf.transpose() * r_t_uf), 0, 0))
-			throw std::bad_alloc();
-		// add unary factor (actually UF^T * UF, but it's the same matrix)
+		{
+#ifdef __AUTO_UNARY_FACTOR_ON_VERTEX_ZERO
+			size_t n_first_vertex_id = 0; // simple
+#else // __AUTO_UNARY_FACTOR_ON_VERTEX_ZERO
+			_ASSERTE(!m_r_system.r_Edge_Pool().b_Empty());
+			size_t n_first_vertex_id = m_r_system.r_Edge_Pool()[0].n_Vertex_Id(0);
+#endif // __AUTO_UNARY_FACTOR_ON_VERTEX_ZERO
+			_ASSERTE(!m_r_system.r_Vertex_Pool()[n_first_vertex_id].b_IsConstant()); // this one must not be constant
+			size_t n_first_vertex_order = m_r_system.r_Vertex_Pool()[n_first_vertex_id].n_Order();
+			// get id of the first vertex (usually zero)
+
+			const Eigen::MatrixXd &r_t_uf = m_r_system.r_t_Unary_Factor();
+			if(!r_t_uf.cols())
+				throw std::runtime_error("system matrix assembled but unary factor not initialized yet"); // if this triggers, consider sorting your dataset or using an explicit CUnaryFactor
+			if(!m_lambda.Append_Block(Eigen::MatrixXd(r_t_uf.transpose() * r_t_uf),
+			   n_first_vertex_order, n_first_vertex_order))
+				throw std::bad_alloc();
+		}
+		// add unary factor (actually UF^T * UF, but it was square-rooted before)
 
 		m_R.Clear();
 		/*Eigen::MatrixXd t_uf_L = (r_t_uf.transpose() * r_t_uf).llt().matrixU();
@@ -2482,8 +2504,11 @@ protected:
 				size_t n_order_min_projection = (n_last < m_n_lambda_block_ordering_size)?
 					m_p_lambda_block_ordering[n_last] : n_last;
 				for(size_t i = n_refresh_from_edge, n = m_r_system.r_Edge_Pool().n_Size(); i < n; ++ i) {
+					_ASSERTE(m_r_system.r_Edge_Pool()[i].n_Vertex_Num() == 2); // won't work for hyperedges // todo
 					size_t n_order_v0 = m_r_system.r_Edge_Pool()[i].n_Vertex_Id(0);
 					size_t n_order_v1 = m_r_system.r_Edge_Pool()[i].n_Vertex_Id(1); // note that these are ids, but these equal order at the moment
+					_ASSERTE(n_order_v0 < m_r_system.r_Vertex_Pool().n_Size()); // make sure none of the vertices is constant
+					_ASSERTE(n_order_v1 < m_r_system.r_Vertex_Pool().n_Size()); // make sure none of the vertices is constant
 					n_order_v0 = (n_order_v0 < m_n_lambda_block_ordering_size)?
 						m_p_lambda_block_ordering[n_order_v0] : n_order_v0;
 					n_order_v1 = (n_order_v1 < m_n_lambda_block_ordering_size)?
@@ -2578,6 +2603,7 @@ protected:
 				size_t n_order_v1 = m_p_lambda_block_ordering[m_r_system.r_Edge_Pool()[i].n_Vertex_Id(1)]; // note that these are ids, but these equal order at the moment
 				n_order_min = std::min(n_order_min, std::min(n_order_v0, n_order_v1));
 			}
+			_ASSERTE(n_order_min < m_r_system.r_Vertex_Pool().n_Size()); // make sure there are some non-const vertices
 			//printf("loop size: " PRIsize "\n", m_n_lambda_block_ordering_size - 1 - n_order_min); // debug
 		}
 		// calculate min vertex order that needs to be updated (within the ordering!)
@@ -2798,7 +2824,7 @@ protected:
 	 *	@param[in] n_referesh_from_vertex is zero-based index of the first vertex that changes
 	 *	@param[in] n_refresh_from_edge is zero-based index of the first edge that changes
 	 */
-	inline void Refresh_Lambda(size_t n_referesh_from_vertex = 0, size_t n_refresh_from_edge = 0)
+	inline void Refresh_Lambda(size_t n_referesh_from_vertex = 0, size_t n_refresh_from_edge = 0) // throw(std::bad_alloc, std::runtime_error)
 	{
 		if(n_refresh_from_edge) {
 			m_r_system.r_Edge_Pool().For_Each_Parallel(n_refresh_from_edge,
@@ -2814,8 +2840,20 @@ protected:
 		// can do this in parallel
 
 		if(!n_referesh_from_vertex) {
+#ifdef __AUTO_UNARY_FACTOR_ON_VERTEX_ZERO
+			size_t n_first_vertex_id = 0; // simple
+#else // __AUTO_UNARY_FACTOR_ON_VERTEX_ZERO
+			_ASSERTE(!m_r_system.r_Edge_Pool().b_Empty());
+			size_t n_first_vertex_id = m_r_system.r_Edge_Pool()[0].n_Vertex_Id(0);
+#endif // __AUTO_UNARY_FACTOR_ON_VERTEX_ZERO
+			_ASSERTE(!m_r_system.r_Vertex_Pool()[n_first_vertex_id].b_IsConstant()); // this one must not be constant
+			size_t n_first_vertex_order = m_r_system.r_Vertex_Pool()[n_first_vertex_id].n_Order();
+			// get id of the first vertex (usually zero)
+
 			const Eigen::MatrixXd &r_t_uf = m_r_system.r_t_Unary_Factor();
-			m_lambda.t_FindBlock(0, 0).noalias() += r_t_uf.transpose() * r_t_uf;
+			if(!r_t_uf.cols())
+				throw std::runtime_error("system matrix assembled but unary factor not initialized yet"); // if this triggers, consider sorting your dataset or using an explicit CUnaryFactor
+			m_lambda.t_FindBlock(n_first_vertex_order, n_first_vertex_order).noalias() += r_t_uf.transpose() * r_t_uf;
 			// for lambda yes
 		}
 		// add unary factor (gets overwritten by the first vertex' block)
@@ -2860,7 +2898,7 @@ protected:
 	 */
 	class CSum_ChiSquareError {
 	protected:
-		double m_f_sum; /**< @brief a running sum of chi-square errors */
+		double m_f_sum; /**< @brief a running sum of \f$\chi^2\f$ errors */
 
 	public:
 		/**
@@ -2947,5 +2985,7 @@ protected:
 	CNonlinearSolver_L(const CNonlinearSolver_L &UNUSED(r_solver)); /**< @brief the object is not copyable */
 	CNonlinearSolver_L &operator =(const CNonlinearSolver_L &UNUSED(r_solver)) { return *this; } /**< @brief the object is not copyable */
 };
+
+/** @} */ // end of group
 
 #endif // !__NONLINEAR_BLOCKY_SOLVER_L_INCLUDED

@@ -1,4 +1,4 @@
-#include "cs.h"
+#include "cxsparse/cs.h"
 /* ordering and symbolic analysis for a Cholesky factorization */
 css *cs_schol (CS_INT order, const cs *A)
 {

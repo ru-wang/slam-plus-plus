@@ -74,7 +74,7 @@
  *	}
  *	@endcode
  *
- *	This is all nice and simple, we declated a simple graph with some SE(2) vertices and a single edge.
+ *	This is all nice and simple, we declared a simple graph with some SE(2) vertices and a single edge.
  *	Note that there is no edge to connect pose and landmark vertex and this is intentional - this is just
  *	a toy example.
  *
@@ -202,11 +202,17 @@
  *	* If you dont know the type but need it, use multipool::CMultiPool::For_Each() along with a function object.
  *
  *	All those, with the exception of <tt>r_Get()</tt> will also work in case there is only a single vertex / edge
- *	type and no interface wrapping is needed (this makes writing generic code a bit easier).
+ *	type and no interface wrapping is needed (this makes writing generic code a bit easier). In case you need
+ *	to use <tt>r_Get()</tt> in generic code where types without interfaces may be used, you can use
+ *	<tt>base_iface::r_GetBase()</tt> to convert any vertex or edge object to the base type.
  *
  */
 
 #include <map>
+
+/** \addtogroup graph
+ *	@{
+ */
 
 /**
  *	@def __FLAT_SYSTEM_USE_THUNK_TABLE
@@ -277,6 +283,12 @@ public:
 	virtual size_t n_Order() const = 0;
 
 	/**
+	 *	@brief determines whether this vertex is a constant vertex
+	 *	@return Returns true if this vertex is a constant vertex, otherwise returns false.
+	 */
+	virtual bool b_IsConstant() const = 0;
+
+	/**
 	 *	@brief sets vertex order
 	 *	@param[in] n_first_element_index is vertex order
 	 *		(column in a matrix where the vertex block is inserted).
@@ -340,7 +352,7 @@ public:
  */
 class CVertexPrerequisities_Lambda_v1_ReductionPlan {
 public:
-	typedef CBaseEdge _TyBaseEdge; /**< @brief base edge type, assumed for this vertex */ 
+	typedef CBaseEdge _TyBaseEdge; /**< @brief base edge type, assumed for this vertex */
 
 protected:
 	std::vector<_TyBaseEdge*> m_edge_list; /**< @brief a list of edges, referencing this vertex (only used by Lambda solver) */
@@ -386,14 +398,14 @@ public:
 #ifndef __FLAT_SYSTEM_USE_THUNK_TABLE
 
 	/**
-	 *	@brief allocates hessian block matrices
+	 *	@brief allocates Hessian blocks
 	 *	@param[out] r_lambda is the target matrix where the blocks are stored
 	 *	@note This function is required for CNonlinearSolver_Lambda.
 	 */
 	virtual inline void Alloc_HessianBlocks(CUberBlockMatrix &r_lambda) = 0;
 
 	/**
-	 *	@brief calculates diagonal lambda hessian blocks
+	 *	@brief calculates diagonal lambda Hessian blocks
 	 *	@note This function is required for CNonlinearSolver_Lambda.
 	 */
 	virtual inline void Calculate_Hessians() = 0;
@@ -423,7 +435,7 @@ public:
 #ifndef __FLAT_SYSTEM_USE_THUNK_TABLE
 
 	/**
-	 *	@brief allocates L factor block matrices
+	 *	@brief allocates L factor blocks
 	 *	@param[out] r_L is the target matrix where the blocks are stored
 	 *	@note This function is required for CNonlinearSolver_L.
 	 */
@@ -489,8 +501,8 @@ public:
 #endif // __BASE_TYPES_USE_ID_ADDRESSING
 
 	/**
-	 *	@brief calculates chi-square error
-	 *	@return Returns (unweighted) chi-square error.
+	 *	@brief calculates \f$\chi^2\f$ error
+	 *	@return Returns (unweighted) \f$\chi^2\f$ error.
 	 *	@note This is supposed to be divided by (m - n), where m is number of edges
 	 *		and n is number of degrees of freedom (equals to n_Dimension()).
 	 */
@@ -506,7 +518,7 @@ public:
 	 *
 	 *	@param[out] r_omega is the omega matrix to be filled (must be initially empty)
 	 *	@param[in] n_min_vertex_order is order offset, in elements, used to position
-	 *		the hessian blocks in the upper-left corner of omega
+	 *		the Hessian blocks in the upper-left corner of omega
 	 */
 	virtual void Calculate_Omega(CUberBlockMatrix &r_omega, size_t n_min_vertex_order) const = 0;
 
@@ -521,14 +533,14 @@ public:
 #ifndef __FLAT_SYSTEM_USE_THUNK_TABLE
 
 	/**
-	 *	@brief allocates hessian block matrices
+	 *	@brief allocates Jacobian blocks
 	 *	@param[out] r_A is the target matrix where the blocks are stored
 	 *	@note This function is required for CNonlinearSolver_A.
 	 */
 	virtual void Alloc_JacobianBlocks(CUberBlockMatrix &r_A) = 0;
 
 	/**
-	 *	@brief calculates hessians
+	 *	@brief calculates Jacobians
 	 *	@note This function is required for CNonlinearSolver_A.
 	 */
 	virtual void Calculate_Jacobians() = 0;
@@ -557,14 +569,14 @@ public:
 class CEdgePrerequisities_Lambda_v1_ReductionPlan { // this is always there, with or without the thunk table
 public:
 	/**
-	 *	@brief allocates hessian block matrices
+	 *	@brief allocates Hessian blocks
 	 *	@param[out] r_lambda is the target matrix where the blocks are stored
 	 *	@note This function is required for CNonlinearSolver_Lambda.
 	 */
 	virtual void Alloc_HessianBlocks(CUberBlockMatrix &r_lambda) = 0;
 
 	/**
-	 *	@brief calculates off-diagonal lambda hessian blocks
+	 *	@brief calculates off-diagonal lambda Hessian blocks
 	 *	@note This function is required for CNonlinearSolver_Lambda.
 	 */
 	virtual void Calculate_Hessians() = 0;
@@ -573,7 +585,7 @@ public:
 	 *	@brief notifies an edge of a conflict (duplicate edge)
 	 *
 	 *	@param[in] p_block is pointer to block data (directly in the matrix, as returned by CUberBlockMatrix::p_GetBlock() or the like)
-	 *	@param[in] r_lambda is reference to the hessian matrix
+	 *	@param[in] r_lambda is reference to the Hessian matrix
 	 *
 	 *	@return Returns true if this is the original owner of the block.
 	 */
@@ -610,7 +622,7 @@ public:
 #ifndef __FLAT_SYSTEM_USE_THUNK_TABLE
 
 	/**
-	 *	@brief allocates L factor block matrices
+	 *	@brief allocates L factor blocks
 	 *	@param[out] r_L is the target matrix where the blocks are stored
 	 *	@note This function is required for CNonlinearSolver_L.
 	 */
@@ -720,6 +732,12 @@ public:
 	virtual size_t n_Order() const = 0;
 
 	/**
+	 *	@brief determines whether this vertex is a constant vertex
+	 *	@return Returns true if this vertex is a constant vertex, otherwise returns false.
+	 */
+	virtual bool b_IsConstant() const = 0;
+
+	/**
 	 *	@brief sets vertex order
 	 *	@param[in] n_first_element_index is vertex order
 	 *		(column in a matrix where the vertex block is inserted).
@@ -807,14 +825,14 @@ public:
 
 
 	/**
-	 *	@brief allocates hessian block matrices
+	 *	@brief allocates Hessian blocks
 	 *	@param[out] r_lambda is the target matrix where the blocks are stored
 	 *	@note This function is required for CNonlinearSolver_Lambda.
 	 */
 	virtual void Alloc_HessianBlocks(CUberBlockMatrix &r_lambda) = 0;
 
 	/**
-	 *	@brief calculates diagonal lambda hessian blocks
+	 *	@brief calculates diagonal lambda Hessian blocks
 	 *	@note This function is required for CNonlinearSolver_Lambda.
 	 */
 	virtual void Calculate_Hessians() = 0;
@@ -832,7 +850,7 @@ public:
 #ifdef __SE_TYPES_SUPPORT_L_SOLVERS // --- L-SLAM specific functions ---
 
 	/**
-	 *	@brief allocates L factor block matrices
+	 *	@brief allocates L factor blocks
 	 *	@param[out] r_L is the target matrix where the blocks are stored
 	 *	@note This function is required for CNonlinearSolver_L.
 	 */
@@ -893,8 +911,8 @@ public:
 #endif // __BASE_TYPES_USE_ID_ADDRESSING
 
 	/**
-	 *	@brief calculates chi-square error
-	 *	@return Returns (unweighted) chi-square error.
+	 *	@brief calculates \f$\chi^2\f$ error
+	 *	@return Returns (unweighted) \f$\chi^2\f$ error.
 	 *	@note This is supposed to be divided by (m - n), where m is number of edges
 	 *		and n is number of degrees of freedom (equals to n_Dimension()).
 	 */
@@ -903,14 +921,14 @@ public:
 #ifdef __SE_TYPES_SUPPORT_A_SOLVERS // --- A-SLAM specific functions ---
 
 	/**
-	 *	@brief allocates hessian block matrices
+	 *	@brief allocates Jacobian blocks
 	 *	@param[out] r_A is the target matrix where the blocks are stored
 	 *	@note This function is required for CNonlinearSolver_A.
 	 */
 	virtual void Alloc_JacobianBlocks(CUberBlockMatrix &r_A) = 0;
 
 	/**
-	 *	@brief calculates hessians
+	 *	@brief calculates Jacobians
 	 *	@note This function is required for CNonlinearSolver_A.
 	 */
 	virtual void Calculate_Jacobians() = 0;
@@ -945,14 +963,14 @@ public:
 	virtual bool Notify_HessianBlock_Conflict(double *p_block, CUberBlockMatrix &r_lambda) = 0;
 
 	/**
-	 *	@brief allocates hessian block matrices
+	 *	@brief allocates Hessian blocks
 	 *	@param[out] r_lambda is the target matrix where the blocks are stored
 	 *	@note This function is required for CNonlinearSolver_Lambda.
 	 */
 	virtual void Alloc_HessianBlocks(CUberBlockMatrix &r_lambda) = 0;
 
 	/**
-	 *	@brief calculates off-diagonal lambda hessian blocks
+	 *	@brief calculates off-diagonal lambda Hessian blocks
 	 *	@note This function is required for CNonlinearSolver_Lambda.
 	 */
 	virtual void Calculate_Hessians() = 0;
@@ -973,7 +991,7 @@ public:
 #ifdef __SE_TYPES_SUPPORT_L_SOLVERS // --- L-SLAM specific functions ---
 
 	/**
-	 *	@brief allocates L factor block matrices
+	 *	@brief allocates L factor blocks
 	 *	@param[out] r_L is the target matrix where the blocks are stored
 	 *	@note This function is required for CNonlinearSolver_L.
 	 */
@@ -991,7 +1009,7 @@ public:
 	 *
 	 *	@param[out] r_omega is the omega matrix to be filled (must be initially empty)
 	 *	@param[in] n_min_vertex_order is order offset, in elements, used to position
-	 *		the hessian blocks in the upper-left corner of omega
+	 *		the Hessian blocks in the upper-left corner of omega
 	 */
 	virtual void Calculate_Omega(CUberBlockMatrix &r_omega, size_t n_min_vertex_order) const = 0;
 };
@@ -1032,6 +1050,12 @@ public:
 	 *	@param[in] p_this pointer to the base object
 	 */
 	virtual size_t n_Order(const CBaseVertexType *p_this) const = 0;
+
+	/**
+	 *	@copydoc CConstVertexFacade::b_IsConstant
+	 *	@param[in] p_this pointer to the base object
+	 */
+	virtual bool b_IsConstant(const CBaseVertexType *p_this) const = 0;
 
 	/**
 	 *	@copydoc CVertexFacade::Set_Order
@@ -1179,6 +1203,14 @@ public:
 	virtual size_t n_Order(const CBaseVertexType *p_this) const
 	{
 		return static_cast<const CVertexType*>(p_this)->n_Order();
+	}
+
+	/**
+	 *	@copydoc CDetachedVertexFacade_Base::b_IsConstant
+	 */
+	virtual bool b_IsConstant(const CBaseVertexType *p_this) const
+	{
+		return static_cast<const CVertexType*>(p_this)->b_IsConstant();
 	}
 
 	/**
@@ -1414,6 +1446,15 @@ public:
 		return m_p_facade->n_Order(m_p_vertex);
 	}
 
+	/**
+	 *	@brief determines whether this vertex is a constant vertex
+	 *	@return Returns true if this vertex is a constant vertex, otherwise returns false.
+	 */
+	bool b_IsConstant() const
+	{
+		return m_p_facade->b_IsConstant(m_p_vertex);
+	}
+
 #ifdef __BASE_TYPES_USE_ID_ADDRESSING
 
 	/**
@@ -1479,7 +1520,7 @@ public:
 #ifdef __SE_TYPES_SUPPORT_L_SOLVERS // --- L-SLAM specific functions ---
 
 	/**
-	 *	@brief allocates L factor block matrices
+	 *	@brief allocates L factor blocks
 	 *	@param[out] r_L is the target matrix where the blocks are stored
 	 *	@note This function is required for CNonlinearSolver_L.
 	 */
@@ -1636,7 +1677,7 @@ public:
 	}
 
 	/**
-	 *	@brief allocates hessian block matrices
+	 *	@brief allocates Hessian blocks
 	 *	@param[out] r_lambda is the target matrix where the blocks are stored
 	 *	@note This function is required for CNonlinearSolver_Lambda.
 	 */
@@ -1646,7 +1687,7 @@ public:
 	}
 
 	/**
-	 *	@brief calculates diagonal lambda hessian blocks
+	 *	@brief calculates diagonal lambda Hessian blocks
 	 *	@note This function is required for CNonlinearSolver_Lambda.
 	 */
 	void Calculate_Hessians()
@@ -2098,8 +2139,8 @@ public:
 #endif // __BASE_TYPES_USE_ID_ADDRESSING
 
 	/**
-	 *	@brief calculates chi-square error
-	 *	@return Returns (unweighted) chi-square error.
+	 *	@brief calculates \f$\chi^2\f$ error
+	 *	@return Returns (unweighted) \f$\chi^2\f$ error.
 	 *	@note This is supposed to be divided by (m - n), where m is number of edges
 	 *		and n is number of degrees of freedom (equals to n_Dimension()).
 	 */
@@ -2136,8 +2177,8 @@ public:
 #ifdef __SE_TYPES_SUPPORT_LAMBDA_SOLVERS // --- ~lambda-SLAM specific functions ---
 
 	/**
-	 *	@brief gets the maximum hessian diagonal value (a damping heuristic for LM)
-	 *	@return Returns the maximum hessian diagonal value.
+	 *	@brief gets the maximum Hessian diagonal value (a damping heuristic for LM)
+	 *	@return Returns the maximum Hessian diagonal value.
 	 */
 	inline double f_Max_VertexHessianDiagValue() const
 	{
@@ -2152,7 +2193,7 @@ public:
 #ifdef __SE_TYPES_SUPPORT_L_SOLVERS // --- L-SLAM specific functions ---
 
 	/**
-	 *	@brief allocates L factor block matrices
+	 *	@brief allocates L factor blocks
 	 *	@param[out] r_L is the target matrix where the blocks are stored
 	 *	@note This function is required for CNonlinearSolver_L.
 	 */
@@ -2173,7 +2214,7 @@ public:
 	 *
 	 *	@param[out] r_omega is the omega matrix to be filled (must be initially empty)
 	 *	@param[in] n_min_vertex_order is order offset, in elements, used to position
-	 *		the hessian blocks in the upper-left corner of omega
+	 *		the Hessian blocks in the upper-left corner of omega
 	 */
 	inline void Calculate_Omega(CUberBlockMatrix &r_omega, size_t n_min_vertex_order) const
 	{
@@ -2265,7 +2306,7 @@ public:
 #ifdef __SE_TYPES_SUPPORT_A_SOLVERS // --- A-SLAM specific functions ---
 
 	/**
-	 *	@brief allocates hessian block matrices
+	 *	@brief allocates Jacobian blocks
 	 *	@param[out] r_A is the target matrix where the blocks are stored
 	 *	@note This function is required for CNonlinearSolver_A.
 	 */
@@ -2275,7 +2316,7 @@ public:
 	}
 
 	/**
-	 *	@brief calculates hessians
+	 *	@brief calculates Jacobians
 	 *	@note This function is required for CNonlinearSolver_A.
 	 */
 	inline void Calculate_Jacobians()
@@ -2290,7 +2331,7 @@ public:
 #ifndef __LAMBDA_USE_V2_REDUCTION_PLAN
 
 	/**
-	 *	@brief allocates hessian block matrices
+	 *	@brief allocates Hessian blocks
 	 *	@param[out] r_lambda is the target matrix where the blocks are stored
 	 *	@note This function is required for CNonlinearSolver_Lambda.
 	 */
@@ -2300,7 +2341,7 @@ public:
 	}
 
 	/**
-	 *	@brief calculates off-diagonal lambda hessian blocks
+	 *	@brief calculates off-diagonal lambda Hessian blocks
 	 *	@note This function is required for CNonlinearSolver_Lambda.
 	 */
 	inline void Calculate_Hessians()
@@ -2731,214 +2772,79 @@ template <class CBaseType, class CTypeList, class COperation>
 class CThunkTable : public CStaticallyLinkedThunkTable<CBaseType, CTypeList, COperation> {};
 #endif // !__FLAT_SYSTEM_STATIC_THUNK_TABLE
 
+// note that CSolverOps_Base moved from here to NonlinearSolver_Base.h to nonlinear_detail namespace
+
 /**
- *	@brief common nonlinear solver functions
+ *	@brief converts an object wrapped with a facade to reference to the base type
+ *	@tparam CVertexType is base vertex type
+ *	@param[in] facade is vertex facade instance
+ *	@return Returns reference to the base pointed to by the given facade.
  */
-class CSolverOps_Base { // this could be in a different file, this is something of an util, not much to do with the interface
-public:
-	/**
-	 *	@brief function object that updates states of all the vertices
-	 */
-	class CUpdateEstimates {
-	protected:
-		const Eigen::VectorXd &m_r_dx; /**< @brief vector of differences */
+template <class CVertexType>
+CVertexType &r_GetBase(CVertexFacade<CVertexType> facade)
+{
+	return facade.r_Get();
+}
 
-	public:
-		/**
-		 *	@brief default constructor
-		 *	@param[in] r_dx is reference to the vector of differences
-		 */
-		inline CUpdateEstimates(const Eigen::VectorXd &r_dx)
-			:m_r_dx(r_dx)
-		{}
+/**
+ *	@brief converts an object wrapped with a facade to reference to the base type
+ *	@tparam CVertexType is base vertex type
+ *	@param[in] facade is vertex facade instance
+ *	@return Returns const reference to the base pointed to by the given facade.
+ */
+template <class CVertexType>
+const CVertexType &r_GetBase(CConstVertexFacade<CVertexType> facade)
+{
+	return facade.r_Get();
+}
 
-		/**
-		 *	@brief updates vertex state
-		 *	@tparam _TyVertex is type of vertex
-		 *	@param[in,out] r_t_vertex is reference to vertex, being updated
-		 */
-		template <class _TyVertex>
-		inline void operator ()(_TyVertex &r_t_vertex) const
-		{
-			r_t_vertex.Operator_Plus(m_r_dx);
-		}
-	};
+/**
+ *	@brief converts an object wrapped with a facade to reference to the base type
+ *	@tparam CEdgeType is base edge type
+ *	@param[in] facade is edge facade instance
+ *	@return Returns reference to the base pointed to by the given facade.
+ */
+template <class CEdgeType>
+CEdgeType &r_GetBase(CEdgeFacade<CEdgeType> facade)
+{
+	return facade.r_Get();
+}
 
-	/**
-	 *	@brief function object that calculates and accumulates chi^2 from all the edges
-	 */
-	class CSum_ChiSquareError {
-	protected:
-		double m_f_sum; /**< @brief a running sum of chi-square errors */
+/**
+ *	@brief converts an object wrapped with a facade to reference to the base type
+ *	@tparam CEdgeType is base edge type
+ *	@param[in] facade is edge facade instance
+ *	@return Returns const reference to the base pointed to by the given facade.
+ */
+template <class CEdgeType>
+const CEdgeType &r_GetBase(CConstEdgeFacade<CEdgeType> facade)
+{
+	return facade.r_Get();
+}
 
-	public:
-		/**
-		 *	@brief default constructor
-		 */
-		inline CSum_ChiSquareError()
-			:m_f_sum(0)
-		{}
+/**
+ *	@brief converts an object wrapped with a facade to reference to the base type
+ *	@tparam CVertexOrEdgeType is base vertex or edge type
+ *	@param[in] r_base is reference to the base object
+ *	@return Returns reference to the base object.
+ */
+template <class CVertexOrEdgeType>
+CVertexOrEdgeType &r_GetBase(CVertexOrEdgeType &r_base)
+{
+	return r_base;
+}
 
-		/**
-		 *	@brief function operator
-		 *	@tparam _TyEdge is edge type
-		 *	@param[in] r_t_edge is edge to output its part R error vector
-		 */
-		template <class _TyEdge>
-		inline void operator ()(const _TyEdge &r_t_edge)
-		{
-			m_f_sum += r_t_edge.f_Chi_Squared_Error();
-		}
-
-		/**
-		 *	@brief gets the current value of the accumulator
-		 *	@return Returns the current value of the accumulator.
-		 */
-		inline operator double() const
-		{
-			return m_f_sum;
-		}
-	};
-
-	/**
-	 *	@brief function object that saves state of all the vertices
-	 */
-	class CSaveState {
-	protected:
-		Eigen::VectorXd &m_r_state; /**< @brief reference to the state vector (out) */
-
-	public:
-		/**
-		 *	@brief default constructor
-		 *	@param[in] r_state is reference to the state vector
-		 */
-		inline CSaveState(Eigen::VectorXd &r_state)
-			:m_r_state(r_state)
-		{}
-
-		/**
-		 *	@brief function operator
-		 *	@tparam _TyVertex is vertex type
-		 *	@param[in,out] r_t_vertex is vertex to output its part the state vector
-		 */
-		template <class _TyVertex>
-		inline void operator ()(_TyVertex &r_t_vertex)
-		{
-			r_t_vertex.SaveState(m_r_state);
-		}
-	};
-
-	/**
-	 *	@brief function object that saves state of all the vertices
-	 */
-	class CLoadState {
-	protected:
-		const Eigen::VectorXd &m_r_state; /**< @brief reference to the state vector (out) */
-
-	public:
-		/**
-		 *	@brief default constructor
-		 *	@param[in] r_state is reference to the state vector
-		 */
-		inline CLoadState(const Eigen::VectorXd &r_state)
-			:m_r_state(r_state)
-		{}
-
-		/**
-		 *	@brief function operator
-		 *	@tparam _TyVertex is vertex type
-		 *	@param[in,out] r_t_vertex is vertex to output its part the state vector
-		 */
-		template <class _TyVertex>
-		inline void operator ()(_TyVertex &r_t_vertex)
-		{
-			r_t_vertex.LoadState(m_r_state);
-		}
-	};
-
-public:
-	/**
-	 *	@brief updates states of all the vertices with the delta vector
-	 *
-	 *	@tparam CSystem is system type
-	 *
-	 *	@param[out] r_system is reference to the system
-	 *	@param[in] r_v_dx is the delta vector
-	 *
-	 *	@note This checks for NaN in debug.
-	 */
-	template <class CSystem>
-	static inline void PushValuesInGraphSystem(CSystem &r_system, const Eigen::VectorXd &r_v_dx)
-	{
-#ifdef _DEBUG
-		for(size_t i = 0, n_variables_size = r_v_dx.rows(); i < n_variables_size; ++ i) {
-			if(_isnan(r_v_dx(i)))
-				fprintf(stderr, "warning: dx[" PRIsize "] = NaN\n", i);
-		}
-		// detect the NaNs, if any (warn, but don't modify)
-#endif // _DEBUG
-
-		r_system.r_Vertex_Pool().For_Each_Parallel(CUpdateEstimates(r_v_dx)); // can do this in parallel
-	}
-
-	/**
-	 *	@brief calculates chi-squared error
-	 *	@tparam CSystem is system type
-	 *	@param[in] r_system is reference to the system
-	 *	@return Returns chi-squared error.
-	 *	@note This only works with systems with edges of one degree of freedom
-	 *		(won't work for e.g. systems with both poses and landmarks).
-	 */
-	template <class CSystem>
-	static inline double f_Chi_Squared_Error(const CSystem &r_system)
-	{
-		if(r_system.r_Edge_Pool().b_Empty())
-			return 0;
-		return r_system.r_Edge_Pool().For_Each(CSum_ChiSquareError()) /
-			(r_system.r_Edge_Pool().n_Size() - r_system.r_Edge_Pool()[0].n_Dimension());
-	}
-
-	/**
-	 *	@brief calculates denormalized chi-squared error
-	 *	@tparam CSystem is system type
-	 *	@param[in] r_system is reference to the system
-	 *	@return Returns denormalized chi-squared error.
-	 *	@note This doesn't perform the final division by (number of edges - degree of freedoms).
-	 */
-	template <class CSystem>
-	static inline double f_Chi_Squared_Error_Denorm(const CSystem &r_system)
-	{
-		return r_system.r_Edge_Pool().For_Each(CSum_ChiSquareError());
-	}
-
-	/**
-	 *	@brief saves state of the optimized vertices to a vector
-	 *
-	 *	@tparam CSystem is system type
-	 *
-	 *	@param[in] r_system is reference to the system
-	 *	@param[in,out] r_v_state is vector to save state (must be allocated to the dimension of the state)
-	 */
-	template <class CSystem>
-	static inline void Save_State(const CSystem &r_system, Eigen::VectorXd &r_v_state)
-	{
-		r_system.r_Vertex_Pool().For_Each_Parallel(CSaveState(r_v_state));
-	}
-
-	/**
-	 *	@brief loads state of the optimized vertices to a vector
-	 *
-	 *	@tparam CSystem is system type
-	 *
-	 *	@param[in,out] r_system is reference to the system
-	 *	@param[in] r_v_state is vector to load the state from
-	 */
-	template <class CSystem>
-	static inline void Load_State(CSystem &r_system, const Eigen::VectorXd &r_v_state)
-	{
-		r_system.r_Vertex_Pool().For_Each_Parallel(CLoadState(r_v_state));
-	}
-};
+/**
+ *	@brief converts an object wrapped with a facade to reference to the base type
+ *	@tparam CVertexOrEdgeType is base vertex or edge type
+ *	@param[in] r_base is const reference to the base object
+ *	@return Returns const reference to the base object.
+ */
+template <class CVertexOrEdgeType>
+const CVertexOrEdgeType &r_GetBase(const CVertexOrEdgeType &r_base)
+{
+	return r_base;
+}
 
 } // ~base_iface
 
@@ -3056,5 +2962,7 @@ public:
 	struct H : public base_iface::CFacadeInstantiationHelper<CBaseVertex, CTypeList,
 		base_iface::CDetachedVertexFacade_Base<CBaseVertex>, base_iface::CDetachedVertexFacade> {};
 };
+
+/** @} */ // end of group
 
 #endif // !__BASE_SE_TYPES_INTERFACE_INCLUDED

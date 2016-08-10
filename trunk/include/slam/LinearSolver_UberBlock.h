@@ -23,8 +23,12 @@
 
 #include "slam/LinearSolverTags.h"
 #include "csparse/cs.hpp"
-#include "slam/BlockMatrix.h" // includes Eigen as well
+//#include "slam/BlockMatrix.h" // included from slam/LinearSolverTags.h
 #include "slam/OrderingMagic.h" // need AMD
+
+/** \addtogroup linsolve
+ *	@{
+ */
 
 /**
  *	@def __USE_CS_AMD
@@ -401,7 +405,7 @@ public:
 #if 0
 			m_R.Rasterize("2_L.tga");
 			// save the factor to see the difference
-#endif // 0	
+#endif // 0
 
 			if(b_result) {
 				m_R.InversePermute_LeftHandSide_Vector(p_x, &r_eta(0),
@@ -421,5 +425,37 @@ public:
 		return b_result;
 	}
 };
+
+/**
+ *	@brief a simple native solver predicate
+ *	@tparam CLinearSolver is linear solver type
+ */
+template <class CLinearSolver>
+class CIsNativeSolver {
+public:
+	/**
+	 *	@brief result, stored as enum
+	 */
+	enum {
+		b_result = false /**< @brief result of comparison */
+	};
+};
+
+/**
+ *	@brief a simple native solver predicate (specialization for native solver)
+ *	@tparam CBlockMatrixSizeList is list of block matrix sized
+ */
+template <class CBlockMatrixSizeList>
+class CIsNativeSolver<CLinearSolver_UberBlock<CBlockMatrixSizeList> > {
+public:
+	/**
+	 *	@brief result, stored as enum
+	 */
+	enum {
+		b_result = true /**< @brief result of comparison */
+	};
+};
+
+/** @} */ // end of group
 
 #endif // !__LINEAR_SOLVER_UBERBLOCK_INCLUDED

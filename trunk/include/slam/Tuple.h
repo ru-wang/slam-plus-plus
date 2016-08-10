@@ -324,6 +324,12 @@ typedef CTupleBase<CTypelistEnd> CEmptyTupleBase; /**< @brief empty base tuple i
 } // ~tuple_detail
 
 /**
+ *	@brief tuple implementation
+ *	@note The namespace is only a hack to make Doxygen not show the long type names in the class list.
+ */
+namespace tuple {
+
+/**
  *	@brief tuple class
  *	@tparam CList is list of tuple element types
  */
@@ -852,6 +858,22 @@ inline CTuple<MakeTypelist8(Type0, Type1, Type2, Type3, Type4, Type5, Type6, Typ
 	:_TyBase(MakeTuple(a0, a1, a2, a3, a4, a5, a6, a7))
 {}
 
+/**
+ *	@brief gets type of a tuple element
+ *
+ *	@tparam _TyTuple is instanitation of CTuple
+ *	@tparam n_index is zero-based index of the element
+ */
+template <class _TyTuple, const int n_index>
+class CTupleElement {
+public:
+	typedef typename CTypelistItemAt<typename _TyTuple::_TyList, n_index>::_TyResult _TyResult; /**< @brief type of the selected tuple element */
+};
+
+} // ~tuple
+
+using namespace tuple; // the namespace is only a hack to make Doxygen not show the long type names in the class list
+
 // inject a specialization of swap() in the std namespace
 namespace std {
 
@@ -884,17 +906,5 @@ void swap(tuple_detail::CTupleBase<CList> &r_a, tuple_detail::CTupleBase<CList> 
 }
 
 }
-
-/**
- *	@brief gets type of a tuple element
- *
- *	@tparam _TyTuple is instanitation of CTuple
- *	@tparam n_index is zero-based index of the element
- */
-template <class _TyTuple, const int n_index>
-class CTupleElement {
-public:
-	typedef typename CTypelistItemAt<typename _TyTuple::_TyList, n_index>::_TyResult _TyResult; /**< @brief type of the selected tuple element */
-};
 
 #endif // !__TUPLE_INCLUDED

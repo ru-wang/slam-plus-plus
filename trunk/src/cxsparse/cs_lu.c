@@ -1,4 +1,4 @@
-#include "cs.h"
+#include "cxsparse/cs.h"
 /* [L,U,pinv]=lu(A, [q lnz unz]). lnz and unz can be guess */
 csn *cs_lu (const cs *A, const css *S, double tol)
 {
@@ -9,7 +9,7 @@ csn *cs_lu (const cs *A, const css *S, double tol)
     CS_INT *Lp, *Li, *Up, *Ui, *pinv, *xi, *q, n, ipiv, k, top, p, i, col, lnz,unz;
     if (!CS_CSC (A) || !S) return (NULL) ;          /* check inputs */
     n = A->n ;
-    q = S->q ; lnz = S->lnz ; unz = S->unz ;
+    q = S->q ; lnz = (CS_INT)S->lnz ; unz = (CS_INT)S->unz ; // swine - fixed a compile-time warning
     x = cs_malloc (n, sizeof (CS_ENTRY)) ;            /* get CS_ENTRY workspace */
     xi = cs_malloc (2*n, sizeof (CS_INT)) ;            /* get CS_INT workspace */
     N = cs_calloc (1, sizeof (csn)) ;               /* allocate result */

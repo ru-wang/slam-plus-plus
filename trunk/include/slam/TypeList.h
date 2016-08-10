@@ -54,6 +54,52 @@
 
 #include "Integer.h" // _ASSERTE(), UNUSED()
 
+#if defined(_MSC_VER) && !defined(__MWERKS__) && _MSC_VER <= 1200
+#include <typeinfo>
+#endif // _MSC_VER) && !__MWERKS__ && _MSC_VER <= 1200
+#include <string.h>
+#include <string>
+// for s_TypeName()
+
+/**
+ *	@brief gets user readable (demangled) type name
+ *
+ *	This is using the __PRETTY_FUNCTION__ hack and requires some string processing.
+ *	Rather than writing some const string class, this is simply using std::string
+ *	with a bit larger runtime cost. It's ok here, it is only intended for debugging.
+ *
+ *	@tparam T is type to get the name of
+ *	@return Returns the type name of <tt>T</tt>.
+ *	@note This function throws std::bad_alloc.
+ */
+template <class T>
+std::string s_TypeName() // throw(std::bad_alloc) // do not rename it, will break the code for MSVC
+{
+#if defined(_MSC_VER) && !defined(__MWERKS__)
+#if _MSC_VER <= 1200
+	return typeid(T).name(); // returns mangled names in newer compilers!
+#else // _MSC_VER <= 1200
+	const char *p = __FUNCSIG__;
+	std::string str = strstr(p, "s_TypeName<") + 11/*strlen("s_TypeName<")*/;
+	str.erase(str.find_last_of(">"), std::string::npos);
+	return str;
+#endif // _MSC_VER <= 1200
+#else // _MSC_VER) && !__MWERKS__
+	const char *p = __PRETTY_FUNCTION__, *w;
+	std::string str;
+	if((w = strstr(p, "T = ")))
+		str = w + 4;
+	else if((w = strstr(p, "= ")))
+		str = w + 2;
+	else if((w = strstr(p, "=")))
+		str = w + 1;
+	else
+		return p; // not sure how to trim it, return the whole thing
+	str.erase(str.end() - 1);
+	return str;
+#endif // _MSC_VER) && !__MWERKS__
+}
+
 /**
  *	@brief typelist template
  *
@@ -594,6 +640,55 @@ struct CSafeTypelistCtor<void (*)(x, y, z, w, s, t, p, q, r, m, n, u, v, a, b, c
 #ifndef __TYPE_LIST_OMIT_OPS
 
 /**
+ *	@brief template for comparing two data types
+ *
+ *	@tparam _TyA is the first type
+ *	@tparam _TyB is the second (different) type
+ */
+template <class _TyA, class _TyB>
+class CEqualType {
+public:
+	/**
+	 *	@brief result, stored as enum
+	 */
+	enum {
+		b_result = false /**< @brief result of comparison (the types are different) */
+	};
+};
+
+/**
+ *	@brief template for comparing two data types
+ *		(specialization for case where the types equal)
+ *
+ *	@tparam _TyA is the first type (the same as the second)
+ */
+template <class _TyA>
+class CEqualType<_TyA, _TyA> {
+public:
+	/**
+	 *	@brief result, stored as enum
+	 */
+	enum {
+		b_result = true /**< @brief result of comparison (the types are equal) */
+	};
+};
+
+/**
+ *	@brief determines whether a typelist is empty
+ *	@tparam _TyList is a typelist
+ */
+template <class _TyList>
+class CTypelistEmpty {
+public:
+	/**
+	 *	@brief result, stored as enum
+	 */
+	enum {
+		b_result = CEqualType<_TyList, CTypelistEnd>::b_result /**< @brief emptiness of the list (the result) */
+	};
+};
+
+/**
  *	@brief calculates length of typelist (result in member enum n_result)
  *	@tparam _TyList is a typelist
  */
@@ -601,7 +696,7 @@ template <class _TyList>
 class CTypelistLength {
 public:
 	/**
-	 *	@brief intermediates, stored as enum
+	 *	@brief result, stored as enum
 	 */
 	enum {
 		n_result = 1 + CTypelistLength<typename _TyList::_TyTail>::n_result /**< @brief length of the list (the result) */
@@ -616,7 +711,7 @@ template <>
 class CTypelistLength<CTypelistEnd> {
 public:
 	/**
-	 *	@brief intermediates, stored as enum
+	 *	@brief result, stored as enum
 	 */
 	enum {
 		n_result = 0 /**< @brief length of the list (the result) */
@@ -686,38 +781,27 @@ public:
 };
 
 /**
- *	@brief template for comparing two data types
+ *	@brief template function enable helper
  *
- *	@tparam _TyA is the first type
- *	@tparam _TyB is the second (different) type
+ *	@tparam b_enable is enable flag (if set, this class defines type T to be
+ *		used in template function declaration)
+ *	@tparam CType is data type of the result, if enabled (default void)
+ *
+ *	@note This will only work for template functions where SFINAE applies.
+ *		The template parameter may not be explicit but can be derived from arguments as well.
  */
-template <class _TyA, class _TyB>
-class CEqualType {
+template <bool b_enable, class CType = void>
+class CEnableIf {
 public:
-	/**
-	 *	@brief result, stored as enum
-	 */
-	enum {
-		b_result = false /**< @brief result of comparison (the types are different) */
-	};
+	typedef CType T; /**< @brief result type */
 };
 
 /**
- *	@brief template for comparing two data types
- *		(specialization for case where the types equal)
- *
- *	@tparam _TyA is the first type (the same as the second)
+ *	@brief template function enable helper (specialization for function disabled)
+ *	@tparam CType is data type of the result, if enabled (default void)
  */
-template <class _TyA>
-class CEqualType<_TyA, _TyA> {
-public:
-	/**
-	 *	@brief result, stored as enum
-	 */
-	enum {
-		b_result = true /**< @brief result of comparison (the types are equal) */
-	};
-};
+template <class CType>
+class CEnableIf<false, CType> {};
 
 /**
  *	@brief selects one of two types, based on compile-time constant boolean condition
@@ -1791,6 +1875,158 @@ public:
 	}
 };
 
+namespace tl_detail {
+
+/**
+ *	@brief static assertion helper
+ *	@brief b_expression is expression being asserted
+ */
+template <const bool b_expression>
+class CStaticAssert {
+public:
+	typedef void DECISION_TREE_REQUIRES_SORTED_TYPELISTS; /**< @brief static assertion tag */
+};
+
+/**
+ *	@brief static assertion helper (specialization for assertion failed)
+ */
+template <>
+class CStaticAssert<false> {};
+
+} // ~tl_detail
+
+/**
+ *	@brief decision tree skeleton template; note that this is only dependent
+ *		on the typelist and so can be reused with different contexts
+ *
+ *	@tparam CList is typelist of sorted CCTSize specializations (must be sorted)
+ *	@tparam CComparator is compile-time pivot to run-time reference value comparator template
+ *	@tparam CReference is reference value type
+ */
+template <class CList, template <class> class CComparator /*= fbs_ut::CRuntimeCompareScalar*/,
+	class CReference /*= size_t*/>
+class CMakeDecisionTreeSkeleton {
+public:
+#ifdef _DEBUG
+	typedef typename CUniqueTypelist<CList>::_TyResult _TyUniqueList;
+	enum {
+		b_is_unique = CEqualType<_TyUniqueList, CList>::b_result
+	};
+	typedef typename tl_detail::CStaticAssert<b_is_unique>::DECISION_TREE_REQUIRES_SORTED_TYPELISTS _TyAssert0; // this is an internal error mostly, forgotten to unique the typelist somewhere
+#endif // _DEBUG
+
+	/**
+	 *	@brief makes a branch of a decission tree from a sorted typelist
+	 *
+	 *	@tparam n_begin is a (zero based) index of the starting element of CList
+	 *		this branch decides over
+	 *	@tparam n_length is number of elements of CList this branch decides over
+	 */
+	template <const int n_begin, const int n_length>
+	class CSkeleton {
+	public:
+#if 0
+		/**
+		 *	@brief decision tree parameters stored as enums
+		 */
+		enum {
+			n_half = (n_length + 1) / 2, /**< @brief half of the length (round up, comparison is less than) */
+			n_pivot = n_begin + n_half, /**< @brief zero-based index of the pivot element */
+			n_rest = n_length - n_half, /**< @brief the remaining half of the length for the right child */
+			b_leaf = false /**< @brief leaf flag */
+		};
+
+		typedef typename CTypelistItemAt<CList, n_pivot>::_TyResult _TyPivot; /**< @brief pivot type */
+
+		typedef CSkeleton<n_begin, n_half> _TyLeft; /**< left subtree */
+		typedef CSkeleton<n_pivot, n_rest> _TyRight; /**< right subtree (has the pivot) */
+
+		static inline bool b_Left_of_Pivot(const CReference reference_value) // returns the result of reference_value < _TyPivot
+		{
+			return !CComparator<_TyPivot>::b_LessThan(reference_value) &&
+			   !CComparator<_TyPivot>::b_Equal(reference_value);
+		}
+#else // 0
+		/**
+		 *	@brief decision tree parameters stored as enums
+		 */
+		enum {
+			n_half = (n_length + 1) / 2, /**< @brief half of the length */
+			n_pivot = n_begin + n_half - 1, /**< @brief zero-based index of the pivot element */
+			n_rest = n_length - n_half, /**< @brief the remaining half of the length for the right child */
+			b_leaf = false /**< @brief leaf flag */
+		};
+
+		typedef typename CTypelistItemAt<CList, n_pivot>::_TyResult _TyPivot; /**< @brief pivot type */
+
+		typedef CSkeleton<n_begin + n_half, n_rest> _TyLeft; /**< left subtree */
+		typedef CSkeleton<n_begin, n_half> _TyRight; /**< right subtree (has the pivot) */
+
+		static inline bool b_Left_of_Pivot(const CReference reference_value) // returns the result of reference_value > _TyPivot
+		{
+			return CComparator<_TyPivot>::b_LessThan(reference_value);
+			// this is actually reference greater than pivot
+			// but that's ok, the left/right halves were swapped
+		}
+#endif // 0
+	};
+
+	/**
+	 *	@brief makes a branch of a decission tree from a sorted typelist
+	 *		(specialization for leafs)
+	 *	@tparam n_begin is a (zero based) index of the starting element of CList
+	 *		this branch decides over
+	 */
+	template <const int n_begin>
+	class CSkeleton<n_begin, 1> {
+	public:
+		/**
+		 *	@brief decision tree parameters stored as enums
+		 */
+		enum {
+			n_pivot = n_begin, /**< @brief zero-based index of the pivot element */
+			b_leaf = true /**< @brief leaf flag */
+		};
+
+		typedef typename CTypelistItemAt<CList, n_pivot>::_TyResult _TyPivot; /**< @brief pivot type */
+
+		static inline bool b_Equals_Pivot(const CReference reference_value) // returns the result of reference_value == _TyPivot
+		{
+			return CComparator<_TyPivot>::b_Equal(reference_value);
+		}
+	};
+
+	typedef CSkeleton<0, CTypelistLength<CList>::n_result> _TyRoot; /**< @brief root of the decition tree */
+
+public:
+	static inline void Debug()
+	{
+		printf("void CMakeDecisionTreeSkeleton::Debug(%s reference_value)\n{\n",
+			s_TypeName<CReference>().c_str());
+		Debug<_TyRoot>(1);
+		printf("}\n");
+	}
+
+protected:
+	template <class CNode>
+	static inline typename CEnableIf<CNode::b_leaf>::T Debug(size_t n_indent)
+	{
+		printf("%*s_ASSERT(b_Equals_Pivot<%s>(reference_value)); // reached leaf\n",
+			n_indent * 4, "", s_TypeName<typename CNode::_TyPivot>().c_str());
+	}
+
+	template <class CNode>
+	static inline typename CEnableIf<!CNode::b_leaf>::T Debug(size_t n_indent)
+	{
+		printf("%*sif(b_Left_of_Pivot<%s>(reference_value)) {\n", n_indent * 4, "",
+			s_TypeName<typename CNode::_TyPivot>().c_str());
+		Debug<typename CNode::_TyLeft>(n_indent + 1);
+		printf("%*s} else {\n", n_indent * 4, "");
+		Debug<typename CNode::_TyRight>(n_indent + 1);
+		printf("%*s}\n", n_indent * 4, "");
+	}
+};
+
 /**
  *	@brief selects a typelist item by an index using a binary tree
  *		(at runtime) and calls a functor on the selected type
@@ -1804,14 +2040,14 @@ template <class CList, class CFunctor>
 class CTypelistItemSelect {
 protected:
 	/**
-	 *	@brief makes a branch of a decission tree from a sorted typelist
+	 *	@brief makes a branch of a decision tree from a sorted typelist
 	 *
 	 *	@tparam n_begin is a (zero based) index of the starting element of CList
 	 *		this branch decides over
 	 *	@tparam n_length is number of elements of CList this branch decides over
 	 */
 	template <const int n_begin, const int n_length>
-	class CDecissionTree {
+	class CDecisionTree {
 	public:
 		/**
 		 *	@brief decision indices stored as enums
@@ -1834,22 +2070,22 @@ protected:
 		static inline CFunctor Select(const size_t n_index, CFunctor f)
 		{
 			if(n_index < n_pivot) {
-				return CDecissionTree</*_CList, _CFunctor,*/ n_begin, n_half>::Select(n_index, f);
+				return CDecisionTree</*_CList, _CFunctor,*/ n_begin, n_half>::Select(n_index, f);
 			} else {
-				return CDecissionTree</*_CList, _CFunctor,*/ n_pivot, n_rest>::Select(n_index, f);
+				return CDecisionTree</*_CList, _CFunctor,*/ n_pivot, n_rest>::Select(n_index, f);
 			}
 		}
 	};
 
 	/**
-	 *	@brief makes a branch of a decission tree from a sorted typelist
+	 *	@brief makes a branch of a decision tree from a sorted typelist
 	 *		(specialization for leafs)
 	 *
 	 *	@tparam n_begin is a (zero based) index of the starting element of CList
 	 *		this branch decides over
 	 */
 	template <const int n_begin>
-	class CDecissionTree<n_begin, 1> {
+	class CDecisionTree<n_begin, 1> {
 	public:
 		typedef typename CTypelistItemAt<CList, n_begin>::_TyResult _TySelected; /**< @brief selected type */
 
@@ -1896,7 +2132,7 @@ public:
 	static inline CFunctor Select(size_t n_index, CFunctor f)
 	{
 		_ASSERTE(n_index < n_list_length); // makes sure the index is valid
-		return CDecissionTree</*CList, CFunctor,*/ 0, n_list_length>::Select(n_index, f);
+		return CDecisionTree</*CList, CFunctor,*/ 0, n_list_length>::Select(n_index, f);
 	}
 };
 
@@ -1955,12 +2191,28 @@ public:
 template <class CListA, class CListB>
 class CTypelistDifference {
 protected:
-	//typedef typename CPredicateInversion<CTypelistItemPresencePredicate>::CInverse CPredicate; // cant typedef an incomplete type
+	//typedef typename CPredicateInversion<CTypelistItemPresencePredicate>::CInverse CPredicate; // cant typedef an incomplete type (in C++11 this could be solved by the using keyword)
 
 public:
 	typedef typename CFilterTypelist<CListA, CListB, /*typename*/ // not a type name, it is incomplete!
 		CPredicateInversion<CTypelistItemPresencePredicate>::CInverse>::_TyResult _TyResult; /**< @brief the resulting typelist difference */
 };
+
+/**
+ *	@brief calculates typelist intersection; constructs a typelist with items in the first list
+ *		which are also present in the second list
+ *
+ *	@tparam CListA is the first list
+ *	@tparam CListB is the second list
+ */
+template <class CListA, class CListB>
+class CTypelistIntersection {
+public:
+	typedef typename CFilterTypelist<CListA, CListB, /*typename*/ // not a type name, it is incomplete!
+		CTypelistItemPresencePredicate>::_TyResult _TyResult; /**< @brief the resulting typelist intersection */
+};
+
+#include <typeinfo>
 
 /**
  *	@brief finds an item in a sorted typelist by a reference value using binary search
@@ -1982,140 +2234,101 @@ template <class CList, template <class> class CComparator,
 	class CReference, class CFunctor>
 class CTypelistItemBFind {
 public:
-	/**
-	 *	@brief makes a branch of a decission tree from a sorted typelist
-	 *
-	 *	@tparam n_begin is a (zero based) index of the starting element of CList
-	 *		this branch decides over
-	 *	@tparam n_length is number of elements of CList this branch decides over
-	 */
-	template <const int n_begin, const int n_length>
-	class CDecissionTree {
-	public:
-		/**
-		 *	@brief decision indices stored as enums
-		 */
-		enum {
-			n_half = (n_length + 1) / 2, /**< @brief half of the length (round up, comparison is less than) */
-			n_pivot = n_begin + n_half, /**< @brief zero-based index of the pivot element */
-			n_rest = n_length - n_half /**< @brief the remaining half of the length for the right child */
-		};
-
-		typedef typename CTypelistItemAt<CList, n_pivot>::_TyResult _TyPivot; /**< @brief pivot type */
-
-		/**
-		 *	@brief finds an item in a sorted typelist by a reference value using binary search
-		 *		(at runtime) and calls a functor on the selected type, assumes that the reference
-		 *		value is always present in the list (generates one level shorter decision tree).
-		 *
-		 *	@param[in] reference_value is reference value (a needle) to be found
-		 *	@param[in] f is a functor with template function operator to process the selected item
-		 *
-		 *	@return Returns the functor after processing the selected item.
-		 */
-		static inline CFunctor FindExisting(const CReference reference_value, CFunctor f)
-		{
-			//if(CComparator<_TyPivot>::b_GreaterThan(reference_value)) { // compares "_TyPivot > reference_value"
-			if(!CComparator<_TyPivot>::b_LessThan(reference_value) &&
-			   !CComparator<_TyPivot>::b_Equal(reference_value)) { // compares "_TyPivot > reference_value"
-				return CDecissionTree</*_CList, _CComparator, _CReference,
-					_CFunctor,*/ n_begin, n_half>::FindExisting(reference_value, f);
-			} else {
-				return CDecissionTree</*_CList, _CComparator, _CReference,
-					_CFunctor,*/ n_pivot, n_rest>::FindExisting(reference_value, f); // contains pivot
-			}
-		}
-
-		/**
-		 *	@brief finds an item in a sorted typelist by a reference value using binary search
-		 *		(at runtime) and calls a functor on the selected type, in case the item was not
-		 *		found in the list, calls the functor with CTypelistEnd
-		 *
-		 *	@param[in] reference_value is reference value (a needle) to be found
-		 *	@param[in] f is a functor with template function operator to process the selected item
-		 *
-		 *	@return Returns the functor after processing the selected item.
-		 */
-		static inline CFunctor Find(const CReference reference_value, CFunctor f)
-		{
-			//if(CComparator<_TyPivot>::b_GreaterThan(reference_value)) { // compares "_TyPivot > reference_value"
-			if(!CComparator<_TyPivot>::b_LessThan(reference_value) &&
-			   !CComparator<_TyPivot>::b_Equal(reference_value)) { // compares "_TyPivot > reference_value"
-				return CDecissionTree</*_CList, _CComparator, _CReference,
-					_CFunctor,*/ n_begin, n_half>::Find(reference_value, f);
-			} else {
-				return CDecissionTree</*_CList, _CComparator, _CReference,
-					_CFunctor,*/ n_pivot, n_rest>::Find(reference_value, f); // contains pivot
-			}
-		}
-	};
+	typedef typename CMakeDecisionTreeSkeleton<CList, CComparator, CReference>::_TyRoot _TySkeleton; /**< @brief decision tree skeleton */
 
 	/**
-	 *	@brief makes a branch of a decission tree from a sorted typelist
-	 *		(specialization for leafs)
+	 *	@brief finds an item in a sorted typelist by a reference value using binary search
+	 *		(at runtime) and calls a functor on the selected type, in case the item was not
+	 *		found in the list, calls the functor with CTypelistEnd
 	 *
-	 *	@tparam n_begin is a (zero based) index of the starting element of CList
-	 *		this branch decides over
+	 *	@param[in] reference_value is reference value (a needle) to be found
+	 *	@param[in] f is a functor with template function operator to process the selected item
+	 *
+	 *	@return Returns the functor after processing the selected item.
 	 */
-	template <const int n_begin>
-	class CDecissionTree<n_begin, 1> {
-	public:
-		typedef typename CTypelistItemAt<CList, n_begin>::_TyResult _TyPivot; /**< @brief pivot type */
-
-		/**
-		 *	@brief finds an item in a sorted typelist by a reference value using binary search
-		 *		(at runtime) and calls a functor on the selected type, assumes that the reference
-		 *		value is always present in the list (generates one level shorter decision tree).
-		 *
-		 *	@param[in] reference_value is reference value (a needle) to be found
-		 *	@param[in] f is a functor with template function operator to process the selected item
-		 *
-		 *	@return Returns the functor after processing the selected item.
-		 */
-		static inline CFunctor FindExisting(const CReference reference_value, CFunctor f)
-		{
-			_ASSERTE(CComparator<_TyPivot>::b_Equal(reference_value)); // makes sure "_TyPivot == reference_value"
+	template <class CNode>
+	static inline typename CEnableIf<CNode::b_leaf, CFunctor>::T Find(const CReference reference_value, CFunctor f)
+	{
+		if(CNode::b_Equals_Pivot(reference_value)) { // if "_TyPivot == reference_value"
 #if defined(_MSC_VER) && !defined(__MWERKS__)
-			f.operator ()<_TyPivot>(); // MSVC cannot parse the .template syntax correctly with overloaded operators
+			f.operator ()<typename CNode::_TyPivot>(); // MSVC cannot parse the .template syntax correctly with overloaded operators
 #else // _MSC_VER && !__MWERKS__
-			f.template operator ()<_TyPivot>();
+			f.template operator ()<typename CNode::_TyPivot>();
 #endif // _MSC_VER && !__MWERKS__
 			// execute the operation on the selected item
-
-			return f;
+		} else {
+#if defined(_MSC_VER) && !defined(__MWERKS__)
+			f.operator ()<CTypelistEnd>(); // MSVC cannot parse the .template syntax correctly with overloaded operators
+#else // _MSC_VER && !__MWERKS__
+			f.template operator ()<CTypelistEnd>();
+#endif // _MSC_VER && !__MWERKS__
+			// not found, execute the operation on CTypelistEnd
 		}
 
-		/**
-		 *	@brief finds an item in a sorted typelist by a reference value using binary search
-		 *		(at runtime) and calls a functor on the selected type, in case the item was not
-		 *		found in the list, calls the functor with CTypelistEnd
-		 *
-		 *	@param[in] reference_value is reference value (a needle) to be found
-		 *	@param[in] f is a functor with template function operator to process the selected item
-		 *
-		 *	@return Returns the functor after processing the selected item.
-		 */
-		static inline CFunctor Find(const CReference reference_value, CFunctor f)
-		{
-			if(CComparator<_TyPivot>::b_Equal(reference_value)) { // if "_TyPivot == reference_value"
-#if defined(_MSC_VER) && !defined(__MWERKS__)
-				f.operator ()<_TyPivot>(); // MSVC cannot parse the .template syntax correctly with overloaded operators
-#else // _MSC_VER && !__MWERKS__
-				f.template operator ()<_TyPivot>();
-#endif // _MSC_VER && !__MWERKS__
-				// execute the operation on the selected item
-			} else {
-#if defined(_MSC_VER) && !defined(__MWERKS__)
-				f.operator ()<CTypelistEnd>(); // MSVC cannot parse the .template syntax correctly with overloaded operators
-#else // _MSC_VER && !__MWERKS__
-				f.template operator ()<CTypelistEnd>();
-#endif // _MSC_VER && !__MWERKS__
-				// not found, execute the operation on CTypelistEnd
-			}
+		return f;
+	}
 
-			return f;
-		}
-	};
+	/**
+	 *	@brief finds an item in a sorted typelist by a reference value using binary search
+	 *		(at runtime) and calls a functor on the selected type, assumes that the reference
+	 *		value is always present in the list (generates one level shorter decision tree).
+	 *
+	 *	@param[in] reference_value is reference value (a needle) to be found
+	 *	@param[in] f is a functor with template function operator to process the selected item
+	 *
+	 *	@return Returns the functor after processing the selected item.
+	 */
+	template <class CNode>
+	static inline typename CEnableIf<CNode::b_leaf, CFunctor>::T FindExisting(const CReference reference_value, CFunctor f)
+	{
+		_ASSERTE(CNode::b_Equals_Pivot(reference_value)); // if "_TyPivot == reference_value"
+#if defined(_MSC_VER) && !defined(__MWERKS__)
+		f.operator ()<typename CNode::_TyPivot>(); // MSVC cannot parse the .template syntax correctly with overloaded operators
+#else // _MSC_VER && !__MWERKS__
+		f.template operator ()<typename CNode::_TyPivot>();
+#endif // _MSC_VER && !__MWERKS__
+		// execute the operation on the selected item
+
+		return f;
+	}
+
+	/**
+	 *	@brief finds an item in a sorted typelist by a reference value using binary search
+	 *		(at runtime) and calls a functor on the selected type, in case the item was not
+	 *		found in the list, calls the functor with CTypelistEnd
+	 *
+	 *	@param[in] reference_value is reference value (a needle) to be found
+	 *	@param[in] f is a functor with template function operator to process the selected item
+	 *
+	 *	@return Returns the functor after processing the selected item.
+	 */
+	template <class CNode>
+	static inline typename CEnableIf<!CNode::b_leaf, CFunctor>::T Find(const CReference reference_value, CFunctor f)
+	{
+		if(CNode::b_Left_of_Pivot(reference_value)) // compares "reference_value < _TyPivot"
+			return Find<typename CNode::_TyLeft>(reference_value, f);
+		else
+			return Find<typename CNode::_TyRight>(reference_value, f); // contains pivot
+	}
+
+	/**
+	 *	@brief finds an item in a sorted typelist by a reference value using binary search
+	 *		(at runtime) and calls a functor on the selected type, assumes that the reference
+	 *		value is always present in the list (generates one level shorter decision tree).
+	 *
+	 *	@param[in] reference_value is reference value (a needle) to be found
+	 *	@param[in] f is a functor with template function operator to process the selected item
+	 *
+	 *	@return Returns the functor after processing the selected item.
+	 */
+	template <class CNode>
+	static inline typename CEnableIf<!CNode::b_leaf, CFunctor>::T FindExisting(const CReference reference_value, CFunctor f)
+	{
+		if(CNode::b_Left_of_Pivot(reference_value)) // compares "reference_value < _TyPivot"
+			return FindExisting<typename CNode::_TyLeft>(reference_value, f);
+		else
+			return FindExisting<typename CNode::_TyRight>(reference_value, f); // contains pivot
+	}
 
 public:
 	/**
@@ -2139,8 +2352,7 @@ public:
 	 */
 	static inline CFunctor Find(const CReference reference_value, CFunctor f)
 	{
-		return CDecissionTree</*CList, CComparator,
-			CReference, CFunctor,*/ 0, CTypelistLength<CList>::n_result>::Find(reference_value, f);
+		return Find<_TySkeleton>(reference_value, f);
 	}
 
 	/**
@@ -2159,8 +2371,7 @@ public:
 	 */
 	static inline CFunctor FindExisting(const CReference reference_value, CFunctor f)
 	{
-		return CDecissionTree</*CList, CComparator,
-			CReference, CFunctor,*/ 0, CTypelistLength<CList>::n_result>::FindExisting(reference_value, f);
+		return FindExisting<_TySkeleton>(reference_value, f);
 	}
 };
 
@@ -2246,6 +2457,51 @@ public:
 	{
 		return m_b_found;
 	}
+};
+
+/**
+ *	@brief sequence construction template
+ *
+ *	This constructs a sequence with a given number of elements.
+ *	Each element is constructed from an integer. The integer, associated
+ *	with the first element can be adjusted (zero by default), the step
+ *	by which the next ones increase can also be specified.
+ *
+ *	@tparam n_element_num is number of elements of the sequence (must be zero or greater)
+ *	@tparam n_first_element is value associated with the first element
+ *	@tparam n_step is value of the increment
+ *	@tparam CTypeConstructor is construction wrapper (see e.g. \ref fbs_ut::CCTSize_Constructor)
+ *
+ *	@note See also \ref fbs_ut::CTypelistIOTA.
+ */
+template <template <const int> class CTypeConstructor,
+	const int n_element_num, const int n_first_element = 0, const int n_step = 1>
+struct CTypelistIOTA {
+protected:
+	/**
+	 *	@brief sequence construction template
+	 *
+	 *	@tparam n_remaining_num is the number of additional elements to generate
+	 *	@tparam n_head_value is value associated with the first element
+	 */
+	template <const int n_remaining_num, const int n_head_value>
+	struct CIOTA {
+		typedef typename CTypeConstructor<n_head_value>::_TyResult CHead; /**< @brief type of the first element of the list */
+		typedef typename CIOTA<n_remaining_num - 1, n_head_value + n_step>::_TyResult CTail; /**< @brief the rest of the list */
+		typedef CTypelist<CHead, CTail> _TyResult; /**< @brief the resulting list */
+	};
+
+	/**
+	 *	@brief sequence construction template (specialization for zero-length sequences)
+	 *	@tparam n_head_value is value associated with the first element
+	 */
+	template <const int n_head_value>
+	struct CIOTA<0, n_head_value> {
+		typedef CTypelistEnd _TyResult; /**< @brief the resulting list */
+	};
+
+public:
+	typedef typename CIOTA<n_element_num, n_first_element>::_TyResult _TyResult; /**< @brief the resulting list */
 };
 
 #endif // !__TYPE_LIST_OMIT_OPS

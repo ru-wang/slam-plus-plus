@@ -18,8 +18,12 @@
  */
 
 #include <stdio.h> // printf
+#ifdef _OPENMP
+#include <omp.h>
+#endif // _OPENMP
 #include "slam/LinearSolver_UberBlock.h"
-#include "slam/LinearSolver_CholMod.h" // linear solvers (only one is required)
+#include "slam/LinearSolver_Schur.h"
+//#include "slam/LinearSolver_CholMod.h" // linear solvers (only one is required)
 #include "slam/ConfigSolvers.h" // nonlinear graph solvers
 #include "slam/SE2_Types.h" // SE(2) types
 

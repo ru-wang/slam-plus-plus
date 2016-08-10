@@ -1,4 +1,4 @@
-#include "cs.h"
+#include "cxsparse/cs.h"
 #ifdef MATLAB_MEX_FILE
 #define malloc mxMalloc
 #define free mxFree

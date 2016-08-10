@@ -142,6 +142,39 @@ struct TBmp {
 	}
 
 	/**
+	 *	@brief transposes the image (exchanges rows with columns)
+	 *	@return Returns true on success, false on failure (not enough memory for the temporary buffer).
+	 *	@note This does not change the pointer to the image data.
+	 */
+	bool Transpose()
+	{
+		const int h = n_height, w = n_width;
+		if(w == h) {
+			for(int x = 0; x < w; ++ x) {
+				for(int y = 0; y < x; ++ y)
+					std::swap(p_buffer[x + w * y], p_buffer[y + w * x]);
+			}
+			// inplace transpose for square images
+		} else {
+			TBmp *p_temp;
+			if(!(p_temp = p_Clone())) // an extra copy in exchange for not changing the image buffer
+				return false;
+
+			std::swap(n_width, n_height);
+			const uint32_t *p_src = p_temp->p_buffer; // antialiass
+			for(int x = 0; x < w; ++ x) {
+				for(int y = 0; y < h; ++ y)
+					p_buffer[y + h * x] = p_src[x + w * y];
+			}
+			// copy the image back transposed
+
+			p_temp->Delete();
+		}
+
+		return true;
+	}
+
+	/**
 	 *	@brief flips the image
 	 *	@param[in] b_vertical is flip direction (if set, flips vertical, if cleared, horizontal)
 	 */
@@ -243,8 +276,17 @@ struct TBmp {
 	{
 		for(uint32_t *p_dest = p_buffer, *p_end = p_buffer + size_t(n_width) * n_height; p_dest != p_end; ++ p_dest) {
 			uint32_t n_color = *p_dest;
-			*p_dest = (n_color & 0xff00ff00U) | ((n_color & 0xff0000) >> 16) | ((n_color & 0x0000ff) << 16);
+			*p_dest = n_RGB_to_BGR(n_color);
 		}
+	}
+	
+	/**
+	 *	@brief swaps between RGB and BGR channel order
+	 *	@note The default order is ARGB, where A is in MSB and B is in LSB.
+	 */
+	static uint32_t n_RGB_to_BGR(uint32_t n_color)
+	{
+		return (n_color & 0xff00ff00U) | ((n_color & 0xff0000) >> 16) | ((n_color & 0x0000ff) << 16);
 	}
 
 	/**
@@ -302,7 +344,7 @@ struct TBmp {
 		}
 		if(n_dest_y < 0) {
 			y -= n_dest_y;
-			n_src_height += n_dest_x;
+			n_src_height += n_dest_y;
 			n_dest_y = 0;
 		}
 		// destination x and y can be negative; fix it like this
@@ -331,12 +373,12 @@ struct TBmp {
 
 			{
 				uint32_t *p_dest = p_clone->p_buffer + _n_width * n_dest_y;
-				for(int yy = n_dest_y; yy < n_fill_height; ++ yy, p_dest += _n_width) {
+				for(int yy = n_dest_y; yy < n_dest_y + n_fill_height; ++ yy, p_dest += _n_width) {
 					for(int xx = 0; xx < n_dest_x; ++ xx)
 						p_dest[xx] = n_background_color;
 					// fill before
 
-					memcpy(p_dest + n_dest_x, p_buffer + (x + (y + yy) * n_width),
+					memcpy(p_dest + n_dest_x, p_buffer + (x + (y + yy - n_dest_y) * n_width),
 						n_fill_width * sizeof(uint32_t));
 					// copy from the source image
 
@@ -486,6 +528,37 @@ struct TBmp {
 	}
 
 	/**
+	 *	@brief fills a selected pixel with a given color, with subpixel precision
+	 *
+	 *	@param[in] x is a coordinate of the pixel to fill
+	 *	@param[in] y is a coordinate of the pixel to fill
+	 *	@param[in] n_color is the fill color
+	 *
+	 *	@note This actually fills up to 4 pixels, depending on the fractional coordinates.
+	 *	@note This performs array boundary checking,
+	 *		coordinates outside the bitmap are ok.
+	 */
+	inline void PutPixel_AA(float f_x, float f_y, uint32_t n_color)
+	{
+		int x = int(floor(f_x)), y = int(floor(f_y));
+		float f_frac_x = f_x - x;
+		float f_frac_y = f_y - y;
+		int n_alpha = (n_color >> 24) & 0xff;
+		int n_weight_00 = int(n_alpha * (1 - f_frac_x) * (1 - f_frac_y));
+		int n_weight_10 = int(n_alpha * f_frac_x * (1 - f_frac_y));
+		int n_weight_01 = int(n_alpha * (1 - f_frac_x) * f_frac_y);
+		int n_weight_11 = int(n_alpha * f_frac_x * f_frac_y);
+		if(x >= 0 && x < n_width && y >= 0 && y < n_height)
+			AlphaBlend(p_buffer[x + n_width * y], n_color, n_weight_00);
+		if(x + 1 >= 0 && x + 1 < n_width && y >= 0 && y < n_height)
+			AlphaBlend(p_buffer[(x + 1) + n_width * y], n_color, n_weight_10);
+		if(x >= 0 && x < n_width && y + 1 >= 0 && y + 1 < n_height)
+			AlphaBlend(p_buffer[x + n_width * (y + 1)], n_color, n_weight_01);
+		if(x + 1 >= 0 && x + 1 < n_width && y + 1 >= 0 && y + 1 < n_height)
+			AlphaBlend(p_buffer[(x + 1) + n_width * (y + 1)], n_color, n_weight_11);
+	}
+
+	/**
 	 *	@brief draws an axis aligned rectangle (only lines, no fill)
 	 *
 	 *	@param[in] n_x0 is a coordinate of the top-left corner
@@ -493,10 +566,9 @@ struct TBmp {
 	 *	@param[in] n_x1 is a coordinate of the bottom-right corner
 	 *	@param[in] n_y1 is a coordinate of the bottom-right corner
 	 *	@param[in] n_color is the line color
-	 *
-	 *	@todo Add support for line width.
+	 *	@param[in] n_line_width is line width, in pixels
 	 */
-	void DrawRect(int n_x0, int n_y0, int n_x1, int n_y1, uint32_t n_color)
+	void DrawRect(int n_x0, int n_y0, int n_x1, int n_y1, uint32_t n_color, int n_line_width = 1)
 	{
 		if(n_x0 > n_x1)
 			std::swap(n_x0, n_x1);
@@ -504,41 +576,55 @@ struct TBmp {
 			std::swap(n_y0, n_y1);
 		// make sure it is ordered
 
-		if(n_y0 >= 0 && n_y0 < n_height) {
-			_ASSERTE(n_y1 >= 0);
-			if(n_y1 < n_height) {
-				for(int x = std::max(0, n_x0); x < std::min(n_width, n_x1 + 1); ++ x) {
-					p_buffer[x + n_y0 * n_width] = n_color;
-					p_buffer[x + n_y1 * n_width] = n_color;
-				}
-				// both are in
-			} else {
-				for(int x = std::max(0, n_x0); x < std::min(n_width, n_x1 + 1); ++ x)
-					p_buffer[x + n_y0 * n_width] = n_color;
-			}
-		} else if(n_y1 >= 0 && n_y1 < n_height) {
-			for(int x = std::max(0, n_x0); x < std::min(n_width, n_x1 + 1); ++ x)
-				p_buffer[x + n_y1 * n_width] = n_color;
-		}
-		// draw horizontal lines
+		int n_inner_line_width = n_line_width / 2;
+		n_x0 += n_inner_line_width;
+		n_y0 += n_inner_line_width;
+		n_x1 -= n_inner_line_width;
+		n_y1 -= n_inner_line_width;
+		// make a smaller rectangle
 
-		if(n_x0 >= 0 && n_x0 < n_width) {
-			_ASSERTE(n_x1 >= 0);
-			if(n_x1 < n_width) {
-				for(int y = std::max(0, n_y0); y < std::min(n_height, n_y1 + 1); ++ y) {
-					p_buffer[n_x0 + y * n_width] = n_color;
-					p_buffer[n_x1 + y * n_width] = n_color;
+		for(int l = 0; l < n_line_width; ++ l, -- n_x0, -- n_y0, ++ n_x1, ++ n_y1) {
+			if(n_y1 > n_y0) {
+				if(n_y0 >= 0 && n_y0 < n_height) {
+					_ASSERTE(n_y1 >= 0);
+					if(n_y1 < n_height) {
+						for(int x = std::max(0, n_x0); x < std::min(n_width, n_x1 + 1); ++ x) {
+							p_buffer[x + n_y0 * n_width] = n_color;
+							p_buffer[x + n_y1 * n_width] = n_color;
+						}
+						// both are in
+					} else {
+						for(int x = std::max(0, n_x0); x < std::min(n_width, n_x1 + 1); ++ x)
+							p_buffer[x + n_y0 * n_width] = n_color;
+					}
+				} else if(n_y1 >= 0 && n_y1 < n_height) {
+					for(int x = std::max(0, n_x0); x < std::min(n_width, n_x1 + 1); ++ x)
+						p_buffer[x + n_y1 * n_width] = n_color;
 				}
-				// both are in
-			} else {
-				for(int y = std::max(0, n_y0); y < std::min(n_height, n_y1 + 1); ++ y)
-					p_buffer[n_x0 + y * n_width] = n_color;
 			}
-		} else if(n_x1 >= 0 && n_x1 < n_width) {
-			for(int y = std::max(0, n_y0); y < std::min(n_height, n_y1 + 1); ++ y)
-				p_buffer[n_x1 + y * n_width] = n_color;
+			// draw horizontal lines
+
+			if(n_x1 > n_x0) {
+				if(n_x0 >= 0 && n_x0 < n_width) {
+					_ASSERTE(n_x1 >= 0);
+					if(n_x1 < n_width) {
+						for(int y = std::max(0, n_y0); y < std::min(n_height, n_y1 + 1); ++ y) {
+							p_buffer[n_x0 + y * n_width] = n_color;
+							p_buffer[n_x1 + y * n_width] = n_color;
+						}
+						// both are in
+					} else {
+						for(int y = std::max(0, n_y0); y < std::min(n_height, n_y1 + 1); ++ y)
+							p_buffer[n_x0 + y * n_width] = n_color;
+					}
+				} else if(n_x1 >= 0 && n_x1 < n_width) {
+					for(int y = std::max(0, n_y0); y < std::min(n_height, n_y1 + 1); ++ y)
+						p_buffer[n_x1 + y * n_width] = n_color;
+				}
+			}
+			// draw vertical lines
 		}
-		// draw vertical lines
+		// each loop iteration draws thickness 1 rectangle, and expands the dimensions
 	}
 
 	/**
@@ -661,6 +747,10 @@ struct TBmp {
 	 */
 	inline bool ClipLine(float &r_f_x0, float &r_f_y0, float &r_f_x1, float &r_f_y1) const
 	{
+		if(r_f_x0 != r_f_x0 || r_f_y0 != r_f_y0 || r_f_x1 != r_f_x1 || r_f_y1 != r_f_y1)
+			return false;
+		// handle NaNs
+
 		bool b_not_narrow;
 		float f_dxdy = ((b_not_narrow = (fabs(r_f_x1 - r_f_x0) > 1e-5f)))?
 			(r_f_y1 - r_f_y0) / (r_f_x1 - r_f_x0) : 0;
@@ -1007,6 +1097,250 @@ struct TBmp {
 	}
 
 	/**
+	 *	@brief box - circle intersection information
+	 */
+	class CBoxCircleIsect {
+	protected:
+		static inline float f_Section(float h, float r = 1)
+		{
+			return (h < r)? sqrt(r * r - h * h) : 0;
+			// http://www.wolframalpha.com/input/?i=r+*+sin%28acos%28x+%2F+r%29%29+%3D+h
+		}
+
+		static inline float f_Integral(float x, float h, float r = 1)
+		{
+			return .5f * (sqrt(1 - x * x / (r * r)) * x * r + r * r * asin(x / r) - 2 * h * x);
+			// http://www.wolframalpha.com/input/?i=r+*+sin%28acos%28x+%2F+r%29%29+-+h
+		}
+
+		static inline float f_ClampedSection_Area(float x0, float x1, float h, float r)
+		{
+			_ASSERTE(x0 <= x1);
+			//if(x0 > x1)
+			//	std::swap(x0, x1); // this must be sorted otherwise we get negative area
+			float s = f_Section(h, r);
+			return f_Integral(std::max(-s, std::min(s, x1)), h, r) -
+				f_Integral(std::max(-s, std::min(s, x0)), h, r); // integrate the area
+		}
+
+	public:
+		/**
+		 *	@brief calculates area of the intersection of a box and a circle centerd at origin
+		 *
+		 *	@param[in] x0 is the lower horizontal coordinate of the box
+		 *	@param[in] x1 is the upper horizontal coordinate of the box
+		 *	@param[in] y0 is the lower vertical coordinate of the box
+		 *	@param[in] y1 is the upper vertical coordinate of the box
+		 *	@param[in] r is radius of the circle
+		 *
+		 *	@return Returns the exact area of the intersection of the box and the circle.
+		 */
+		static inline float f_Area(float x0, float x1, float y0, float y1, float r)
+		{
+			_ASSERTE(y0 <= y1);
+			//if(y0 > y1)
+			//	std::swap(y0, y1); // this will simplify the reasoning
+			if(y0 < 0) {
+				if(y1 < 0) {
+					return f_Area(x0, x1, -y1, -y0, r);
+					// the box is completely under, just flip it above and try again
+				} else {
+					return f_Area(x0, x1, 0, -y0, r) + f_Area(x0, x1, 0, y1, r);
+					// the box is both above and below, divide it to two boxes and go again
+				}
+			} else {
+				_ASSERTE(y1 >= 0);
+				// y0 >= 0, which means that y1 >= 0 also (y1 >= y0) because of the swap at the beginning
+
+				return f_ClampedSection_Area(x0, x1, y0, r) -
+					f_ClampedSection_Area(x0, x1, y1, r);
+				// area of the lower box minus area of the higher box
+			}
+		}
+
+		/**
+		 *	@brief calculates area of the intersection of a box and a circle
+		 *
+		 *	@param[in] x0 is the lower horizontal coordinate of the box
+		 *	@param[in] x1 is the upper horizontal coordinate of the box
+		 *	@param[in] y0 is the lower vertical coordinate of the box
+		 *	@param[in] y1 is the upper vertical coordinate of the box
+		 *	@param[in] cx is horizontal coordinate of the center of the circle
+		 *	@param[in] cy is horizontal vertical of the center of the circle
+		 *	@param[in] r is radius of the circle
+		 *
+		 *	@return Returns the exact area of the intersection of the box and the circle.
+		 */
+		static float f_Area(float x0, float x1, float y0, float y1, float cx, float cy, float r)
+		{
+			x0 -= cx; x1 -= cx;
+			y0 -= cy; y1 -= cy;
+			// get rid of the circle center
+
+			return std::max(.0f, f_Area(x0, x1, y0, y1, r)); // this is sometimes slightly imprecise
+		}
+	};
+
+	/**
+	 *	@brief draws antialiased circle
+	 *
+	 *	@param[in] f_x is horizontal coordinate of the center of the circle
+	 *	@param[in] f_y is vertical coordinate of the center of the circle
+	 *	@param[in] f_radius is radius of the circle, in pixels
+	 *	@param[in] n_color is the line color
+	 *	@param[in] f_line_width is line width (default 1, the line is centered on the circle)
+	 *
+	 *	@note This is using an exact algorithm for computing alpha, which is horribly inefficient.
+	 */
+	void DrawCircle_AA(float f_x, float f_y, float f_radius, uint32_t n_color, float f_line_width = 1)
+	{
+		if(f_radius <= 0 || f_line_width <= 0)
+			return;
+
+		float f_inner_radius = f_radius - f_line_width / 2;
+		float f_outer_radius = f_radius + f_line_width / 2;
+		if(f_inner_radius <= 0) { // the line is thicker and fills the inside of the circle completely
+			FillCircle_AA(f_x, f_y, f_outer_radius, n_color); // otherwise will divide by zero and have problems
+			return;
+		}
+
+		const int n_min_x = std::max(0, std::min(n_width, int(floor(f_x - f_outer_radius)) - 1)),
+			n_min_y = std::max(0, std::min(n_height, int(floor(f_y - f_outer_radius)) - 1)),
+			n_max_x = std::max(0, std::min(n_width, int(ceil(f_x + f_outer_radius)) + 2)),
+			n_max_y = std::max(0, std::min(n_height, int(ceil(f_y + f_outer_radius)) + 2));
+		// ger the raster bounds (leave some space outside for blending)
+
+		const float f_outside = (f_outer_radius + 1.44f) * (f_outer_radius + 1.44f),
+			f_inside = (std::max(f_inner_radius - 1.44f, .0f)) * (std::max(f_inner_radius - 1.44f, .0f));
+		for(int y = n_min_y; y < n_max_y; ++ y) {
+			for(int x = n_min_x; x < n_max_x; ++ x) {
+				_ASSERTE(x >= 0 && x < n_width && y >= 0 && y < n_height); // make sure that the clamps work as expected
+
+				float f_cheap = (x - f_x) * (x - f_x) + (y - f_y) * (y - f_y);
+				if(f_cheap > f_outside || f_cheap < f_inside)
+					continue; // zero alpha
+
+				float f_dist = CBoxCircleIsect::f_Area(x - f_x, x + 1 - f_x, y - f_y, y + 1 - f_y, f_outer_radius) -
+					CBoxCircleIsect::f_Area(x - f_x, x + 1 - f_x, y - f_y, y + 1 - f_y, f_inner_radius);
+				// wow, exact integral of area of the circle covering the pixel
+
+				if(f_dist == 0)
+					continue; // zero alpha
+				else if(f_dist == 1)
+					p_buffer[x + n_width * y] = n_color;
+				else
+					AlphaBlend(p_buffer[x + n_width * y], n_color, int(255 * f_dist));
+			}
+		}
+		// a simple (expensive) antialiased / subpixel precise circle algorithm
+
+		// t_odo - use an integrator and do it precisely
+		// todo - try to adapt bresenham to floats (and verify using the precise code)
+	}
+
+	/**
+	 *	@brief draws antialiased circle with solid color fill
+	 *
+	 *	@param[in] f_x is horizontal coordinate of the center of the circle
+	 *	@param[in] f_y is vertical coordinate of the center of the circle
+	 *	@param[in] f_radius is radius of the circle, in pixels
+	 *	@param[in] n_color is the line color
+	 *
+	 *	@note This is using an exact algorithm for computing alpha, which is horribly inefficient.
+	 */
+	void FillCircle_AA(float f_x, float f_y, float f_radius, uint32_t n_color)
+	{
+		if(f_radius <= 0)
+			return;
+		const int n_min_x = std::max(0, std::min(n_width, int(floor(f_x - f_radius)) - 1)),
+			n_min_y = std::max(0, std::min(n_height, int(floor(f_y - f_radius)) - 1)),
+			n_max_x = std::max(0, std::min(n_width, int(ceil(f_x + f_radius)) + 2)),
+			n_max_y = std::max(0, std::min(n_height, int(ceil(f_y + f_radius)) + 2));
+		// ger the raster bounds (leave some space outside for blending)
+
+		//const float f_radius2 = f_radius * f_radius;
+		const float f_outside = (f_radius + 1.44f) * (f_radius + 1.44f),
+			f_inside = (std::max(f_radius - 1.44f, .0f)) * (std::max(f_radius - 1.44f, .0f));
+		for(int y = n_min_y; y < n_max_y; ++ y) {
+			for(int x = n_min_x; x < n_max_x; ++ x) {
+				_ASSERTE(x >= 0 && x < n_width && y >= 0 && y < n_height); // make sure that the clamps work as expected
+
+				/*float f_dist = std::max(.0f, std::min(1.0f, .707f * .5f *
+					sqrt(f_radius2 - (x - f_x) * (x - f_x) - (y - f_y) * (y - f_y))));*/
+				// this is just distance from circle center, that's a cheap approximation
+
+				float f_cheap = (x - f_x) * (x - f_x) + (y - f_y) * (y - f_y);
+				//float f_dist = CBoxCircleIsect::f_Area(x, x + 1, y, y + 1, f_x, f_y, f_radius);
+				if(f_cheap > f_outside) {
+					//_ASSERTE(f_dist < 1.0f / 255);
+					continue; // zero alpha
+				} else if(f_cheap < f_inside) {
+					//_ASSERTE(f_dist > 1 - 1.0f / 255);
+					p_buffer[x + n_width * y] = n_color;//0xff00ff00; // full alpha
+					continue;
+				}
+
+				float f_dist = CBoxCircleIsect::f_Area(x - f_x,
+					x + 1 - f_x, y - f_y, y + 1 - f_y, f_radius);
+				// wow, exact integral of area of the circle covering the pixel
+
+				/*if(f_dist == 0)
+					continue; // zero alpha
+				else if(f_dist == 1)
+					p_buffer[x + n_width * y] = n_color;
+				else*/
+					AlphaBlend(p_buffer[x + n_width * y], n_color, int(255 * f_dist));
+			}
+		}
+		// a simple (expensive) antialiased / subpixel precise circle algorithm
+
+		// t_odo - use an integrator and do it precisely
+		// todo - try to adapt bresenham to floats (and verify using the precise code)
+
+#if 0	// this does not work yet
+		/*f_x = floor(f_x);
+		f_y = floor(f_y);*/
+		n_color &= 0xffffff;
+		float y = 0, x = f_radius, f_disc = 0, f_r2 = f_radius * f_radius;
+		while(y < x) {
+			float f_dc = ceil(sqrt(f_r2 - y * y)) - (sqrt(f_r2 - y * y));
+			if(f_dc < f_disc)
+				x -= 1;
+			float x1 = x - 1;
+			/*if(int(x1) != int(y))*/ {
+				BlendPixel(+x1 + f_x, +y  + f_y, n_color | (int(f_dc * 255) << 24));
+				BlendPixel(+y  + f_x, +x1 + f_y, n_color | (int(f_dc * 255) << 24));
+			}
+			BlendPixel(+x  + f_x, +y  + f_y, n_color | (int(255 - f_dc * 255) << 24));
+			BlendPixel(+y  + f_x, +x  + f_y, n_color | (int(255 - f_dc * 255) << 24));
+			/*if(int(x) != 0)*/ {
+				/*if(int(x1) != int(y))*/ {
+					BlendPixel(-x1 + f_x, +y  + f_y, n_color | (int(f_dc * 255) << 24));
+					BlendPixel(+y  + f_x, -x1 + f_y, n_color | (int(f_dc * 255) << 24));
+				}
+				BlendPixel(-x  + f_x, +y  + f_y, n_color | (int(255 - f_dc * 255) << 24));
+				BlendPixel(+y  + f_x, -x  + f_y, n_color | (int(255 - f_dc * 255) << 24));
+			}
+			/*if(int(y) != 0)*/ {
+				/*if(int(x1) != int(y))*/ {
+					BlendPixel(-y  + f_x, +x1 + f_y, n_color | (int(f_dc * 255) << 24));
+					BlendPixel(-y  + f_x, -x1 + f_y, n_color | (int(f_dc * 255) << 24));
+					BlendPixel(+x1 + f_x, -y  + f_y, n_color | (int(f_dc * 255) << 24));
+					BlendPixel(-x1 + f_x, -y  + f_y, n_color | (int(f_dc * 255) << 24));
+				}
+				BlendPixel(-y  + f_x, +x  + f_y, n_color | (int(255 - f_dc * 255) << 24));
+				BlendPixel(-y  + f_x, -x  + f_y, n_color | (int(255 - f_dc * 255) << 24));
+				BlendPixel(+x  + f_x, -y  + f_y, n_color | (int(255 - f_dc * 255) << 24));
+				BlendPixel(-x  + f_x, -y  + f_y, n_color | (int(255 - f_dc * 255) << 24));
+			}
+			y += 1;
+			f_disc = f_dc;
+		}
+#endif // 0
+	}
+
+#if 0
+	/**
 	 *	@brief draws a solid-color antialiassed line with subpixel precision
 	 *
 	 *	@param[in] f_x0 is a coordinate of the first line point
@@ -1278,6 +1612,608 @@ struct TBmp {
 			// thick lines
 		}
 	}
+#else // 0
+	/**
+	 *	@brief draws a solid-color antialiased line with subpixel precision
+	 *
+	 *	@param[in] f_x0 is a coordinate of the first line point
+	 *	@param[in] f_y0 is a coordinate of the first line point
+	 *	@param[in] f_x1 is a coordinate of the second line point
+	 *	@param[in] f_y1 is a coordinate of the second line point
+	 *	@param[in] n_color is the line color
+	 *	@param[in] f_line_width is the line width, in pixels
+	 *	@param[in] n_line_end_type is line end type (0 = natural / fastest, 1 = bevel, 2 = round)
+	 *
+	 *	@note This performs clipping, coordinates outside the bitmap are ok.
+	 *	@note This is somewhat wasteful if the bitmap is grayscale
+	 *		since the blending is full RGBA blending.
+	 *	@note Only the RGB parts of the color are used. The alpha is assumed to be 0xff.
+	 *
+	 *	@todo To draw a path with alpha less than 100%, the rasterizer actually needs to know
+	 *		about all the lines, otherwise the overlapping parts will get more alpha.
+	 */
+	void DrawLine_AA(float f_x0, float f_y0, float f_x1, float f_y1,
+		uint32_t n_color, float f_line_width = 1, int n_line_end_type = 1) // this is slightly untested. if it causes problems, just change the #ifdef to use the old code in the above branch
+	{
+		_ASSERTE(n_line_end_type >= 0 && n_line_end_type <= 2);
+		if(f_line_width <= 0)
+			return;
+		// too thin
+
+		if(!ClipLine(f_x0, f_y0, f_x1, f_y1))
+			return;
+		// perform simple clipping
+
+		_ASSERTE(std::max(abs(int(f_x0) - int(f_x1)), abs(int(f_y0) - int(f_y1))) <=
+			std::max(n_width, n_height)); // line lenght is now bound by bitmap size
+		const bool b_steep = fabs(f_y0 - f_y1) > fabs(f_x0 - f_x1);
+		if(b_steep) {
+			std::swap(f_x0, f_y0);
+			std::swap(f_x1, f_y1);
+			// makes sure it is rasterized in the larger dimension
+		}
+		if(f_x0 > f_x1) {
+			std::swap(f_x0, f_x1);
+			std::swap(f_y0, f_y1);
+		}
+
+		const int n_FP_shift = 16;
+		const int n_FP_factor = 65536;
+		// added these in order to improve precission on large images
+
+		const float f_dxdy = (fabs(f_x1 - f_x0) > 1e-5f)? (f_y1 - f_y0) / (f_x1 - f_x0) : 0;
+		const int n_gradient = int(n_FP_factor * f_dxdy);
+		int n_end_x0 = int(floor(f_x0 + .5f));
+		int n_end_x1 = int(floor(f_x1 + .5f));
+		// note the .5 are important otherwise antialiassing discontinuities occur in the first quadrant
+
+		const float f_line_width_orig = f_line_width;
+		f_line_width = f_line_width * sqrt(1 + f_dxdy * f_dxdy);
+		// update the line width, based on the slope of the line
+		// note that this is corrected for b_steep
+
+		const float f_cov_x0 = sqrt(1 - (f_x0 + .5f - floor(f_x0 + .5f)));//ceil(f_x0 + .5f) - (f_x0 + .5f); // how much of line is in the first pixel
+		const float f_cov_x1 = sqrt(f_x1 + .5f - floor(f_x1 + .5f));//1 - (ceil(f_x1 + .5f) - (f_x1 + .5f)); // how much of line is in the last pixel
+		// note that we take a sqrt here to fill in the edges slightly more to get rid of seams where two
+		// lines meet (even though they overlap exactly, blend(blend(white, black, 50%), black, 50%) != black)
+
+		const float f_end_y0 = f_y0 + f_dxdy * (n_end_x0 - f_x0);
+		int n_lerp_y = int((f_end_y0 + f_dxdy) * n_FP_factor);
+		const float f_end_y1 = f_y1 + f_dxdy * (n_end_x1 - f_x1);
+		// the same for both branches
+
+		if(f_line_width <= 1) {
+			_ASSERTE(fabs(f_x0 - f_x1) >= fabs(f_y0 - f_y1)); // make sure we're not missing some cases
+			if(n_end_x0 == n_end_x1) {
+				float f_coverage = (f_x1 - f_x0) * f_line_width; // length of the line inside a pixel
+				float f_y_end = (f_y0 + f_y1) * .5f; // average y in pixel //f_y0 + f_dxdy * ((f_x0 + f_x1) * .5f - n_end_x0); // y-position of line center
+				int n_y_alpha = int(255 * (f_y_end - floor(f_y_end)));
+
+				int n_x = n_end_x0, n_y = int(floor(f_y_end));
+				if(b_steep) {
+					std::swap(n_x, n_y);
+					if(n_x + 1 >= 0 && n_x + 1 < n_width && n_y >= 0 && n_y < n_height)
+						AlphaBlend(p_buffer[n_x + 1 + n_y * n_width], n_color, int(n_y_alpha * f_coverage));
+				} else if(n_x >= 0 && n_x < n_width && n_y + 1 >= 0 && n_y + 1 < n_height)
+					AlphaBlend(p_buffer[n_x + (n_y + 1) * n_width], n_color, int(n_y_alpha * f_coverage));
+				if(n_x >= 0 && n_x < n_width && n_y >= 0 && n_y < n_height)
+					AlphaBlend(p_buffer[n_x + n_y * n_width], n_color, int((255 - n_y_alpha) * f_coverage));
+
+				return;
+			}
+			// in case the line only occupies a single pixel
+
+			const int n_alpha_y0 = int(255 * (f_end_y0 - floor(f_end_y0)));
+			const int n_alpha_y1 = int(255 * (f_end_y1 - floor(f_end_y1)));
+			// calculate aliassing on the end of the lines
+			// note the .5 are important otherwise antialiassing discontinuities occur in the first quadrant
+
+			if(b_steep) {
+				if(n_end_x0 >= 0 && n_end_x0 < n_height) {
+					int n_y = n_end_x0, n_x = int(floor(f_end_y0));
+					if(n_x + 1 >= 0 && n_x + 1 < n_width)
+						AlphaBlend(p_buffer[n_x + 1 + n_y * n_width], n_color, int((n_alpha_y0) * (f_cov_x0 * f_line_width)));
+					if(n_x >= 0 && n_x < n_width)
+						AlphaBlend(p_buffer[n_x + n_y * n_width], n_color, int((255 - n_alpha_y0) * (f_cov_x0 * f_line_width)));
+				}
+				// handle the first endpoint
+
+				if(n_end_x1 >= 0 && n_end_x1 < n_height) {
+					int n_y = n_end_x1, n_x = int(floor(f_end_y1));
+					if(n_x >= 0 && n_x < n_width)
+						AlphaBlend(p_buffer[n_x + n_y * n_width], n_color, int((255 - n_alpha_y1) * (f_cov_x1 * f_line_width)));
+					if(n_x + 1 >= 0 && n_x + 1 < n_width)
+						AlphaBlend(p_buffer[n_x + 1 + n_y * n_width], n_color, int(n_alpha_y1 * (f_cov_x1 * f_line_width)));
+				}
+				// handle the second endpoint
+
+				for(int n_y = n_end_x0 + 1; n_y < n_end_x1; ++ n_y, n_lerp_y += n_gradient) {
+					int n_x = n_lerp_y >> n_FP_shift;
+					_ASSERTE(n_x >= 0 && n_x < n_width && n_y >= 0 && n_y < n_height);
+					int n_alpha_0 = (n_lerp_y >> (n_FP_shift - 8)) & 0xff;
+					AlphaBlend(p_buffer[n_x + n_y * n_width], n_color, int((0xff - n_alpha_0) * f_line_width));
+					if(n_x + 1 < n_width)
+						AlphaBlend(p_buffer[n_x + 1 + n_y * n_width], n_color, int(n_alpha_0 * f_line_width));
+				}
+				// draw the line
+			} else {
+				if(n_end_x0 >= 0 && n_end_x0 < n_width) {
+					int n_x = n_end_x0, n_y = int(floor(f_end_y0));
+					if(n_y + 1 >= 0 && n_y + 1 < n_height)
+						AlphaBlend(p_buffer[n_x + (n_y + 1) * n_width], n_color, int((n_alpha_y0) * (f_cov_x0 * f_line_width)));
+					if(n_y >= 0 && n_y < n_height)
+						AlphaBlend(p_buffer[n_x + n_y * n_width], n_color, int((255 - n_alpha_y0) * (f_cov_x0 * f_line_width)));
+				}
+				// handle the first endpoint
+
+				if(n_end_x1 >= 0 && n_end_x1 < n_width) {
+					int n_x = n_end_x1, n_y = int(floor(f_end_y1));
+					if(n_y >= 0 && n_y < n_height)
+						AlphaBlend(p_buffer[n_x + n_y * n_width], n_color, int((255 - n_alpha_y1) * (f_cov_x1 * f_line_width)));
+					if(n_y + 1 >= 0 && n_y + 1 < n_height)
+						AlphaBlend(p_buffer[n_x + (n_y + 1) * n_width], n_color, int(n_alpha_y1 * (f_cov_x1 * f_line_width)));
+				}
+				// handle the second endpoint
+
+				for(int n_x = n_end_x0 + 1; n_x < n_end_x1; ++ n_x, n_lerp_y += n_gradient) {
+					int n_y = n_lerp_y >> n_FP_shift;
+					_ASSERTE(n_x >= 0 && n_x < n_width && n_y >= 0 && n_y < n_height);
+					int n_alpha_0 = (n_lerp_y >> (n_FP_shift - 8)) & 0xff;
+					AlphaBlend(p_buffer[n_x + n_y * n_width], n_color, int((0xff - n_alpha_0) * f_line_width));
+					if(n_y + 1 < n_height)
+						AlphaBlend(p_buffer[n_x + (n_y + 1) * n_width], n_color, int(n_alpha_0 * f_line_width));
+				}
+			}
+			// thin lines
+		} else {
+			const float f_line_extent_top = (f_line_width - 1) * .5f;
+			const float f_line_extent_bottom = f_line_extent_top; // equal in floating point
+			const int n_line_extent_top = int(f_line_extent_top * n_FP_factor);
+			const int n_line_extent_bottom = n_line_extent_top; // just semantics, negligible error //int(f_line_width * n_FP_factor - n_line_extent_top); // not entirely equal in fixed point
+			// calculate extent on top and bottom
+
+			if(!n_line_end_type) {
+				if(n_end_x0 == n_end_x1) {
+					float f_coverage = f_x1 - f_x0; // length of the line inside a pixel
+					float f_y_end = f_y0 + f_dxdy * (n_end_x0 - (f_x0 + f_x1) * .5f); // y-position of line center
+					// average y in pixel
+
+					int n_y_top = int(floor(f_y_end - f_line_extent_top));
+					int n_y_bottom = int(floor(f_y_end + f_line_extent_bottom));
+					int n_y_alpha_top = 255 - int(255 * (f_y_end - f_line_extent_top - floor(f_y_end - f_line_extent_top)));
+					int n_y_alpha_bottom = int(255 * (f_y_end + f_line_extent_bottom - floor(f_y_end + f_line_extent_bottom)));
+
+					if(b_steep) {
+						int n_y = n_end_x0, n_x = n_y_top;
+						if(n_x >= 0 && n_x < n_width && n_y >= 0 && n_y < n_height)
+							AlphaBlend(p_buffer[n_x + n_y * n_width], n_color, int(n_y_alpha_top * f_coverage));
+						for(++ n_x; n_x <= n_y_bottom; ++ n_x) {
+							if(n_x >= 0 && n_x < n_width && n_y >= 0 && n_y < n_height)
+								AlphaBlend(p_buffer[n_x + n_y * n_width], n_color, int(255 * f_coverage));
+						}
+						_ASSERTE(n_x == n_y_bottom + 1);
+						if(n_x >= 0 && n_x < n_width && n_y >= 0 && n_y < n_height)
+							AlphaBlend(p_buffer[n_x + n_y * n_width], n_color, int(n_y_alpha_bottom * f_coverage));
+					} else {
+						int n_x = n_end_x0, n_y = n_y_top;
+						if(n_x >= 0 && n_x < n_width && n_y >= 0 && n_y < n_height)
+							AlphaBlend(p_buffer[n_x + n_y * n_width], n_color, int(n_y_alpha_top * f_coverage));
+						for(++ n_y; n_y <= n_y_bottom; ++ n_y) {
+							if(n_x >= 0 && n_x < n_width && n_y >= 0 && n_y < n_height)
+								AlphaBlend(p_buffer[n_x + n_y * n_width], n_color, int(255 * f_coverage));
+						}
+						_ASSERTE(n_y == n_y_bottom + 1);
+						if(n_x >= 0 && n_x < n_width && n_y >= 0 && n_y < n_height)
+							AlphaBlend(p_buffer[n_x + n_y * n_width], n_color, int(n_y_alpha_bottom * f_coverage));
+					}
+
+					return;
+				}
+				// in case the line only occupies a single pixel
+
+				{
+					const int n_alpha_y0_top = 255 - int(255 * (f_end_y0 - f_line_extent_top - floor(f_end_y0 - f_line_extent_top)));
+					const int n_alpha_y1_top = 255 - int(255 * (f_end_y1 - f_line_extent_top - floor(f_end_y1 - f_line_extent_top)));
+					const int n_alpha_y0_bottom = int(255 * (f_end_y0 + f_line_extent_bottom - floor(f_end_y0 + f_line_extent_bottom)));
+					const int n_alpha_y1_bottom = int(255 * (f_end_y1 + f_line_extent_bottom - floor(f_end_y1 + f_line_extent_bottom)));
+					// calculate aliassing on the end of the lines
+					// note the .5 are important otherwise antialiassing discontinuities occur in the first quadrant
+
+					if(b_steep) {
+						if(n_end_x0 >= 0 && n_end_x0 < n_height) {
+							int n_y = n_end_x0, n_x_top = int(floor(f_end_y0 - f_line_extent_top)),
+								n_x_bottom = int(floor(f_end_y0 + f_line_extent_bottom));
+							if(n_x_top >= 0 && n_x_top < n_width)
+								AlphaBlend(p_buffer[n_x_top + n_y * n_width], n_color, int(n_alpha_y0_top * f_cov_x0));
+							for(int n_x = n_x_top + 1; n_x <= n_x_bottom; ++ n_x) {
+								if(n_x >= 0 && n_x < n_width) {
+									//p_buffer[n_x + n_y * n_width] = n_color;
+									AlphaBlend(p_buffer[n_x + n_y * n_width], n_color, int(255 * f_cov_x0)); // seems ok now
+								}
+							}
+							if(++ n_x_bottom >= 0 && n_x_bottom < n_width)
+								AlphaBlend(p_buffer[n_x_bottom + n_y * n_width], n_color, int(n_alpha_y0_bottom * f_cov_x0));
+						}
+						// handle the first endpoint
+
+						if(n_end_x1 >= 0 && n_end_x1 < n_height) {
+							int n_y = n_end_x1, n_x_top = int(floor(f_end_y1 - f_line_extent_top)),
+								n_x_bottom = int(floor(f_end_y1 + f_line_extent_bottom));
+							if(n_x_top >= 0 && n_x_top < n_width)
+								AlphaBlend(p_buffer[n_x_top + n_y * n_width], n_color, int(n_alpha_y1_top * f_cov_x1));
+							for(int n_x = n_x_top + 1; n_x <= n_x_bottom; ++ n_x) {
+								if(n_x >= 0 && n_x < n_width) {
+									//p_buffer[n_x + n_y * n_width] = n_color;
+									AlphaBlend(p_buffer[n_x + n_y * n_width], n_color, int(255 * f_cov_x1)); // seems ok now
+								}
+							}
+							if(++ n_x_bottom >= 0 && n_x_bottom < n_width)
+								AlphaBlend(p_buffer[n_x_bottom + n_y * n_width], n_color, int(n_alpha_y1_bottom * f_cov_x1));
+						}
+						// handle the second endpoint
+					} else {
+						if(n_end_x0 >= 0 && n_end_x0 < n_width) {
+							int n_x = n_end_x0, n_y_top = int(floor(f_end_y0 - f_line_extent_top)),
+								n_y_bottom = int(floor(f_end_y0 + f_line_extent_bottom));
+							if(n_y_top >= 0 && n_y_top < n_height)
+								AlphaBlend(p_buffer[n_x + n_y_top * n_width], n_color, int(n_alpha_y0_top * f_cov_x0));
+							for(int n_y = n_y_top + 1; n_y <= n_y_bottom; ++ n_y) {
+								if(n_y >= 0 && n_y < n_height) {
+									//p_buffer[n_x + n_y * n_width] = n_color;
+									AlphaBlend(p_buffer[n_x + n_y * n_width], n_color, int(255 * f_cov_x0)); // seems ok now
+								}
+							}
+							if(++ n_y_bottom >= 0 && n_y_bottom < n_height)
+								AlphaBlend(p_buffer[n_x + n_y_bottom * n_width], n_color, int(n_alpha_y0_bottom * f_cov_x0));
+						}
+						// handle the first endpoint
+
+						if(n_end_x1 >= 0 && n_end_x1 < n_width) {
+							int n_x = n_end_x1, n_y_top = int(floor(f_end_y1 - f_line_extent_top)),
+								n_y_bottom = int(floor(f_end_y1 + f_line_extent_bottom));
+							if(n_y_top >= 0 && n_y_top < n_height)
+								AlphaBlend(p_buffer[n_x + n_y_top * n_width], n_color, int(n_alpha_y1_top * f_cov_x1));
+							for(int n_y = n_y_top + 1; n_y <= n_y_bottom; ++ n_y) {
+								if(n_y >= 0 && n_y < n_height) {
+									//p_buffer[n_x + n_y * n_width] = n_color;
+									AlphaBlend(p_buffer[n_x + n_y * n_width], n_color, int(255 * f_cov_x1)); // seems ok now
+								}
+							}
+							if(++ n_y_bottom >= 0 && n_y_bottom < n_height)
+								AlphaBlend(p_buffer[n_x + n_y_bottom * n_width], n_color, int(n_alpha_y1_bottom * f_cov_x1));
+						}
+						// handle the second endpoint
+					}
+				}
+				// thick endpoints, type 0
+
+				++ n_end_x0;
+				-- n_end_x1;
+				// clip the line so that its ends are not over-drawn
+			} else if(n_line_end_type == 1 || n_line_end_type == 2) {
+				int n_line_end_size = int(ceil((f_line_width_orig - 1) / 2 * fabs(f_dxdy))) + 1; // t_odo - carry the changes to SP as well // does not seem to make a difference
+				// calculate line length extent
+
+				const float k = (n_line_end_type == 1)? .75f : 0; // if it ends with discs, the discs take care of the seams. if it ends with bevels, we need to extend the line a bit in order to not have seams. natural ends will have seams.
+				const float f_d0 = f_x0 - k + f_y0 * f_dxdy;
+				const float f_d1 = f_x1 + k + f_y1 * f_dxdy; // t_odo - debug these, there must be no overdraw between the adjacent lines
+
+				const int n_x_size = (b_steep)? n_height : n_width;
+				_ASSERTE(n_end_x0 >= 0 && n_end_x0 <= n_x_size);
+				_ASSERTE(n_end_x1 >= 0 && n_end_x1 <= n_x_size);
+				const int n_x0b = std::max(n_end_x0 - n_line_end_size, 0),
+					n_x0e = std::min(n_end_x0 + n_line_end_size, n_x_size),
+					n_x1b = std::min(n_end_x1 - n_line_end_size + 1, n_x_size),
+					n_x1e = std::min(n_end_x1 + n_line_end_size + 2, n_x_size);
+				int n_lerp_y0 = n_lerp_y + n_gradient * (-n_line_end_size - 1 + std::max(0, n_line_end_size - n_end_x0)); // starts at n_x0b
+				int n_lerp_y1 = n_lerp_y0 + n_gradient * (n_x1b - n_x0b);
+				_ASSERTE(n_x0b >= 0 && n_x0b < n_x_size);
+				_ASSERTE(n_x0e >= n_x1b || n_x0e >= 0 && n_x0e <= n_x_size); // no need to use n_x_size - 1, it is an exclusive limit
+				_ASSERTE(n_x0e >= n_x1b || n_x1b >= 0 && n_x1b < n_x_size);
+				_ASSERTE(n_x1e >= 0 && n_x1e <= n_x_size); // no need to use n_x_size - 1, it is an exclusive limit
+
+				if(n_line_end_type == 1) {
+					if(b_steep) {
+						if(n_x0e < n_x1b) {
+							for(int n_y = n_x0b; n_y < n_x0e; ++ n_y, n_lerp_y0 += n_gradient) {
+								_ASSERTE(n_y >= 0 && n_y < n_height); // no guarantees about x
+								int n_x_top = (n_lerp_y0 - n_line_extent_top) >> n_FP_shift;
+								int n_x_bottom = (n_lerp_y0 + n_line_extent_bottom) >> n_FP_shift;
+								int n_alpha_top = 255 - (((n_lerp_y0 - n_line_extent_top) >> (n_FP_shift - 8)) & 0xff);
+								int n_alpha_bottom = ((n_lerp_y0 + n_line_extent_bottom) >> (n_FP_shift - 8)) & 0xff;
+								if(n_x_top >= 0 && n_x_top < n_width && n_y + n_x_top * f_dxdy - f_d0 >= 0)
+									AlphaBlend(p_buffer[n_x_top + n_y * n_width], n_color, int(n_alpha_top * std::max(.0f, std::min(1.0f, n_y + n_x_top * f_dxdy - f_d0))));
+								for(int n_x = n_x_top + 1; n_x <= n_x_bottom; ++ n_x) {
+									if(n_x >= 0 && n_x < n_width && n_y + n_x * f_dxdy - f_d0 >= 0)
+										//p_buffer[n_x + n_y * n_width] = n_color;//0xffff0000
+										AlphaBlend(p_buffer[n_x + n_y * n_width], n_color, int(255 * std::max(.0f, std::min(1.0f, n_y + n_x * f_dxdy - f_d0))));
+								}
+								if(++ n_x_bottom >= 0 && n_x_bottom < n_width && n_y + n_x_bottom * f_dxdy - f_d0 >= 0)
+									AlphaBlend(p_buffer[n_x_bottom + n_y * n_width], n_color, int(n_alpha_bottom * std::max(.0f, std::min(1.0f, n_y + n_x_bottom * f_dxdy - f_d0))));
+							}
+							for(int n_y = n_x1b; n_y < n_x1e; ++ n_y, n_lerp_y1 += n_gradient) {
+								_ASSERTE(n_y >= 0 && n_y < n_height); // no guarantees about x
+								int n_x_top = (n_lerp_y1 - n_line_extent_top) >> n_FP_shift;
+								int n_x_bottom = (n_lerp_y1 + n_line_extent_bottom) >> n_FP_shift;
+								int n_alpha_top = 255 - (((n_lerp_y1 - n_line_extent_top) >> (n_FP_shift - 8)) & 0xff);
+								int n_alpha_bottom = ((n_lerp_y1 + n_line_extent_bottom) >> (n_FP_shift - 8)) & 0xff;
+								if(n_x_top >= 0 && n_x_top < n_width && n_y + n_x_top * f_dxdy - f_d1 <= 0)
+									AlphaBlend(p_buffer[n_x_top + n_y * n_width], n_color, int(n_alpha_top * std::max(.0f, std::min(1.0f, f_d1 - n_y - n_x_top * f_dxdy))));
+								for(int n_x = n_x_top + 1; n_x <= n_x_bottom; ++ n_x) {
+									if(n_x >= 0 && n_x < n_width && n_y + n_x * f_dxdy - f_d1 <= 0)
+										//p_buffer[n_x + n_y * n_width] = n_color;//0xff0000ff;
+										AlphaBlend(p_buffer[n_x + n_y * n_width], n_color, int(255 * std::max(.0f, std::min(1.0f, f_d1 - n_y - n_x * f_dxdy))));
+								}
+								if(++ n_x_bottom >= 0 && n_x_bottom < n_width && n_y + n_x_bottom * f_dxdy - f_d1 <= 0)
+									AlphaBlend(p_buffer[n_x_bottom + n_y * n_width], n_color, int(n_alpha_bottom * std::max(.0f, std::min(1.0f, f_d1 - n_y - n_x_bottom * f_dxdy))));
+							}
+						} else {
+							for(int n_y = n_x0b; n_y < n_x1e; ++ n_y, n_lerp_y0 += n_gradient) {
+								_ASSERTE(n_y >= 0 && n_y < n_height); // no guarantees about x
+								int n_x_top = (n_lerp_y0 - n_line_extent_top) >> n_FP_shift;
+								int n_x_bottom = (n_lerp_y0 + n_line_extent_bottom) >> n_FP_shift;
+								int n_alpha_top = 255 - (((n_lerp_y0 - n_line_extent_top) >> (n_FP_shift - 8)) & 0xff);
+								int n_alpha_bottom = ((n_lerp_y0 + n_line_extent_bottom) >> (n_FP_shift - 8)) & 0xff;
+								if(n_x_top >= 0 && n_x_top < n_width && n_y + n_x_top * f_dxdy - f_d0 >= 0 && n_y + n_x_top * f_dxdy - f_d1 <= 0)
+									AlphaBlend(p_buffer[n_x_top + n_y * n_width], n_color, int(n_alpha_top * std::max(.0f, std::min(1.0f, n_y + n_x_top * f_dxdy - f_d0)) * std::max(.0f, std::min(1.0f, f_d1 - n_y - n_x_top * f_dxdy))));
+								for(int n_x = n_x_top + 1; n_x <= n_x_bottom; ++ n_x) {
+									if(n_x >= 0 && n_x < n_width &&
+									   n_y + n_x * f_dxdy - f_d0 >= 0 && n_y + n_x * f_dxdy - f_d1 <= 0)
+										//p_buffer[n_x + n_y * n_width] = n_color;//0xff00ff00;
+										AlphaBlend(p_buffer[n_x + n_y * n_width], n_color, int(255 * std::max(.0f, std::min(1.0f, n_y + n_x * f_dxdy - f_d0)) * std::max(.0f, std::min(1.0f, f_d1 - n_y - n_x * f_dxdy))));
+								}
+								if(++ n_x_bottom >= 0 && n_x_bottom < n_width && n_y + n_x_bottom * f_dxdy - f_d0 >= 0 && n_y + n_x_bottom * f_dxdy - f_d1 <= 0)
+									AlphaBlend(p_buffer[n_x_bottom + n_y * n_width], n_color, int(n_alpha_bottom * std::max(.0f, std::min(1.0f, n_y + n_x_bottom * f_dxdy - f_d0)) * std::max(.0f, std::min(1.0f, f_d1 - n_y - n_x_bottom * f_dxdy))));
+							}
+						}
+					} else {
+						if(n_x0e < n_x1b) {
+							for(int n_x = n_x0b; n_x < n_x0e; ++ n_x, n_lerp_y0 += n_gradient) {
+								_ASSERTE(n_x >= 0 && n_x < n_width); // no guarantees about y
+								int n_y_top = (n_lerp_y0 - n_line_extent_top) >> n_FP_shift;
+								int n_y_bottom = (n_lerp_y0 + n_line_extent_bottom) >> n_FP_shift;
+								int n_alpha_top = 255 - (((n_lerp_y0 - n_line_extent_top) >> (n_FP_shift - 8)) & 0xff);
+								int n_alpha_bottom = ((n_lerp_y0 + n_line_extent_bottom) >> (n_FP_shift - 8)) & 0xff;
+								if(n_y_top >= 0 && n_y_top < n_height && n_x + n_y_top * f_dxdy - f_d0 >= 0)
+									AlphaBlend(p_buffer[n_x + n_y_top * n_width], n_color, int(n_alpha_top * std::max(.0f, std::min(1.0f, n_y_top * f_dxdy + n_x - f_d0))));
+								for(int n_y = n_y_top + 1; n_y <= n_y_bottom; ++ n_y) {
+									if(n_y >= 0 && n_y < n_height && n_x + n_y * f_dxdy - f_d0 >= 0)
+										//p_buffer[n_x + n_y * n_width] = n_color;//0xffff0000;
+										AlphaBlend(p_buffer[n_x + n_y * n_width], n_color, int(255 * std::max(.0f, std::min(1.0f, n_y * f_dxdy + n_x - f_d0))));
+								}
+								if(++ n_y_bottom >= 0 && n_y_bottom < n_height && n_x + n_y_bottom * f_dxdy - f_d0 >= 0)
+									AlphaBlend(p_buffer[n_x + n_y_bottom * n_width], n_color, int(n_alpha_bottom * std::max(.0f, std::min(1.0f, n_y_bottom * f_dxdy + n_x - f_d0))));
+							}
+							for(int n_x = n_x1b; n_x < n_x1e; ++ n_x, n_lerp_y1 += n_gradient) {
+								_ASSERTE(n_x >= 0 && n_x < n_width); // no guarantees about y
+								int n_y_top = (n_lerp_y1 - n_line_extent_top) >> n_FP_shift;
+								int n_y_bottom = (n_lerp_y1 + n_line_extent_bottom) >> n_FP_shift;
+								int n_alpha_top = 255 - (((n_lerp_y1 - n_line_extent_top) >> (n_FP_shift - 8)) & 0xff);
+								int n_alpha_bottom = ((n_lerp_y1 + n_line_extent_bottom) >> (n_FP_shift - 8)) & 0xff;
+								if(n_y_top >= 0 && n_y_top < n_height && n_x + n_y_top * f_dxdy - f_d1 <= 0)
+									AlphaBlend(p_buffer[n_x + n_y_top * n_width], n_color, int(n_alpha_top * std::max(.0f, std::min(1.0f, f_d1 - n_y_top * f_dxdy - n_x))));
+								for(int n_y = n_y_top + 1; n_y <= n_y_bottom; ++ n_y) {
+									if(n_y >= 0 && n_y < n_height && n_x + n_y * f_dxdy - f_d1 <= 0)
+										//p_buffer[n_x + n_y * n_width] = n_color;//0xff0000ff;
+										AlphaBlend(p_buffer[n_x + n_y * n_width], n_color, int(255 * std::max(.0f, std::min(1.0f, f_d1 - n_y * f_dxdy - n_x))));
+								}
+								if(++ n_y_bottom >= 0 && n_y_bottom < n_height && n_x + n_y_bottom * f_dxdy - f_d1 <= 0)
+									AlphaBlend(p_buffer[n_x + n_y_bottom * n_width], n_color, int(n_alpha_bottom * std::max(.0f, std::min(1.0f, f_d1 - n_y_bottom * f_dxdy - n_x))));
+							}
+						} else {
+							for(int n_x = n_x0b; n_x < n_x1e; ++ n_x, n_lerp_y0 += n_gradient) {
+								_ASSERTE(n_x >= 0 && n_x < n_width); // no guarantees about y
+								int n_y_top = (n_lerp_y0 - n_line_extent_top) >> n_FP_shift;
+								int n_y_bottom = (n_lerp_y0 + n_line_extent_bottom) >> n_FP_shift;
+								int n_alpha_top = 255 - (((n_lerp_y0 - n_line_extent_top) >> (n_FP_shift - 8)) & 0xff);
+								int n_alpha_bottom = ((n_lerp_y0 + n_line_extent_bottom) >> (n_FP_shift - 8)) & 0xff;
+								if(n_y_top >= 0 && n_y_top < n_height && n_x + n_y_top * f_dxdy - f_d0 >= 0 && n_x + n_y_top * f_dxdy - f_d1 <= 0)
+									AlphaBlend(p_buffer[n_x + n_y_top * n_width], n_color, int(n_alpha_top * std::max(.0f, std::min(1.0f, n_y_top * f_dxdy + n_x - f_d0)) * std::max(.0f, std::min(1.0f, f_d1 - n_y_top * f_dxdy - n_x))));
+								for(int n_y = n_y_top + 1; n_y <= n_y_bottom; ++ n_y) {
+									if(n_y >= 0 && n_y < n_height &&
+									   n_x + n_y * f_dxdy - f_d0 >= 0 && n_x + n_y * f_dxdy - f_d1 <= 0)
+										//p_buffer[n_x + n_y * n_width] = n_color;//0xff00ff00;
+										AlphaBlend(p_buffer[n_x + n_y * n_width], n_color, int(255 * std::max(.0f, std::min(1.0f, n_y * f_dxdy + n_x - f_d0)) * std::max(.0f, std::min(1.0f, f_d1 - n_y * f_dxdy - n_x))));
+								}
+								if(++ n_y_bottom >= 0 && n_y_bottom < n_height && n_x + n_y_bottom * f_dxdy - f_d0 >= 0 && n_x + n_y_bottom * f_dxdy - f_d1 <= 0)
+									AlphaBlend(p_buffer[n_x + n_y_bottom * n_width], n_color, int(n_alpha_bottom * std::max(.0f, std::min(1.0f, n_y_bottom * f_dxdy + n_x - f_d0)) * std::max(.0f, std::min(1.0f, f_d1 - n_y_bottom * f_dxdy - n_x))));
+							}
+						}
+					}
+					// thick endpoints, type 1
+				} else {
+					if(b_steep) {
+						if(n_x0e < n_x1b) {
+							for(int n_y = n_x0b; n_y < n_x0e; ++ n_y, n_lerp_y0 += n_gradient) {
+								_ASSERTE(n_y >= 0 && n_y < n_height); // no guarantees about x
+								int n_x_top = (n_lerp_y0 - n_line_extent_top) >> n_FP_shift;
+								int n_x_bottom = (n_lerp_y0 + n_line_extent_bottom) >> n_FP_shift;
+								int n_alpha_top = 255 - (((n_lerp_y0 - n_line_extent_top) >> (n_FP_shift - 8)) & 0xff);
+								int n_alpha_bottom = ((n_lerp_y0 + n_line_extent_bottom) >> (n_FP_shift - 8)) & 0xff;
+								if(n_x_top >= 0 && n_x_top < n_width && n_y + n_x_top * f_dxdy - f_d0 >= 0)
+									AlphaBlend(p_buffer[n_x_top + n_y * n_width], n_color, n_alpha_top);
+								for(int n_x = n_x_top + 1; n_x <= n_x_bottom; ++ n_x) {
+									if(n_x >= 0 && n_x < n_width && n_y + n_x * f_dxdy - f_d0 >= 0)
+										p_buffer[n_x + n_y * n_width] = n_color;//0xffff0000
+								}
+								if(++ n_x_bottom >= 0 && n_x_bottom < n_width && n_y + n_x_bottom * f_dxdy - f_d0 >= 0)
+									AlphaBlend(p_buffer[n_x_bottom + n_y * n_width], n_color, n_alpha_bottom);
+							}
+							for(int n_y = n_x1b; n_y < n_x1e; ++ n_y, n_lerp_y1 += n_gradient) {
+								_ASSERTE(n_y >= 0 && n_y < n_height); // no guarantees about x
+								int n_x_top = (n_lerp_y1 - n_line_extent_top) >> n_FP_shift;
+								int n_x_bottom = (n_lerp_y1 + n_line_extent_bottom) >> n_FP_shift;
+								int n_alpha_top = 255 - (((n_lerp_y1 - n_line_extent_top) >> (n_FP_shift - 8)) & 0xff);
+								int n_alpha_bottom = ((n_lerp_y1 + n_line_extent_bottom) >> (n_FP_shift - 8)) & 0xff;
+								if(n_x_top >= 0 && n_x_top < n_width && n_y + n_x_top * f_dxdy - f_d1 <= 0) // t_odo - use <= / >= everywhere
+									AlphaBlend(p_buffer[n_x_top + n_y * n_width], n_color, n_alpha_top);
+								for(int n_x = n_x_top + 1; n_x <= n_x_bottom; ++ n_x) {
+									if(n_x >= 0 && n_x < n_width && n_y + n_x * f_dxdy - f_d1 <= 0)
+										p_buffer[n_x + n_y * n_width] = n_color;//0xff0000ff;
+								}
+								if(++ n_x_bottom >= 0 && n_x_bottom < n_width && n_y + n_x_bottom * f_dxdy - f_d1 <= 0)
+									AlphaBlend(p_buffer[n_x_bottom + n_y * n_width], n_color, n_alpha_bottom);
+							}
+						} else {
+							for(int n_y = n_x0b; n_y < n_x1e; ++ n_y, n_lerp_y0 += n_gradient) {
+								_ASSERTE(n_y >= 0 && n_y < n_height); // no guarantees about x
+								int n_x_top = (n_lerp_y0 - n_line_extent_top) >> n_FP_shift;
+								int n_x_bottom = (n_lerp_y0 + n_line_extent_bottom) >> n_FP_shift;
+								int n_alpha_top = 255 - (((n_lerp_y0 - n_line_extent_top) >> (n_FP_shift - 8)) & 0xff);
+								int n_alpha_bottom = ((n_lerp_y0 + n_line_extent_bottom) >> (n_FP_shift - 8)) & 0xff;
+								if(n_x_top >= 0 && n_x_top < n_width && n_y + n_x_top * f_dxdy - f_d0 >= 0 && n_y + n_x_top * f_dxdy - f_d1 <= 0)
+									AlphaBlend(p_buffer[n_x_top + n_y * n_width], n_color, n_alpha_top);
+								for(int n_x = n_x_top + 1; n_x <= n_x_bottom; ++ n_x) {
+									if(n_x >= 0 && n_x < n_width &&
+									   n_y + n_x * f_dxdy - f_d0 >= 0 && n_y + n_x * f_dxdy - f_d1 <= 0)
+										p_buffer[n_x + n_y * n_width] = n_color;//0xff00ff00;
+								}
+								if(++ n_x_bottom >= 0 && n_x_bottom < n_width && n_y + n_x_bottom * f_dxdy - f_d0 >= 0 && n_y + n_x_bottom * f_dxdy - f_d1 <= 0)
+									AlphaBlend(p_buffer[n_x_bottom + n_y * n_width], n_color, n_alpha_bottom);
+							}
+						}
+					} else {
+						if(n_x0e < n_x1b) {
+							for(int n_x = n_x0b; n_x < n_x0e; ++ n_x, n_lerp_y0 += n_gradient) {
+								_ASSERTE(n_x >= 0 && n_x < n_width); // no guarantees about y
+								int n_y_top = (n_lerp_y0 - n_line_extent_top) >> n_FP_shift;
+								int n_y_bottom = (n_lerp_y0 + n_line_extent_bottom) >> n_FP_shift;
+								int n_alpha_top = 255 - (((n_lerp_y0 - n_line_extent_top) >> (n_FP_shift - 8)) & 0xff);
+								int n_alpha_bottom = ((n_lerp_y0 + n_line_extent_bottom) >> (n_FP_shift - 8)) & 0xff;
+								if(n_y_top >= 0 && n_y_top < n_height && n_x + n_y_top * f_dxdy - f_d0 >= 0)
+									AlphaBlend(p_buffer[n_x + n_y_top * n_width], n_color, n_alpha_top);
+								for(int n_y = n_y_top + 1; n_y <= n_y_bottom; ++ n_y) {
+									if(n_y >= 0 && n_y < n_height && n_x + n_y * f_dxdy - f_d0 >= 0)
+										p_buffer[n_x + n_y * n_width] = n_color;//0xffff0000;
+								}
+								if(++ n_y_bottom >= 0 && n_y_bottom < n_height && n_x + n_y_bottom * f_dxdy - f_d0 >= 0)
+									AlphaBlend(p_buffer[n_x + n_y_bottom * n_width], n_color, n_alpha_bottom);
+							}
+							for(int n_x = n_x1b; n_x < n_x1e; ++ n_x, n_lerp_y1 += n_gradient) {
+								_ASSERTE(n_x >= 0 && n_x < n_width); // no guarantees about y
+								int n_y_top = (n_lerp_y1 - n_line_extent_top) >> n_FP_shift;
+								int n_y_bottom = (n_lerp_y1 + n_line_extent_bottom) >> n_FP_shift;
+								int n_alpha_top = 255 - (((n_lerp_y1 - n_line_extent_top) >> (n_FP_shift - 8)) & 0xff);
+								int n_alpha_bottom = ((n_lerp_y1 + n_line_extent_bottom) >> (n_FP_shift - 8)) & 0xff;
+								if(n_y_top >= 0 && n_y_top < n_height && n_x + n_y_top * f_dxdy - f_d1 <= 0)
+									AlphaBlend(p_buffer[n_x + n_y_top * n_width], n_color, n_alpha_top);
+								for(int n_y = n_y_top + 1; n_y <= n_y_bottom; ++ n_y) {
+									if(n_y >= 0 && n_y < n_height && n_x + n_y * f_dxdy - f_d1 <= 0)
+										p_buffer[n_x + n_y * n_width] = n_color;//0xff0000ff;
+								}
+								if(++ n_y_bottom >= 0 && n_y_bottom < n_height && n_x + n_y_bottom * f_dxdy - f_d1 <= 0)
+									AlphaBlend(p_buffer[n_x + n_y_bottom * n_width], n_color, n_alpha_bottom);
+							}
+						} else {
+							for(int n_x = n_x0b; n_x < n_x1e; ++ n_x, n_lerp_y0 += n_gradient) {
+								_ASSERTE(n_x >= 0 && n_x < n_width); // no guarantees about y
+								int n_y_top = (n_lerp_y0 - n_line_extent_top) >> n_FP_shift;
+								int n_y_bottom = (n_lerp_y0 + n_line_extent_bottom) >> n_FP_shift;
+								int n_alpha_top = 255 - (((n_lerp_y0 - n_line_extent_top) >> (n_FP_shift - 8)) & 0xff);
+								int n_alpha_bottom = ((n_lerp_y0 + n_line_extent_bottom) >> (n_FP_shift - 8)) & 0xff;
+								if(n_y_top >= 0 && n_y_top < n_height && n_x + n_y_top * f_dxdy - f_d0 >= 0 && n_x + n_y_top * f_dxdy - f_d1 <= 0)
+									AlphaBlend(p_buffer[n_x + n_y_top * n_width], n_color, n_alpha_top);
+								for(int n_y = n_y_top + 1; n_y <= n_y_bottom; ++ n_y) {
+									if(n_y >= 0 && n_y < n_height &&
+									   n_x + n_y * f_dxdy - f_d0 >= 0 && n_x + n_y * f_dxdy - f_d1 <= 0)
+										p_buffer[n_x + n_y * n_width] = n_color;//0xff00ff00;
+								}
+								if(++ n_y_bottom >= 0 && n_y_bottom < n_height && n_x + n_y_bottom * f_dxdy - f_d0 >= 0 && n_x + n_y_bottom * f_dxdy - f_d1 <= 0)
+									AlphaBlend(p_buffer[n_x + n_y_bottom * n_width], n_color, n_alpha_bottom);
+							}
+						}
+					}
+					// thick endpoints, type 1, no antialiassing of the ends
+
+					const float p_x[] = {f_x0 + .5f, f_x1 + .5f}, p_y[] = {f_y0 + .5f, f_y1 + .5f}, p_d[] = {f_d0, f_d1};
+					for(int n_end = 0; n_end < 2; ++ n_end) {
+						const float f_x = ((b_steep)? p_y : p_x)[n_end],
+							f_y = ((b_steep)? p_x : p_y)[n_end],
+							f_d = p_d[n_end], f_radius = f_line_width_orig / 2;
+						const int n_sign = (n_end)? 1 : -1;
+						const int n_min_x = std::max(0, std::min(n_width, int(floor(f_x - f_radius)) - 1)),
+							n_min_y = std::max(0, std::min(n_height, int(floor(f_y - f_radius)) - 1)),
+							n_max_x = std::max(0, std::min(n_width, int(ceil(f_x + f_radius)) + 2)),
+							n_max_y = std::max(0, std::min(n_height, int(ceil(f_y + f_radius)) + 2));
+						// ger the raster bounds (leave some space outside for blending)
+
+						const float f_outside = (f_radius + 1.44f) * (f_radius + 1.44f),
+							f_inside = (std::max(f_radius - 1.44f, .0f)) * (std::max(f_radius - 1.44f, .0f));
+						for(int y = n_min_y; y < n_max_y; ++ y) {
+							for(int x = n_min_x; x < n_max_x; ++ x) {
+								_ASSERTE(x >= 0 && x < n_width && y >= 0 && y < n_height); // make sure that the clamps work as expected
+
+								if(((b_steep)? y + x * f_dxdy - f_d : x + y * f_dxdy - f_d) * n_sign < 0)
+									continue;
+
+								float f_cheap = (x - f_x) * (x - f_x) + (y - f_y) * (y - f_y);
+								//float f_dist = CBoxCircleIsect::f_Area(x, x + 1, y, y + 1, f_x, f_y, f_radius);
+								if(f_cheap > f_outside) {
+									//_ASSERTE(f_dist < 1.0f / 255);
+									continue; // zero alpha
+								} else if(f_cheap < f_inside) {
+									//_ASSERTE(f_dist > 1 - 1.0f / 255);
+									p_buffer[x + n_width * y] = n_color;//0xff00ff00; // full alpha
+									continue;
+								}
+
+								float f_dist = CBoxCircleIsect::f_Area(x - f_x,
+									x + 1 - f_x, y - f_y, y + 1 - f_y, f_radius);
+								// wow, exact integral of area of the circle covering the pixel
+
+								AlphaBlend(p_buffer[x + n_width * y], n_color, int(255 * f_dist));
+							}
+						}
+						// a simple (expensive) antialiased / subpixel precise circle algorithm
+					}
+					// t_odo - draw antialiased discs at either end
+					// todo - make this more efficient, this is outrageously expensive
+				}
+
+				n_lerp_y += n_gradient * (n_line_end_size - 1); // note that n_lerp_y has a single dxdy offset in it already (always used by the thin line rasterizer)
+				n_end_x0 += n_line_end_size;
+				n_end_x1 -= n_line_end_size;
+				// clip the line so that its ends are not over-drawn
+			}
+
+			if(b_steep) {
+				for(int n_y = n_end_x0; n_y <= n_end_x1; ++ n_y, n_lerp_y += n_gradient) {
+					int n_x_top = (n_lerp_y - n_line_extent_top) >> n_FP_shift;
+					int n_x_bottom = (n_lerp_y + n_line_extent_bottom) >> n_FP_shift;
+					_ASSERTE(n_x_bottom >= 0 && n_x_top < n_width && n_y >= 0 && n_y < n_height); // only partially bound
+					int n_alpha_top = 255 - (((n_lerp_y - n_line_extent_top) >> (n_FP_shift - 8)) & 0xff);
+					int n_alpha_bottom = ((n_lerp_y + n_line_extent_bottom) >> (n_FP_shift - 8)) & 0xff;
+					if(n_x_top >= 0)
+						AlphaBlend(p_buffer[n_x_top + n_y * n_width], n_color, n_alpha_top);
+					for(int n_x = n_x_top + 1; n_x <= n_x_bottom; ++ n_x) {
+						if(n_x >= 0 && n_x < n_width)
+							p_buffer[n_x + n_y * n_width] = n_color; // full coverage
+					}
+					if(++ n_x_bottom < n_width)
+						AlphaBlend(p_buffer[n_x_bottom + n_y * n_width], n_color, n_alpha_bottom);
+				}
+				// draw the line
+			} else {
+				for(int n_x = n_end_x0; n_x <= n_end_x1; ++ n_x, n_lerp_y += n_gradient) {
+					int n_y_top = (n_lerp_y - n_line_extent_top) >> n_FP_shift;
+					int n_y_bottom = (n_lerp_y + n_line_extent_bottom) >> n_FP_shift;
+					_ASSERTE(n_x >= 0 && n_x < n_width && n_y_bottom >= 0 && n_y_top < n_height); // only partially bound
+					int n_alpha_top = 255 - (((n_lerp_y - n_line_extent_top) >> (n_FP_shift - 8)) & 0xff);
+					int n_alpha_bottom = ((n_lerp_y + n_line_extent_bottom) >> (n_FP_shift - 8)) & 0xff;
+					if(n_y_top >= 0)
+						AlphaBlend(p_buffer[n_x + n_y_top * n_width], n_color, n_alpha_top);
+					for(int n_y = n_y_top + 1; n_y <= n_y_bottom; ++ n_y) {
+						if(n_y >= 0 && n_y < n_height)
+							p_buffer[n_x + n_y * n_width] = n_color; // full coverage
+					}
+					if(++ n_y_bottom < n_height)
+						AlphaBlend(p_buffer[n_x + n_y_bottom * n_width], n_color, n_alpha_bottom);
+				}
+			}
+			// thick lines
+		}
+	}
+#endif // 0
 
 	/**
 	 *	@brief draws a solid-color line
@@ -1464,12 +2400,123 @@ struct TBmp {
 			}
 			// fixup left point if offscreen
 
-			int r = std::min(n_width - 1, int(floor(p_segment[1][0])));
-			for(; l <= r; ++ l) {
+			int r = std::min(n_width, int(floor(p_segment[1][0])));
+			for(; l < r; ++ l) {
 				if(p_segment[0][2] < p_z_buffer[l]) {
 					p_z_buffer[l] = p_segment[0][2];
 					p_color_buffer[l] = n_color;
 				}
+
+				for(int n = 0; n < 3; ++ n)
+					p_segment[0][n] += p_delta[n];
+			}
+			// rasterize the segment
+		}
+		// rasterize the triangle
+	}
+
+	/**
+	 *	@brief draws a solid-color triangle
+	 *
+	 *	@param[in] p_z_buffer is pointer to the buffer containing 1/z values
+	 *		(a block of memory with the same dimensions and addressing as this bitmap)
+	 *	@param[in] p_vertex is a list of the triangle vertices
+	 *	@param[in] n_color is the fill color
+	 *
+	 *	@note This performs clipping, coordinates outside the bitmap are ok.
+	 */
+	template <class CPixelShader>
+	void DrawTriangle_Shader(const float p_vertex[3][3], CPixelShader shader)
+	{
+		int n_min_y = int(floor(std::min(p_vertex[0][1], std::min(p_vertex[1][1], p_vertex[2][1]))));
+		int n_max_y = int(floor(std::max(p_vertex[0][1], std::max(p_vertex[1][1], p_vertex[2][1]))));
+		// find the top / bottom y
+
+		if(n_min_y < 0)
+			n_min_y = 0;
+		if(n_max_y >= n_height)
+			n_max_y = n_height - 1;
+		// make sure we don't compute pixels that are not displayed in the end
+
+		//p_z_buffer += n_width * n_min_y;
+		uint32_t *p_color_buffer = p_buffer + n_width * n_min_y;
+		for(int y = n_min_y; y <= n_max_y; ++ y, /*p_z_buffer += n_width,*/ p_color_buffer += n_width) {
+			int n_point_num = 0;
+			float p_segment[2][3];
+			for(int i = 0, j = 2; i < 3; j = i ++) {
+				const float *p_a = p_vertex[i];
+				const float *p_b = p_vertex[j];
+
+				if((y >= p_a[1] && y <= p_b[1]) ||
+				   (y >= p_b[1] && y <= p_a[1])) {
+					float t = (y - p_a[1]) / (p_b[1] - p_a[1]);
+					// find edge-scanline intersection
+
+					if(n_point_num < 2) {
+						for(int n = 0; n < 3; ++ n)
+							p_segment[n_point_num][n] = p_a[n] + t * (p_b[n] - p_a[n]);
+						++ n_point_num;
+					} else {
+						if(p_segment[0][0] > p_segment[1][0]) {
+							for(int n = 0; n < 3; ++ n)
+								std::swap(p_segment[0][n], p_segment[1][n]);
+						}
+						// make sure the first is left and the second is right
+
+						float p_isect[3];
+						for(int n = 0; n < 3; ++ n)
+							p_isect[n] = p_a[n] + t * (p_b[n] - p_a[n]);
+						// calculate the new intersection
+
+						if(p_isect[0] < p_segment[0][0])
+							memcpy(p_segment[0], p_isect, 3 * sizeof(float)); // new is left to 0
+						else if(p_isect[0] > p_segment[1][0])
+							memcpy(p_segment[1], p_isect, 3 * sizeof(float)); // new is right to 1
+						// in case the third intersection was found on the same scanline,
+						// replace the one lying in the segment of the other two
+					}
+					// calculate intersection position, add it to the list
+				}
+			}
+			// find intersection of the triangle and the scanline
+
+			if(n_point_num != 2)
+				continue;
+			// bad intersections
+
+			if(p_segment[0][0] > p_segment[1][0]) {
+				for(int n = 0; n < 3; ++ n)
+					std::swap(p_segment[0][n], p_segment[1][n]);
+			}
+			// make sure the first is left and the second is right
+
+			if(int(p_segment[1][0]) < 0 || p_segment[0][0] >= n_width)
+				continue;
+			// it's too left, or too right
+
+			p_segment[0][2] = 1 / p_segment[0][2];
+			p_segment[1][2] = 1 / p_segment[1][2];
+			// convert z to 1/z to make its interpolation linear
+
+			float p_delta[3];
+			for(int n = 0; n < 3; ++ n)
+				p_delta[n] = p_segment[1][n] - p_segment[0][n];
+			float f_len = p_delta[0];
+			for(int m = 0; m < 3; ++ m)
+				p_delta[m] /= f_len;
+			// calculate delta coordinates per x-step
+
+			int l = std::max(0, int(floor(p_segment[0][0])));
+			if(p_segment[0][0] != l) {
+				float f_offset = l - p_segment[0][0];
+				for(int n = 0; n < 3; ++ n)
+					p_segment[0][n] += p_delta[n] * f_offset;
+			}
+			// fixup left point if offscreen
+
+			int r = std::min(n_width, int(floor(p_segment[1][0])));
+			for(; l < r; ++ l) {
+				shader(p_color_buffer[l]); // todo - add barycentric coordinates or other means of vertex coordinate interpolation
 
 				for(int n = 0; n < 3; ++ n)
 					p_segment[0][n] += p_delta[n];

@@ -21,9 +21,11 @@
  *	@date 2012-09-03
  */
 
-//#include "slam/Parser.h"
-#include "slam/FlatSystem.h"
 #include <map>
+
+/** \addtogroup parser
+ *	@{
+ */
 
 /**
  *	@brief set this in edge traits for the CParseLoop to ignore this edge
@@ -387,5 +389,7 @@ public:
 		// add the vertex to the system (convert parsed vertex to internal representation)
 	}
 };
+
+/** @} */ // end of group
 
 #endif // !__PARSE_LOOP_INCLUDED

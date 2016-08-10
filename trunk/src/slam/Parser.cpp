@@ -521,7 +521,7 @@ bool CParser::Parse(const char *p_s_filename, CParserAdaptor *p_callback,
 			case token_Landmark2D_RangeBearing:
 				// this case intentionally falls through (not supported)
 			default:
-				fprintf(stderr, "error: internal program error: unknown token occured\n");
+				fprintf(stderr, "error: internal program error: unknown token occurred\n");
 				fclose(p_fr);
 				return false;
 			}
@@ -561,16 +561,39 @@ void CParserBase::TrimSpace(std::string &r_s_string)
 bool CParserBase::ReadLine(std::string &r_s_line, FILE *p_fr)
 {
 	r_s_line.erase();
-	for(int c = fgetc(p_fr); c != '\n' && c != EOF; c = fgetc(p_fr)) {
-		if(ferror(p_fr))
-			return false;
-		try {
+	try {
+		for(int c = fgetc(p_fr); c != '\n' && c != EOF; c = fgetc(p_fr)) {
+			/*if(ferror(p_fr)) // if some other reading error happens, fgetc() also returns EOF
+				return false;*/
 			r_s_line += c; // some string implementations don't have push_back()
-		} catch(std::bad_alloc&) {
-			return false;
 		}
+	} catch(std::bad_alloc&) {
+		return false;
 	}
 	// read line
+
+	return !ferror(p_fr);
+}
+
+bool CParserBase::ReadField(std::string &r_s_line, FILE *p_fr)
+{
+	r_s_line.erase();
+
+	int c = fgetc(p_fr);
+	while(isspace(uint8_t(c)) && c != EOF)
+		c = fgetc(p_fr);
+	// skip space
+
+	try {
+		for(; !isspace(uint8_t(c)) && c != EOF; c = fgetc(p_fr)) {
+			/*if(ferror(p_fr)) // if some other reading error happens, fgetc() also returns EOF
+				return false;*/
+			r_s_line += c; // some string implementations don't have push_back()
+		}
+	} catch(std::bad_alloc&) {
+		return false;
+	}
+	// read non-whitespace
 
 	return !ferror(p_fr);
 }

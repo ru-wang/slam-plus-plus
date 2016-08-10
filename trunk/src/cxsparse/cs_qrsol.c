@@ -1,4 +1,4 @@
-#include "cs.h"
+#include "cxsparse/cs.h"
 /* x=A\b where A can be rectangular; b overwritten with solution */
 CS_INT cs_qrsol (CS_INT order, const cs *A, CS_ENTRY *b)
 {

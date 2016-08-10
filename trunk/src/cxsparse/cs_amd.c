@@ -1,4 +1,4 @@
-#include "cs.h"
+#include "cxsparse/cs.h"
 /* clear w */
 static CS_INT cs_wclear (CS_INT mark, CS_INT lemax, CS_INT *w, CS_INT n)
 {
@@ -28,7 +28,7 @@ CS_INT *cs_amd (CS_INT order, const cs *A)  /* order 0:natural, 1:Chol, 2:LU, 3:
     AT = cs_transpose (A, 0) ;              /* compute A' */
     if (!AT) return (NULL) ;
     m = A->m ; n = A->n ;
-    dense = CS_MAX (16, 10 * sqrt ((double) n)) ;   /* find dense threshold */
+    dense = (CS_INT)CS_MAX (16.0, 10 * sqrt ((double) n)) ;   /* find dense threshold */ // swine - fixed a compile-time warning
     dense = CS_MIN (n-2, dense) ;
     if (order == 1 && n == m)
     {

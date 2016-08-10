@@ -21,6 +21,11 @@
  *	@date 2012-09-03
  */
 
+
+/** \addtogroup linsolve
+ *	@{
+ */
+
 /**
  *	@def __CSPARSE_LINEAR_SOLVER_REUSE_WORKSPACE
  *	@brief if defined, CLinearSolver_CSparse::Solve_PosDef() will reuse
@@ -36,7 +41,7 @@
 
 #include "slam/LinearSolverTags.h"
 #include "csparse/cs.hpp"
-#include "slam/BlockMatrix.h" // includes Eigen as well
+//#include "slam/BlockMatrix.h" // included from slam/LinearSolverTags.h
 
 /**
  *	@brief linear solver model based on CSparse
@@ -126,6 +131,25 @@ public:
 	 */
 	bool Factorize_PosDef_Blocky(CUberBlockMatrix &r_factor, const CUberBlockMatrix &r_lambda,
 		std::vector<size_t> &r_workspace, size_t n_dest_row_id = 0,
+		size_t n_dest_column_id = 0, bool b_upper_factor = true); // throw(std::bad_alloc)
+
+	/**
+	 *	@brief factorizes a pre-ordered block matrix, puts result in another block matrix
+	 *
+	 *	@param[out] r_f_time is time of the factorization only (ommits block conversion)
+	 *	@param[out] r_factor is destination for the factor (must contain structure but not any nonzero blocks)
+	 *	@param[in] r_lambda is a pre-ordered block matrix to be factorized
+	 *	@param[in] r_workspace is reverse row lookup of r_factor for CUberBlockMatrix::From_Sparse()
+	 *	@param[in] n_dest_row_id is id of block row where the factor should be put in L
+	 *	@param[in] n_dest_column_id is id of block column where the factor should be put in L
+	 *	@param[in] b_upper_factor is the factor flag (if set, factor is U (R), if not se, factor is L)
+	 *
+	 *	@return Returns true on success, false on failure (not pos def or incorrect structure of r_factor).
+	 *
+	 *	@note This function throws std::bad_alloc.
+	 */
+	bool Factorize_PosDef_Blocky_Benchmark(double &r_f_time, CUberBlockMatrix &r_factor,
+		const CUberBlockMatrix &r_lambda, std::vector<size_t> &r_workspace, size_t n_dest_row_id = 0,
 		size_t n_dest_column_id = 0, bool b_upper_factor = true); // throw(std::bad_alloc)
 
 	/**
@@ -249,5 +273,7 @@ protected:
 	 */
 	static csn *cs_chol_workspace (const cs *A, const css *S, csi *cin, double *xin);
 };
+
+/** @} */ // end of group
 
 #endif // !__LINEAR_SOLVER_CS_INCLUDED

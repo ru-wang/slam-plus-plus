@@ -1,4 +1,4 @@
-#include "cs.h"
+#include "cxsparse/cs.h"
 /* allocate a sparse matrix (triplet form or compressed-column form) */
 cs *cs_spalloc (CS_INT m, CS_INT n, CS_INT nzmax, CS_INT values, CS_INT triplet)
 {
@@ -10,7 +10,7 @@ cs *cs_spalloc (CS_INT m, CS_INT n, CS_INT nzmax, CS_INT values, CS_INT triplet)
     A->nz = triplet ? 0 : -1 ;              /* allocate triplet or comp.col */
     A->p = cs_malloc (triplet ? nzmax : n+1, sizeof (CS_INT)) ;
     A->i = cs_malloc (nzmax, sizeof (CS_INT)) ;
-    A->x = values ? cs_malloc (nzmax, sizeof (CS_ENTRY)) : NULL ;
+    A->x = values ? (CS_ENTRY*)cs_malloc (nzmax, sizeof (CS_ENTRY)) : (CS_ENTRY*)NULL ;
     return ((!A->p || !A->i || (values && !A->x)) ? cs_spfree (A) : A) ;
 }
 

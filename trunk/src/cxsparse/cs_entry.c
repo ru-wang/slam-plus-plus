@@ -1,4 +1,4 @@
-#include "cs.h"
+#include "cxsparse/cs.h"
 /* add an entry to a triplet matrix; return 1 if ok, 0 otherwise */
 CS_INT cs_entry (cs *T, CS_INT i, CS_INT j, CS_ENTRY x)
 {

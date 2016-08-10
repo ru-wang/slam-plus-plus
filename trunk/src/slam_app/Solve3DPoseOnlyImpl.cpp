@@ -23,13 +23,15 @@
  */
 #define __SE3_POSE_ONLY_ENABLED
 
-#include "slam_app/Main.h"
+#include <stdio.h>
+struct TCommandLineArgs; // forward declaration
 #ifdef __SE3_POSE_ONLY_ENABLED
-#include "slam/ConfigSolvers.h" // only included in files that actually need the solvers (slow to compile)
+#include "slam_app/Main.h"
+//#include "slam/ConfigSolvers.h" // included via slam_app/Main.h
 #include "slam/SE3_Types.h"
 #endif // __SE3_POSE_ONLY_ENABLED
 
-int n_Run_SE3PoseOnly_Solver(TCommandLineArgs t_args) // throw(std::runtime_error, std::bad_alloc)
+int n_Run_SE3PoseOnly_Solver(const TCommandLineArgs &t_args) // throw(std::runtime_error, std::bad_alloc)
 {
 #ifdef __SE3_POSE_ONLY_ENABLED
 	_ASSERTE(t_args.b_pose_only);

@@ -23,6 +23,14 @@
 //#define __SCHUR_PROFILING // defined in slam/LinearSolver_Schur.h
 // want to see profile info?
 
+/**
+ *	@def __GPU_DENSE_FALLBACK_TO_LU
+ *	@brief if defined and GPU dense Cholesky fails, will try to decompose and
+ *		solve using LU instead (aimed to help in case of some numerical issues,
+ *		probably bad if it happens every time)
+ */
+#define __GPU_DENSE_FALLBACK_TO_LU
+
 #if !defined(__DISABLE_GPU)
 
 #include <cula.hpp>
@@ -273,6 +281,7 @@ struct TSharedGPUData { // basically a member storage of CLinearSolver_DenseGPU,
 	int n_device; /**< @brief chosen CUDA device index */
 	CUdevice t_device; /**< @brief chosen CUDA device handle */
 	CUcontext t_context; /**< @brief CUDA context, using the chosen device */ // simplify management by using a single context: only one context is active in SLAM++ and no context switching needs to take place
+	std::vector<CUcontext> omp_context_list; /**< @brief additional CUDA contexts, using the same device, one per each thread; the first one is the same as t_context; use COMPCUDAContextGuard() to place them */
 	// needed for both CUDA and CULA
 
 	/*CUdeviceptr dense_p_lambda_storage, dense_p_rhs_storage;
@@ -304,53 +313,79 @@ struct TSharedGPUData { // basically a member storage of CLinearSolver_DenseGPU,
 	{
 		__GPU_Function;
 
-		if(n_device != -1)
-			return;
-		// already inizialized
+#ifdef _OPENMP
+		#pragma omp critical
+#endif // _OPENMP
+		{
+			do {
+				if(n_device != -1)
+					break;
+				// already inizialized
 
-		int n_dev_num;
-		int result, dn_result;
-		if((result = cuInit(0)) != CUDA_SUCCESS || (dn_result =
-		   cuDeviceGetCount(&n_dev_num)) != CUDA_SUCCESS || !n_dev_num) {
-			if(result != CUDA_SUCCESS)
-				fprintf(stderr, "error: cuInit() returns %d\n", result);
-			else if(dn_result != CUDA_SUCCESS)
-				fprintf(stderr, "error: cuDeviceGetCount() returns %d\n", dn_result);
-			else
-				fprintf(stderr, "error: cuDeviceGetCount() found no devices\n");
-			throw std::runtime_error("cuInit() failed");
+				int n_dev_num;
+				int result, dn_result;
+				if((result = cuInit(0)) != CUDA_SUCCESS || (dn_result =
+				   cuDeviceGetCount(&n_dev_num)) != CUDA_SUCCESS || !n_dev_num) {
+					if(result != CUDA_SUCCESS)
+						fprintf(stderr, "error: cuInit() returns %d\n", result);
+					else if(dn_result != CUDA_SUCCESS)
+						fprintf(stderr, "error: cuDeviceGetCount() returns %d\n", dn_result);
+					else
+						fprintf(stderr, "error: cuDeviceGetCount() found no devices\n");
+					throw std::runtime_error("cuInit() failed");
+				}
+
+				size_t n_max_mem;
+				for(int i = 0; i < n_dev_num; ++ i) {
+					if(cuDeviceGet(&t_device, i) != CUDA_SUCCESS)
+						throw std::runtime_error("cuDeviceGet() failed");
+					size_t n_mem;
+					if(cuDeviceTotalMem(&n_mem, t_device) != CUDA_SUCCESS)
+						throw std::runtime_error("cuDeviceTotalMem() failed");
+					if(!i || n_mem > n_max_mem) {
+						n_max_mem = n_mem;
+						n_device = i;
+					}
+				}
+				// choose the best device, based on memory size (tends to prefer Tesla devices before GTX ones)
+
+				if(cuDeviceGet(&t_device, n_device) != CUDA_SUCCESS)
+					throw std::runtime_error("cuDeviceGet() failed");
+				// get handle to the chosen device
+
+				char p_s_dev_name[1024];
+				if(cuDeviceGetName(p_s_dev_name, sizeof(p_s_dev_name) / sizeof(char) - 1, t_device) != CUDA_SUCCESS)
+					throw std::runtime_error("cuDeviceGetName() failed");
+				printf("debug: chosen GPU device: \'%s\' (" PRIsizeB "B RAM)\n", p_s_dev_name, PRIsizeBparams(n_max_mem));
+				// print the chosen device name
+
+				if(cuCtxCreate(&t_context, CU_CTX_SCHED_AUTO, t_device) != CUDA_SUCCESS ||
+				   cuCtxSetCurrent(t_context) != CUDA_SUCCESS)
+					throw std::runtime_error("cuCtxCreate() failed");
+				if(cuCtxSetSharedMemConfig(CU_SHARED_MEM_CONFIG_EIGHT_BYTE_BANK_SIZE) != CUDA_SUCCESS)
+					throw std::runtime_error("cuCtxSetSharedMemConfig() failed");
+				// create context and request 8-byte memory banks: will work mostly with doubles
+
+				omp_context_list.clear();
+				omp_context_list.push_back(t_context);
+#ifdef _OPENMP
+				omp_context_list.resize(omp_get_max_threads());
+				#pragma omp parallel
+				{
+					int tid = omp_get_thread_num();
+					if(tid) {
+						CUcontext &r_t_context = omp_context_list[tid];
+						if(cuCtxCreate(&r_t_context, CU_CTX_SCHED_AUTO, t_device) != CUDA_SUCCESS ||
+						   cuCtxSetCurrent(r_t_context) != CUDA_SUCCESS)
+							throw std::runtime_error("cuCtxCreate() failed");
+						if(cuCtxSetSharedMemConfig(CU_SHARED_MEM_CONFIG_EIGHT_BYTE_BANK_SIZE) != CUDA_SUCCESS)
+							throw std::runtime_error("cuCtxSetSharedMemConfig() failed");
+						// create context and request 8-byte memory banks: will work mostly with doubles
+					}
+				}
+#endif // _OPENMP
+			} while(0);
 		}
-
-		size_t n_max_mem;
-		for(int i = 0; i < n_dev_num; ++ i) {
-			if(cuDeviceGet(&t_device, i) != CUDA_SUCCESS)
-				throw std::runtime_error("cuDeviceGet() failed");
-			size_t n_mem;
-			if(cuDeviceTotalMem(&n_mem, t_device) != CUDA_SUCCESS)
-				throw std::runtime_error("cuDeviceTotalMem() failed");
-			if(!i || n_mem > n_max_mem) {
-				n_max_mem = n_mem;
-				n_device = i;
-			}
-		}
-		// choose the best device, based on memory size (tends to prefer Tesla devices before GTX ones)
-
-		if(cuDeviceGet(&t_device, n_device) != CUDA_SUCCESS)
-			throw std::runtime_error("cuDeviceGet() failed");
-		// get handle to the chosen device
-
-		char p_s_dev_name[1024];
-		if(cuDeviceGetName(p_s_dev_name, sizeof(p_s_dev_name) / sizeof(char) - 1, t_device) != CUDA_SUCCESS)
-			throw std::runtime_error("cuDeviceGetName() failed");
-		printf("debug: chosen GPU device: \'%s\' (" PRIsizeB "B RAM)\n", p_s_dev_name, PRIsizeBparams(n_max_mem));
-		// print the chosen device name
-
-		if(cuCtxCreate(&t_context, CU_CTX_SCHED_AUTO, t_device) != CUDA_SUCCESS ||
-		   cuCtxSetCurrent(t_context) != CUDA_SUCCESS)
-			throw std::runtime_error("cuCtxCreate() failed");
-		if(cuCtxSetSharedMemConfig(CU_SHARED_MEM_CONFIG_EIGHT_BYTE_BANK_SIZE) != CUDA_SUCCESS)
-			throw std::runtime_error("cuCtxSetSharedMemConfig() failed");
-		// create context and request 8-byte memory banks: will work mostly with doubles
 	}
 
 protected:
@@ -370,7 +405,11 @@ protected:
 
 		if(t_context)
 			cuCtxDestroy(t_context);
-		// delete cuda context
+		for(size_t i = 0, n = omp_context_list.size(); i < n; ++ i) {
+			if(omp_context_list[i] && omp_context_list[i] != t_context)
+				cuCtxDestroy(omp_context_list[i]);
+		}
+		// delete cuda contexts
 	}
 
 	/**
@@ -394,6 +433,65 @@ static TSharedGPUData &gpu = TSharedGPUData::r_GetInstance(); /**< @brief GPU da
  */
 
 /*
+ *								=== COMPCUDAContextGuard ===
+ */
+
+COMPCUDAContextGuard::COMPCUDAContextGuard() // throw(std::runtime_error)
+	:m_b_pushed(true)
+{
+#ifdef _OPENMP
+	const int n_tid = omp_get_thread_num();
+	int n_result;
+	if(n_tid && (n_result = cuCtxPushCurrent(gpu.omp_context_list[n_tid])) != CUDA_SUCCESS) {
+		m_b_pushed = false;
+		char p_s_message[256];
+		sprintf(p_s_message, "cuCtxPushCurrent() failed with %d", n_result);
+		fprintf(stderr, "error: %s\n", p_s_message);
+		throw std::runtime_error(p_s_message);
+	}
+#endif // _OPENMP
+}
+
+COMPCUDAContextGuard::COMPCUDAContextGuard(bool b_active) // throw(std::runtime_error)
+	:m_b_pushed(b_active)
+{
+	if(!b_active)
+		return; // do nothing
+#ifdef _OPENMP
+	const int n_tid = omp_get_thread_num();
+	int n_result;
+	if((n_result = cuCtxPushCurrent(gpu.omp_context_list[n_tid])) != CUDA_SUCCESS) {
+		m_b_pushed = false;
+		char p_s_message[256];
+		sprintf(p_s_message, "cuCtxPushCurrent() failed with %d", n_result);
+		fprintf(stderr, "error: %s\n", p_s_message);
+		throw std::runtime_error(p_s_message);
+	}
+#endif // _OPENMP
+}
+
+COMPCUDAContextGuard::~COMPCUDAContextGuard() // throw(std::runtime_error)
+{
+#ifdef _OPENMP
+	if(!m_b_pushed)
+		return;
+	CUcontext t_old_ctx;
+	int n_result;
+	const int n_tid = omp_get_thread_num();
+	if(n_tid && (n_result = cuCtxPopCurrent(&t_old_ctx)) != CUDA_SUCCESS) {
+		char p_s_message[256];
+		sprintf(p_s_message, "cuCtxPopCurrent() failed with %d", n_result);
+		fprintf(stderr, "error: %s\n", p_s_message);
+		throw std::runtime_error(p_s_message);
+	}
+#endif // _OPENMP
+}
+
+/*
+ *								=== ~COMPCUDAContextGuard ===
+ */
+
+/*
  *								=== CLinearSolver_DenseGPU ===
  */
 
@@ -404,81 +502,117 @@ CLinearSolver_DenseGPU::CLinearSolver_DenseGPU() // throw(std::runtime_error)
 {
 	__GPU_Function;
 
-	++ n_instance_num;
-	if(!b_cula_initialized) {
-		CGPUGuard::Register_SignalHandlers();
-		// avoid letting the user quit the program in the middle
-		// of some computation, as that sometimes crashes the GPU
-		// now have to look at b_quit
+#ifdef _OPENMP
+	//#pragma omp critical
+#endif // _OPENMP
+	{
+#ifdef _OPENMP
+		#pragma omp atomic
+#endif // _OPENMP
+		++ n_instance_num;
+		if(!b_cula_initialized) {
+			CGPUGuard::Register_SignalHandlers();
+			// avoid letting the user quit the program in the middle
+			// of some computation, as that sometimes crashes the GPU
+			// now have to look at b_quit
 
-		{
-			gpu.CUInit();
-			// initialize CUDA
-
-			if(culaSelectDevice(gpu.n_device) != culaNoError)
-				throw std::runtime_error("culaSelectDevice() failed");
-			// "To bind without error, this function must be called before culaInitialize."
-		}
-
-		//printf("debug: culaInitialize()\n"); // seems to do that only once, when needed
-		culaStatus s;
-		switch(s = culaInitialize()) {
-		case culaNoError:
-			b_cula_initialized = true;
-			break;
-		case culaInsufficientRuntime:
-			throw std::runtime_error("failed to initialize CULA: no compatible driver found");
-		case culaInsufficientComputeCapability:
-			throw std::runtime_error("failed to initialize CULA: no hardware with sufficient comp. cap. found");
-		case culaNoHardware:
-			throw std::runtime_error("failed to initialize CULA: no compatible hardware found");
-		default:
-			fprintf(stderr, "error: CULA error: \'%s\'\n", culaGetStatusString(s));
 			{
-				culaInfo i = culaGetErrorInfo();
-				char p_s_error[1024];
-				culaGetErrorInfoString(s, i, p_s_error, sizeof(p_s_error) / sizeof(char) - 1);
-				fprintf(stderr, "error: CULA error: %d, \'%s\'\n", int(s), culaGetStatusString(s));
-				fprintf(stderr, "error: CULA error info: %d, \'%s\'\n", int(i), p_s_error);
+				gpu.CUInit();
+				// initialize CUDA
+
+				if(culaSelectDevice(gpu.n_device) != culaNoError)
+					throw std::runtime_error("culaSelectDevice() failed");
+				// "To bind without error, this function must be called before culaInitialize."
 			}
-			throw std::runtime_error("failed to initialize CULA: unspecified error");
+
+			//printf("debug: culaInitialize()\n"); // seems to do that only once, when needed
+			culaStatus s;
+			switch(s = culaInitialize()) {
+			case culaNoError:
+				b_cula_initialized = true;
+				break;
+			case culaInsufficientRuntime:
+				throw std::runtime_error("failed to initialize CULA: no compatible driver found");
+			case culaInsufficientComputeCapability:
+				throw std::runtime_error("failed to initialize CULA: no hardware with sufficient comp. cap. found");
+			case culaNoHardware:
+				throw std::runtime_error("failed to initialize CULA: no compatible hardware found");
+			default:
+				fprintf(stderr, "error: CULA error: \'%s\'\n", culaGetStatusString(s));
+				{
+					culaInfo i = culaGetErrorInfo();
+					char p_s_error[1024];
+					culaGetErrorInfoString(s, i, p_s_error, sizeof(p_s_error) / sizeof(char) - 1);
+					fprintf(stderr, "error: CULA error: %d, \'%s\'\n", int(s), culaGetStatusString(s));
+					fprintf(stderr, "error: CULA error info: %d, \'%s\'\n", int(i), p_s_error);
+				}
+				throw std::runtime_error("failed to initialize CULA: unspecified error");
+			}
 		}
+		// the first one is in charge of initializing CULA
+		// don't want to do lazy initialization here, just initialize it
+		// when creating the solver so it is ready for when it is used
 	}
-	// the first one is in charge of initializing CULA
-	// don't want to do lazy initialization here, just initialize it
-	// when creating the solver so it is ready for when it is used
 
 	{
 		_ASSERTE(sizeof(CUdeviceptr) == sizeof(m_gpu.p_lambda_storage));
 		_ASSERTE(sizeof(CUdeviceptr) == sizeof(m_gpu.p_rhs_storage));
+		//_ASSERTE(sizeof(CUdeviceptr) == sizeof(m_gpu.p_LU_perm));
 		m_gpu.p_lambda_storage = 0;
 		m_gpu.p_rhs_storage = 0;
 		m_gpu.n_lambda_size = 0;
+		//m_gpu.p_LU_perm = 0;
 	}
-	// in?tialize per-instance data (this is lazily allocated)
+	// initialize per-instance data (this is lazily allocated)
+}
+
+CLinearSolver_DenseGPU::CLinearSolver_DenseGPU(const CLinearSolver_DenseGPU &UNUSED(r_other))
+{
+	_ASSERTE(n_instance_num); // r_other exists, and already tried to initialize at this point
+	++ n_instance_num;
+
+	{
+		_ASSERTE(sizeof(CUdeviceptr) == sizeof(m_gpu.p_lambda_storage));
+		_ASSERTE(sizeof(CUdeviceptr) == sizeof(m_gpu.p_rhs_storage));
+		//_ASSERTE(sizeof(CUdeviceptr) == sizeof(m_gpu.p_LU_perm));
+		m_gpu.p_lambda_storage = 0;
+		m_gpu.p_rhs_storage = 0;
+		m_gpu.n_lambda_size = 0;
+		//m_gpu.p_LU_perm = 0;
+	}
+	// initialize per-instance data (this is lazily allocated)
 }
 
 CLinearSolver_DenseGPU::~CLinearSolver_DenseGPU()
 {
 	__GPU_Function;
 
-	{
+	/*{
 		if(m_gpu.p_lambda_storage)
 			cuMemFree((CUdeviceptr)m_gpu.p_lambda_storage);
 		if(m_gpu.p_rhs_storage)
 			cuMemFree((CUdeviceptr)m_gpu.p_rhs_storage);
+		//if(m_gpu.p_LU_perm)
+		//	cuMemFree((CUdeviceptr)m_gpu.p_LU_perm);
 	}
-	// delete per instance data
+	// delete per instance data*/
 
-	_ASSERTE(n_instance_num > 0); // this exists
-	if(!(-- n_instance_num)) {
-		if(b_cula_initialized) {
-			b_cula_initialized = false;
-			//printf("debug: culaShutdown()\n"); // seems to do that only once, when needed
-			culaShutdown();
+	Free_Memory(); // all in one place
+
+#ifdef _OPENMP
+	#pragma omp critical
+#endif // _OPENMP
+	{
+		_ASSERTE(n_instance_num > 0); // this exists
+		if(!(-- n_instance_num)) {
+			if(b_cula_initialized) {
+				b_cula_initialized = false;
+				//printf("debug: culaShutdown()\n"); // seems to do that only once, when needed
+				culaShutdown();
+			}
 		}
+		// the last one takes care of the cleanup
 	}
-	// the last one takes care of the cleanup
 }
 
 void CLinearSolver_DenseGPU::Free_Memory()
@@ -492,20 +626,66 @@ void CLinearSolver_DenseGPU::Free_Memory()
 	// free host memory
 
 	{
+		int n_result = CUDA_SUCCESS;
 		if(m_gpu.p_lambda_storage)
-			cuMemFree((CUdeviceptr)m_gpu.p_lambda_storage);
+			n_result |= cuMemFree((CUdeviceptr)m_gpu.p_lambda_storage);
 		if(m_gpu.p_rhs_storage)
-			cuMemFree((CUdeviceptr)m_gpu.p_rhs_storage);
+			n_result |= cuMemFree((CUdeviceptr)m_gpu.p_rhs_storage);
+		//if(m_gpu.p_LU_perm)
+		//	n_result |= cuMemFree((CUdeviceptr)m_gpu.p_LU_perm);
+		_ASSERTE(!n_result);
 		m_gpu.p_lambda_storage = 0;
 		m_gpu.p_rhs_storage = 0;
 		m_gpu.n_lambda_size = 0;
+		//m_gpu.p_LU_perm = 0;
 	}
 	// free GPU memory
 }
 
-bool CLinearSolver_DenseGPU::Solve_PosDef(const CUberBlockMatrix &r_lambda, Eigen::VectorXd &r_eta) // throw(std::bad_alloc)
+bool CLinearSolver_DenseGPU::Solve_PosDef(const CUberBlockMatrix &r_lambda, Eigen::VectorXd &r_eta) // throw(std::bad_alloc, std::runtime_error)
 {
 	__GPU_Function;
+
+	if(0) do {
+		static bool b_first_time = true;
+		if(!b_first_time)
+			break;
+		b_first_time = false;
+		// once is enough
+
+		cs *p_struct = cs_spalloc(r_lambda.n_BlockColumn_Num(),
+			r_lambda.n_BlockColumn_Num(), 1, 1, 0);
+		// alloc with values, so that it can be later converted back to a block
+		// matrix (the conversion does not support binary matrices)
+
+		p_struct = r_lambda.p_BlockStructure_to_Sparse(p_struct);
+		// get block structure
+
+		const size_t n = p_struct->n;
+		std::vector<size_t> cumsums(n);
+		for(size_t i = 0; i < n; ++ i)
+			cumsums[i] = i + 1;
+		// create cumsums of 1
+
+		CUberBlockMatrix lam_sp(cumsums.begin(), cumsums.end(), cumsums.begin(), cumsums.end());
+		_ASSERTE(lam_sp.n_Row_Num() == n && lam_sp.n_Column_Num() == n);
+		// make a block matrix with 1x1 blocks and size matching that of the p_struct matrix
+
+		cs *p_struct_tr = cs_transpose(p_struct, 1);
+		cs_spfree(p_struct);
+		p_struct = p_struct_tr;
+		// transpose the structure, matrix market symmetric matrices are supposed to store the lower half
+
+		std::vector<size_t> workspace;
+		lam_sp.From_Sparse(0, 0, p_struct, false, workspace);
+		cs_spfree(p_struct);
+		// fill the block matrix with the sparse matrix
+
+		lam_sp.Save_MatrixMarket("schur_sparsity.mtx", 0,
+			"block matrix nonzero pattern", "matrix coordinate real symmetric");
+		// todo - make this a CUberBlockMatrix member function (possibly in a more optimal manner)
+	} while(0);
+	// debug - save the schur complement sparsity pattern for further processing
 
 	r_lambda.Convert_to_Dense(m_t_lambda);
 
@@ -561,7 +741,7 @@ bool CLinearSolver_DenseGPU::Solve_PosDef(const CUberBlockMatrix &r_lambda, Eige
 		   cuMemAlloc((CUdeviceptr*)&m_gpu.p_rhs_storage, n * sizeof(double)) != CUDA_SUCCESS) {
 			m_gpu.n_lambda_size = 0; // !!
 			char p_s_error[256];
-			sprintf(p_s_error, "CLinearSolver_DenseGPU::Solve_PosDef failed to allocate"
+			sprintf(p_s_error, "CLinearSolver_DenseGPU::Solve_PosDef() failed to allocate"
 				" memory (%d x %d, " PRIsize ")", n, n, r_lambda.n_NonZero_Num());
 			throw std::runtime_error(p_s_error);
 		}
@@ -572,7 +752,7 @@ bool CLinearSolver_DenseGPU::Solve_PosDef(const CUberBlockMatrix &r_lambda, Eige
 	if(cuMemcpyHtoDAsync((CUdeviceptr)m_gpu.p_lambda_storage, m_t_lambda.data(), n * n * sizeof(double), 0) != CUDA_SUCCESS ||
 	   cuMemcpyHtoDAsync((CUdeviceptr)m_gpu.p_rhs_storage, r_eta.data(), n * sizeof(double), 0) != CUDA_SUCCESS ||
 	   cuCtxSynchronize() != CUDA_SUCCESS)
-		throw std::runtime_error("CLinearSolver_DenseGPU::Solve_PosDef failed to upload data");
+		throw std::runtime_error("CLinearSolver_DenseGPU::Solve_PosDef() failed to upload data");
 	// copy the data to the GPU
 
 	culaStatus n_retval = culaDevicePosv('U', int(n), 1, (culaDeviceDouble*)m_gpu.p_lambda_storage,
@@ -583,12 +763,37 @@ bool CLinearSolver_DenseGPU::Solve_PosDef(const CUberBlockMatrix &r_lambda, Eige
 		culaGetErrorInfoString(n_retval, n_info, p_s_error, sizeof(p_s_error) / sizeof(char) - 1);
 		fprintf(stderr, "error: GPU solution returns %d (culaGetErrorInfo() returns %d, says \'%s\')\n",
 			n_retval, n_info, p_s_error);
-		throw std::runtime_error("CLinearSolver_DenseGPU::Solve_PosDef failed");
+#ifdef __GPU_DENSE_FALLBACK_TO_LU
+		fprintf(stderr, "error: fallback to LU\n");
+
+		m_t_lambda.triangularView<Eigen::StrictlyLower>() =
+			m_t_lambda.triangularView<Eigen::StrictlyUpper>().transpose();
+		// make the matrix symmetric for GPU LU
+
+		if(cuMemcpyHtoDAsync((CUdeviceptr)m_gpu.p_lambda_storage, m_t_lambda.data(), n * n * sizeof(double), 0) != CUDA_SUCCESS ||
+		   cuMemcpyHtoDAsync((CUdeviceptr)m_gpu.p_rhs_storage, r_eta.data(), n * sizeof(double), 0) != CUDA_SUCCESS ||
+		   cuCtxSynchronize() != CUDA_SUCCESS)
+			throw std::runtime_error("CLinearSolver_DenseGPU::Solve_PosDef() failed to upload data");
+		// copy the data to the GPU (reupload everything, just to be sure)
+
+		std::vector<int> pivot(n);
+		culaStatus n_retval = culaGesv(int(n), 1, m_t_lambda.data(), int(n), &pivot[0], r_eta.data(), int(n)); // LU solve
+		if(n_retval) {
+			culaInfo n_info = culaGetErrorInfo();
+			culaGetErrorInfoString(n_retval, n_info, p_s_error, sizeof(p_s_error) / sizeof(char) - 1);
+			fprintf(stderr, "error: GPU solution returns %d (culaGetErrorInfo() returns %d, says \'%s\')\n",
+				n_retval, n_info, p_s_error);
+			throw std::runtime_error("CLinearSolver_DenseGPU::Solve_PosDef() failed");
+		}
+		// factorize and solve on GPU using LU, may help in case the system is almost indefinite
+#else // __GPU_DENSE_FALLBACK_TO_LU
+		throw std::runtime_error("CLinearSolver_DenseGPU::Solve_PosDef() failed");
+#endif // __GPU_DENSE_FALLBACK_TO_LU
 	}
 	// factorize and solve on GPU
 
 	if(cuMemcpyDtoH(r_eta.data(), (CUdeviceptr)m_gpu.p_rhs_storage, n * sizeof(double)) != CUDA_SUCCESS)
-		throw std::runtime_error("CLinearSolver_DenseGPU::Solve_PosDef failed to download data");
+		throw std::runtime_error("CLinearSolver_DenseGPU::Solve_PosDef() failed to download data");
 	// copy only the RHS back, save time that would be spent transferring the factorization back - we don't need it
 #elif 0
 	culaStatus n_retval = culaPosv('U', int(n), 1, m_t_lambda.data(), int(n), r_eta.data(), int(n)); // Cholesky solve
@@ -598,7 +803,7 @@ bool CLinearSolver_DenseGPU::Solve_PosDef(const CUberBlockMatrix &r_lambda, Eige
 		culaGetErrorInfoString(n_retval, n_info, p_s_error, sizeof(p_s_error) / sizeof(char) - 1);
 		fprintf(stderr, "error: GPU solution returns %d (culaGetErrorInfo() returns %d, says \'%s\')\n",
 			n_retval, n_info, p_s_error);
-		throw std::runtime_error("CLinearSolver_DenseGPU::Solve_PosDef failed");
+		throw std::runtime_error("CLinearSolver_DenseGPU::Solve_PosDef() failed");
 	}
 	// factorize and solve on GPU
 #elif 1
@@ -614,7 +819,7 @@ bool CLinearSolver_DenseGPU::Solve_PosDef(const CUberBlockMatrix &r_lambda, Eige
 		culaGetErrorInfoString(n_retval, n_info, p_s_error, sizeof(p_s_error) / sizeof(char) - 1);
 		fprintf(stderr, "error: GPU solution returns %d (culaGetErrorInfo() returns %d, says \'%s\')\n",
 			n_retval, n_info, p_s_error);
-		throw std::runtime_error("CLinearSolver_DenseGPU::Solve_PosDef failed");
+		throw std::runtime_error("CLinearSolver_DenseGPU::Solve_PosDef() failed");
 	}
 	// factorize and solve on GPU
 #elif 0
@@ -630,7 +835,7 @@ bool CLinearSolver_DenseGPU::Solve_PosDef(const CUberBlockMatrix &r_lambda, Eige
 		culaGetErrorInfoString(n_retval, n_info, p_s_error, sizeof(p_s_error) / sizeof(char) - 1);
 		fprintf(stderr, "error: GPU solution returns %d (culaGetErrorInfo() returns %d, says \'%s\')\n",
 			n_retval, n_info, p_s_error);
-		throw std::runtime_error("CLinearSolver_DenseGPU::Solve_PosDef failed");
+		throw std::runtime_error("CLinearSolver_DenseGPU::Solve_PosDef() failed");
 	}
 	// factorize on GPU
 
@@ -647,10 +852,10 @@ bool CLinearSolver_DenseGPU::Solve_PosDef(const CUberBlockMatrix &r_lambda, Eige
 	int n_retval = culaPotrf('U', int(n), m_t_lambda.data(), int(n)); // Cholesky
 	if(n_retval == 8) {
 		fprintf(stderr, "error: GPU solution returns %d (not pos def; culaGetErrorInfo() returns %d)\n", n_retval, culaGetErrorInfo());
-		throw std::runtime_error("CLinearSolver_DenseGPU::Solve_PosDef: not pos def");
+		throw std::runtime_error("CLinearSolver_DenseGPU::Solve_PosDef(): not pos def");
 	} else if(n_retval) {
 		fprintf(stderr, "error: GPU solution returns %d (culaGetErrorInfo() returns %d)\n", n_retval, culaGetErrorInfo());
-		throw std::runtime_error("CLinearSolver_DenseGPU::Solve_PosDef failed");
+		throw std::runtime_error("CLinearSolver_DenseGPU::Solve_PosDef() failed");
 	}
 	r_eta = m_t_lambda.triangularView<Eigen::Upper>().transpose().solve(r_eta); // backsubstitution
 	r_eta = m_t_lambda.triangularView<Eigen::Upper>().solve(r_eta); // backsubstitution
@@ -659,6 +864,151 @@ bool CLinearSolver_DenseGPU::Solve_PosDef(const CUberBlockMatrix &r_lambda, Eige
 
 #if 0 && defined(_DEBUG) // seems to work
 	printf("GPU solution error: %g\n", (ref - r_eta).norm());
+#endif // 0 && _DEBUG
+
+	return true;
+}
+
+bool CLinearSolver_DenseGPU::Dense_Inverse(double *p_dest, const double *p_src,
+	const size_t n, bool b_upper_storage, bool b_try_Cholesky) // throw(std::bad_alloc, std::runtime_error)
+{
+	__GPU_Function;
+
+#if 0 && defined(_DEBUG) // seems to work
+	Eigen::MatrixXd ref;
+	{
+		typedef Eigen::PartialPivLU<Eigen::MatrixXd> _TyDecomposition; /**< @brief matrix factorization type (Cholesky) */
+		_TyDecomposition t_factorization;
+
+		Eigen::Map<const Eigen::MatrixXd> r_src(p_src, n, n);
+		m_t_lambda = r_src;
+		if(b_upper_storage) {
+			m_t_lambda.triangularView<Eigen::StrictlyLower>() =
+				r_src.transpose().triangularView<Eigen::StrictlyLower>();
+		}
+
+		t_factorization.compute(m_t_lambda);
+		//if(t_factorization.info() != Eigen::Success) // always succeeds
+		//	return false;
+		// LU
+
+		ref = t_factorization.inverse();
+		// inverse
+	}
+	// just a mockup
+#endif // 0 && _DEBUG
+
+	//size_t n = r_src.cols();
+	//_ASSERTE(r_src.rows() == n); // make sure it is square
+	if(n > INT_MAX)
+		throw std::runtime_error("matrix too large for CULA"); // likely wouldn't fit in the memory at this point
+#if 1
+
+	if(m_gpu.n_lambda_size < n) {
+		if(m_gpu.p_lambda_storage)
+			cuMemFree((CUdeviceptr)m_gpu.p_lambda_storage);
+		if(m_gpu.p_rhs_storage)
+			cuMemFree((CUdeviceptr)m_gpu.p_rhs_storage);
+		//if(m_gpu.p_LU_perm)
+		//	cuMemFree((CUdeviceptr)m_gpu.p_LU_perm);
+		_ASSERTE(sizeof(double) >= sizeof(int)); // make sure p_LU_perm fits inside p_rhs_storage
+		int n_result;
+		if((n_result = cuMemAlloc((CUdeviceptr*)&m_gpu.p_lambda_storage, n * n * sizeof(double))) != CUDA_SUCCESS ||
+		   (n_result = cuMemAlloc((CUdeviceptr*)&m_gpu.p_rhs_storage, n * sizeof(double))) != CUDA_SUCCESS /*||
+		   cuMemAlloc((CUdeviceptr*)&m_gpu.p_LU_perm, n * sizeof(int)) != CUDA_SUCCESS*/) {
+			m_gpu.n_lambda_size = 0; // !!
+			char p_s_error[256];
+			sprintf(p_s_error, "CLinearSolver_DenseGPU::Dense_Inverse() failed to allocate"
+				" memory (" PRIsize " x " PRIsize ", " PRIsize "), result %d", n, n, n * n, n_result);
+			throw std::runtime_error(p_s_error);
+		}
+		m_gpu.n_lambda_size = n;
+	} /*else if(!m_gpu.p_LU_perm) {
+		if(cuMemAlloc((CUdeviceptr*)&m_gpu.p_LU_perm, n * sizeof(int)) != CUDA_SUCCESS) {
+			m_gpu.n_lambda_size = 0; // !!
+			char p_s_error[256];
+			sprintf(p_s_error, "CLinearSolver_DenseGPU::Solve_PosDef() failed to allocate"
+				" memory (" PRIsize " x " PRIsize ", " PRIsize ")", n, n, n * n);
+			throw std::runtime_error(p_s_error);
+		}
+		m_gpu.n_lambda_size = n;
+	}*/
+	// (re)allocate storage for lambda and the permutation (need to alloc the RHS as well - could just reuse it)
+
+	if(cuMemcpyHtoDAsync((CUdeviceptr)m_gpu.p_lambda_storage, p_src, n * n * sizeof(double), 0) != CUDA_SUCCESS ||
+	   cuCtxSynchronize() != CUDA_SUCCESS)
+		throw std::runtime_error("CLinearSolver_DenseGPU::Dense_Inverse() failed to upload data");
+	// copy the data to the GPU
+
+	culaStatus n_retval;
+	if(b_try_Cholesky) {
+		n_retval = culaDevicePotrf('U', int(n), (culaDeviceDouble*)m_gpu.p_lambda_storage, int(n)); // Cholesky factorize
+		if(!n_retval)
+			n_retval = culaDevicePotri('U', int(n), (culaDeviceDouble*)m_gpu.p_lambda_storage, int(n)); // Cholesky invert
+	}
+	if(!b_try_Cholesky || n_retval) {
+		if(b_try_Cholesky) {
+			culaInfo n_info = culaGetErrorInfo();
+			char p_s_error[1024];
+			culaGetErrorInfoString(n_retval, n_info, p_s_error, sizeof(p_s_error) / sizeof(char) - 1);
+			fprintf(stderr, "error: GPU inverse returns %d (culaGetErrorInfo() returns %d, says \'%s\')\n",
+				n_retval, n_info, p_s_error);
+#ifdef __GPU_DENSE_FALLBACK_TO_LU
+			fprintf(stderr, "error: fallback to LU\n");
+#else // __GPU_DENSE_FALLBACK_TO_LU
+			throw std::runtime_error("CLinearSolver_DenseGPU::Solve_PosDef() failed");
+#endif // __GPU_DENSE_FALLBACK_TO_LU
+		}
+		// did we get here by failing cholesky?
+
+		if(b_upper_storage) {
+			Eigen::Map<const Eigen::MatrixXd> r_src(p_src, n, n);
+			Eigen::Map<Eigen::MatrixXd> r_dest(p_dest, n, n);
+			if(p_src != p_dest) {
+				//r_dest.triangularView<Eigen::Upper>() =
+				//	r_src.triangularView<Eigen::Upper>();
+				r_dest = r_src.selfadjointView<Eigen::Upper>();
+			} else {
+				r_dest.triangularView<Eigen::StrictlyLower>() =
+					r_src.transpose().triangularView<Eigen::StrictlyLower>();
+			}
+		}
+		// make the matrix full for GPU LU, without modifying src
+
+		if(cuMemcpyHtoDAsync((CUdeviceptr)m_gpu.p_lambda_storage,
+		   (b_upper_storage)? p_dest : p_src, n * n * sizeof(double), 0) != CUDA_SUCCESS ||
+		   cuCtxSynchronize() != CUDA_SUCCESS)
+			throw std::runtime_error("CLinearSolver_DenseGPU::Dense_Inverse() failed to upload data");
+		// copy the data to the GPU (reupload everything, just to be sure)
+
+		_ASSERTE(sizeof(double) >= sizeof(int)); // make sure p_LU_perm fits inside p_rhs_storage
+		int *p_LU_perm = (int*)m_gpu.p_rhs_storage; // reuse
+		culaStatus n_retval = culaDeviceGetrf(int(n), int(n), m_gpu.p_lambda_storage, int(n), /*m_gpu.*/p_LU_perm); // LU factorize
+		if(!n_retval)
+			n_retval = culaDeviceGetri(int(n), m_gpu.p_lambda_storage, int(n), /*m_gpu.*/p_LU_perm); // LU inverse
+		if(n_retval) {
+			culaInfo n_info = culaGetErrorInfo();
+			char p_s_error[256];
+			culaGetErrorInfoString(n_retval, n_info, p_s_error, sizeof(p_s_error) / sizeof(char) - 1);
+			fprintf(stderr, "error: GPU inverse returns %d (culaGetErrorInfo() returns %d, says \'%s\')\n",
+				n_retval, n_info, p_s_error);
+			throw std::runtime_error("CLinearSolver_DenseGPU::Dense_Inverse() failed");
+		}
+		// factorize and solve on GPU using LU, may help in case the system is almost indefinite
+	}
+	// factorize and solve on GPU
+
+	if(cuMemcpyDtoH(p_dest, (CUdeviceptr)m_gpu.p_lambda_storage, n * n * sizeof(double)) != CUDA_SUCCESS)
+		throw std::runtime_error("CLinearSolver_DenseGPU::Dense_Inverse() failed to download data");
+	// copy only the RHS back, save time that would be spent transferring the factorization back - we don't need it
+#endif // 1
+	// do it on a GPU?
+
+#if 0 && defined(_DEBUG) // seems to work
+	{
+		Eigen::Map<Eigen::MatrixXd> r_dest(p_dest, n, n);
+		printf("debug: GPU inverse error: %g\n", (ref - r_dest).norm());
+	}
 #endif // 0 && _DEBUG
 
 	return true;
@@ -811,16 +1161,16 @@ bool CLinearSolver_Schur_GPUBase::GPUSolve(const CUberBlockMatrix &r_lambda,
 #if 0
 	CUberBlockMatrix C_inv;
 	if(n_landmark_dimension == 3) // this can be anticipated
-		C_inv.InverseOf_Symmteric_FBS<MakeTypelist_Safe((fbs_ut::CCTSize2D<3, 3>))>(C); // C is block diagonal (should also be symmetric)
+		C_inv.InverseOf_Symmteric_FBS<MakeTypelist_Safe((fbs_ut::CCTSize2D<3, 3>))>(C, true); // C is block diagonal (should also be symmetric)
 	else
-		C_inv.InverseOf_Symmteric(C);
+		C_inv.InverseOf_Symmteric(C, true);
 #else // 0
 	_ASSERTE(C.b_BlockDiagonal()); // it is, unless the ordering is bad
-	CUberBlockMatrix &C_inv = C; // can do it inplace
+	CUberBlockMatrix /*&*/C_inv/* = C*/; // can do it inplace // do *not* reuse storage, will modify lambda!
 	if(n_landmark_dimension == 3) // this can be anticipated in BA
 		C_inv.InverseOf_BlockDiag_FBS_Parallel<MakeTypelist_Safe((fbs_ut::CCTSize2D<3, 3>))>(C); // faster version, slightly less general
 	else
-		C_inv.InverseOf_Symmteric(C); // there is no non-FBS InverseOf_BlockDiag(), just use this one instead 
+		C_inv.InverseOf_Symmteric(C, true); // there is no non-FBS InverseOf_BlockDiag(), just use this one instead 
 #endif // 0
 	// inverse of C
 
@@ -1468,7 +1818,7 @@ bool CLinearSolver_Schur_GPUBase::GPUSolve(const CUberBlockMatrix &r_lambda,
 	// also note that schur_compl is not completely dense if it is not many times smaller than C
 
 	Eigen::Map<Eigen::VectorXd>(p_double_workspace, n_pose_vector_size) = v_dx; // an unnecessary copy, maybe could work around
-	// obtained a first part of the solution
+	// obtained the first part of the solution
 
 #if 1
 	Eigen::Map<Eigen::VectorXd> v_dl(p_double_workspace +
@@ -1664,7 +2014,7 @@ bool CLinearSolver_Schur_GPUBase::GPUSolve(const CUberBlockMatrix &r_lambda,
 	if(n_landmark_dimension == 3) // this can be anticipated in BA
 		C_inv.InverseOf_BlockDiag_FBS_Parallel<MakeTypelist_Safe((fbs_ut::CCTSize2D<3, 3>))>(C); // faster version, slightly less general
 	else
-		C_inv.InverseOf_Symmteric(C); // there is no non-FBS InverseOf_BlockDiag(), just use this one instead 
+		C_inv.InverseOf_Symmteric(C, true); // there is no non-FBS InverseOf_BlockDiag(), just use this one instead 
 	// inverse of C
 
 	double f_inverse_time = dt.f_Time();
@@ -1735,7 +2085,7 @@ bool CLinearSolver_Schur_GPUBase::GPUSolve(const CUberBlockMatrix &r_lambda,
 	// also note that schur_compl is not completely dense if it is not many times smaller than C
 
 	Eigen::Map<Eigen::VectorXd>(p_double_workspace, n_pose_vector_size) = v_dx; // an unnecessary copy, maybe could work around
-	// obtained a first part of the solution
+	// obtained the first part of the solution
 
 	Eigen::Map<Eigen::VectorXd> v_dl(p_double_workspace +
 		n_pose_vector_size, n_landmark_vector_size); // calculated inplace

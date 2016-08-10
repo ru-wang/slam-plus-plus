@@ -1,4 +1,4 @@
-#include "cs.h"
+#include "cxsparse/cs.h"
 /* sparse Cholesky update/downdate, L*L' + sigma*w*w' (sigma = +1 or -1) */
 CS_INT cs_updown (cs *L, CS_INT sigma, const cs *C, const CS_INT *parent)
 {

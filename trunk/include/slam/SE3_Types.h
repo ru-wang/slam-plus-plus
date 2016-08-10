@@ -10,29 +10,32 @@
 #define __SE3_TYPES_INCLUDED
 
 #include "slam/BaseTypes.h"
-#include "slam/SE2_Types.h"
-//#include "slam/2DSolverBase.h"
 #include "slam/3DSolverBase.h"
+#include "slam/Parser.h" // parsed types passed to constructors
+
+/** \addtogroup se3
+ *	@{
+ */
 
 /**
  *	@brief SE(3) pose vertex type
  */
-class CVertexPose3D : public CSEBaseVertexImpl<CVertexPose3D, 6> { // this says to use base vertex implementation for class with name CVertexPose2D, while the vertex has 3 dimensions; this will generate member variable m_v_state ("member vector" state), which will be Eigen dense column vector with the given number of dimensions
+class CVertexPose3D : public CSEBaseVertexImpl<CVertexPose3D, 6> {
 public:
-	__SE3_TYPES_ALIGN_OPERATOR_NEW // imposed by the use of eigen, copy this
+	__GRAPH_TYPES_ALIGN_OPERATOR_NEW
 
 	/**
 	 *	@brief default constructor; has no effect
 	 */
-	inline CVertexPose3D() // copy this
+	inline CVertexPose3D()
 	{}
 
 	/**
 	 *	@brief constructor; initializes state vector
 	 *	@param[in] r_v_state is state vector initializer
 	 */
-	inline CVertexPose3D(const Eigen::Matrix<double, 6, 1> &r_v_state) // copy this, change the dimension of the vector to appropriate
-		:CSEBaseVertexImpl<CVertexPose3D, 6>(r_v_state) // change the dimension here as well
+	inline CVertexPose3D(const Eigen::Matrix<double, 6, 1> &r_v_state)
+		:CSEBaseVertexImpl<CVertexPose3D, 6>(r_v_state)
 	{}
 
 	/**
@@ -77,7 +80,7 @@ public:
  */
 class CVertexLandmark3D : public CSEBaseVertexImpl<CVertexLandmark3D, 3> {
 public:
-	__SE3_TYPES_ALIGN_OPERATOR_NEW
+	__GRAPH_TYPES_ALIGN_OPERATOR_NEW
 
 	/**
 	 *	@brief default constructor; has no effect
@@ -121,13 +124,13 @@ public:
 /**
  *	@brief SE(3) pose-pose edge
  */
-class CEdgePose3D : public CBaseEdgeImpl<CEdgePose3D, MakeTypelist(CVertexPose3D, CVertexPose3D), 6> { // again, this tells that base implementation for base edge for type that will be called CEdgePose2D, and it will be an edge between two vertices of type CVertexPose2D, and the measurement will have 3 dimensions (in order to have hyperedges, you need to provide your own version of CBaseEdgeImpl, that is an advanced topic)
+class CEdgePose3D : public CBaseEdgeImpl<CEdgePose3D, MakeTypelist(CVertexPose3D, CVertexPose3D), 6> {
 public:
 	/**
 	 *	@brief vertex initialization functor
 	 *	Calculates vertex position from the first vertex and an XYT edge.
 	 */
-	class CRelative_to_Absolute_XYZ_Initializer { // this is an object which is used to lazy initialize vertices (copy it)
+	class CRelative_to_Absolute_XYZ_Initializer {
 	protected:
 		const Eigen::Matrix<double, 6, 1> &m_r_v_pose1; /**< @brief the first vertex */
 		const Eigen::Matrix<double, 6, 1> &m_r_v_delta; /**< @brief the edge, shared by r_v_vertex1 and the vertex being initialized */
@@ -157,12 +160,12 @@ public:
 	};
 
 public:
-	__SE3_TYPES_ALIGN_OPERATOR_NEW // imposed by the use of eigen, just copy this
+	__GRAPH_TYPES_ALIGN_OPERATOR_NEW // imposed by the use of eigen, just copy this
 
 	/**
 	 *	@brief default constructor; has no effect
 	 */
-	inline CEdgePose3D() // copy this
+	inline CEdgePose3D()
 	{}
 
 	/**
@@ -174,9 +177,9 @@ public:
 	 *	@param[in,out] r_system is reference to system (used to query edge vertices)
 	 */
 	template <class CSystem>
-	CEdgePose3D(const CParserBase::TEdge3D &r_t_edge, CSystem &r_system) // this is edge constructor how it is called in the parse loop; you need to change type of the edge
+	CEdgePose3D(const CParserBase::TEdge3D &r_t_edge, CSystem &r_system)
 		:CBaseEdgeImpl<CEdgePose3D, MakeTypelist(CVertexPose3D, CVertexPose3D), 6>(r_t_edge.m_n_node_0,
-		r_t_edge.m_n_node_1, r_t_edge.m_v_delta, r_t_edge.m_t_inv_sigma) // this just calls the base edge implementation, you need to change types and maintain the parameters if required (these are: index of first and of second vertex, the measurement vector and the inverse sigma matrix)
+		r_t_edge.m_n_node_1, r_t_edge.m_v_delta, r_t_edge.m_t_inv_sigma)
 	{
 		//fprintf(stderr, "%f %f %f\n", r_t_edge.m_v_delta(0), r_t_edge.m_v_delta(1), r_t_edge.m_v_delta(2));
 
@@ -186,14 +189,13 @@ public:
 
 		m_p_vertex0 = &r_system.template r_Get_Vertex<CVertexPose3D>(r_t_edge.m_n_node_0, CInitializeNullVertex<>());
 		m_p_vertex1 = &r_system.template r_Get_Vertex<CVertexPose3D>(r_t_edge.m_n_node_1,
-			CRelative_to_Absolute_XYZ_Initializer(m_p_vertex0->r_v_State(), r_t_edge.m_v_delta)); // rename your initializer if required
-
+			CRelative_to_Absolute_XYZ_Initializer(m_p_vertex0->r_v_State(), r_t_edge.m_v_delta));
 		// get vertices (initialize if required)
-		// the strange syntax with "template" is required by g++, otherwise gives "expected primary-expression before '>' token"
 
-		_ASSERTE(r_system.r_Vertex_Pool()[r_t_edge.m_n_node_0].n_Dimension() == 6); // get the vertices from the vertex pool to ensure a correct type is used, do not use m_p_vertex0 / m_p_vertex1 for this
-		_ASSERTE(r_system.r_Vertex_Pool()[r_t_edge.m_n_node_1].n_Dimension() == 6); // change the dimensionality here, if required (full type control currently not possible to make sure that the indices in the edge really point to vertices that are of the expected type. e.g. the edge might expect both vertices to be poses, but if the dataset is not "nice", one of the vertices can very well be a landmark)
+		//_ASSERTE(r_system.r_Vertex_Pool()[r_t_edge.m_n_node_0].n_Dimension() == 6); // get the vertices from the vertex pool to ensure a correct type is used, do not use m_p_vertex0 / m_p_vertex1 for this
+		//_ASSERTE(r_system.r_Vertex_Pool()[r_t_edge.m_n_node_1].n_Dimension() == 6);
 		// make sure the dimensionality is correct (might not be)
+		// this fails with const vertices, for obvious reasons. with the thunk tables this can be safely removed.
 	}
 
 	/**
@@ -209,9 +211,9 @@ public:
 	 */
 	template <class CSystem>
 	CEdgePose3D(size_t n_node0, size_t n_node1, const Eigen::Matrix<double, 6, 1> &r_v_delta,
-		const Eigen::Matrix<double, 6, 6> &r_t_inv_sigma, CSystem &r_system) // this is edge constructor how it is called in the parse loop; you need to change type of the edge
+		const Eigen::Matrix<double, 6, 6> &r_t_inv_sigma, CSystem &r_system)
 		:CBaseEdgeImpl<CEdgePose3D, MakeTypelist(CVertexPose3D, CVertexPose3D), 6>(n_node0,
-		n_node1, r_v_delta, r_t_inv_sigma) // this just calls the base edge implementation, you need to change types and maintain the parameters if required (these are: index of first and of second vertex, the measurement vector and the inverse sigma matrix)
+		n_node1, r_v_delta, r_t_inv_sigma)
 	{
 		//fprintf(stderr, "%f %f %f\n", r_t_edge.m_v_delta(0), r_t_edge.m_v_delta(1), r_t_edge.m_v_delta(2));
 
@@ -220,14 +222,13 @@ public:
 
 		m_p_vertex0 = &r_system.template r_Get_Vertex<CVertexPose3D>(n_node0, CInitializeNullVertex<>());
 		m_p_vertex1 = &r_system.template r_Get_Vertex<CVertexPose3D>(n_node1,
-			CRelative_to_Absolute_XYZ_Initializer(m_p_vertex0->r_v_State(), r_v_delta)); // rename your initializer if required
-
+			CRelative_to_Absolute_XYZ_Initializer(m_p_vertex0->r_v_State(), r_v_delta));
 		// get vertices (initialize if required)
-		// the strange syntax with "template" is required by g++, otherwise gives "expected primary-expression before '>' token"
 
-		_ASSERTE(r_system.r_Vertex_Pool()[n_node0].n_Dimension() == 6); // get the vertices from the vertex pool to ensure a correct type is used, do not use m_p_vertex0 / m_p_vertex1 for this
-		_ASSERTE(r_system.r_Vertex_Pool()[n_node1].n_Dimension() == 6); // change the dimensionality here, if required (full type control currently not possible to make sure that the indices in the edge really point to vertices that are of the expected type. e.g. the edge might expect both vertices to be poses, but if the dataset is not "nice", one of the vertices can very well be a landmark)
+		//_ASSERTE(r_system.r_Vertex_Pool()[n_node0].n_Dimension() == 6); // get the vertices from the vertex pool to ensure a correct type is used, do not use m_p_vertex0 / m_p_vertex1 for this
+		//_ASSERTE(r_system.r_Vertex_Pool()[n_node1].n_Dimension() == 6);
 		// make sure the dimensionality is correct (might not be)
+		// this fails with const vertices, for obvious reasons. with the thunk tables this can be safely removed.
 	}
 
 	/**
@@ -265,7 +266,7 @@ public:
 		Eigen::Matrix<double, 6, 1> &r_v_error) const // change dimensionality of eigen types, if required
 	{
 		C3DJacobians::Absolute_to_Relative(m_p_vertex0->r_v_State(),
-			m_p_vertex1->r_v_State(), r_v_expectation, r_t_jacobian0, r_t_jacobian1); // write your jacobian calculation code here (vertex state vectors are inputs, the rest are the outputs that you need to fill)
+			m_p_vertex1->r_v_State(), r_v_expectation, r_t_jacobian0, r_t_jacobian1);
 		// calculates the expectation and the jacobians
 
 #if 0
@@ -315,10 +316,10 @@ public:
 	}
 
 	/**
-	 *	@brief calculates chi-square error
-	 *	@return Returns (unweighted) chi-square error for this edge.
+	 *	@brief calculates \f$\chi^2\f$ error
+	 *	@return Returns (unweighted) \f$\chi^2\f$ error for this edge.
 	 */
-	inline double f_Chi_Squared_Error() const // this function should mostly work as is, you just need to change dimensions of the vectors and matrices
+	inline double f_Chi_Squared_Error() const
 	{
 		Eigen::Matrix<double, 6, 6> p_jacobi[2];
 		Eigen::Matrix<double, 6, 1> v_expectation, v_error;
@@ -342,12 +343,12 @@ public:
 	typedef Eigen::Matrix<double, 6, 1> Vector6d; /**< @brief 6D vector type */ // just shorter names
 
 public:
-	__SE3_TYPES_ALIGN_OPERATOR_NEW // imposed by the use of eigen, just copy this
+	__GRAPH_TYPES_ALIGN_OPERATOR_NEW // imposed by the use of eigen, just copy this
 
 	/**
 	 *	@brief default constructor; has no effect
 	 */
-	inline CEdgePose3D_Ternary() // copy this
+	inline CEdgePose3D_Ternary()
 	{}
 
 	/**
@@ -359,22 +360,22 @@ public:
 	 *	@param[in,out] r_system is reference to system (used to query edge vertices)
 	 */
 	template <class CSystem>
-	CEdgePose3D_Ternary(const CParserBase::TEdge3D &r_t_edge, CSystem &r_system) // this is edge constructor how it is called in the parse loop; you need to change type of the edge
+	CEdgePose3D_Ternary(const CParserBase::TEdge3D &r_t_edge, CSystem &r_system)
 		:_TyBase(typename _TyBase::_TyVertexIndexTuple(r_t_edge.m_n_node_0,
-		r_t_edge.m_n_node_1, r_t_edge.m_n_node_1/*2*/), r_t_edge.m_v_delta, r_t_edge.m_t_inv_sigma) // this just calls the base edge implementation, you need to change types and maintain the parameters if required (these are: index of first and of second vertex, the measurement vector and the inverse sigma matrix)
+		r_t_edge.m_n_node_1, r_t_edge.m_n_node_1/*2*/), r_t_edge.m_v_delta, r_t_edge.m_t_inv_sigma)
 	{
 		m_vertex_ptr.Get<0>() = &r_system.template r_Get_Vertex<CVertexPose3D>(r_t_edge.m_n_node_0, CInitializeNullVertex<>());
 		m_vertex_ptr.Get<1>() = &r_system.template r_Get_Vertex<CVertexPose3D>(r_t_edge.m_n_node_1,
 			CEdgePose3D::CRelative_to_Absolute_XYZ_Initializer(m_vertex_ptr.Get<0>()->v_State(), r_t_edge.m_v_delta));
 		m_vertex_ptr.Get<2>() = &r_system.template r_Get_Vertex<CVertexPose3D>(r_t_edge.m_n_node_1/*2*/,
-			CEdgePose3D::CRelative_to_Absolute_XYZ_Initializer(m_vertex_ptr.Get<0>()->v_State(), r_t_edge.m_v_delta)); // rename your initializer if required
+			CEdgePose3D::CRelative_to_Absolute_XYZ_Initializer(m_vertex_ptr.Get<0>()->v_State(), r_t_edge.m_v_delta));
 		// get vertices (initialize if required)
-		// the strange syntax with "template" is required by g++, otherwise gives "expected primary-expression before '>' token"
 
-		_ASSERTE(r_system.r_Vertex_Pool()[r_t_edge.m_n_node_0].n_Dimension() == 6); // get the vertices from the vertex pool to ensure a correct type is used, do not use m_p_vertex0 / m_p_vertex1 for this
-		_ASSERTE(r_system.r_Vertex_Pool()[r_t_edge.m_n_node_1].n_Dimension() == 6);
-		_ASSERTE(r_system.r_Vertex_Pool()[r_t_edge.m_n_node_1/*2*/].n_Dimension() == 6); // change the dimensionality here, if required (full type control currently not possible to make sure that the indices in the edge really point to vertices that are of the expected type. e.g. the edge might expect both vertices to be poses, but if the dataset is not "nice", one of the vertices can very well be a landmark)
+		//_ASSERTE(r_system.r_Vertex_Pool()[r_t_edge.m_n_node_0].n_Dimension() == 6); // get the vertices from the vertex pool to ensure a correct type is used, do not use m_p_vertex0 / m_p_vertex1 for this
+		//_ASSERTE(r_system.r_Vertex_Pool()[r_t_edge.m_n_node_1].n_Dimension() == 6);
+		//_ASSERTE(r_system.r_Vertex_Pool()[r_t_edge.m_n_node_1/*2*/].n_Dimension() == 6);
 		// make sure the dimensionality is correct (might not be)
+		// this fails with const vertices, for obvious reasons. with the thunk tables this can be safely removed.
 	}
 
 	/**
@@ -399,7 +400,7 @@ public:
 	{
 		C3DJacobians::Absolute_to_Relative(m_vertex_ptr.Get<0>()->v_State(),
 			m_vertex_ptr.Get<1>()->v_State(), r_v_expectation,
-			r_t_jacobian_tuple.Get<0>(), r_t_jacobian_tuple.Get<1>()); // write your jacobian calculation code here (vertex state vectors are inputs, the rest are the outputs that you need to fill)
+			r_t_jacobian_tuple.Get<0>(), r_t_jacobian_tuple.Get<1>());
 		r_t_jacobian_tuple.Get<2>().setIdentity(); // don't really have code that calculates this (yet)
 		// calculates the expectation and the jacobians
 
@@ -416,8 +417,8 @@ public:
 	}
 
 	/**
-	 *	@brief calculates chi-square error
-	 *	@return Returns (unweighted) chi-square error for this edge.
+	 *	@brief calculates \f$\chi^2\f$ error
+	 *	@return Returns (unweighted) \f$\chi^2\f$ error for this edge.
 	 */
 	inline double f_Chi_Squared_Error() const
 	{
@@ -439,13 +440,13 @@ public:
 /**
  *	@brief SE(3) pose-landmark edge
  */
-class CEdgePoseLandmark3D : public CBaseEdgeImpl<CEdgePoseLandmark3D, MakeTypelist(CVertexPose3D, CVertexLandmark3D), 3> { // again, this tells that base implementation for base edge for type that will be called CEdgePose2D, and it will be an edge between two vertices of type CVertexPose2D, and the measurement will have 3 dimensions (in order to have hyperedges, you need to provide your own version of CBaseEdgeImpl, that is an advanced topic)
+class CEdgePoseLandmark3D : public CBaseEdgeImpl<CEdgePoseLandmark3D, MakeTypelist(CVertexPose3D, CVertexLandmark3D), 3> {
 public:
 	/**
 	 *	@brief vertex initialization functor
 	 *	Calculates vertex position from the first vertex and an XYT edge.
 	 */
-	class CRelative_to_Absolute_XYZ_Initializer { // this is an object which is used to lazy initialize vertices (copy it)
+	class CRelative_to_Absolute_XYZ_Initializer {
 	protected:
 		const Eigen::Matrix<double, 6, 1> &m_r_v_pose1; /**< @brief the first vertex */
 		const Eigen::Matrix<double, 3, 1> &m_r_v_delta; /**< @brief the edge, shared by r_v_vertex1 and the vertex being initialized */
@@ -477,12 +478,12 @@ public:
 	};
 
 public:
-	__SE3_TYPES_ALIGN_OPERATOR_NEW // imposed by the use of eigen, just copy this
+	__GRAPH_TYPES_ALIGN_OPERATOR_NEW // imposed by the use of eigen, just copy this
 
 	/**
 	 *	@brief default constructor; has no effect
 	 */
-	inline CEdgePoseLandmark3D() // copy this
+	inline CEdgePoseLandmark3D()
 	{}
 
 	/**
@@ -494,26 +495,25 @@ public:
 	 *	@param[in,out] r_system is reference to system (used to query edge vertices)
 	 */
 	template <class CSystem>
-	CEdgePoseLandmark3D(const CParserBase::TLandmark3D_XYZ &r_t_edge, CSystem &r_system) // this is edge constructor how it is called in the parse loop; you need to change type of the edge
+	CEdgePoseLandmark3D(const CParserBase::TLandmark3D_XYZ &r_t_edge, CSystem &r_system)
 		:CBaseEdgeImpl<CEdgePoseLandmark3D, MakeTypelist(CVertexPose3D, CVertexLandmark3D), 3>(r_t_edge.m_n_node_0,
-		r_t_edge.m_n_node_1, r_t_edge.m_v_delta, r_t_edge.m_t_inv_sigma) // this just calls the base edge implementation, you need to change types and maintain the parameters if required (these are: index of first and of second vertex, the measurement vector and the inverse sigma matrix)
+		r_t_edge.m_n_node_1, r_t_edge.m_v_delta, r_t_edge.m_t_inv_sigma)
 	{
 		//fprintf(stderr, "%f %f %f\n", r_t_edge.m_v_delta(0), r_t_edge.m_v_delta(1), r_t_edge.m_v_delta(2));
 
 		m_p_vertex0 = &r_system.template r_Get_Vertex<CVertexPose3D>(r_t_edge.m_n_node_0, CInitializeNullVertex<>());
 		m_p_vertex1 = &r_system.template r_Get_Vertex<CVertexLandmark3D>(r_t_edge.m_n_node_1,
-			CRelative_to_Absolute_XYZ_Initializer(m_p_vertex0->r_v_State(), r_t_edge.m_v_delta)); // rename your initializer if required
-
+			CRelative_to_Absolute_XYZ_Initializer(m_p_vertex0->r_v_State(), r_t_edge.m_v_delta));
 		// get vertices (initialize if required)
-		// the strange syntax with "template" is required by g++, otherwise gives "expected primary-expression before '>' token"
 
 		//print me edge
 		//std::cout << r_t_edge.m_n_node_0 << " to " << r_t_edge.m_n_node_1 << std::endl;
 		//std::cout << r_t_edge.m_v_delta << std::endl;
 
-		_ASSERTE(r_system.r_Vertex_Pool()[r_t_edge.m_n_node_0].n_Dimension() == 6); // get the vertices from the vertex pool to ensure a correct type is used, do not use m_p_vertex0 / m_p_vertex1 for this
-		_ASSERTE(r_system.r_Vertex_Pool()[r_t_edge.m_n_node_1].n_Dimension() == 3); // change the dimensionality here, if required (full type control currently not possible to make sure that the indices in the edge really point to vertices that are of the expected type. e.g. the edge might expect both vertices to be poses, but if the dataset is not "nice", one of the vertices can very well be a landmark)
+		//_ASSERTE(r_system.r_Vertex_Pool()[r_t_edge.m_n_node_0].n_Dimension() == 6); // get the vertices from the vertex pool to ensure a correct type is used, do not use m_p_vertex0 / m_p_vertex1 for this
+		//_ASSERTE(r_system.r_Vertex_Pool()[r_t_edge.m_n_node_1].n_Dimension() == 3);
 		// make sure the dimensionality is correct (might not be)
+		// this fails with const vertices, for obvious reasons. with the thunk tables this can be safely removed.
 	}
 
 	/**
@@ -529,22 +529,21 @@ public:
 	 */
 	template <class CSystem>
 	CEdgePoseLandmark3D(size_t n_node0, size_t n_node1, const Eigen::Matrix<double, 3, 1> &r_v_delta,
-		const Eigen::Matrix<double, 3, 3> &r_t_inv_sigma, CSystem &r_system) // this is edge constructor how it is called in the parse loop; you need to change type of the edge
+		const Eigen::Matrix<double, 3, 3> &r_t_inv_sigma, CSystem &r_system)
 		:CBaseEdgeImpl<CEdgePoseLandmark3D, MakeTypelist(CVertexPose3D, CVertexLandmark3D), 3>(n_node0,
-		n_node1, r_v_delta, r_t_inv_sigma) // this just calls the base edge implementation, you need to change types and maintain the parameters if required (these are: index of first and of second vertex, the measurement vector and the inverse sigma matrix)
+		n_node1, r_v_delta, r_t_inv_sigma)
 	{
 		//fprintf(stderr, "%f %f %f\n", r_t_edge.m_v_delta(0), r_t_edge.m_v_delta(1), r_t_edge.m_v_delta(2));
 
 		m_p_vertex0 = &r_system.template r_Get_Vertex<CVertexPose3D>(n_node0, CInitializeNullVertex<>());
 		m_p_vertex1 = &r_system.template r_Get_Vertex<CVertexLandmark3D>(n_node1,
-			CRelative_to_Absolute_XYZ_Initializer(m_p_vertex0->r_v_State(), r_v_delta)); // rename your initializer if required
-
+			CRelative_to_Absolute_XYZ_Initializer(m_p_vertex0->r_v_State(), r_v_delta));
 		// get vertices (initialize if required)
-		// the strange syntax with "template" is required by g++, otherwise gives "expected primary-expression before '>' token"
 
-		_ASSERTE(r_system.r_Vertex_Pool()[n_node0].n_Dimension() == 6); // get the vertices from the vertex pool to ensure a correct type is used, do not use m_p_vertex0 / m_p_vertex1 for this
-		_ASSERTE(r_system.r_Vertex_Pool()[n_node1].n_Dimension() == 3); // change the dimensionality here, if required (full type control currently not possible to make sure that the indices in the edge really point to vertices that are of the expected type. e.g. the edge might expect both vertices to be poses, but if the dataset is not "nice", one of the vertices can very well be a landmark)
+		//_ASSERTE(r_system.r_Vertex_Pool()[n_node0].n_Dimension() == 6); // get the vertices from the vertex pool to ensure a correct type is used, do not use m_p_vertex0 / m_p_vertex1 for this
+		//_ASSERTE(r_system.r_Vertex_Pool()[n_node1].n_Dimension() == 3);
 		// make sure the dimensionality is correct (might not be)
+		// this fails with const vertices, for obvious reasons. with the thunk tables this can be safely removed.
 	}
 
 	/**
@@ -571,7 +570,7 @@ public:
 		Eigen::Matrix<double, 3, 1> &r_v_error) const // change dimensionality of eigen types, if required
 	{
 		C3DJacobians::Absolute_to_Relative_Landmark(m_p_vertex0->r_v_State(),
-			m_p_vertex1->r_v_State(), r_v_expectation, r_t_jacobian0, r_t_jacobian1); // write your jacobian calculation code here (vertex state vectors are inputs, the rest are the outputs that you need to fill)
+			m_p_vertex1->r_v_State(), r_v_expectation, r_t_jacobian0, r_t_jacobian1);
 		// calculates the expectation and the jacobians
 
 		//std::cout << "expect: " << r_v_expectation(0) << " " << r_v_expectation(1) << " " << r_v_expectation(2) << " -- ";
@@ -587,10 +586,10 @@ public:
 	}
 
 	/**
-	 *	@brief calculates chi-square error
-	 *	@return Returns (unweighted) chi-square error for this edge.
+	 *	@brief calculates \f$\chi^2\f$ error
+	 *	@return Returns (unweighted) \f$\chi^2\f$ error for this edge.
 	 */
-	inline double f_Chi_Squared_Error() const // this function should mostly work as is, you just need to change dimensions of the vectors and matrices
+	inline double f_Chi_Squared_Error() const
 	{
 		Eigen::Matrix<double, 3, 6> p_jacobi0;
 		Eigen::Matrix<double, 3, 3> p_jacobi1;
@@ -601,6 +600,12 @@ public:
 		return (v_error.transpose() * m_t_sigma_inv).dot(v_error); // ||z_i - h_i(O_i)||^2 lambda_i
 	}
 };
+
+/** @} */ // end of group
+
+/** \addtogroup parser
+ *	@{
+ */
 
 /**
  *	@brief edge traits for SE(3) solver
@@ -617,7 +622,7 @@ public:
 	 */
 	static const char *p_s_Reason()
 	{
-		return "unknown edge type occured";
+		return "unknown edge type occurred";
 	}
 };
 
@@ -656,7 +661,7 @@ public:
 	 */
 	static const char *p_s_Reason()
 	{
-		return "unknown edge type occured";
+		return "unknown edge type occurred";
 	}
 };
 
@@ -677,5 +682,7 @@ class CSE3LandmarkPoseEdgeTraits<CParserBase::TLandmark3D_XYZ> {
 public:
 	typedef CEdgePoseLandmark3D _TyEdge; /**< @brief the edge type to construct from the parsed type */
 };
+
+/** @} */ // end of group
 
 #endif // !__SE3_TYPES_INCLUDED

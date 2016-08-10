@@ -10,27 +10,32 @@
 #define __BA_TYPES_INCLUDED
 
 #include "slam/BaseTypes.h"
-#include "slam/SE2_Types.h"
+//#include "slam/SE2_Types.h"
 //#include "slam/SE3_Types.h" // not this
 #include "slam/BASolverBase.h"
 #include "slam/3DSolverBase.h" // that. want rot / arot
+#include "slam/Parser.h" // parsed types passed to constructors
 
-/*class CVertexIntrinsics : public CSEBaseVertexImpl<CVertexIntrinsics, 4> { // this says to use base vertex implementation for class with name CVertexPose2D, while the vertex has 3 dimensions; this will generate member variable m_v_state ("member vector" state), which will be Eigen dense column vector with the given number of dimensions
+/** \addtogroup ba_group
+ *	@{
+ */
+
+/*class CVertexIntrinsics : public CSEBaseVertexImpl<CVertexIntrinsics, 4> {
 public:
-    __BA_TYPES_ALIGN_OPERATOR_NEW // imposed by the use of eigen, copy this
+    __GRAPH_TYPES_ALIGN_OPERATOR_NEW
 
 	/ **
 	 *	@brief default constructor; has no effect
 	 * /
-    inline CVertexPoseBA() // copy this
+    inline CVertexPoseBA()
     {}
 
 	/ **
 	 *	@brief constructor from vector type
 	 *	@param[in] r_v_state is state of the vertex
 	 * /
-    inline CVertexIntrinsics(const Eigen::VectorXd &r_v_state) // copy this, change the dimension of the vector to appropriate
-        :CSEBaseVertexImpl<CVertexIntrinsics, 4>(r_v_state) // change the dimension here as well
+    inline CVertexIntrinsics(const Eigen::VectorXd &r_v_state)
+        :CSEBaseVertexImpl<CVertexIntrinsics, 4>(r_v_state)
     {}
 
 	/ **
@@ -45,25 +50,25 @@ public:
 /**
  *	@brief bundle adjustment camera pose
  */
-class CVertexCam : public CSEBaseVertexImpl<CVertexCam, 6> { // this says to use base vertex implementation for class with name CVertexPose2D, while the vertex has 3 dimensions; this will generate member variable m_v_state ("member vector" state), which will be Eigen dense column vector with the given number of dimensions
+class CVertexCam : public CSEBaseVertexImpl<CVertexCam, 6> {
 protected:
     Eigen::Matrix<double, 5, 1, Eigen::DontAlign> m_v_intrinsics; /**< @brief vertex cam should hold own camera params (these are not being optimized) */
 
 public:
-    __BA_TYPES_ALIGN_OPERATOR_NEW // imposed by the use of eigen, copy this
+    __GRAPH_TYPES_ALIGN_OPERATOR_NEW
 
 	/**
 	 *	@brief default constructor; has no effect
 	 */
-    inline CVertexCam() // copy this
+    inline CVertexCam()
     {}
 
 	/**
 	 *	@brief constructor from vector type
 	 *	@param[in] r_v_state is state of the vertex
 	 */
-    inline CVertexCam(const Eigen::Matrix<double, 11, 1> &r_v_state) // copy this, change the dimension of the vector to appropriate
-        :CSEBaseVertexImpl<CVertexCam, 6>(r_v_state.head<6>()), // change the dimension here as well
+    inline CVertexCam(const Eigen::Matrix<double, 11, 1> &r_v_state)
+        :CSEBaseVertexImpl<CVertexCam, 6>(r_v_state.head<6>()),
 		m_v_intrinsics(r_v_state.tail<5>())
     {}
 
@@ -71,8 +76,8 @@ public:
 	 *	@brief constructor from optimized vector type (because of CSEBaseVertexImpl<CVertexCam, 6>)
 	 *	@param[in] r_v_state is state of the vertex
 	 */
-    inline CVertexCam(const Eigen::Matrix<double, 6, 1> &r_v_state) // copy this, change the dimension of the vector to appropriate
-        :CSEBaseVertexImpl<CVertexCam, 6>(r_v_state.head<6>()) // change the dimension here as well
+    inline CVertexCam(const Eigen::Matrix<double, 6, 1> &r_v_state)
+        :CSEBaseVertexImpl<CVertexCam, 6>(r_v_state.head<6>())
     {
 		m_v_intrinsics.setZero(); // we did not get this information
 	}
@@ -81,8 +86,8 @@ public:
 	 *	@brief constructor from parsed type
 	 *	@param[in] r_t_vertex is state of the vertex
 	 */
-    inline CVertexCam(const CParserBase::TVertexCam3D &r_t_vertex) // copy this, change the dimension of the vector to appropriate
-        :CSEBaseVertexImpl<CVertexCam, 6>(r_t_vertex.m_v_position.head<6>()), // change the dimension here as well
+    inline CVertexCam(const CParserBase::TVertexCam3D &r_t_vertex)
+        :CSEBaseVertexImpl<CVertexCam, 6>(r_t_vertex.m_v_position.head<6>()),
 		m_v_intrinsics(r_t_vertex.m_v_position.tail<5>())
     {}
 
@@ -132,22 +137,21 @@ public:
 /**
  *	@brief bundle adjustment camera pose
  */
-class CVertexIntrinsics : public CSEBaseVertexImpl<CVertexIntrinsics, 5> { // this says to use base vertex implementation for class with name CVertexPose2D, while the vertex has 3 dimensions; this will generate member variable m_v_state ("member vector" state), which will be Eigen dense column vector with the given number of dimensions
-
+class CVertexIntrinsics : public CSEBaseVertexImpl<CVertexIntrinsics, 5> {
 public:
-    __BA_TYPES_ALIGN_OPERATOR_NEW // imposed by the use of eigen, copy this
+    __GRAPH_TYPES_ALIGN_OPERATOR_NEW
 
 	/**
 	 *	@brief default constructor; has no effect
 	 */
-    inline CVertexIntrinsics() // copy this
+    inline CVertexIntrinsics()
     {}
 
 	/**
 	 *	@brief constructor from vector type
 	 *	@param[in] r_v_state is state of the vertex
 	 */
-    inline CVertexIntrinsics(const Eigen::Matrix<double, 5, 1> &r_v_state) // copy this, change the dimension of the vector to appropriate
+    inline CVertexIntrinsics(const Eigen::Matrix<double, 5, 1> &r_v_state)
         :CSEBaseVertexImpl<CVertexIntrinsics, 5>(r_v_state)
     {}
 
@@ -155,7 +159,7 @@ public:
 	 *	@brief constructor from parsed type
 	 *	@param[in] r_t_vertex is state of the vertex
 	 */
-    inline CVertexIntrinsics(const CParserBase::TVertexIntrinsics &r_t_vertex) // copy this, change the dimension of the vector to appropriate
+    inline CVertexIntrinsics(const CParserBase::TVertexIntrinsics &r_t_vertex)
         :CSEBaseVertexImpl<CVertexIntrinsics, 5>(r_t_vertex.m_v_position)
     {}
 
@@ -179,25 +183,25 @@ public:
 /**
  *	@brief bundle adjustment camera pose
  */
-class CVertexSCam : public CSEBaseVertexImpl<CVertexSCam, 6> { // this says to use base vertex implementation for class with name CVertexPose2D, while the vertex has 3 dimensions; this will generate member variable m_v_state ("member vector" state), which will be Eigen dense column vector with the given number of dimensions
+class CVertexSCam : public CSEBaseVertexImpl<CVertexSCam, 6> {
 protected:
     Eigen::Matrix<double, 6, 1, Eigen::DontAlign> m_v_intrinsics; /**< @brief vertex cam should hold own camera params (these are not being optimized) */
 
 public:
-    __BA_TYPES_ALIGN_OPERATOR_NEW // imposed by the use of eigen, copy this
+    __GRAPH_TYPES_ALIGN_OPERATOR_NEW
 
 	/**
 	 *	@brief default constructor; has no effect
 	 */
-    inline CVertexSCam() // copy this
+    inline CVertexSCam()
     {}
 
 	/**
 	 *	@brief constructor from vector type
 	 *	@param[in] r_v_state is state of the vertex
 	 */
-    inline CVertexSCam(const Eigen::Matrix<double, 12, 1> &r_v_state) // copy this, change the dimension of the vector to appropriate
-        :CSEBaseVertexImpl<CVertexSCam, 6>(r_v_state.head<6>()), // change the dimension here as well
+    inline CVertexSCam(const Eigen::Matrix<double, 12, 1> &r_v_state)
+        :CSEBaseVertexImpl<CVertexSCam, 6>(r_v_state.head<6>()),
 		m_v_intrinsics(r_v_state.tail<6>())
     {}
 
@@ -205,8 +209,8 @@ public:
 	 *	@brief constructor from optimized vector type (because of CSEBaseVertexImpl<CVertexCam, 6>)
 	 *	@param[in] r_v_state is state of the vertex
 	 */
-    inline CVertexSCam(const Eigen::Matrix<double, 6, 1> &r_v_state) // copy this, change the dimension of the vector to appropriate
-        :CSEBaseVertexImpl<CVertexSCam, 6>(r_v_state.head<6>()) // change the dimension here as well
+    inline CVertexSCam(const Eigen::Matrix<double, 6, 1> &r_v_state)
+        :CSEBaseVertexImpl<CVertexSCam, 6>(r_v_state.head<6>())
     {
 		m_v_intrinsics.setZero(); // we did not get this information
 	}
@@ -215,8 +219,8 @@ public:
 	 *	@brief constructor from parsed type
 	 *	@param[in] r_t_vertex is state of the vertex
 	 */
-    inline CVertexSCam(const CParserBase::TVertexSCam3D &r_t_vertex) // copy this, change the dimension of the vector to appropriate
-        :CSEBaseVertexImpl<CVertexSCam, 6>(r_t_vertex.m_v_position.head<6>()), // change the dimension here as well
+    inline CVertexSCam(const CParserBase::TVertexSCam3D &r_t_vertex)
+        :CSEBaseVertexImpl<CVertexSCam, 6>(r_t_vertex.m_v_position.head<6>()),
 		m_v_intrinsics(r_t_vertex.m_v_position.tail<6>())
     {}
 
@@ -265,21 +269,21 @@ public:
 /**
  *	@brief bundle adjustment camera pose
  */
-class CVertexSpheron : public CSEBaseVertexImpl<CVertexSpheron, 6> { // this says to use base vertex implementation for class with name CVertexPose2D, while the vertex has 3 dimensions; this will generate member variable m_v_state ("member vector" state), which will be Eigen dense column vector with the given number of dimensions
+class CVertexSpheron : public CSEBaseVertexImpl<CVertexSpheron, 6> {
 public:
-    __BA_TYPES_ALIGN_OPERATOR_NEW // imposed by the use of eigen, copy this
+    __GRAPH_TYPES_ALIGN_OPERATOR_NEW
 
 	/**
 	 *	@brief default constructor; has no effect
 	 */
-    inline CVertexSpheron() // copy this
+    inline CVertexSpheron()
     {}
 
 	/**
 	 *	@brief constructor from vector type
 	 *	@param[in] r_v_state is state of the vertex
 	 */
-    inline CVertexSpheron(const Eigen::Matrix<double, 6, 1> &r_v_state) // copy this, change the dimension of the vector to appropriate
+    inline CVertexSpheron(const Eigen::Matrix<double, 6, 1> &r_v_state)
         :CSEBaseVertexImpl<CVertexSpheron, 6>(r_v_state)
     {}
 
@@ -287,7 +291,7 @@ public:
 	 *	@brief constructor from parsed type
 	 *	@param[in] r_t_vertex is state of the vertex
 	 */
-    inline CVertexSpheron(const CParserBase::TVertexSpheron &r_t_vertex) // copy this, change the dimension of the vector to appropriate
+    inline CVertexSpheron(const CParserBase::TVertexSpheron &r_t_vertex)
         :CSEBaseVertexImpl<CVertexSpheron, 6>(r_t_vertex.m_v_position)
     {}
 
@@ -323,30 +327,30 @@ public:
 /**
  *	@brief bundle adjustment (observed) keypoint vertex
  */
-class CVertexXYZ : public CSEBaseVertexImpl<CVertexXYZ, 3> { // this says to use base vertex implementation for class with name CVertexPose2D, while the vertex has 3 dimensions; this will generate member variable m_v_state ("member vector" state), which will be Eigen dense column vector with the given number of dimensions
+class CVertexXYZ : public CSEBaseVertexImpl<CVertexXYZ, 3> {
 public:
-    __BA_TYPES_ALIGN_OPERATOR_NEW // imposed by the use of eigen, copy this
+    __GRAPH_TYPES_ALIGN_OPERATOR_NEW
 
 	/**
 	 *	@brief default constructor; has no effect
 	 */
-    inline CVertexXYZ() // copy this
+    inline CVertexXYZ()
     {}
 
 	/**
 	 *	@brief constructor from vector type
 	 *	@param[in] r_v_state is state of the vertex
 	 */
-    inline CVertexXYZ(const Eigen::Vector3d &r_v_state) // copy this, change the dimension of the vector to appropriate
-        :CSEBaseVertexImpl<CVertexXYZ, 3>(r_v_state) // change the dimension here as well
+    inline CVertexXYZ(const Eigen::Vector3d &r_v_state)
+        :CSEBaseVertexImpl<CVertexXYZ, 3>(r_v_state)
     {}
 
 	/**
 	 *	@brief constructor from parsed type
 	 *	@param[in] r_t_vertex is state of the vertex
 	 */
-    inline CVertexXYZ(const CParserBase::TVertexXYZ &r_t_vertex) // copy this, change the dimension of the vector to appropriate
-        :CSEBaseVertexImpl<CVertexXYZ, 3>(r_t_vertex.m_v_position) // change the dimension here as well
+    inline CVertexXYZ(const CParserBase::TVertexXYZ &r_t_vertex)
+        :CSEBaseVertexImpl<CVertexXYZ, 3>(r_t_vertex.m_v_position)
     {}
 
 	/**
@@ -371,14 +375,14 @@ public:
 /**
  *	@brief BA vex-cam edge
  */
-class CEdgeP2C3D : public CBaseEdgeImpl<CEdgeP2C3D, MakeTypelist(CVertexCam, CVertexXYZ), 2> { // again, this tells that base implementation for base edge for type that will be called CEdgePose2D, and it will be an edge between two vertices of type CVertexPose2D, and the measurement will have 3 dimensions (in order to have hyperedges, you need to provide your own version of CBaseEdgeImpl, that is an advanced topic)
+class CEdgeP2C3D : public CBaseEdgeImpl<CEdgeP2C3D, MakeTypelist(CVertexCam, CVertexXYZ), 2> {
 public:
-	__BA_TYPES_ALIGN_OPERATOR_NEW // imposed by the use of eigen, just copy this
+	__GRAPH_TYPES_ALIGN_OPERATOR_NEW // imposed by the use of eigen, just copy this
 
 	/**
 	 *	@brief default constructor; has no effect
 	 */
-	inline CEdgeP2C3D() // copy this
+	inline CEdgeP2C3D()
 	{}
 
 	/**
@@ -390,12 +394,14 @@ public:
 	 *	@param[in,out] r_system is reference to system (used to query edge vertices)
 	 */
 	template <class CSystem>
-	CEdgeP2C3D(const CParserBase::TEdgeP2C3D &r_t_edge, CSystem &r_system) // this is edge constructor how it is called in the parse loop; you need to change type of the edge
+	CEdgeP2C3D(const CParserBase::TEdgeP2C3D &r_t_edge, CSystem &r_system)
 		:CBaseEdgeImpl<CEdgeP2C3D, MakeTypelist(CVertexCam, CVertexXYZ), 2>(r_t_edge.m_n_node_1,
-		r_t_edge.m_n_node_0, r_t_edge.m_v_delta, r_t_edge.m_t_inv_sigma) // this just calls the base edge implementation, you need to change types and maintain the parameters if required (these are: index of first and of second vertex, the measurement vector and the inverse sigma matrix)
+		r_t_edge.m_n_node_0, r_t_edge.m_v_delta, r_t_edge.m_t_inv_sigma,
+		CBaseEdge::explicitly_initialized_vertices, r_system)
 	{
-		m_p_vertex0 = &r_system.template r_Get_Vertex<CVertexCam>(r_t_edge.m_n_node_1, CInitializeNullVertex<>());
-		m_p_vertex1 = &r_system.template r_Get_Vertex<CVertexXYZ>(r_t_edge.m_n_node_0, CInitializeNullVertex<CVertexXYZ>()); // rename your initializer if required
+		//m_p_vertex0 = &r_system.template r_Get_Vertex<CVertexCam>(r_t_edge.m_n_node_1, CInitializeNullVertex<>());
+		//m_p_vertex1 = &r_system.template r_Get_Vertex<CVertexXYZ>(r_t_edge.m_n_node_0, CInitializeNullVertex<CVertexXYZ>());
+		// ititialized by CBaseEdgeImpl constructor
 
 		//std::swap(r_t_edge.m_n_node_1, r_t_edge.m_n_node_0);
 
@@ -404,13 +410,12 @@ public:
 		//		m_p_vertex0->r_v_State()(4), m_p_vertex0->r_v_State()(5), m_p_vertex0->r_v_State()(6), m_p_vertex0->r_v_State()(7), m_p_vertex0->r_v_State()(8), m_p_vertex0->r_v_State()(9));
 
 		//fprintf(stderr, "dims: %d %d \n", (m_p_vertex0)->n_Dimension(), (m_p_vertex1)->n_Dimension());
-
 		// get vertices (initialize if required)
-		// the strange syntax with "template" is required by g++, otherwise gives "expected primary-expression before '>' token"
 
-		_ASSERTE(r_system.r_Vertex_Pool()[r_t_edge.m_n_node_1].n_Dimension() == 6); // get the vertices from the vertex pool to ensure a correct type is used, do not use m_p_vertex0 / m_p_vertex1 for this
-		_ASSERTE(r_system.r_Vertex_Pool()[r_t_edge.m_n_node_0].n_Dimension() == 3); // change the dimensionality here, if required (full type control currently not possible to make sure that the indices in the edge really point to vertices that are of the expected type. e.g. the edge might expect both vertices to be poses, but if the dataset is not "nice", one of the vertices can very well be a landmark)
+		//_ASSERTE(r_system.r_Vertex_Pool()[r_t_edge.m_n_node_1].n_Dimension() == 6); // get the vertices from the vertex pool to ensure a correct type is used, do not use m_p_vertex0 / m_p_vertex1 for this
+		//_ASSERTE(r_system.r_Vertex_Pool()[r_t_edge.m_n_node_0].n_Dimension() == 3);
 		// make sure the dimensionality is correct (might not be)
+		// this fails with const vertices, for obvious reasons. with the thunk tables this can be safely removed.
 	}
 
 	/**
@@ -428,16 +433,18 @@ public:
 	CEdgeP2C3D(size_t n_node1, size_t n_node0, const Eigen::Vector2d &v_delta, // won't align non-reference arg
 		const Eigen::Matrix2d &r_t_inv_sigma, CSystem &r_system) // respect const-ness!
 		:CBaseEdgeImpl<CEdgeP2C3D, MakeTypelist(CVertexCam, CVertexXYZ), 2>(n_node0,
-		n_node1, v_delta, r_t_inv_sigma)
+		n_node1, v_delta, r_t_inv_sigma, CBaseEdge::explicitly_initialized_vertices, r_system)
 	{
-		m_p_vertex0 = &r_system.template r_Get_Vertex<CVertexCam>(n_node0, CInitializeNullVertex<>());
-		m_p_vertex1 = &r_system.template r_Get_Vertex<CVertexXYZ>(n_node1, CInitializeNullVertex<CVertexXYZ>());
+		//m_p_vertex0 = &r_system.template r_Get_Vertex<CVertexCam>(n_node0, CInitializeNullVertex<>());
+		//m_p_vertex1 = &r_system.template r_Get_Vertex<CVertexXYZ>(n_node1, CInitializeNullVertex<CVertexXYZ>());
 		// get vertices (initialize if required)
 		// "template" is required by g++, otherwise gives "expected primary-expression before '>' token"
+		// ititialized by CBaseEdgeImpl constructor
 
-		_ASSERTE(r_system.r_Vertex_Pool()[n_node0].n_Dimension() == 6); // get the vertices from the vertex pool to ensure a correct type is used, do not use m_p_vertex0 / m_p_vertex1 for this
-		_ASSERTE(r_system.r_Vertex_Pool()[n_node1].n_Dimension() == 3);
+		//_ASSERTE(r_system.r_Vertex_Pool()[n_node0].n_Dimension() == 6); // get the vertices from the vertex pool to ensure a correct type is used, do not use m_p_vertex0 / m_p_vertex1 for this
+		//_ASSERTE(r_system.r_Vertex_Pool()[n_node1].n_Dimension() == 3);
 		// make sure the dimensionality is correct (might not be)
+		// this fails with const vertices, for obvious reasons. with the thunk tables this can be safely removed.
 	}
 
 	/**
@@ -464,18 +471,18 @@ public:
 		Eigen::Matrix<double, 2, 1> &r_v_error) const // change dimensionality of eigen types, if required
 	{
 		CBAJacobians::Project_P2C(m_p_vertex0->r_v_State() /* Cam */, m_p_vertex0->v_Intrinsics() /* camera intrinsic params */,
-			m_p_vertex1->r_v_State() /* XYZ */, r_v_expectation, r_t_jacobian0, r_t_jacobian1); // write your jacobian calculation code here (vertex state vectors are inputs, the rest are the outputs that you need to fill)
+			m_p_vertex1->r_v_State() /* XYZ */, r_v_expectation, r_t_jacobian0, r_t_jacobian1);
 		// calculates the expectation and the jacobians
 
 		r_v_error = m_v_measurement - r_v_expectation;
-		// calculates error (possibly re-calculates, if running A-SLAM)*/
+		// calculates error (possibly re-calculates, if running A-SLAM)
 	}
 
 	/**
-	 *	@brief calculates chi-square error
-	 *	@return Returns (unweighted) chi-square error for this edge.
+	 *	@brief calculates \f$\chi^2\f$ error
+	 *	@return Returns (unweighted) \f$\chi^2\f$ error for this edge.
 	 */
-	inline double f_Chi_Squared_Error() const // this function should mostly work as is, you just need to change dimensions of the vectors and matrices
+	inline double f_Chi_Squared_Error() const
 	{
 		/*Eigen::Matrix<double, 2, 6> p_jacobi0;
 		Eigen::Matrix<double, 2, 3> p_jacobi1;
@@ -499,9 +506,9 @@ public:
 
 	/**
 	 *	@brief calculates reprojection error
-	 *	@return Returns (unweighted) chi-square error for this edge.
+	 *	@return Returns reprojection error for this edge, in pixels.
 	 */
-	inline double f_Reprojection_Error() const // this function should mostly work as is, you just need to change dimensions of the vectors and matrices
+	inline double f_Reprojection_Error() const
 	{
 		/*Eigen::Matrix<double, 2, 6> p_jacobi0;
 		Eigen::Matrix<double, 2, 3> p_jacobi1;
@@ -526,17 +533,17 @@ public:
 /**
  *	@brief BA vex-cam edge
  */
-class CEdgeP2CI3D : public CBaseEdgeImpl<CEdgeP2CI3D, MakeTypelist(CVertexCam, CVertexXYZ, CVertexIntrinsics), 2> { // again, this tells that base implementation for base edge for type that will be called CEdgePose2D, and it will be an edge between two vertices of type CVertexPose2D, and the measurement will have 3 dimensions (in order to have hyperedges, you need to provide your own version of CBaseEdgeImpl, that is an advanced topic)
+class CEdgeP2CI3D : public CBaseEdgeImpl<CEdgeP2CI3D, MakeTypelist(CVertexCam, CVertexXYZ, CVertexIntrinsics), 2> {
 public:
 	typedef CBaseEdgeImpl<CEdgeP2CI3D, MakeTypelist(CVertexCam, CVertexXYZ, CVertexIntrinsics), 2> _TyBase; /**< @brief base edge type */
 
 public:
-	__BA_TYPES_ALIGN_OPERATOR_NEW // imposed by the use of eigen, just copy this
+	__GRAPH_TYPES_ALIGN_OPERATOR_NEW // imposed by the use of eigen, just copy this
 
 	/**
 	 *	@brief default constructor; has no effect
 	 */
-	inline CEdgeP2CI3D() // copy this
+	inline CEdgeP2CI3D()
 	{}
 
 	/**
@@ -548,20 +555,22 @@ public:
 	 *	@param[in,out] r_system is reference to system (used to query edge vertices)
 	 */
 	template <class CSystem>
-	CEdgeP2CI3D(const CParserBase::TEdgeP2CI3D &r_t_edge, CSystem &r_system) // this is edge constructor how it is called in the parse loop; you need to change type of the edge
+	CEdgeP2CI3D(const CParserBase::TEdgeP2CI3D &r_t_edge, CSystem &r_system)
 		:_TyBase(typename _TyBase::_TyVertexIndexTuple(r_t_edge.m_n_node_1,
-				r_t_edge.m_n_node_0, r_t_edge.m_n_node_2), r_t_edge.m_v_delta, r_t_edge.m_t_inv_sigma) // this just calls the base edge implementation, you need to change types and maintain the parameters if required (these are: index of first and of second vertex, the measurement vector and the inverse sigma matrix)
+		r_t_edge.m_n_node_0, r_t_edge.m_n_node_2), r_t_edge.m_v_delta, r_t_edge.m_t_inv_sigma,
+		CBaseEdge::explicitly_initialized_vertices, r_system)
 	{
-		m_vertex_ptr.Get<0>() = &r_system.template r_Get_Vertex<CVertexCam>(r_t_edge.m_n_node_1, CInitializeNullVertex<>());
-		m_vertex_ptr.Get<1>() = &r_system.template r_Get_Vertex<CVertexXYZ>(r_t_edge.m_n_node_0, CInitializeNullVertex<CVertexXYZ>());
-		m_vertex_ptr.Get<2>() = &r_system.template r_Get_Vertex<CVertexIntrinsics>(r_t_edge.m_n_node_2, CInitializeNullVertex<CVertexIntrinsics>()); // rename your initializer if required
+		//m_vertex_ptr.Get<0>() = &r_system.template r_Get_Vertex<CVertexCam>(r_t_edge.m_n_node_1, CInitializeNullVertex<>());
+		//m_vertex_ptr.Get<1>() = &r_system.template r_Get_Vertex<CVertexXYZ>(r_t_edge.m_n_node_0, CInitializeNullVertex<CVertexXYZ>());
+		//m_vertex_ptr.Get<2>() = &r_system.template r_Get_Vertex<CVertexIntrinsics>(r_t_edge.m_n_node_2, CInitializeNullVertex<CVertexIntrinsics>());
 		// get vertices (initialize if required)
-		// the strange syntax with "template" is required by g++, otherwise gives "expected primary-expression before '>' token"
+		// initialized already in CBaseEdgeImpl constructor
 
-		_ASSERTE(r_system.r_Vertex_Pool()[r_t_edge.m_n_node_0].n_Dimension() == 3); // get the vertices from the vertex pool to ensure a correct type is used, do not use m_p_vertex0 / m_p_vertex1 for this
-		_ASSERTE(r_system.r_Vertex_Pool()[r_t_edge.m_n_node_1].n_Dimension() == 6);
-		_ASSERTE(r_system.r_Vertex_Pool()[r_t_edge.m_n_node_2].n_Dimension() == 5); // change the dimensionality here, if required (full type control currently not possible to make sure that the indices in the edge really point to vertices that are of the expected type. e.g. the edge might expect both vertices to be poses, but if the dataset is not "nice", one of the vertices can very well be a landmark)
+		//_ASSERTE(r_system.r_Vertex_Pool()[r_t_edge.m_n_node_0].n_Dimension() == 3); // get the vertices from the vertex pool to ensure a correct type is used, do not use m_p_vertex0 / m_p_vertex1 for this
+		//_ASSERTE(r_system.r_Vertex_Pool()[r_t_edge.m_n_node_1].n_Dimension() == 6);
+		//_ASSERTE(r_system.r_Vertex_Pool()[r_t_edge.m_n_node_2].n_Dimension() == 5);
 		// make sure the dimensionality is correct (might not be)
+		// this fails with const vertices, for obvious reasons. with the thunk tables this can be safely removed.
 	}
 
 	/**
@@ -580,18 +589,20 @@ public:
 	CEdgeP2CI3D(size_t n_node_0, size_t n_node_1, size_t n_node_2, const Eigen::Vector2d &v_delta, // won't align non-reference arg
 		const Eigen::Matrix2d &r_t_inv_sigma, CSystem &r_system) // respect const-ness!
 		:_TyBase(typename _TyBase::_TyVertexIndexTuple(n_node_0,
-				n_node_1, n_node_2), v_delta, r_t_inv_sigma) // this just calls the base edge implementation, you need to change types and maintain the parameters if required (these are: index of first and of second vertex, the measurement vector and the inverse sigma matrix)
+		n_node_1, n_node_2), v_delta, r_t_inv_sigma,
+		CBaseEdge::explicitly_initialized_vertices, r_system)
 	{
-		m_vertex_ptr.Get<0>() = &r_system.template r_Get_Vertex<CVertexCam>(n_node_0, CInitializeNullVertex<>());
-		m_vertex_ptr.Get<1>() = &r_system.template r_Get_Vertex<CVertexXYZ>(n_node_1, CInitializeNullVertex<CVertexXYZ>());
-		m_vertex_ptr.Get<2>() = &r_system.template r_Get_Vertex<CVertexIntrinsics>(n_node_2, CInitializeNullVertex<CVertexIntrinsics>()); // rename your initializer if required
+		//m_vertex_ptr.Get<0>() = &r_system.template r_Get_Vertex<CVertexCam>(n_node_0, CInitializeNullVertex<>());
+		//m_vertex_ptr.Get<1>() = &r_system.template r_Get_Vertex<CVertexXYZ>(n_node_1, CInitializeNullVertex<CVertexXYZ>());
+		//m_vertex_ptr.Get<2>() = &r_system.template r_Get_Vertex<CVertexIntrinsics>(n_node_2, CInitializeNullVertex<CVertexIntrinsics>());
 		// get vertices (initialize if required)
-		// the strange syntax with "template" is required by g++, otherwise gives "expected primary-expression before '>' token"
+		// initialized already in CBaseEdgeImpl constructor
 
-		_ASSERTE(r_system.r_Vertex_Pool()[n_node_1].n_Dimension() == 3); // get the vertices from the vertex pool to ensure a correct type is used, do not use m_p_vertex0 / m_p_vertex1 for this
-		_ASSERTE(r_system.r_Vertex_Pool()[n_node_0].n_Dimension() == 6);
-		_ASSERTE(r_system.r_Vertex_Pool()[n_node_2].n_Dimension() == 5); // change the dimensionality here, if required (full type control currently not possible to make sure that the indices in the edge really point to vertices that are of the expected type. e.g. the edge might expect both vertices to be poses, but if the dataset is not "nice", one of the vertices can very well be a landmark)
+		//_ASSERTE(r_system.r_Vertex_Pool()[n_node_1].n_Dimension() == 3); // get the vertices from the vertex pool to ensure a correct type is used, do not use m_p_vertex0 / m_p_vertex1 for this
+		//_ASSERTE(r_system.r_Vertex_Pool()[n_node_0].n_Dimension() == 6);
+		//_ASSERTE(r_system.r_Vertex_Pool()[n_node_2].n_Dimension() == 5);
 		// make sure the dimensionality is correct (might not be)
+		// this fails with const vertices, for obvious reasons. with the thunk tables this can be safely removed.
 	}
 
 	/**
@@ -618,20 +629,20 @@ public:
 		CBAJacobians::Project_P2CI(m_vertex_ptr.Get<0>()->v_State(), m_vertex_ptr.Get<2>()->v_State(),
 			m_vertex_ptr.Get<1>()->v_State(), r_v_expectation,
 			r_t_jacobian_tuple.Get<0>(), r_t_jacobian_tuple.Get<1>(),
-			r_t_jacobian_tuple.Get<2>()); // write your jacobian calculation code here (vertex state vectors are inputs, the rest are the outputs that you need to fill)
+			r_t_jacobian_tuple.Get<2>());
 		// calculates the expectation and the jacobians
 
 		//std::cout << r_v_expectation.transpose() << " | " << m_v_measurement.transpose() << std::endl;
 
 		r_v_error = m_v_measurement - r_v_expectation;
-		// calculates error (possibly re-calculates, if running A-SLAM)*/
+		// calculates error (possibly re-calculates, if running A-SLAM)
 	}
 
 	/**
-	 *	@brief calculates chi-square error
-	 *	@return Returns (unweighted) chi-square error for this edge.
+	 *	@brief calculates \f$\chi^2\f$ error
+	 *	@return Returns (unweighted) \f$\chi^2\f$ error for this edge.
 	 */
-	inline double f_Chi_Squared_Error() const // this function should mostly work as is, you just need to change dimensions of the vectors and matrices
+	inline double f_Chi_Squared_Error() const
 	{
 		Eigen::Vector2d v_error;
 		CBAJacobians::Project_P2C(m_vertex_ptr.Get<0>()->v_State() /* Cam */, m_vertex_ptr.Get<2>()->v_State(),
@@ -646,9 +657,9 @@ public:
 
 	/**
 	 *	@brief calculates reprojection error
-	 *	@return Returns (unweighted) chi-square error for this edge.
+	 *	@return Returns reprojection error for this edge, in pixels.
 	 */
-	inline double f_Reprojection_Error() const // this function should mostly work as is, you just need to change dimensions of the vectors and matrices
+	inline double f_Reprojection_Error() const
 	{
 		Eigen::Vector2d v_expectation;
 		CBAJacobians::Project_P2C(m_vertex_ptr.Get<0>()->v_State() /* Cam */, m_vertex_ptr.Get<2>()->v_State(),
@@ -665,14 +676,14 @@ public:
 /**
  *	@brief BA vex-cam edge
  */
-class CEdgeP2SC3D : public CBaseEdgeImpl<CEdgeP2SC3D, MakeTypelist(CVertexSCam, CVertexXYZ), 3> { // again, this tells that base implementation for base edge for type that will be called CEdgePose2D, and it will be an edge between two vertices of type CVertexPose2D, and the measurement will have 3 dimensions (in order to have hyperedges, you need to provide your own version of CBaseEdgeImpl, that is an advanced topic)
+class CEdgeP2SC3D : public CBaseEdgeImpl<CEdgeP2SC3D, MakeTypelist(CVertexSCam, CVertexXYZ), 3> {
 public:
-	__BA_TYPES_ALIGN_OPERATOR_NEW // imposed by the use of eigen, just copy this
+	__GRAPH_TYPES_ALIGN_OPERATOR_NEW // imposed by the use of eigen, just copy this
 
 	/**
 	 *	@brief default constructor; has no effect
 	 */
-	inline CEdgeP2SC3D() // copy this
+	inline CEdgeP2SC3D()
 	{}
 
 	/**
@@ -684,12 +695,14 @@ public:
 	 *	@param[in,out] r_system is reference to system (used to query edge vertices)
 	 */
 	template <class CSystem>
-	CEdgeP2SC3D(const CParserBase::TEdgeP2SC3D &r_t_edge, CSystem &r_system) // this is edge constructor how it is called in the parse loop; you need to change type of the edge
+	CEdgeP2SC3D(const CParserBase::TEdgeP2SC3D &r_t_edge, CSystem &r_system)
 		:CBaseEdgeImpl<CEdgeP2SC3D, MakeTypelist(CVertexSCam, CVertexXYZ), 3>(r_t_edge.m_n_node_1,
-		r_t_edge.m_n_node_0, r_t_edge.m_v_delta, r_t_edge.m_t_inv_sigma) // this just calls the base edge implementation, you need to change types and maintain the parameters if required (these are: index of first and of second vertex, the measurement vector and the inverse sigma matrix)
+		r_t_edge.m_n_node_0, r_t_edge.m_v_delta, r_t_edge.m_t_inv_sigma,
+		CBaseEdge::explicitly_initialized_vertices, r_system)
 	{
-		m_p_vertex0 = &r_system.template r_Get_Vertex<CVertexSCam>(r_t_edge.m_n_node_1, CInitializeNullVertex<>());
-		m_p_vertex1 = &r_system.template r_Get_Vertex<CVertexXYZ>(r_t_edge.m_n_node_0, CInitializeNullVertex<CVertexXYZ>()); // rename your initializer if required
+		//m_p_vertex0 = &r_system.template r_Get_Vertex<CVertexSCam>(r_t_edge.m_n_node_1, CInitializeNullVertex<>());
+		//m_p_vertex1 = &r_system.template r_Get_Vertex<CVertexXYZ>(r_t_edge.m_n_node_0, CInitializeNullVertex<CVertexXYZ>());
+		// initialized already in CBaseEdgeImpl constructor
 
 		//std::swap(r_t_edge.m_n_node_1, r_t_edge.m_n_node_0);
 
@@ -698,13 +711,12 @@ public:
 		//		m_p_vertex0->r_v_State()(4), m_p_vertex0->r_v_State()(5), m_p_vertex0->r_v_State()(6), m_p_vertex0->r_v_State()(7), m_p_vertex0->r_v_State()(8), m_p_vertex0->r_v_State()(9));
 
 		//fprintf(stderr, "dims: %d %d \n", (m_p_vertex0)->n_Dimension(), (m_p_vertex1)->n_Dimension());
-
 		// get vertices (initialize if required)
-		// the strange syntax with "template" is required by g++, otherwise gives "expected primary-expression before '>' token"
 
-		_ASSERTE(r_system.r_Vertex_Pool()[r_t_edge.m_n_node_1].n_Dimension() == 6); // get the vertices from the vertex pool to ensure a correct type is used, do not use m_p_vertex0 / m_p_vertex1 for this
-		_ASSERTE(r_system.r_Vertex_Pool()[r_t_edge.m_n_node_0].n_Dimension() == 3); // change the dimensionality here, if required (full type control currently not possible to make sure that the indices in the edge really point to vertices that are of the expected type. e.g. the edge might expect both vertices to be poses, but if the dataset is not "nice", one of the vertices can very well be a landmark)
+		//_ASSERTE(r_system.r_Vertex_Pool()[r_t_edge.m_n_node_1].n_Dimension() == 6); // get the vertices from the vertex pool to ensure a correct type is used, do not use m_p_vertex0 / m_p_vertex1 for this
+		//_ASSERTE(r_system.r_Vertex_Pool()[r_t_edge.m_n_node_0].n_Dimension() == 3);
 		// make sure the dimensionality is correct (might not be)
+		// this fails with const vertices, for obvious reasons. with the thunk tables this can be safely removed.
 	}
 
 	/**
@@ -722,16 +734,18 @@ public:
 	CEdgeP2SC3D(size_t n_node1, size_t n_node0, const Eigen::Vector3d &v_delta, // won't align non-reference arg
 		const Eigen::Matrix3d &r_t_inv_sigma, CSystem &r_system) // respect const-ness!
 		:CBaseEdgeImpl<CEdgeP2SC3D, MakeTypelist(CVertexSCam, CVertexXYZ), 3>(n_node0,
-		n_node1, v_delta, r_t_inv_sigma)
+		n_node1, v_delta, r_t_inv_sigma, CBaseEdge::explicitly_initialized_vertices, r_system)
 	{
-		m_p_vertex0 = &r_system.template r_Get_Vertex<CVertexSCam>(n_node0, CInitializeNullVertex<>());
-		m_p_vertex1 = &r_system.template r_Get_Vertex<CVertexXYZ>(n_node1, CInitializeNullVertex<CVertexXYZ>());
+		//m_p_vertex0 = &r_system.template r_Get_Vertex<CVertexSCam>(n_node0, CInitializeNullVertex<>());
+		//m_p_vertex1 = &r_system.template r_Get_Vertex<CVertexXYZ>(n_node1, CInitializeNullVertex<CVertexXYZ>());
 		// get vertices (initialize if required)
 		// "template" is required by g++, otherwise gives "expected primary-expression before '>' token"
+		// initialized already in CBaseEdgeImpl constructor
 
-		_ASSERTE(r_system.r_Vertex_Pool()[n_node0].n_Dimension() == 6); // get the vertices from the vertex pool to ensure a correct type is used, do not use m_p_vertex0 / m_p_vertex1 for this
-		_ASSERTE(r_system.r_Vertex_Pool()[n_node1].n_Dimension() == 3);
+		//_ASSERTE(r_system.r_Vertex_Pool()[n_node0].n_Dimension() == 6); // get the vertices from the vertex pool to ensure a correct type is used, do not use m_p_vertex0 / m_p_vertex1 for this
+		//_ASSERTE(r_system.r_Vertex_Pool()[n_node1].n_Dimension() == 3);
 		// make sure the dimensionality is correct (might not be)
+		// this fails with const vertices, for obvious reasons. with the thunk tables this can be safely removed.
 	}
 
 	/**
@@ -758,7 +772,7 @@ public:
 		Eigen::Matrix<double, 3, 1> &r_v_error) const // change dimensionality of eigen types, if required
 	{
 		CBAJacobians::Project_P2SC(m_p_vertex0->r_v_State() /* Cam */, m_p_vertex0->v_Intrinsics() /* camera intrinsic params */,
-			m_p_vertex1->r_v_State() /* XYZ */, r_v_expectation, r_t_jacobian0, r_t_jacobian1); // write your jacobian calculation code here (vertex state vectors are inputs, the rest are the outputs that you need to fill)
+			m_p_vertex1->r_v_State() /* XYZ */, r_v_expectation, r_t_jacobian0, r_t_jacobian1);
 		// calculates the expectation and the jacobians
 
 		//std::cout << "me: " << m_v_measurement[0] << " " << m_v_measurement[1] << " " << m_v_measurement[2] << " ----  " <<
@@ -767,14 +781,14 @@ public:
 		//std::cout << "J1:" << r_t_jacobian1 << std::endl;
 
 		r_v_error = m_v_measurement - r_v_expectation;
-		// calculates error (possibly re-calculates, if running A-SLAM)*/
+		// calculates error (possibly re-calculates, if running A-SLAM)
 	}
 
 	/**
-	 *	@brief calculates chi-square error
-	 *	@return Returns (unweighted) chi-square error for this edge.
+	 *	@brief calculates \f$\chi^2\f$ error
+	 *	@return Returns (unweighted) \f$\chi^2\f$ error for this edge.
 	 */
-	inline double f_Chi_Squared_Error() const // this function should mostly work as is, you just need to change dimensions of the vectors and matrices
+	inline double f_Chi_Squared_Error() const
 	{
 		Eigen::Matrix<double, 3, 6> p_jacobi0;
 		Eigen::Matrix<double, 3, 3> p_jacobi1;
@@ -791,9 +805,9 @@ public:
 
 	/**
 	 *	@brief calculates reprojection error
-	 *	@return Returns (unweighted) chi-square error for this edge.
+	 *	@return Returns reprojection error for this edge, in pixels.
 	 */
-	inline double f_Reprojection_Error() const // this function should mostly work as is, you just need to change dimensions of the vectors and matrices
+	inline double f_Reprojection_Error() const
 	{
 		/*Eigen::Matrix<double, 2, 6> p_jacobi0;
 		Eigen::Matrix<double, 2, 3> p_jacobi1;
@@ -810,6 +824,146 @@ public:
 };
 
 /**
+ *	@brief Camera-to-Camera Epipolar constraint edge (C2CE)
+ *
+ *	This edge represents epipolar constraint
+ *	between two 2D images \f$p0,p1\f$ of a 3D point:
+ *	\f{equation}{ p1^T * F * p0 = 0 \f}
+ *	where F is a fundamental matrix: \f$F = K2 * E * K1 \f$, \f$E = [t]_x * R \f$,
+ *	\f$K\f$ is as calibration matrix, and \f$[R|t]\f$
+ *	is a relative translation between cameras.
+*/
+class CEdgeC2CE : public CBaseEdgeImpl<CEdgeC2CE, MakeTypelist(CVertexCam, CVertexCam), 4> {
+public:
+	__GRAPH_TYPES_ALIGN_OPERATOR_NEW // imposed by the use of eigen, just copy this
+
+	/**
+	 *	@brief default constructor; has no effect
+	 */
+	inline CEdgeC2CE()
+	{}
+
+	/**
+	 *	@brief constructor; converts parsed edge to edge representation
+	 *
+	 *	@tparam CSystem is type of system where this edge is being stored
+	 *
+	 *	@param[in] r_t_edge is parsed edge
+	 *	@param[in,out] r_system is reference to system (used to query edge vertices)
+	 */
+	template <class CSystem>
+	CEdgeC2CE(const CParserBase::TEdgeC2CE &r_t_edge, CSystem &r_system)
+		:CBaseEdgeImpl<CEdgeC2CE, MakeTypelist(CVertexCam, CVertexCam), 4>(r_t_edge.m_n_node_0,
+		r_t_edge.m_n_node_1, r_t_edge.m_v_delta, r_t_edge.m_t_inv_sigma,
+		CBaseEdge::explicitly_initialized_vertices, r_system)
+	{}
+
+	/**
+	 *	@brief constructor; initializes edge with data
+	 *
+	 *	@tparam CSystem is type of system where this edge is being stored
+	 *
+	 *	@param[in] n_node0 is (zero-based) index of the first (origin) node (camera)
+	 *	@param[in] n_node1 is (zero-based) index of the second (endpoint) node (camera)
+	 *	@param[in] v_delta contains corresponding 2D points coordinates - [x0, y0, x1, y1]
+	 *	@param[in] r_t_inv_sigma is the information matrix
+	 *	@param[in,out] r_system is reference to system (used to query edge vertices)
+	 */
+	template <class CSystem>
+	CEdgeC2CE(size_t n_node0, size_t n_node1, const Eigen::Vector4d &v_delta, // won't align non-reference arg
+		const Eigen::Matrix4d &r_t_inv_sigma, CSystem &r_system) // respect const-ness!
+		:CBaseEdgeImpl<CEdgeC2CE, MakeTypelist(CVertexCam, CVertexCam), 4>(n_node0,
+		n_node1, v_delta, r_t_inv_sigma, CBaseEdge::explicitly_initialized_vertices, r_system)
+	{}
+
+	/**
+	 *	@brief updates the edge with a new measurement
+	 *
+	 *	@param[in] r_t_edge is parsed edge
+	 */
+	inline void Update(const CParserBase::TEdgeC2CE &r_t_edge)
+	{
+		CBaseEdgeImpl<CEdgeC2CE, MakeTypelist(CVertexCam, CVertexCam),
+			4>::Update(r_t_edge.m_v_delta, r_t_edge.m_t_inv_sigma);
+	}
+
+	/**
+	 *	@brief calculates jacobians, expectation and error
+	 *
+	 *	@param[out] r_t_jacobian0 is jacobian, associated with the first vertex
+	 *	@param[out] r_t_jacobian1 is jacobian, associated with the second vertex
+	 *	@param[out] r_v_expectation is input vector, expectation is zero error
+	 *	@param[out] r_v_error is error vector
+	 */
+	inline void Calculate_Jacobians_Expectation_Error(Eigen::Matrix<double, 4, 6> &r_t_jacobian0,
+		Eigen::Matrix<double, 4, 6> &r_t_jacobian1, Eigen::Matrix<double, 4, 1> &r_v_expectation,
+		Eigen::Matrix<double, 4, 1> &r_v_error) const // change dimensionality of eigen types, if required
+	{
+		Eigen::Vector4d input = m_v_measurement;
+
+		// expectation is zero, here r_v_expectation is input
+		CBAJacobians::Project_PC2CE(m_p_vertex0->r_v_State() /* Cam0 */, m_p_vertex1->r_v_State() /* Cam1 */,
+				m_p_vertex0->v_Intrinsics() /* camera intrinsic params 0 */, m_p_vertex1->v_Intrinsics() /* camera intrinsic params 1 */,
+				input, r_v_expectation, r_t_jacobian0, r_t_jacobian1);
+		// calculates the expectation and the jacobians
+
+		// error is stored in expectation
+		r_v_error = r_v_expectation;
+		//std::cout << m_p_vertex0->r_v_State().transpose() << " | " << m_p_vertex1->r_v_State().transpose() << std::endl;
+		//std::cout << "err: " << r_v_error.transpose() << std::endl;
+		// calculates error (possibly re-calculates, if running A-SLAM)
+	}
+
+	/**
+	 *	@brief calculates \f$\chi^2\f$ error
+	 *	@return Returns (unweighted) \f$\chi^2\f$ error for this edge.
+	 */
+	inline double f_Chi_Squared_Error() const
+	{
+		/*Eigen::Matrix<double, 2, 6> p_jacobi0;
+		Eigen::Matrix<double, 2, 3> p_jacobi1;
+		Eigen::Matrix<double, 2, 1> v_expectation, v_error;
+		Calculate_Jacobians_Expectation_Error(p_jacobi0, p_jacobi1, v_expectation, v_error);
+		// calculates the expectation, error and the jacobians
+		//std::cerr << v_error[0] << " " << v_error[1] << " ----  " << (v_error.transpose() * m_t_sigma_inv).dot(v_error) << std::endl;
+		//std::cout << sqrt( v_error[0]*v_error[0] + v_error[1]*v_error[1] ) << std::endl;*/
+
+		Eigen::Vector4d input = m_v_measurement;
+		Eigen::Vector4d v_error;
+		CBAJacobians::Project_PC2CE(m_p_vertex0->r_v_State() /* Cam0 */, m_p_vertex1->r_v_State() /* Cam1 */,
+					m_p_vertex0->v_Intrinsics() /* camera intrinsic params 0 */, m_p_vertex1->v_Intrinsics() /* camera intrinsic params 1 */,
+					input, v_error);
+		//std::cout << v_error.transpose() << " | " << m_v_measurement.transpose() << std::endl;
+
+		//v_error -= m_v_measurement; // this is actually negative error, but it is squared below so the chi2 is the same
+		// this should be faster, as it does not calculate the jacobians
+		// (in BA, this is actually timed as it is used in solver step validation)
+		//std::cout << m_p_vertex0->r_v_State().transpose() << " | " << m_p_vertex1->r_v_State().transpose() << std::endl;
+		//std::cout << "err: " << v_error.transpose() << " chi: " << (v_error.transpose() * m_t_sigma_inv).dot(v_error) << std::endl;
+
+		return (v_error.transpose() * m_t_sigma_inv).dot(v_error); // ||z_i - h_i(O_i)||^2 lambda_i*/
+		//return 0;
+	}
+
+	/**
+	 *	@brief calculates reprojection error
+	 *	@return Returns reprojection error for this edge, in pixels.
+	 */
+	inline double f_Reprojection_Error() const
+	{
+		//Eigen::Vector2d v_error;
+		//CBAJacobians::Project_P2C(m_p_vertex0->r_v_State() /* Cam */, m_p_vertex0->v_Intrinsics(),
+		//	m_p_vertex1->r_v_State() /* XYZ */, v_error);
+		//v_error -= m_v_measurement; // this is actually negative error, but we only need the norm so sign does not matter
+		// this should be faster, as it does not calculate the jacobians
+		// (in BA, this is actually timed as it is used in solver step validation)
+
+		//return v_error.norm();
+		return 0;
+	}
+};
+
+/**
  *	@brief edge for 3D landmark observation by a spherical camera
  *	@note This is formally a SLAM edge, not BA.
  */
@@ -819,7 +973,7 @@ public:
 	 *	@brief vertex initialization functor
 	 *	Calculates vertex position from the first vertex and an XYT edge.
 	 */
-	class CRelative_to_Absolute_XYZ_Initializer { // this is an object which is used to lazy initialize vertices (copy it)
+	class CRelative_to_Absolute_XYZ_Initializer {
 	protected:
 		const Eigen::Matrix<double, 6, 1> &m_r_v_pose1; /**< @brief the first vertex */
 		const Eigen::Matrix<double, 3, 1> &m_r_v_delta; /**< @brief the edge, shared by r_v_vertex1 and the vertex being initialized */
@@ -857,12 +1011,12 @@ public:
 	};
 
 public:
-	__BA_TYPES_ALIGN_OPERATOR_NEW // imposed by the use of eigen, just copy this
+	__GRAPH_TYPES_ALIGN_OPERATOR_NEW // imposed by the use of eigen, just copy this
 
 	/**
 	 *	@brief default constructor; has no effect
 	 */
-	inline CEdgeSpheronXYZ() // copy this
+	inline CEdgeSpheronXYZ()
 	{}
 
 	/**
@@ -874,26 +1028,25 @@ public:
 	 *	@param[in,out] r_system is reference to system (used to query edge vertices)
 	 */
 	template <class CSystem>
-	CEdgeSpheronXYZ(const CParserBase::TEdgeSpheronXYZ &r_t_edge, CSystem &r_system) // this is edge constructor how it is called in the parse loop; you need to change type of the edge
+	CEdgeSpheronXYZ(const CParserBase::TEdgeSpheronXYZ &r_t_edge, CSystem &r_system)
 		:CBaseEdgeImpl<CEdgeSpheronXYZ, MakeTypelist(CVertexSpheron, CVertexXYZ), 3>(r_t_edge.m_n_node_0,
-		r_t_edge.m_n_node_1, r_t_edge.m_v_delta, r_t_edge.m_t_inv_sigma) // this just calls the base edge implementation, you need to change types and maintain the parameters if required (these are: index of first and of second vertex, the measurement vector and the inverse sigma matrix)
+		r_t_edge.m_n_node_1, r_t_edge.m_v_delta, r_t_edge.m_t_inv_sigma)
 	{
 		//fprintf(stderr, "%f %f %f\n", r_t_edge.m_v_delta(0), r_t_edge.m_v_delta(1), r_t_edge.m_v_delta(2));
 
 		m_p_vertex0 = &r_system.template r_Get_Vertex<CVertexSpheron>(r_t_edge.m_n_node_0, CInitializeNullVertex<>());
 		m_p_vertex1 = &r_system.template r_Get_Vertex<CVertexXYZ>(r_t_edge.m_n_node_1,
-			CRelative_to_Absolute_XYZ_Initializer(m_p_vertex0->r_v_State(), r_t_edge.m_v_delta)); // rename your initializer if required
-
+			CRelative_to_Absolute_XYZ_Initializer(m_p_vertex0->r_v_State(), r_t_edge.m_v_delta));
 		// get vertices (initialize if required)
-		// the strange syntax with "template" is required by g++, otherwise gives "expected primary-expression before '>' token"
 
 		//print me edge
 		//std::cout << r_t_edge.m_n_node_0 << " to " << r_t_edge.m_n_node_1 << std::endl;
 		//std::cout << r_t_edge.m_v_delta << std::endl;
 
-		_ASSERTE(r_system.r_Vertex_Pool()[r_t_edge.m_n_node_0].n_Dimension() == 6);
-		_ASSERTE(r_system.r_Vertex_Pool()[r_t_edge.m_n_node_1].n_Dimension() == 3); // change the dimensionality here, if required (full type control currently not possible to make sure that the indices in the edge really point to vertices that are of the expected type. e.g. the edge might expect both vertices to be poses, but if the dataset is not "nice", one of the vertices can very well be a landmark)
+		//_ASSERTE(r_system.r_Vertex_Pool()[r_t_edge.m_n_node_0].n_Dimension() == 6);
+		//_ASSERTE(r_system.r_Vertex_Pool()[r_t_edge.m_n_node_1].n_Dimension() == 3);
 		// make sure the dimensionality is correct (might not be)
+		// this fails with const vertices, for obvious reasons. with the thunk tables this can be safely removed.
 	}
 
 	/**
@@ -909,22 +1062,21 @@ public:
 	 */
 	template <class CSystem>
 	CEdgeSpheronXYZ(size_t n_node0, size_t n_node1, const Eigen::Matrix<double, 3, 1> &r_v_delta,
-		const Eigen::Matrix<double, 3, 3> &r_t_inv_sigma, CSystem &r_system) // this is edge constructor how it is called in the parse loop; you need to change type of the edge
+		const Eigen::Matrix<double, 3, 3> &r_t_inv_sigma, CSystem &r_system)
 		:CBaseEdgeImpl<CEdgeSpheronXYZ, MakeTypelist(CVertexSpheron, CVertexXYZ), 3>(n_node0,
-		n_node1, r_v_delta, r_t_inv_sigma) // this just calls the base edge implementation, you need to change types and maintain the parameters if required (these are: index of first and of second vertex, the measurement vector and the inverse sigma matrix)
+		n_node1, r_v_delta, r_t_inv_sigma)
 	{
 		//fprintf(stderr, "%f %f %f\n", r_t_edge.m_v_delta(0), r_t_edge.m_v_delta(1), r_t_edge.m_v_delta(2));
 
 		m_p_vertex0 = &r_system.template r_Get_Vertex<CVertexSpheron>(n_node0, CInitializeNullVertex<>());
 		m_p_vertex1 = &r_system.template r_Get_Vertex<CVertexXYZ>(n_node1,
-			CRelative_to_Absolute_XYZ_Initializer(m_p_vertex0->r_v_State(), r_v_delta)); // rename your initializer if required
-
+			CRelative_to_Absolute_XYZ_Initializer(m_p_vertex0->r_v_State(), r_v_delta));
 		// get vertices (initialize if required)
-		// the strange syntax with "template" is required by g++, otherwise gives "expected primary-expression before '>' token"
 
-		_ASSERTE(r_system.r_Vertex_Pool()[n_node0].n_Dimension() == 6);
-		_ASSERTE(r_system.r_Vertex_Pool()[n_node1].n_Dimension() == 3); // change the dimensionality here, if required (full type control currently not possible to make sure that the indices in the edge really point to vertices that are of the expected type. e.g. the edge might expect both vertices to be poses, but if the dataset is not "nice", one of the vertices can very well be a landmark)
+		//_ASSERTE(r_system.r_Vertex_Pool()[n_node0].n_Dimension() == 6);
+		//_ASSERTE(r_system.r_Vertex_Pool()[n_node1].n_Dimension() == 3);
 		// make sure the dimensionality is correct (might not be)
+		// this fails with const vertices, for obvious reasons. with the thunk tables this can be safely removed.
 	}
 
 	/**
@@ -951,7 +1103,7 @@ public:
 		Eigen::Matrix<double, 3, 1> &r_v_error) const // change dimensionality of eigen types, if required
 	{
 		C3DJacobians::Absolute_to_Relative_Landmark(m_p_vertex0->r_v_State(),
-			m_p_vertex1->r_v_State(), r_v_expectation, r_t_jacobian0, r_t_jacobian1); // write your jacobian calculation code here (vertex state vectors are inputs, the rest are the outputs that you need to fill)
+			m_p_vertex1->r_v_State(), r_v_expectation, r_t_jacobian0, r_t_jacobian1);
 		// calculates the expectation and the jacobians
 
 		/*std::cout << "v1: " << m_p_vertex0->r_v_State()(0) << " " << m_p_vertex0->r_v_State()(1) << " " <<
@@ -972,10 +1124,10 @@ public:
 	}
 
 	/**
-	 *	@brief calculates chi-square error
-	 *	@return Returns (unweighted) chi-square error for this edge.
+	 *	@brief calculates \f$\chi^2\f$ error
+	 *	@return Returns (unweighted) \f$\chi^2\f$ error for this edge.
 	 */
-	inline double f_Chi_Squared_Error() const // this function should mostly work as is, you just need to change dimensions of the vectors and matrices
+	inline double f_Chi_Squared_Error() const
 	{
 		/*Eigen::Matrix<double, 3, 6> p_jacobi0;
 		Eigen::Matrix<double, 3, 3> p_jacobi1;
@@ -995,6 +1147,12 @@ public:
 	}
 };
 
+/** @} */ // end of group
+
+/** \addtogroup parser
+ *	@{
+ */
+
 /**
  *	@brief edge traits for BA solver
  */
@@ -1010,7 +1168,7 @@ public:
 	 */
 	static const char *p_s_Reason()
 	{
-		return "unknown edge type occured 1";
+		return "unknown edge type occurred 1";
 	}
 };
 
@@ -1021,6 +1179,15 @@ template <>
 class CBAEdgeTraits<CParserBase::TEdgeP2C3D> {
 public:
 	typedef CEdgeP2C3D _TyEdge; /**< @brief the edge type to construct from the parsed type */
+};
+
+/**
+ *	@brief edge traits for BA solver
+ */
+template <>
+class CBAEdgeTraits<CParserBase::TEdgeC2CE> {
+public:
+	typedef CEdgeC2CE _TyEdge; /**< @brief the edge type to construct from the parsed type */
 };
 
 /**
@@ -1056,7 +1223,7 @@ public:
 	 */
 	static const char *p_s_Reason()
 	{
-		return "unknown vertex type occured";
+		return "unknown vertex type occurred";
 	}
 };
 
@@ -1093,7 +1260,7 @@ public:
 	 */
 	static const char *p_s_Reason()
 	{
-		return "unknown edge type occured 2";
+		return "unknown edge type occurred 2";
 	}
 };
 
@@ -1139,7 +1306,7 @@ public:
 	 */
 	static const char *p_s_Reason()
 	{
-		return "unknown vertex type occured";
+		return "unknown vertex type occurred";
 	}
 };
 
@@ -1176,7 +1343,7 @@ public:
 	 */
 	static const char *p_s_Reason()
 	{
-		return "unknown edge type occured 2";
+		return "unknown edge type occurred 2";
 	}
 };
 
@@ -1222,7 +1389,7 @@ public:
 	 */
 	static const char *p_s_Reason()
 	{
-		return "unknown vertex type occured";
+		return "unknown vertex type occurred";
 	}
 };
 
@@ -1259,7 +1426,7 @@ public:
 	 */
 	static const char *p_s_Reason()
 	{
-		return "unknown edge type occured 1";
+		return "unknown edge type occurred 1";
 	}
 };
 
@@ -1314,7 +1481,7 @@ public:
 	 */
 	static const char *p_s_Reason()
 	{
-		return "unknown vertex type occured";
+		return "unknown vertex type occurred";
 	}
 };
 
@@ -1344,5 +1511,7 @@ class CBAIntrinsicsVertexTraits<CParserBase::TVertexIntrinsics> {
 public:
 	typedef CVertexIntrinsics _TyVertex; /**< @brief the edge type to construct from the parsed type */
 };
+
+/** @} */ // end of group
 
 #endif // __BA_TYPES_INCLUDED

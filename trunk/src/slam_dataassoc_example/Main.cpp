@@ -12,7 +12,7 @@
 
 /**
  *	@file src/slam_dataassoc_example/Main.cpp
- *	@brief data association / compact SLAM example
+ *	@brief example of data association using marginal covariances
  *	@date 2013
  *	@author -tHE SWINe-
  */
@@ -23,6 +23,7 @@
 #include "slam/SE2_Types.h" // SE(2) types
 #include "slam/Marginals.h" // covariance calculation
 #include "slam/Distances.h" // distance calculation
+#include "eigen/Eigen/SVD" // JacobiSVD
 
 /**
  *	@brief parsed edge data
@@ -30,6 +31,7 @@
 struct TEdgeData {
 	size_t p_vertex[2]; /**< @brief indices of the vertices */
 	Eigen::Vector3d v_measurement; /**< @brief measurement vector */
+	Eigen::Matrix3d t_information; /**< @brief information matrix */
 
 	/**
 	 *	@brief default constructor; has no effect
@@ -43,9 +45,11 @@ struct TEdgeData {
 	 *	@param[in] n_vertex_0 is index of the first vertex
 	 *	@param[in] n_vertex_1 is index of the second vertex
 	 *	@param[in] r_v_measurement is measurement vector
+	 *	@param[in] r_t_information is information matrix
 	 */
-	TEdgeData(size_t n_vertex_0, size_t n_vertex_1, const Eigen::Vector3d &r_v_measurement)
-		:v_measurement(r_v_measurement)
+	TEdgeData(size_t n_vertex_0, size_t n_vertex_1,
+		const Eigen::Vector3d &r_v_measurement, const Eigen::Matrix3d &r_t_information)
+		:v_measurement(r_v_measurement), t_information(r_t_information)
 	{
 		p_vertex[0] = n_vertex_0;
 		p_vertex[1] = n_vertex_1;
@@ -90,7 +94,7 @@ public:
  *	@param[out] edges is vector of edges to add the edges to
  *	@note The data are taken from Olson's Manhattan dataset.
  */
-void Add_ManhattanEdges(std::vector<TEdgeData> &edges);
+static void Add_ManhattanEdges(std::vector<TEdgeData> &edges);
 
 /**
  *	@brief a helper function that loads a 2D dataset (2D to make the data structures involved in this example simple)
@@ -98,7 +102,7 @@ void Add_ManhattanEdges(std::vector<TEdgeData> &edges);
  *	@param[in] p_s_filename is null-terminated string, containing file name of a dataset
  *	@param[out] edges is vector of edges to add the edges to
  */
-void Load_Dataset(const char *p_s_filename, std::vector<TEdgeData> &edges);
+static void Load_Dataset(const char *p_s_filename, std::vector<TEdgeData> &edges);
 
 /**
  *	@brief main
@@ -156,23 +160,12 @@ int main(int n_arg_num, const char **p_arg_list)
 	}
 	// calculate image resolution and transformation to raster coordinates
 
-	Eigen::Matrix3d information;
-	/*information <<
-		45,  0,  0,
-		 0, 45,  0,
-		 0,  0, 45;*/ // manhattan
-	information <<
-		22.36,	   0,	  0,
-			0, 22.36,	  0,
-			0,	   0, 70.71; // intel
-	// prepare the information matrix (all edges have the same)
-
 	Eigen::Vector3d v_sensor_range;
 	//v_sensor_range << 3, 3, 2 * M_PI; // manhattan (has some long loop closures)
 	v_sensor_range << 3, 2, 2 * M_PI; // intel
 	// sensor range (a tolerance, affects which poses will be matched)
 
-	double f_loop_probability_threshold = 0.1578;//0.1; // as in TRO
+	double f_loop_probability_threshold = 0.1; // as in TRO
 	// poses with higher loop probability will be candidates for sensor matching
 
 	std::vector<TEdgeData> edges;
@@ -192,7 +185,7 @@ int main(int n_arg_num, const char **p_arg_list)
 		const TEdgeData &r_edge = edges[i];
 		if(r_edge.p_vertex[0] < n_vertex_num &&
 		   r_edge.p_vertex[1] < n_vertex_num) {
-			// both edges are already in the system, this is a loop closute
+			// both edges are already in the system, this is a loop closure
 
 			loop_closures.push_back(r_edge);
 			// put it to the list of loop closures
@@ -214,7 +207,7 @@ int main(int n_arg_num, const char **p_arg_list)
 	// but the fake "sensor matching" code would have to be at the beginning of the loop,
 	// which seemed counterintuitive for a code example
 
-	size_t n_association_num = 0;
+	size_t n_closed_loop_num = 0, n_association_num = 0;
 	// keep a counter of how many times sensor matching was attempted
 
 	CTimer t;
@@ -224,19 +217,22 @@ int main(int n_arg_num, const char **p_arg_list)
 	double f_distances_time = 0;
 	double f_drawing_time = 0;
 
-	FILE *p_fw = fopen("covanim_data.dat", "wb");
+	FILE *p_fw;
+	if(!(p_fw = fopen("covanim_data.dat", "wb"))) {
+		fprintf(stderr, "error: failed to open output file for writing\n");
+		return -1;
+	}
 
 	double f_min_probability = 1;
 
 	for(size_t i = 0, n = edges.size(); i < n; ++ i) {
-		if(n_arg_num < 2)
-			printf("step " PRIsize "\r", i);
-		const TEdgeData &r_edge = edges[i];
+		printf("step " PRIsize "\r", i);
+		const TEdgeData &r_edge = edges[i]; // copy intended
 		// get an edge
 
 		solver.Incremental_Step(system.r_Add_Edge(
 			CEdgePose2D(r_edge.p_vertex[0], r_edge.p_vertex[1],
-			r_edge.v_measurement, information, system)));
+			r_edge.v_measurement, r_edge.t_information, system)));
 		// this is a spanning tree edge, add it to the system and update
 
 		const CUberBlockMatrix &r_marginals = solver.r_MarginalCovariance().r_SparseMatrix();
@@ -247,14 +243,16 @@ int main(int n_arg_num, const char **p_arg_list)
 			r_marginals.n_BlockRow_Num() - 1, r_marginals.n_BlockColumn_Num() - 1);
 		// get the last block of the marginals, corresponding to the current pose
 
-		if(0) {
+		timer.Accum_DiffSample(f_solver_time);
+
+		if(1) {
 			char p_s_filename[256];
 			sprintf(p_s_filename, "anim/sys%05" _PRIsize ".txt", i + 2); // 2 vertices at the first edge
 			system.Dump(p_s_filename);
 			// write the system
 		}
 
-		timer.Accum_DiffSample(f_solver_time);
+		timer.Accum_DiffSample(f_drawing_time);
 
 		std::vector<size_t> probable_matches, true_matches; // list of probable matches with the last vertex
 		if(!loop_closures.empty()) {
@@ -272,14 +270,15 @@ int main(int n_arg_num, const char **p_arg_list)
 			size_t n_last_vertex = r_vertex_pool.n_Size() - 1;
 			_ASSERTE(n_last_vertex <= INT_MAX);
 			int _n_last_vertex = int(n_last_vertex);
-			#pragma omp parallel for schedule(dynamic, 32) if(_n_last_vertex > 64)
+			#pragma omp parallel for schedule(dynamic, 32) if(n_last_vertex > 64)
 			for(int j = 0; j < _n_last_vertex; ++ j) {
-				Eigen::VectorXd v_probability_distance = distances.Calculate_Distance(j, n_last_vertex);
+				Eigen::VectorXd v_probability_distance;
+				distances.Calculate_Distance(v_probability_distance, j, n_last_vertex);
 				double f_min_probability_distance = v_probability_distance.minCoeff(); // minimal of all probabilities
 				// calculate probability that the vertices are closer than the specified distance threshold
 				// calculates distance between vertices j and n_last_vertex
 
-				if(f_min_probability_distance > f_loop_probability_threshold) { // an ad-hoc threshold
+				if(f_min_probability_distance > f_loop_probability_threshold) {
 					#pragma omp critical
 					{
 						++ n_association_num;
@@ -290,14 +289,15 @@ int main(int n_arg_num, const char **p_arg_list)
 						while((p_edge_it = std::find(loop_closures.begin(), loop_closures.end(),
 						   std::make_pair(j, n_last_vertex))) != loop_closures.end()) {
 							const TEdgeData &r_edge = *p_edge_it;
-							// found an edge between vertices j and m
+							// found an edge between vertices j and n_last_vertex
 
 							timer.Accum_DiffSample(f_distances_time);
 
+							++ n_closed_loop_num;
 							solver.Incremental_Step(system.r_Add_Edge(
 								CEdgePose2D(r_edge.p_vertex[0], r_edge.p_vertex[1],
-								r_edge.v_measurement, information, system)));
-							// add it to the system
+								r_edge.v_measurement, r_edge.t_information, system)));
+							// add it to the system, recalculate marginal covariances
 
 							timer.Accum_DiffSample(f_solver_time);
 
@@ -320,12 +320,19 @@ int main(int n_arg_num, const char **p_arg_list)
 					}
 				}
 			}
+			// close the loops
 		}
 		// find probable matches using the covariances
 
+		timer.Accum_DiffSample(f_distances_time);
+
+		// there are only various debug outputs below
+
 		{
-			uint32_t n_last_vertex = system.r_Vertex_Pool().n_Size() - 1;
-			uint32_t n_match_num = true_matches.size(), n_test_num = probable_matches.size();
+			_ASSERTE(system.r_Vertex_Pool().n_Size() - 1 <= UINT32_MAX);
+			uint32_t n_last_vertex = uint32_t(system.r_Vertex_Pool().n_Size() - 1);
+			_ASSERTE(true_matches.size() <= UINT32_MAX && probable_matches.size() <= UINT32_MAX);
+			uint32_t n_match_num = uint32_t(true_matches.size()), n_test_num = uint32_t(probable_matches.size());
 
 			fwrite(&n_last_vertex, sizeof(uint32_t), 1, p_fw);
 			// write the vertex id
@@ -356,25 +363,36 @@ int main(int n_arg_num, const char **p_arg_list)
 
 			fwrite(&n_test_num, sizeof(uint32_t), 1, p_fw);
 			if(n_test_num) {
-				_ASSERTE(sizeof(size_t) == sizeof(uint32_t)); // otherwise the below wont work
-				fwrite(&probable_matches[0], sizeof(uint32_t), probable_matches.size(), p_fw);
+				if(sizeof(size_t) == sizeof(uint32_t)) // otherwise the below wont work
+					fwrite(&probable_matches[0], sizeof(uint32_t), probable_matches.size(), p_fw);
+				else {
+					for(size_t j = 0, m = probable_matches.size(); j < m; ++ j) {
+						_ASSERTE(probable_matches[j] <= UINT32_MAX);
+						uint32_t n_pose_id = uint32_t(probable_matches[j]);
+						fwrite(&n_pose_id, sizeof(uint32_t), 1, p_fw);
+					}
+				}
 			}
 			fwrite(&n_match_num, sizeof(uint32_t), 1, p_fw);
 			if(n_match_num) {
-				_ASSERTE(sizeof(size_t) == sizeof(uint32_t)); // otherwise the below wont work
-				fwrite(&true_matches[0], sizeof(uint32_t), true_matches.size(), p_fw);
+				if(sizeof(size_t) == sizeof(uint32_t)) // otherwise the below wont work
+					fwrite(&true_matches[0], sizeof(uint32_t), true_matches.size(), p_fw);
+				else {
+					for(size_t j = 0, m = true_matches.size(); j < m; ++ j) {
+						_ASSERTE(true_matches[j] <= UINT32_MAX);
+						uint32_t n_pose_id = uint32_t(true_matches[j]);
+						fwrite(&n_pose_id, sizeof(uint32_t), 1, p_fw);
+					}
+				}
 			}
 			// write the matches
 		}
-
-		timer.Accum_DiffSample(f_distances_time);
-
 		if(0) {
 			char p_s_filename[256];
 			sprintf(p_s_filename, "anim/covmat_%04" _PRIsize ".tga", i);
 			solver.r_MarginalCovariance().r_SparseMatrix().Rasterize(p_s_filename);
 		}
-		if(0) {
+		if(1) {
 			p_image->Clear(-1);
 			// clear to white
 
@@ -497,8 +515,8 @@ int main(int n_arg_num, const char **p_arg_list)
 	}
 	// finalize the covariance data stream
 
-	printf("\ndone. correctly matched " PRIsize " / " PRIsize " loop closures (tried " PRIsize " times)\n",
-		n_loop_closure_num - loop_closures.size(), n_loop_closure_num, n_association_num);
+	printf("\ndone. correctly matched " PRIsize " / " PRIsize " loop closures (tried "
+		PRIsize " times)\n", n_closed_loop_num, n_loop_closure_num, n_association_num);
 	printf("the minimal successful probability that closed a loop was %g\n", f_min_probability);
 	printf("solver took %f sec\n", f_solver_time);
 	printf("distance calculation and pose matching took %f sec\n", f_distances_time);
@@ -507,26 +525,6 @@ int main(int n_arg_num, const char **p_arg_list)
 
 	p_image->Delete();
 	// delete the bitmap
-
-	// --------------- marginals testbed ---------------
-
-	/*CMarginals::Test_ExperimentalIncrementalMarginals<CEdgePose2D>(system, solver, information);
-	// test the incremental marginals update
-
-	{
-		const CUberBlockMatrix &lambda = solver.r_Lambda();
-		// get system matrix (without relinearizing!)
-
-		CUberBlockMatrix R;
-		R.CholeskyOf(lambda);
-
-		printf("\n");
-		CMarginals::Marginals_Test_FBS<MakeTypelist(Eigen::Matrix3d)>(R, 3);
-		CMarginals::Marginals_Test(R, 3);
-	}*/
-	// test the marginals
-
-	// --------------- ~marginals testbed ---------------
 
 	system.Plot2D("result.tga", plot_quality::plot_Printing); // plot in print quality
 	solver.Dump(f_solver_time); // show some stats
@@ -540,125 +538,136 @@ int main(int n_arg_num, const char **p_arg_list)
  */
 void Add_ManhattanEdges(std::vector<TEdgeData> &edges)
 {
-	edges.push_back(TEdgeData(0, 1, Eigen::Vector3d(1.03039, 0.0113498, -0.0129577)));
-	edges.push_back(TEdgeData(1, 2, Eigen::Vector3d(1.0139, -0.0586393, -0.013225)));
-	edges.push_back(TEdgeData(2, 3, Eigen::Vector3d(1.02765, -0.00745597, 0.00483283)));
-	edges.push_back(TEdgeData(3, 4, Eigen::Vector3d(-0.0120155, 1.00436, 1.56679)));
-	edges.push_back(TEdgeData(4, 5, Eigen::Vector3d(1.01603, 0.0145648, -0.0163041)));
-	edges.push_back(TEdgeData(5, 6, Eigen::Vector3d(1.02389, 0.00680757, 0.0109813)));
-	edges.push_back(TEdgeData(6, 7, Eigen::Vector3d(0.957734, 0.00315932, 0.0109005)));
-	edges.push_back(TEdgeData(7, 8, Eigen::Vector3d(-1.02382, -0.0136683, -3.09324)));
-	edges.push_back(TEdgeData(5, 9, Eigen::Vector3d(0.0339432, 0.0324387, -3.1274)));
-	edges.push_back(TEdgeData(8, 9, Eigen::Vector3d(1.02344, 0.0139844, -0.00780158)));
-	edges.push_back(TEdgeData(3, 10, Eigen::Vector3d(0.0440195, 0.988477, -1.56353)));
-	edges.push_back(TEdgeData(9, 10, Eigen::Vector3d(1.00335, 0.0222496, 0.0234909)));
-	edges.push_back(TEdgeData(10, 11, Eigen::Vector3d(0.977245, 0.0190423, -0.0286232)));
-	edges.push_back(TEdgeData(11, 12, Eigen::Vector3d(-0.99688, -0.0255117, 3.15627)));
-	edges.push_back(TEdgeData(12, 13, Eigen::Vector3d(0.990646, 0.0183964, -0.0165195)));
-	edges.push_back(TEdgeData(8, 14, Eigen::Vector3d(0.0158085, 0.0210588, 3.12831)));
-	edges.push_back(TEdgeData(13, 14, Eigen::Vector3d(0.945873, 0.00889308, -0.00260169)));
-	edges.push_back(TEdgeData(7, 15, Eigen::Vector3d(-0.0147277, -0.00159495, -0.0195786)));
-	edges.push_back(TEdgeData(14, 15, Eigen::Vector3d(1.00001, 0.00642824, 0.0282342)));
-	edges.push_back(TEdgeData(15, 16, Eigen::Vector3d(0.0378719, -1.02609, -1.5353)));
-	edges.push_back(TEdgeData(16, 17, Eigen::Vector3d(0.98379, 0.019891, 0.0240848)));
-	edges.push_back(TEdgeData(17, 18, Eigen::Vector3d(0.957199, 0.0295867, -0.0115004)));
-	edges.push_back(TEdgeData(18, 19, Eigen::Vector3d(0.99214, 0.0192015, -0.00729783)));
-	edges.push_back(TEdgeData(19, 20, Eigen::Vector3d(-0.0459215, -1.01632, -1.53912)));
-	edges.push_back(TEdgeData(20, 21, Eigen::Vector3d(0.99845, -0.00523202, -0.0340973)));
-	edges.push_back(TEdgeData(21, 22, Eigen::Vector3d(0.988728, 0.00903381, -0.0129141)));
-	edges.push_back(TEdgeData(22, 23, Eigen::Vector3d(0.989422, 0.00698231, -0.0242835)));
-	edges.push_back(TEdgeData(23, 24, Eigen::Vector3d(-1.00201, -0.00626341, 3.13974)));
-	edges.push_back(TEdgeData(24, 25, Eigen::Vector3d(1.01535, 0.00491314, 3.02279e-05)));
-	edges.push_back(TEdgeData(21, 26, Eigen::Vector3d(-0.95214, -0.0418463, 3.13475)));
-	edges.push_back(TEdgeData(25, 26, Eigen::Vector3d(1.03299, -0.00172652, 0.0224073)));
-	edges.push_back(TEdgeData(19, 27, Eigen::Vector3d(-0.0176158, -0.0052181, 1.56791)));
-	edges.push_back(TEdgeData(26, 27, Eigen::Vector3d(0.989137, -0.00857052, -0.0209045)));
-	edges.push_back(TEdgeData(27, 28, Eigen::Vector3d(-0.0483998, 0.981715, 1.56408)));
-	edges.push_back(TEdgeData(28, 29, Eigen::Vector3d(1.03082, -0.021271, -0.06069)));
-	edges.push_back(TEdgeData(29, 30, Eigen::Vector3d(1.01192, 0.0164477, -0.0352014)));
-	edges.push_back(TEdgeData(30, 31, Eigen::Vector3d(0.991338, 0.00781231, 0.0305919)));
-	edges.push_back(TEdgeData(31, 32, Eigen::Vector3d(0.00861057, -0.974025, -1.56961)));
-	edges.push_back(TEdgeData(32, 33, Eigen::Vector3d(1.04256, 0.0106692, 0.0220136)));
-	edges.push_back(TEdgeData(33, 34, Eigen::Vector3d(0.990826, 0.0166949, -0.0427845)));
-	edges.push_back(TEdgeData(34, 35, Eigen::Vector3d(0.995988, 0.029526, -0.0144112)));
-	edges.push_back(TEdgeData(35, 36, Eigen::Vector3d(-0.0107743, 0.996051, 1.59416)));
-	edges.push_back(TEdgeData(36, 37, Eigen::Vector3d(1.00499, 0.0110863, -0.00316511)));
-	edges.push_back(TEdgeData(37, 38, Eigen::Vector3d(1.03843, 0.0146778, -0.0323211)));
-	edges.push_back(TEdgeData(38, 39, Eigen::Vector3d(1.00625, 0.00674436, -0.0280641)));
-	edges.push_back(TEdgeData(39, 40, Eigen::Vector3d(0.0561635, 0.984988, -4.70377)));
-	edges.push_back(TEdgeData(40, 41, Eigen::Vector3d(0.984656, -0.0319246, 0.0110837)));
-	edges.push_back(TEdgeData(41, 42, Eigen::Vector3d(1.00266, 0.030635, 0.0300476)));
-	edges.push_back(TEdgeData(42, 43, Eigen::Vector3d(0.986417, -0.0130982, -0.0241183)));
-	edges.push_back(TEdgeData(43, 44, Eigen::Vector3d(0.97872, 0.0120778, -0.0117429)));
-	edges.push_back(TEdgeData(44, 45, Eigen::Vector3d(0.996113, -0.0407306, -0.0152182)));
-	edges.push_back(TEdgeData(45, 46, Eigen::Vector3d(1.00255, -0.00216301, -0.0105021)));
-	edges.push_back(TEdgeData(46, 47, Eigen::Vector3d(0.999641, -0.0336501, 0.0188071)));
-	edges.push_back(TEdgeData(47, 48, Eigen::Vector3d(-0.949748, 0.0117583, 3.11376)));
-	edges.push_back(TEdgeData(48, 49, Eigen::Vector3d(1.01739, 0.0123797, -0.00893411)));
-	edges.push_back(TEdgeData(49, 50, Eigen::Vector3d(1.01548, 0.0274024, -0.019191)));
-	edges.push_back(TEdgeData(40, 51, Eigen::Vector3d(2.97743, 0.0326539, 3.1211)));
-	edges.push_back(TEdgeData(50, 51, Eigen::Vector3d(1.05227, 0.0147383, -0.00136236)));
-	edges.push_back(TEdgeData(51, 52, Eigen::Vector3d(-0.0108141, -0.98436, -1.56099)));
-	edges.push_back(TEdgeData(52, 53, Eigen::Vector3d(1.03071, 0.00895876, -0.00840075)));
-	edges.push_back(TEdgeData(53, 54, Eigen::Vector3d(0.98342, 0.00979391, -0.0306844)));
-	edges.push_back(TEdgeData(7, 55, Eigen::Vector3d(-0.0335046, -0.00680906, -1.58407)));
-	edges.push_back(TEdgeData(54, 55, Eigen::Vector3d(1.01204, -0.015331, 0.00584842)));
-	edges.push_back(TEdgeData(14, 56, Eigen::Vector3d(0.00385417, 0.000186059, -3.14717)));
-	edges.push_back(TEdgeData(8, 56, Eigen::Vector3d(-0.0196555, 0.00673762, 0.0127182)));
-	edges.push_back(TEdgeData(55, 56, Eigen::Vector3d(-0.00365754, -0.984986, -1.57285)));
-	edges.push_back(TEdgeData(5, 57, Eigen::Vector3d(-0.048046, -0.00753482, -3.16285)));
-	edges.push_back(TEdgeData(56, 57, Eigen::Vector3d(1.031, -0.0163252, -0.0169613)));
-	edges.push_back(TEdgeData(57, 58, Eigen::Vector3d(0.983393, -0.0113447, -0.0148402)));
-	edges.push_back(TEdgeData(58, 59, Eigen::Vector3d(1.01024, 0.011576, 0.00432891)));
-	edges.push_back(TEdgeData(59, 60, Eigen::Vector3d(0.0201084, -1.00859, 4.73677)));
-	edges.push_back(TEdgeData(60, 61, Eigen::Vector3d(0.992544, -0.00406336, 0.00906878)));
-	edges.push_back(TEdgeData(61, 62, Eigen::Vector3d(0.980911, -0.0126781, 0.0247609)));
-	edges.push_back(TEdgeData(62, 63, Eigen::Vector3d(1.00765, -0.0370944, -0.00745089)));
-	edges.push_back(TEdgeData(47, 64, Eigen::Vector3d(-0.992098, -0.0164591, 3.12281)));
-	edges.push_back(TEdgeData(63, 64, Eigen::Vector3d(-0.0145417, -0.998609, -1.54739)));
-	edges.push_back(TEdgeData(64, 65, Eigen::Vector3d(1.03794, -0.0168313, -0.0130817)));
-	edges.push_back(TEdgeData(65, 66, Eigen::Vector3d(0.9912, 0.0115711, -0.0249519)));
-	edges.push_back(TEdgeData(66, 67, Eigen::Vector3d(0.949443, -0.0154924, -0.0091255)));
-	edges.push_back(TEdgeData(43, 68, Eigen::Vector3d(0.993623, 0.0391936, -0.00106149)));
-	edges.push_back(TEdgeData(67, 68, Eigen::Vector3d(-0.978361, -0.00927414, -3.13791)));
-	edges.push_back(TEdgeData(45, 69, Eigen::Vector3d(-0.006758, -0.00679624, -0.00213649)));
-	edges.push_back(TEdgeData(68, 69, Eigen::Vector3d(1.00367, -0.0352973, 0.0340684)));
-	edges.push_back(TEdgeData(69, 70, Eigen::Vector3d(1.02981, 0.00255454, 0.0150012)));
-	edges.push_back(TEdgeData(70, 71, Eigen::Vector3d(1.03652, 0.0118072, -0.00163612)));
-	edges.push_back(TEdgeData(71, 72, Eigen::Vector3d(0.00398168, -0.993979, 4.69836)));
-	edges.push_back(TEdgeData(72, 73, Eigen::Vector3d(0.969371, -0.0306017, -0.0326511)));
-	edges.push_back(TEdgeData(73, 74, Eigen::Vector3d(0.985691, 0.0111442, -0.00166414)));
-	edges.push_back(TEdgeData(74, 75, Eigen::Vector3d(0.981205, -0.00596464, 0.0226695)));
-	edges.push_back(TEdgeData(75, 76, Eigen::Vector3d(-0.00825988, 0.981841, -4.71863)));
-	edges.push_back(TEdgeData(76, 77, Eigen::Vector3d(1.01399, 0.0332094, -0.0649213)));
-	edges.push_back(TEdgeData(77, 78, Eigen::Vector3d(1.02795, 0.00984078, 0.0340066)));
-	edges.push_back(TEdgeData(78, 79, Eigen::Vector3d(1.00265, -0.00774271, 0.00950595)));
-	edges.push_back(TEdgeData(79, 80, Eigen::Vector3d(-0.0102099, -0.978673, 4.74423)));
-	edges.push_back(TEdgeData(80, 81, Eigen::Vector3d(1.01265, 0.0192011, -0.00199527)));
-	edges.push_back(TEdgeData(81, 82, Eigen::Vector3d(0.994241, -0.0319085, -0.0197558)));
-	edges.push_back(TEdgeData(82, 83, Eigen::Vector3d(1.00925, 0.00590969, -0.0214812)));
-	edges.push_back(TEdgeData(83, 84, Eigen::Vector3d(-0.0184826, 1.03307, -4.72819)));
-	edges.push_back(TEdgeData(84, 85, Eigen::Vector3d(0.984696, 0.0196236, 0.00877518)));
-	edges.push_back(TEdgeData(85, 86, Eigen::Vector3d(0.993027, 0.010799, 0.0107298)));
-	edges.push_back(TEdgeData(86, 87, Eigen::Vector3d(0.992905, 0.0213607, 0.0110665)));
-	edges.push_back(TEdgeData(87, 88, Eigen::Vector3d(0.00121839, 1.04031, 1.53711)));
-	edges.push_back(TEdgeData(88, 89, Eigen::Vector3d(1.00767, -0.0150986, 0.0147958)));
-	edges.push_back(TEdgeData(89, 90, Eigen::Vector3d(1.01226, -0.00539061, 0.030011)));
-	edges.push_back(TEdgeData(90, 91, Eigen::Vector3d(1.03457, 0.00297329, -0.00901519)));
-	edges.push_back(TEdgeData(91, 92, Eigen::Vector3d(-0.0159521, 0.972423, 1.55259)));
-	edges.push_back(TEdgeData(92, 93, Eigen::Vector3d(0.990753, 0.0620248, -0.0146912)));
-	edges.push_back(TEdgeData(93, 94, Eigen::Vector3d(0.971423, 0.0142496, 0.000217408)));
-	edges.push_back(TEdgeData(94, 95, Eigen::Vector3d(1.02272, -0.0278824, 0.000365479)));
-	edges.push_back(TEdgeData(95, 96, Eigen::Vector3d(-0.0193242, 1.04934, 1.57253)));
-	edges.push_back(TEdgeData(96, 97, Eigen::Vector3d(1.03931, -0.0130887, 0.0113687)));
-	edges.push_back(TEdgeData(97, 98, Eigen::Vector3d(0.993004, 0.0393656, -0.0105709)));
-	edges.push_back(TEdgeData(98, 99, Eigen::Vector3d(1.03897, -0.0238964, -0.0173253)));
-	edges.push_back(TEdgeData(99, 100, Eigen::Vector3d(-0.985853, -0.00979836, -3.15198)));
-	edges.push_back(TEdgeData(83, 101, Eigen::Vector3d(-1.97704, -0.00703316, -3.16668)));
-	edges.push_back(TEdgeData(100, 101, Eigen::Vector3d(1.02465, 0.0317282, 0.024041)));
-	edges.push_back(TEdgeData(96, 102, Eigen::Vector3d(0.007666, 0.00487275, -3.16637)));
-	edges.push_back(TEdgeData(96, 102, Eigen::Vector3d(0.0105401, -0.00932236, -3.11433)));
-	edges.push_back(TEdgeData(101, 102, Eigen::Vector3d(0.99396, 0.0202571, -0.00240724)));
+	Eigen::Matrix3d information;
+	information <<
+		45,  0,  0,
+		 0, 45,  0,
+		 0,  0, 45; // manhattan
+	/*information <<
+		22.36,	   0,	  0,
+			0, 22.36,	  0,
+			0,	   0, 70.71;*/ // intel
+	// prepare the information matrix (all edges have the same)
+
+	edges.push_back(TEdgeData(0, 1, Eigen::Vector3d(1.03039, 0.0113498, -0.0129577), information));
+	edges.push_back(TEdgeData(1, 2, Eigen::Vector3d(1.0139, -0.0586393, -0.013225), information));
+	edges.push_back(TEdgeData(2, 3, Eigen::Vector3d(1.02765, -0.00745597, 0.00483283), information));
+	edges.push_back(TEdgeData(3, 4, Eigen::Vector3d(-0.0120155, 1.00436, 1.56679), information));
+	edges.push_back(TEdgeData(4, 5, Eigen::Vector3d(1.01603, 0.0145648, -0.0163041), information));
+	edges.push_back(TEdgeData(5, 6, Eigen::Vector3d(1.02389, 0.00680757, 0.0109813), information));
+	edges.push_back(TEdgeData(6, 7, Eigen::Vector3d(0.957734, 0.00315932, 0.0109005), information));
+	edges.push_back(TEdgeData(7, 8, Eigen::Vector3d(-1.02382, -0.0136683, -3.09324), information));
+	edges.push_back(TEdgeData(5, 9, Eigen::Vector3d(0.0339432, 0.0324387, -3.1274), information));
+	edges.push_back(TEdgeData(8, 9, Eigen::Vector3d(1.02344, 0.0139844, -0.00780158), information));
+	edges.push_back(TEdgeData(3, 10, Eigen::Vector3d(0.0440195, 0.988477, -1.56353), information));
+	edges.push_back(TEdgeData(9, 10, Eigen::Vector3d(1.00335, 0.0222496, 0.0234909), information));
+	edges.push_back(TEdgeData(10, 11, Eigen::Vector3d(0.977245, 0.0190423, -0.0286232), information));
+	edges.push_back(TEdgeData(11, 12, Eigen::Vector3d(-0.99688, -0.0255117, 3.15627), information));
+	edges.push_back(TEdgeData(12, 13, Eigen::Vector3d(0.990646, 0.0183964, -0.0165195), information));
+	edges.push_back(TEdgeData(8, 14, Eigen::Vector3d(0.0158085, 0.0210588, 3.12831), information));
+	edges.push_back(TEdgeData(13, 14, Eigen::Vector3d(0.945873, 0.00889308, -0.00260169), information));
+	edges.push_back(TEdgeData(7, 15, Eigen::Vector3d(-0.0147277, -0.00159495, -0.0195786), information));
+	edges.push_back(TEdgeData(14, 15, Eigen::Vector3d(1.00001, 0.00642824, 0.0282342), information));
+	edges.push_back(TEdgeData(15, 16, Eigen::Vector3d(0.0378719, -1.02609, -1.5353), information));
+	edges.push_back(TEdgeData(16, 17, Eigen::Vector3d(0.98379, 0.019891, 0.0240848), information));
+	edges.push_back(TEdgeData(17, 18, Eigen::Vector3d(0.957199, 0.0295867, -0.0115004), information));
+	edges.push_back(TEdgeData(18, 19, Eigen::Vector3d(0.99214, 0.0192015, -0.00729783), information));
+	edges.push_back(TEdgeData(19, 20, Eigen::Vector3d(-0.0459215, -1.01632, -1.53912), information));
+	edges.push_back(TEdgeData(20, 21, Eigen::Vector3d(0.99845, -0.00523202, -0.0340973), information));
+	edges.push_back(TEdgeData(21, 22, Eigen::Vector3d(0.988728, 0.00903381, -0.0129141), information));
+	edges.push_back(TEdgeData(22, 23, Eigen::Vector3d(0.989422, 0.00698231, -0.0242835), information));
+	edges.push_back(TEdgeData(23, 24, Eigen::Vector3d(-1.00201, -0.00626341, 3.13974), information));
+	edges.push_back(TEdgeData(24, 25, Eigen::Vector3d(1.01535, 0.00491314, 3.02279e-05), information));
+	edges.push_back(TEdgeData(21, 26, Eigen::Vector3d(-0.95214, -0.0418463, 3.13475), information));
+	edges.push_back(TEdgeData(25, 26, Eigen::Vector3d(1.03299, -0.00172652, 0.0224073), information));
+	edges.push_back(TEdgeData(19, 27, Eigen::Vector3d(-0.0176158, -0.0052181, 1.56791), information));
+	edges.push_back(TEdgeData(26, 27, Eigen::Vector3d(0.989137, -0.00857052, -0.0209045), information));
+	edges.push_back(TEdgeData(27, 28, Eigen::Vector3d(-0.0483998, 0.981715, 1.56408), information));
+	edges.push_back(TEdgeData(28, 29, Eigen::Vector3d(1.03082, -0.021271, -0.06069), information));
+	edges.push_back(TEdgeData(29, 30, Eigen::Vector3d(1.01192, 0.0164477, -0.0352014), information));
+	edges.push_back(TEdgeData(30, 31, Eigen::Vector3d(0.991338, 0.00781231, 0.0305919), information));
+	edges.push_back(TEdgeData(31, 32, Eigen::Vector3d(0.00861057, -0.974025, -1.56961), information));
+	edges.push_back(TEdgeData(32, 33, Eigen::Vector3d(1.04256, 0.0106692, 0.0220136), information));
+	edges.push_back(TEdgeData(33, 34, Eigen::Vector3d(0.990826, 0.0166949, -0.0427845), information));
+	edges.push_back(TEdgeData(34, 35, Eigen::Vector3d(0.995988, 0.029526, -0.0144112), information));
+	edges.push_back(TEdgeData(35, 36, Eigen::Vector3d(-0.0107743, 0.996051, 1.59416), information));
+	edges.push_back(TEdgeData(36, 37, Eigen::Vector3d(1.00499, 0.0110863, -0.00316511), information));
+	edges.push_back(TEdgeData(37, 38, Eigen::Vector3d(1.03843, 0.0146778, -0.0323211), information));
+	edges.push_back(TEdgeData(38, 39, Eigen::Vector3d(1.00625, 0.00674436, -0.0280641), information));
+	edges.push_back(TEdgeData(39, 40, Eigen::Vector3d(0.0561635, 0.984988, -4.70377), information));
+	edges.push_back(TEdgeData(40, 41, Eigen::Vector3d(0.984656, -0.0319246, 0.0110837), information));
+	edges.push_back(TEdgeData(41, 42, Eigen::Vector3d(1.00266, 0.030635, 0.0300476), information));
+	edges.push_back(TEdgeData(42, 43, Eigen::Vector3d(0.986417, -0.0130982, -0.0241183), information));
+	edges.push_back(TEdgeData(43, 44, Eigen::Vector3d(0.97872, 0.0120778, -0.0117429), information));
+	edges.push_back(TEdgeData(44, 45, Eigen::Vector3d(0.996113, -0.0407306, -0.0152182), information));
+	edges.push_back(TEdgeData(45, 46, Eigen::Vector3d(1.00255, -0.00216301, -0.0105021), information));
+	edges.push_back(TEdgeData(46, 47, Eigen::Vector3d(0.999641, -0.0336501, 0.0188071), information));
+	edges.push_back(TEdgeData(47, 48, Eigen::Vector3d(-0.949748, 0.0117583, 3.11376), information));
+	edges.push_back(TEdgeData(48, 49, Eigen::Vector3d(1.01739, 0.0123797, -0.00893411), information));
+	edges.push_back(TEdgeData(49, 50, Eigen::Vector3d(1.01548, 0.0274024, -0.019191), information));
+	edges.push_back(TEdgeData(40, 51, Eigen::Vector3d(2.97743, 0.0326539, 3.1211), information));
+	edges.push_back(TEdgeData(50, 51, Eigen::Vector3d(1.05227, 0.0147383, -0.00136236), information));
+	edges.push_back(TEdgeData(51, 52, Eigen::Vector3d(-0.0108141, -0.98436, -1.56099), information));
+	edges.push_back(TEdgeData(52, 53, Eigen::Vector3d(1.03071, 0.00895876, -0.00840075), information));
+	edges.push_back(TEdgeData(53, 54, Eigen::Vector3d(0.98342, 0.00979391, -0.0306844), information));
+	edges.push_back(TEdgeData(7, 55, Eigen::Vector3d(-0.0335046, -0.00680906, -1.58407), information));
+	edges.push_back(TEdgeData(54, 55, Eigen::Vector3d(1.01204, -0.015331, 0.00584842), information));
+	edges.push_back(TEdgeData(14, 56, Eigen::Vector3d(0.00385417, 0.000186059, -3.14717), information));
+	edges.push_back(TEdgeData(8, 56, Eigen::Vector3d(-0.0196555, 0.00673762, 0.0127182), information));
+	edges.push_back(TEdgeData(55, 56, Eigen::Vector3d(-0.00365754, -0.984986, -1.57285), information));
+	edges.push_back(TEdgeData(5, 57, Eigen::Vector3d(-0.048046, -0.00753482, -3.16285), information));
+	edges.push_back(TEdgeData(56, 57, Eigen::Vector3d(1.031, -0.0163252, -0.0169613), information));
+	edges.push_back(TEdgeData(57, 58, Eigen::Vector3d(0.983393, -0.0113447, -0.0148402), information));
+	edges.push_back(TEdgeData(58, 59, Eigen::Vector3d(1.01024, 0.011576, 0.00432891), information));
+	edges.push_back(TEdgeData(59, 60, Eigen::Vector3d(0.0201084, -1.00859, 4.73677), information));
+	edges.push_back(TEdgeData(60, 61, Eigen::Vector3d(0.992544, -0.00406336, 0.00906878), information));
+	edges.push_back(TEdgeData(61, 62, Eigen::Vector3d(0.980911, -0.0126781, 0.0247609), information));
+	edges.push_back(TEdgeData(62, 63, Eigen::Vector3d(1.00765, -0.0370944, -0.00745089), information));
+	edges.push_back(TEdgeData(47, 64, Eigen::Vector3d(-0.992098, -0.0164591, 3.12281), information));
+	edges.push_back(TEdgeData(63, 64, Eigen::Vector3d(-0.0145417, -0.998609, -1.54739), information));
+	edges.push_back(TEdgeData(64, 65, Eigen::Vector3d(1.03794, -0.0168313, -0.0130817), information));
+	edges.push_back(TEdgeData(65, 66, Eigen::Vector3d(0.9912, 0.0115711, -0.0249519), information));
+	edges.push_back(TEdgeData(66, 67, Eigen::Vector3d(0.949443, -0.0154924, -0.0091255), information));
+	edges.push_back(TEdgeData(43, 68, Eigen::Vector3d(0.993623, 0.0391936, -0.00106149), information));
+	edges.push_back(TEdgeData(67, 68, Eigen::Vector3d(-0.978361, -0.00927414, -3.13791), information));
+	edges.push_back(TEdgeData(45, 69, Eigen::Vector3d(-0.006758, -0.00679624, -0.00213649), information));
+	edges.push_back(TEdgeData(68, 69, Eigen::Vector3d(1.00367, -0.0352973, 0.0340684), information));
+	edges.push_back(TEdgeData(69, 70, Eigen::Vector3d(1.02981, 0.00255454, 0.0150012), information));
+	edges.push_back(TEdgeData(70, 71, Eigen::Vector3d(1.03652, 0.0118072, -0.00163612), information));
+	edges.push_back(TEdgeData(71, 72, Eigen::Vector3d(0.00398168, -0.993979, 4.69836), information));
+	edges.push_back(TEdgeData(72, 73, Eigen::Vector3d(0.969371, -0.0306017, -0.0326511), information));
+	edges.push_back(TEdgeData(73, 74, Eigen::Vector3d(0.985691, 0.0111442, -0.00166414), information));
+	edges.push_back(TEdgeData(74, 75, Eigen::Vector3d(0.981205, -0.00596464, 0.0226695), information));
+	edges.push_back(TEdgeData(75, 76, Eigen::Vector3d(-0.00825988, 0.981841, -4.71863), information));
+	edges.push_back(TEdgeData(76, 77, Eigen::Vector3d(1.01399, 0.0332094, -0.0649213), information));
+	edges.push_back(TEdgeData(77, 78, Eigen::Vector3d(1.02795, 0.00984078, 0.0340066), information));
+	edges.push_back(TEdgeData(78, 79, Eigen::Vector3d(1.00265, -0.00774271, 0.00950595), information));
+	edges.push_back(TEdgeData(79, 80, Eigen::Vector3d(-0.0102099, -0.978673, 4.74423), information));
+	edges.push_back(TEdgeData(80, 81, Eigen::Vector3d(1.01265, 0.0192011, -0.00199527), information));
+	edges.push_back(TEdgeData(81, 82, Eigen::Vector3d(0.994241, -0.0319085, -0.0197558), information));
+	edges.push_back(TEdgeData(82, 83, Eigen::Vector3d(1.00925, 0.00590969, -0.0214812), information));
+	edges.push_back(TEdgeData(83, 84, Eigen::Vector3d(-0.0184826, 1.03307, -4.72819), information));
+	edges.push_back(TEdgeData(84, 85, Eigen::Vector3d(0.984696, 0.0196236, 0.00877518), information));
+	edges.push_back(TEdgeData(85, 86, Eigen::Vector3d(0.993027, 0.010799, 0.0107298), information));
+	edges.push_back(TEdgeData(86, 87, Eigen::Vector3d(0.992905, 0.0213607, 0.0110665), information));
+	edges.push_back(TEdgeData(87, 88, Eigen::Vector3d(0.00121839, 1.04031, 1.53711), information));
+	edges.push_back(TEdgeData(88, 89, Eigen::Vector3d(1.00767, -0.0150986, 0.0147958), information));
+	edges.push_back(TEdgeData(89, 90, Eigen::Vector3d(1.01226, -0.00539061, 0.030011), information));
+	edges.push_back(TEdgeData(90, 91, Eigen::Vector3d(1.03457, 0.00297329, -0.00901519), information));
+	edges.push_back(TEdgeData(91, 92, Eigen::Vector3d(-0.0159521, 0.972423, 1.55259), information));
+	edges.push_back(TEdgeData(92, 93, Eigen::Vector3d(0.990753, 0.0620248, -0.0146912), information));
+	edges.push_back(TEdgeData(93, 94, Eigen::Vector3d(0.971423, 0.0142496, 0.000217408), information));
+	edges.push_back(TEdgeData(94, 95, Eigen::Vector3d(1.02272, -0.0278824, 0.000365479), information));
+	edges.push_back(TEdgeData(95, 96, Eigen::Vector3d(-0.0193242, 1.04934, 1.57253), information));
+	edges.push_back(TEdgeData(96, 97, Eigen::Vector3d(1.03931, -0.0130887, 0.0113687), information));
+	edges.push_back(TEdgeData(97, 98, Eigen::Vector3d(0.993004, 0.0393656, -0.0105709), information));
+	edges.push_back(TEdgeData(98, 99, Eigen::Vector3d(1.03897, -0.0238964, -0.0173253), information));
+	edges.push_back(TEdgeData(99, 100, Eigen::Vector3d(-0.985853, -0.00979836, -3.15198), information));
+	edges.push_back(TEdgeData(83, 101, Eigen::Vector3d(-1.97704, -0.00703316, -3.16668), information));
+	edges.push_back(TEdgeData(100, 101, Eigen::Vector3d(1.02465, 0.0317282, 0.024041), information));
+	edges.push_back(TEdgeData(96, 102, Eigen::Vector3d(0.007666, 0.00487275, -3.16637), information));
+	edges.push_back(TEdgeData(96, 102, Eigen::Vector3d(0.0105401, -0.00932236, -3.11433), information));
+	edges.push_back(TEdgeData(101, 102, Eigen::Vector3d(0.99396, 0.0202571, -0.00240724), information));
 }
 
 #include "slam_app/ParsePrimitives.h"
@@ -686,12 +695,15 @@ public:
 	 */
 	void AppendSystem(const CParserBase::TEdge2D &r_t_edge) // throw(std::bad_alloc)
 	{
-		m_r_edges.push_back(TEdgeData(r_t_edge.m_n_node_0, r_t_edge.m_n_node_1, r_t_edge.m_v_delta));
+		m_r_edges.push_back(TEdgeData(r_t_edge.m_n_node_0, r_t_edge.m_n_node_1,
+			r_t_edge.m_v_delta, r_t_edge.m_t_inv_sigma));
 	}
 };
 
 void Load_Dataset(const char *p_s_filename, std::vector<TEdgeData> &r_edges)
 {
+	r_edges.clear(); // !!
+
 	typedef MakeTypelist(CEdge2DParsePrimitive) AllowedEdges;
 	typedef CParserTemplate<CMyParseLoop, AllowedEdges> CParser;
 
@@ -705,6 +717,15 @@ void Load_Dataset(const char *p_s_filename, std::vector<TEdgeData> &r_edges)
  *	@page dataassocexample Data Association Example
  *
  *	@todo At this point there is no description. But you can browse the source code.
+ *
+ *	This is an example of using the marginal covariances and information theory
+ *	metrics to propose data association.
+ *
+ *	This example parses a standard pose SLAM graph file and puts the loop closures aside.
+ *	It then simulates a robot traversing the graph and calculates data associations.
+ *	If there are loop closures corresponding to the proposed data associations, the loops
+ *	are closed.
+ *
  */
 
 /*

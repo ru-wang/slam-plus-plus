@@ -45,13 +45,13 @@
 				Name="VCCLCompilerTool"
 				AdditionalOptions="/MP /Zm500"
 				Optimization="0"
-				AdditionalIncludeDirectories="../external/NIST_BLAS\INCLUDE;../external/Ceres\include;../external/Ceres\internal;../include/slam;../include;../include/eigen;../include/cholmod/SuiteSparse;../include/cholmod;&quot;E:/my-projects/z_libs/g2o/trunk/&quot;;&quot;E:/my-projects/z_libs/g2o/trunk/build/&quot;;&quot;E:\my-projects\z_libs\gtsam\gtsam-2.0.0&quot;;&quot;E:\my-projects\z_libs\boost\boost_1_50_0&quot;"
-				PreprocessorDefinitions="WIN32;_DEBUG;_CONSOLE;_CRT_SECURE_NO_WARNINGS;_USE_MATH_DEFINES;__USE_NATIVE_CHOLESKY;CERES_NO_PROTOCOL_BUFFERS"
+				AdditionalIncludeDirectories="../external/NIST_BLAS\INCLUDE;../external/Ceres\include;../external/Ceres\internal;../include/slam;../include;../include/eigen;../include/cholmod/SuiteSparse;../include/cholmod;&quot;E:/my-projects/z_libs/g2o/trunk/&quot;;&quot;E:/my-projects/z_libs/g2o/trunk/build/&quot;;&quot;E:\my-projects\z_libs\gtsam\gtsam-2.0.0&quot;;&quot;E:\my-projects\z_libs\boost\boost_1_50_0&quot;;../external/igraph/include"
+				PreprocessorDefinitions="WIN32;_DEBUG;_CONSOLE;EIGEN_DONT_PARALLELIZE;_CRT_SECURE_NO_WARNINGS;_USE_MATH_DEFINES;__USE_NATIVE_CHOLESKY;CERES_NO_PROTOCOL_BUFFERS;__DISABLE_GPU"
 				StringPooling="true"
 				MinimalRebuild="false"
 				BasicRuntimeChecks="3"
 				RuntimeLibrary="3"
-				EnableEnhancedInstructionSet="1"
+				EnableEnhancedInstructionSet="0"
 				RuntimeTypeInfo="false"
 				OpenMP="false"
 				UsePrecompiledHeader="0"
@@ -113,8 +113,8 @@
 				Name="VCCLCompilerTool"
 				AdditionalOptions="/bigobj /MP"
 				Optimization="0"
-				AdditionalIncludeDirectories="../external/NIST_BLAS\INCLUDE;../external/Ceres\include;../external/Ceres\internal;../include/slam;../include;../include/eigen;../include/cholmod/SuiteSparse;../include/cholmod;&quot;E:/my-projects/z_libs/g2o/trunk/&quot;;&quot;E:/my-projects/z_libs/g2o/trunk/build/&quot;;&quot;E:\my-projects\z_libs\gtsam\gtsam-2.0.0&quot;;&quot;E:\my-projects\z_libs\boost\boost_1_50_0&quot;"
-				PreprocessorDefinitions="WIN32;_WIN64;DLONG;_DEBUG;_CONSOLE;_CRT_SECURE_NO_WARNINGS;_USE_MATH_DEFINES;__LINEAR_SOLVER_OVERRIDE=3;CERES_NO_PROTOCOL_BUFFERS;__CXSPARSE_SHORT"
+				AdditionalIncludeDirectories="../external/NIST_BLAS\INCLUDE;../external/Ceres\include;../external/Ceres\internal;../include/slam;../include;../include/eigen;../include/cholmod/SuiteSparse;../include/cholmod;&quot;E:/my-projects/z_libs/g2o/trunk/&quot;;&quot;E:/my-projects/z_libs/g2o/trunk/build/&quot;;&quot;E:\my-projects\z_libs\gtsam\gtsam-2.0.0&quot;;&quot;E:\my-projects\z_libs\boost\boost_1_50_0&quot;;../external/igraph/include"
+				PreprocessorDefinitions="WIN32;_WIN64;DLONG;_DEBUG;_CONSOLE;EIGEN_DONT_PARALLELIZE;_CRT_SECURE_NO_WARNINGS;_USE_MATH_DEFINES;__LINEAR_SOLVER_OVERRIDE=3;CERES_NO_PROTOCOL_BUFFERS;__CXSPARSE_SHORT"
 				StringPooling="true"
 				MinimalRebuild="false"
 				BasicRuntimeChecks="3"
@@ -187,8 +187,8 @@
 				OmitFramePointers="true"
 				EnableFiberSafeOptimizations="false"
 				WholeProgramOptimization="false"
-				AdditionalIncludeDirectories="../external/NIST_BLAS\INCLUDE;../external/Ceres\include;../external/Ceres\internal;../include/slam;../include;../include/eigen;../include/cholmod/SuiteSparse;../include/cholmod;&quot;E:/my-projects/z_libs/g2o/trunk/&quot;;&quot;E:/my-projects/z_libs/g2o/trunk/build/&quot;;&quot;E:\my-projects\z_libs\gtsam\gtsam-2.0.0&quot;;&quot;E:\my-projects\z_libs\boost\boost_1_50_0&quot;"
-				PreprocessorDefinitions="WIN32;NDEBUG;_CONSOLE;_CRT_SECURE_NO_WARNINGS;_USE_MATH_DEFINES;__USE_NATIVE_CHOLESKY;CERES_NO_PROTOCOL_BUFFERS"
+				AdditionalIncludeDirectories="../external/NIST_BLAS\INCLUDE;../external/Ceres\include;../external/Ceres\internal;../include/slam;../include;../include/eigen;../include/cholmod/SuiteSparse;../include/cholmod;&quot;E:/my-projects/z_libs/g2o/trunk/&quot;;&quot;E:/my-projects/z_libs/g2o/trunk/build/&quot;;&quot;E:\my-projects\z_libs\gtsam\gtsam-2.0.0&quot;;&quot;E:\my-projects\z_libs\boost\boost_1_50_0&quot;;../external/igraph/include"
+				PreprocessorDefinitions="WIN32;NDEBUG;_CONSOLE;EIGEN_DONT_PARALLELIZE;_CRT_SECURE_NO_WARNINGS;_USE_MATH_DEFINES;__USE_NATIVE_CHOLESKY;CERES_NO_PROTOCOL_BUFFERS;_SECURE_SCL=0;__DISABLE_GPU"
 				StringPooling="true"
 				RuntimeLibrary="2"
 				BufferSecurityCheck="false"
@@ -255,14 +255,14 @@
 			/>
 			<Tool
 				Name="VCCLCompilerTool"
-				AdditionalOptions="/MP"
+				AdditionalOptions="/MP /bigobj"
 				Optimization="2"
 				InlineFunctionExpansion="2"
 				EnableIntrinsicFunctions="true"
 				FavorSizeOrSpeed="1"
-				WholeProgramOptimization="true"
-				AdditionalIncludeDirectories="../external/NIST_BLAS\INCLUDE;../external/Ceres\include;../external/Ceres\internal;../include/slam;../include;../include/eigen;../include/cholmod/SuiteSparse;../include/cholmod;&quot;E:/my-projects/z_libs/g2o/trunk/&quot;;&quot;E:/my-projects/z_libs/g2o/trunk/build/&quot;;&quot;E:\my-projects\z_libs\gtsam\gtsam-2.0.0&quot;;&quot;E:\my-projects\z_libs\boost\boost_1_50_0&quot;"
-				PreprocessorDefinitions="WIN32;NDEBUG;_CONSOLE;_CRT_SECURE_NO_WARNINGS;_USE_MATH_DEFINES;EIGEN_VECTORIZE_SSE3;__LINEAR_SOLVER_OVERRIDE=3;__CXSPARSE_SHORT;_STATIC_CPPLIB;CERES_NO_PROTOCOL_BUFFERS"
+				WholeProgramOptimization="false"
+				AdditionalIncludeDirectories="../external/NIST_BLAS\INCLUDE;../external/Ceres\include;../external/Ceres\internal;../include/slam;../include;../include/eigen;../include/cholmod/SuiteSparse;../include/cholmod;&quot;E:/my-projects/z_libs/g2o/trunk/&quot;;&quot;E:/my-projects/z_libs/g2o/trunk/build/&quot;;&quot;E:\my-projects\z_libs\gtsam\gtsam-2.0.0&quot;;&quot;E:\my-projects\z_libs\boost\boost_1_50_0&quot;;../external/igraph/include"
+				PreprocessorDefinitions="WIN32;NDEBUG;_CONSOLE;EIGEN_DONT_PARALLELIZE;_CRT_SECURE_NO_WARNINGS;_USE_MATH_DEFINES;EIGEN_VECTORIZE_SSE3;__LINEAR_SOLVER_OVERRIDE=3;__CXSPARSE_SHORT;_STATIC_CPPLIB;CERES_NO_PROTOCOL_BUFFERS;_SECURE_SCL=0"
 				StringPooling="true"
 				RuntimeLibrary="2"
 				BufferSecurityCheck="false"
@@ -319,7 +319,15 @@
 				>
 			</File>
 			<File
-				RelativePath="..\src\slam\IncrementalPolicy.cpp"
+				RelativePath="..\src\slam\BlockMatrixTests.cpp"
+				>
+			</File>
+			<File
+				RelativePath="..\src\slam\Debug.cpp"
+				>
+			</File>
+			<File
+				RelativePath="..\src\slam\Eigenvalues.cpp"
 				>
 			</File>
 			<File
@@ -335,11 +343,19 @@
 				>
 			</File>
 			<File
+				RelativePath="..\src\slam\LinearSolver_Schur.cpp"
+				>
+			</File>
+			<File
 				RelativePath="..\src\slam\OrderingMagic.cpp"
 				>
 			</File>
 			<File
 				RelativePath="..\src\slam\Parser.cpp"
+				>
+			</File>
+			<File
+				RelativePath="..\src\slam\Tags.cpp"
 				>
 			</File>
 			<File
@@ -350,6 +366,14 @@
 				RelativePath="..\src\slam\Timer.cpp"
 				>
 			</File>
+			<Filter
+				Name="GPU"
+				>
+				<File
+					RelativePath="..\src\slam\LinearSolver_Schur_GPU.cpp"
+					>
+				</File>
+			</Filter>
 		</Filter>
 		<Filter
 			Name="Header Files"
@@ -369,7 +393,19 @@
 				>
 			</File>
 			<File
+				RelativePath="..\include\slam\BaseInterface.h"
+				>
+			</File>
+			<File
 				RelativePath="..\include\slam\BaseTypes.h"
+				>
+			</File>
+			<File
+				RelativePath="..\include\slam\BaseTypes_Binary.h"
+				>
+			</File>
+			<File
+				RelativePath="..\include\slam\BaseTypes_Unary.h"
 				>
 			</File>
 			<File
@@ -383,13 +419,54 @@
 			<File
 				RelativePath="..\include\slam\BlockMatrix.h"
 				>
+				<FileConfiguration
+					Name="Debug|Win32"
+					>
+					<Tool
+						Name="VCCustomBuildTool"
+					/>
+				</FileConfiguration>
+			</File>
+			<File
+				RelativePath="..\include\slam\BlockMatrix.inl"
+				>
+			</File>
+			<File
+				RelativePath="..\include\slam\BlockMatrixBase.h"
+				>
 			</File>
 			<File
 				RelativePath="..\include\slam\BlockMatrixFBS.h"
 				>
+				<FileConfiguration
+					Name="Debug|Win32"
+					>
+					<Tool
+						Name="VCCustomBuildTool"
+					/>
+				</FileConfiguration>
+			</File>
+			<File
+				RelativePath="..\include\slam\BlockMatrixFBS.inl"
+				>
 			</File>
 			<File
 				RelativePath="..\include\slam\BlockMatrixFBSUtil.h"
+				>
+				<FileConfiguration
+					Name="Debug|Win32"
+					>
+					<Tool
+						Name="VCCustomBuildTool"
+					/>
+				</FileConfiguration>
+			</File>
+			<File
+				RelativePath="..\include\slam\BlockMatrixTests.h"
+				>
+			</File>
+			<File
+				RelativePath="..\include\slam\BlockMatrixVBR.h"
 				>
 			</File>
 			<File
@@ -401,7 +478,27 @@
 				>
 			</File>
 			<File
+				RelativePath="..\include\slam\Distances.h"
+				>
+			</File>
+			<File
+				RelativePath="..\include\slam\Eigenvalues.h"
+				>
+			</File>
+			<File
+				RelativePath="..\include\slam\Eigenvalues.inl"
+				>
+			</File>
+			<File
+				RelativePath="..\include\slam\ErrorEval.h"
+				>
+			</File>
+			<File
 				RelativePath="..\include\slam\FlatSystem.h"
+				>
+			</File>
+			<File
+				RelativePath="..\include\slam\IncrementalPolicy.h"
 				>
 			</File>
 			<File
@@ -433,11 +530,27 @@
 				>
 			</File>
 			<File
+				RelativePath="..\include\slam\Marginals.h"
+				>
+			</File>
+			<File
+				RelativePath="..\include\slam\MemUsage.h"
+				>
+			</File>
+			<File
 				RelativePath="..\include\slam\NonlinearSolver_A.h"
 				>
 			</File>
 			<File
+				RelativePath="..\include\slam\NonlinearSolver_Base.h"
+				>
+			</File>
+			<File
 				RelativePath="..\include\slam\NonlinearSolver_FastL.h"
+				>
+			</File>
+			<File
+				RelativePath="..\include\slam\NonlinearSolver_FastL_Base.h"
 				>
 			</File>
 			<File
@@ -446,6 +559,14 @@
 			</File>
 			<File
 				RelativePath="..\include\slam\NonlinearSolver_Lambda.h"
+				>
+			</File>
+			<File
+				RelativePath="..\include\slam\NonlinearSolver_Lambda_Base.h"
+				>
+			</File>
+			<File
+				RelativePath="..\include\slam\NonlinearSolver_Lambda_DL.h"
 				>
 			</File>
 			<File
@@ -469,6 +590,10 @@
 				>
 			</File>
 			<File
+				RelativePath="..\include\slam\ROCV_Types.h"
+				>
+			</File>
+			<File
 				RelativePath="..\include\slam\SE2_Types.h"
 				>
 			</File>
@@ -478,6 +603,18 @@
 			</File>
 			<File
 				RelativePath="..\include\slam\Segregated.h"
+				>
+			</File>
+			<File
+				RelativePath="..\include\slam\Self.h"
+				>
+			</File>
+			<File
+				RelativePath="..\include\slam\Sim3_Types.h"
+				>
+			</File>
+			<File
+				RelativePath="..\include\slam\Sim3SolverBase.h"
 				>
 			</File>
 			<File
@@ -494,6 +631,10 @@
 			</File>
 			<File
 				RelativePath="..\include\slam\Timer.h"
+				>
+			</File>
+			<File
+				RelativePath="..\include\slam\Tuple.h"
 				>
 			</File>
 			<File

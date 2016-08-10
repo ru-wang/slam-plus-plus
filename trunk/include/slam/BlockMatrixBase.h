@@ -18,7 +18,11 @@
  *	@file include/slam/BlockMatrixBase.h
  *	@date 2012
  *	@author -tHE SWINe-
- *	@brief the überblockmatrix base class
+ *	@brief the ÜberBlockMatrix base class
+ */
+
+/** \addtogroup ubm
+ *	@{
  */
 
 /**
@@ -56,6 +60,14 @@
  *		if using matrices with very small blocks.
  */
 #define __UBER_BLOCK_MATRIX_BUFFER_BOUNDS_CHECK
+
+/**
+ *	@def __UBER_BLOCK_MATRIX_TRIANGULAR_SOLVE_NEVER_FAILS
+ *	@brief if defined, the triangular solving routines will not check for division by zero
+ *		and will instead compute a vector with infinities and not-a-numbers if a zero occurs
+ *	@note Division by zero is still checked in debug, via an assertion.
+ */
+//#define __UBER_BLOCK_MATRIX_TRIANGULAR_SOLVE_NEVER_FAILS
 
 /**
  *	@def __UBER_BLOCK_MATRIX_MULTIPLICATION_LINEAR
@@ -172,7 +184,8 @@
 #endif // __UBER_BLOCK_MATRIX_SUPRESS_FBS
 
 #include "eigen/Eigen/Core"
-#include "eigen/Eigen/Dense" // dense Cholesky
+#include "eigen/Eigen/LU" // dense matrix inverse
+#include "eigen/Eigen/Cholesky" // dense Cholesky
 
 #if !defined(__UBER_BLOCK_MATRIX_ALIGN_BLOCK_MEMORY) && \
 	(defined(EIGEN_VECTORIZE) || defined(_M_X64) || defined(_M_AMD64) || \
@@ -183,29 +196,7 @@
 // also if EIGEN_VECTORIZE (practically if SSE2 is enabled in MSVC compiler settings)
 // this comes *after* eigen is included
 
-#if !defined(_WIN32) && !defined(_WIN64)
-/**
- *	@def _finite
- *	@brief determines if an input value is a finite number
- *	@param[in] x is the input value
- *	@return Returns true if the input value is a finite number, otherwise returns false.
- *	@note This is only compiled on linux where standard library function _finite()
- *		is not available. Always returns true (even for inf or nan).
- */
-#define _finite(x) (true)
-
-/**
- *	@def _isnan
- *	@brief determines if an input value is not a number
- *	@param[in] x is the input value
- *	@return Returns true if the input value is not a number, otherwise returns false.
- *	@note This is only compiled on linux where standard library function _isnan()
- *		is not available. Always returns false (even for inf or nan).
- */
-#define _isnan(x) (false)
-#endif // !_WIN32 && !_WIN64
-// we are using some advanced math functions to catch evil numbers; ignore those on linux
-
+#include "slam/Debug.h" // _ASSERTE, _isnan
 #include <vector>
 #include "slam/Segregated.h"
 #include <utility>
@@ -217,8 +208,7 @@
 #endif // __UBER_BLOCK_MATRIX_HAVE_CSPARSE
 #include "slam/Tga.h"
 #include "slam/TypeList.h"
-#include "slam/Timer.h" // debugging
-#include "slam/Debug.h" // _ASSERTE
+#include "slam/Timer.h" // profiling
 #ifdef _OPENMP
 #include <omp.h>
 #endif // _OPENMP
@@ -252,7 +242,7 @@
 /**
  *	@brief contains static assertion template for alignment check
  */
-namespace ubm_static_check {
+namespace blockmatrix_detail {
 
 /**
  *	@brief compile-time assertion helper
@@ -265,6 +255,7 @@ public:
 	typedef void MATRIX_BLOCK_DIMENSIONS_MUST_BE_KNOWN_AT_COMPILE_TIME; /**< @brief assertion tag */
 	typedef void MATRIX_DIMENSIONS_MUST_BE_KNOWN_AT_COMPILE_TIME; /**< @brief assertion tag */
 	typedef void MATRIX_DIMENSIONS_MISMATCH; /**< @brief assertion tag */
+	typedef void MATRIX_MUTUALLY_EXCLUSIVE_OPTIONS_SELECTED; /**< @brief assertion tag */
 };
 
 /**
@@ -272,42 +263,6 @@ public:
  */
 template <>
 class CStaticAssert<false> {};
-
-} // ~ubm_static_check
-
-/**
- *	@brief checks dimension of a matrix against a reference
- *
- *	This asserts that the dimensions of the checked matrix matches that of the reference,
- *	and if possible does it at compile time. Nothing else than the dimensions are checked.
- *
- *	@tparam CReferenceMat is reference Eigen::Matrix specialization with constant dimensions
- *	@tparam CCheckedMat is checked Eigen::Matrix specialization
- *
- *	@param[in] r_matrix is the checked matrix
- */
-template <class CReferenceMat, class CCheckedMat>
-inline void DimensionCheck(const CCheckedMat &r_matrix)
-{
-	enum {
-		n_correct_rows = CReferenceMat::RowsAtCompileTime,
-		n_correct_cols = CReferenceMat::ColsAtCompileTime,
-
-		b_ref_is_not_dynamic = n_correct_rows != Eigen::Dynamic && n_correct_cols != Eigen::Dynamic,
-
-		n_checked_rows = CCheckedMat::RowsAtCompileTime,
-		n_checked_cols = CCheckedMat::ColsAtCompileTime,
-
-		b_checked_is_dynamic = n_checked_rows == Eigen::Dynamic || n_checked_cols == Eigen::Dynamic,
-		b_checked_matches = n_correct_rows == n_checked_rows && n_correct_cols == n_checked_cols
-	};
-
-	typedef typename ubm_static_check::CStaticAssert<b_ref_is_not_dynamic>::MATRIX_DIMENSIONS_MUST_BE_KNOWN_AT_COMPILE_TIME CAssert0; // reference type must not be dynamic
-	typedef typename ubm_static_check::CStaticAssert<b_checked_is_dynamic || b_checked_matches>::MATRIX_DIMENSIONS_MISMATCH CAssert1; // checked type either matches at compile time, or is dynamic
-
-	_ASSERTE(!b_checked_is_dynamic || (r_matrix.rows() == n_correct_rows && r_matrix.cols() == n_correct_cols)); // in case checked is not dynamic, this reduces to a compile time constant
-	// in case the matrix is dynamic-sized, check at runtime
-}
 
 /**
  *	@brief UberLame block matrix base class
@@ -931,7 +886,7 @@ public:
 			alignment_Assert_Value = (n_memory_align > 0 && n_memory_align % sizeof(_Ty) == 0) /**< @brief value of the assert condition */
 		};
 
-		typedef typename ubm_static_check::CStaticAssert<alignment_Assert_Value>::MATRIX_POOL_MEMORY_ALIGNMENT_MUST_BE_INTEGER_MULTIPLE_OF_SCALAR_TYPE_SIZE CAssert0; /**< @brief makes sure the alignment is correct */
+		typedef typename CStaticAssert<alignment_Assert_Value>::MATRIX_POOL_MEMORY_ALIGNMENT_MUST_BE_INTEGER_MULTIPLE_OF_SCALAR_TYPE_SIZE CAssert0; /**< @brief makes sure the alignment is correct */
 
 	public:
 		/**
@@ -1293,13 +1248,13 @@ protected:
 	};
 
 protected:
-	size_t m_n_row_num; /**< @brief number of matrix rows */
-	size_t m_n_col_num; /**< @brief number of matrix columns */
-	std::vector<TRow> m_block_rows_list; /**< @brief list of sizes of blocks rows (sum of all the elements equals m_n_row_num) */
-	std::vector<TColumn> m_block_cols_list; /**< @brief list of sizes of columns rows (sum of all the elements equals m_n_col_num) */
+	size_t m_n_row_num; /**< @brief number of matrix rows, in elements */
+	size_t m_n_col_num; /**< @brief number of matrix columns, in elements */
+	std::vector<TRow> m_block_rows_list; /**< @brief list of sizes of blocks rows (sum of all the sizes equals m_n_row_num) */
+	std::vector<TColumn> m_block_cols_list; /**< @brief list of block columns (sum of all the sizes equals m_n_col_num) */
 
-	_TyPool m_data_pool; /**< @brief data storage */
-	size_t m_n_ref_elem_num; /**< @brief number of referenced elements */
+	_TyPool m_data_pool; /**< @brief data storage for matrix elements */
+	size_t m_n_ref_elem_num; /**< @brief number of referenced elements (in shallow copies) */
 
 	//CTimer m_timer; // profiling
 
@@ -1472,6 +1427,15 @@ public:
 	size_t n_Allocation_Size() const;
 
 	/**
+	 *	@brief calculates the size of this object in memory
+	 *	@return Returns the size of this object (and of all associated
+	 *		arrays or buffers) in memory, in bytes.
+	 *	@note This is similar to \ref n_Allocation_Size(), except that this function discounts
+	 *		the unused space in the last page of the elements storage.
+	 */
+	size_t n_Allocation_Size_NoLastPage() const;
+
+	/**
 	 *	@brief erases all the data of the matrix
 	 */
 	void Clear();
@@ -1633,5 +1597,205 @@ public:
 		// use the allocator class, but only instantiate it as needed so it is possible to swap matrices
 	}
 };
+
+} // ~blockmatrix_detail
+
+/**
+ *	@brief checks dimension of a matrix against a reference
+ *
+ *	This asserts that the dimensions of the checked matrix matches that of the reference,
+ *	and if possible does it at compile time. Nothing else than the dimensions are checked.
+ *
+ *	@tparam CReferenceMat is reference Eigen::Matrix specialization with constant dimensions
+ *	@tparam CCheckedMat is checked Eigen::Matrix specialization
+ *
+ *	@param[in] r_matrix is the checked matrix
+ */
+template <class CReferenceMat, class CCheckedMat>
+inline void DimensionCheck(const CCheckedMat &r_matrix)
+{
+	enum {
+		n_correct_rows = CReferenceMat::RowsAtCompileTime,
+		n_correct_cols = CReferenceMat::ColsAtCompileTime,
+
+		b_ref_is_not_dynamic = n_correct_rows != Eigen::Dynamic && n_correct_cols != Eigen::Dynamic,
+
+		n_checked_rows = CCheckedMat::RowsAtCompileTime,
+		n_checked_cols = CCheckedMat::ColsAtCompileTime,
+
+		b_checked_is_dynamic = int(n_checked_rows) == int(Eigen::Dynamic) || int(n_checked_cols) == int(Eigen::Dynamic),
+		b_checked_matches = int(n_correct_rows) == int(n_checked_rows) && int(n_correct_cols) == int(n_checked_cols)
+		// avoid g++ enum comparison warning
+	};
+
+	typedef typename blockmatrix_detail::CStaticAssert<b_ref_is_not_dynamic>::MATRIX_DIMENSIONS_MUST_BE_KNOWN_AT_COMPILE_TIME CAssert0; // reference type must not be dynamic
+	typedef typename blockmatrix_detail::CStaticAssert<b_checked_is_dynamic || b_checked_matches>::MATRIX_DIMENSIONS_MISMATCH CAssert1; // checked type either matches at compile time, or is dynamic
+
+	_ASSERTE(!b_checked_is_dynamic || (r_matrix.rows() == n_correct_rows && r_matrix.cols() == n_correct_cols)); // in case checked is not dynamic, this reduces to a compile time constant
+	// in case the matrix is dynamic-sized, check at runtime
+}
+
+/**
+ *	@brief derives a fixed-size double-precision matrix type from a derived type
+ *
+ *	@tparam Derived is Eigen derived matrix type (as in <tt>Eigen::MatrixBase<Derived></tt> function argument)
+ *	@tparam b_allow_dynamic is dynamic matrix type flag (if set, dynamic size matrices are allowed, otherwise they trigger compile assertion; default false)
+ */
+template <class Derived, bool b_allow_dynamic = false>
+class CDeriveMatrixType {
+protected:
+	enum {
+		n_rows = Eigen::MatrixBase<Derived>::RowsAtCompileTime,
+		n_cols = Eigen::MatrixBase<Derived>::ColsAtCompileTime,
+
+		b_derived_is_not_dynamic = b_allow_dynamic || (n_rows != Eigen::Dynamic && n_cols != Eigen::Dynamic),
+	};
+
+	typedef typename blockmatrix_detail::CStaticAssert<b_derived_is_not_dynamic>::MATRIX_DIMENSIONS_MUST_BE_KNOWN_AT_COMPILE_TIME CAssert0; // the derived type must not be dynamic
+
+public:
+	typedef Eigen::Matrix<double, n_rows, n_cols> _TyResult; /**< @brief fixed-size double-precision matrix of the same size as Derived */
+};
+
+namespace blockmatrix_detail {
+
+/**
+ *	@brief utility class to convert a vector type to a reference to it
+ *	@tparam CRefType is a map or reference type to convert to
+ */
+template <class CRefType>
+class CMakeVectorRef {
+public:
+	/**
+	 *	@brief makes a reference to a vector
+	 *	@tparam CInputType is input vector type
+	 *	@param[in] r_vector is reference to the input vector
+	 *	@return Returns a reference to the input vector.
+	 */
+	template <class CInputType>
+	static CRefType Ref(CInputType &r_vector)
+	{
+		return static_cast<CRefType>(r_vector); // this is for casting to a vector. do not allow making a map or a vector of a different type out of it
+	}
+
+	/**
+	 *	@brief makes a const reference to a vector
+	 *	@tparam CInputType is input vector type
+	 *	@param[in] r_vector is reference to the input vector
+	 *	@return Returns a const reference to the input vector.
+	 */
+	template <class CInputType>
+	static CRefType ConstRef(const CInputType &r_vector)
+	{
+		return static_cast<CRefType>(r_vector); // this is for casting to a vector. do not allow making a map or a vector of a different type out of it
+	}
+};
+
+/**
+ *	@brief utility class to convert a vector type to \ref Eigen::Map
+ *
+ *	@tparam CVecType is the first template parameter of the resulting \ref Eigen::Map
+ *	@tparam n_options is the second template parameter of the resulting \ref Eigen::Map
+ */
+template <class CVecType, int n_options>
+class CMakeVectorRef<Eigen::Map<CVecType, n_options> > {
+public:
+	typedef Eigen::Map<CVecType, n_options> _TyRef; /**< @brief type of the resulting map */
+
+public:
+	/**
+	 *	@brief makes a reference to a vector (specialization for dynamic size)
+	 *	@tparam CInputType is input vector type
+	 *	@param[in] r_vector is reference to the input vector
+	 *	@return Returns a map wrapping the input vector.
+	 */
+	template <class CInputType>
+	static typename CEnableIf<CInputType::RowsAtCompileTime == Eigen::Dynamic,
+		_TyRef>::T Ref(CInputType &r_vector)
+	{
+		return _TyRef(r_vector.data(), r_vector.rows());
+	}
+
+	/**
+	 *	@brief makes a reference to a vector (specialization for compile time constant size)
+	 *	@tparam CInputType is input vector type
+	 *	@param[in] r_vector is reference to the input vector
+	 *	@return Returns a map wrapping the input vector.
+	 */
+	template <class CInputType>
+	static typename CEnableIf<CInputType::RowsAtCompileTime != Eigen::Dynamic,
+		_TyRef>::T Ref(CInputType &r_vector)
+	{
+		return _TyRef(r_vector.data(), CInputType::RowsAtCompileTime);
+	}
+
+	/**
+	 *	@brief makes a const reference to a vector (specialization for dynamic size)
+	 *	@tparam CInputType is input vector type
+	 *	@param[in] r_vector is reference to the input vector
+	 *	@return Returns a const map wrapping the input vector.
+	 */
+	template <class CInputType>
+	static typename CEnableIf<CInputType::RowsAtCompileTime == Eigen::Dynamic,
+		_TyRef>::T ConstRef(const CInputType &r_vector)
+	{
+		return _TyRef(r_vector.data(), r_vector.rows());
+	}
+
+	/**
+	 *	@brief makes a const reference to a vector (specialization for compile time constant size)
+	 *	@tparam CInputType is input vector type
+	 *	@param[in] r_vector is reference to the input vector
+	 *	@return Returns a const map wrapping the input vector.
+	 */
+	template <class CInputType>
+	static typename CEnableIf<CInputType::RowsAtCompileTime != Eigen::Dynamic,
+		_TyRef>::T ConstRef(const CInputType &r_vector)
+	{
+		return _TyRef(r_vector.data(), CInputType::RowsAtCompileTime);
+	}
+};
+
+} // ~blockmatrix_detail
+
+/**
+ *	@brief converts a vector to a const map or a const reference to it
+ *
+ *	@tparam CRefType is a map or reference type to convert to
+ *	@tparam CInputType is input vector type
+ *
+ *	@param[in] r_vector is reference to the input vector
+ *
+ *	@return Returns a const reference or a const map wrapping the input vector.
+ *
+ *	@note This facilitates simple conversion between maps of different types
+ *		(but the same size) or "conversion" of vectors to maps.
+ */
+template <class CRefType, class CInputType>
+inline CRefType t_MakeVectorRef(const CInputType &r_vector)
+{
+	return blockmatrix_detail::CMakeVectorRef<CRefType>::ConstRef(r_vector);
+}
+
+/**
+ *	@brief converts a vector to a map or a reference to it
+ *
+ *	@tparam CRefType is a map or reference type to convert to
+ *	@tparam CInputType is input vector type
+ *
+ *	@param[in] r_vector is reference to the input vector
+ *
+ *	@return Returns a reference or a map wrapping the input vector.
+ *
+ *	@note This facilitates simple conversion between maps of different types
+ *		(but the same size) or "conversion" of vectors to maps.
+ */
+template <class CRefType, class CInputType>
+inline CRefType t_MakeVectorRef(CInputType &r_vector)
+{
+	return blockmatrix_detail::CMakeVectorRef<CRefType>::Ref(r_vector);
+}
+
+/** @} */ // end of group
 
 #endif // !__UBER_BLOCK_MATRIX_BASE_INCLUDED

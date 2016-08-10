@@ -24,6 +24,8 @@
 
 #include "slam/BlockMatrixBase.h"
 
+namespace blockmatrix_detail {
+
 /**
  *	@brief a dummy class, containing implementation of the FBS functionality (to be dissolved later)
  */
@@ -35,17 +37,17 @@ public:
 	 *		matrices with known compile-time sizes
 	 */
 	template <class CBlockMatrixTypelistA, class CBlockMatrixTypelistB>
-	class CFBS_MatrixMultiply : public fbs_ut::CFixedBlockSize_BinaryBase<
+	class CFBS_MatrixMultiply : public fbs_ut::deprecate::CFixedBlockSize_BinaryBase<
 		CBlockMatrixTypelistA, CBlockMatrixTypelistB> {
 	public:
-		typedef typename fbs_ut::CFixedBlockSize_BinaryBase<CBlockMatrixTypelistA, CBlockMatrixTypelistB>::_TyBlockMatrixTypelistA _TyBlockMatrixTypelistA; /**< @brief list of block sizes, represented as Eigen::Matrix (of the left-hand-side matrix) */
-		typedef typename fbs_ut::CFixedBlockSize_BinaryBase<CBlockMatrixTypelistA, CBlockMatrixTypelistB>::_TyBlockMatrixTypelistB _TyBlockMatrixTypelistB; /**< @brief list of block sizes, represented as Eigen::Matrix (of the right-hand-side matrix) */
-		typedef typename fbs_ut::CFixedBlockSize_BinaryBase<CBlockMatrixTypelistA, CBlockMatrixTypelistB>::CRowHeightsListB CRowHeightsListB; /**< @brief list of unique block row heights (of the right-hand-side matrix) */
-		typedef typename fbs_ut::CFixedBlockSize_BinaryBase<CBlockMatrixTypelistA, CBlockMatrixTypelistB>::CColumnWidthsListB CColumnWidthsListB; /**< @brief list of unique block column widths (of the right-hand-side matrix) */
-		typedef typename fbs_ut::CFixedBlockSize_BinaryBase<CBlockMatrixTypelistA, CBlockMatrixTypelistB>::CRowHeightsListA CRowHeightsListA; /**< @brief list of unique block row heights (of the left-hand-side matrix) */
-		typedef typename fbs_ut::CFixedBlockSize_BinaryBase<CBlockMatrixTypelistA, CBlockMatrixTypelistB>::CColumnWidthsListA CColumnWidthsListA; /**< @brief list of unique block column widths (of the left-hand-side matrix) */
-		typedef typename fbs_ut::CFixedBlockSize_BinaryBase<CBlockMatrixTypelistA, CBlockMatrixTypelistB>::CDimsList_UniqA CDimsList_UniqA; /**< @brief list of block sizes as CCTSize2D (of the left-hand-side matrix; duplicate records removed) */
-		typedef typename fbs_ut::CFixedBlockSize_BinaryBase<CBlockMatrixTypelistA, CBlockMatrixTypelistB>::CDimsList_UniqB CDimsList_UniqB; /**< @brief list of block sizes as CCTSize2D (of the right-hand-side matrix; duplicate records removed) */
+		typedef typename fbs_ut::deprecate::CFixedBlockSize_BinaryBase<CBlockMatrixTypelistA, CBlockMatrixTypelistB>::_TyBlockMatrixTypelistA _TyBlockMatrixTypelistA; /**< @brief list of block sizes, represented as Eigen::Matrix (of the left-hand-side matrix) */
+		typedef typename fbs_ut::deprecate::CFixedBlockSize_BinaryBase<CBlockMatrixTypelistA, CBlockMatrixTypelistB>::_TyBlockMatrixTypelistB _TyBlockMatrixTypelistB; /**< @brief list of block sizes, represented as Eigen::Matrix (of the right-hand-side matrix) */
+		typedef typename fbs_ut::deprecate::CFixedBlockSize_BinaryBase<CBlockMatrixTypelistA, CBlockMatrixTypelistB>::CRowHeightsListB CRowHeightsListB; /**< @brief list of unique block row heights (of the right-hand-side matrix) */
+		typedef typename fbs_ut::deprecate::CFixedBlockSize_BinaryBase<CBlockMatrixTypelistA, CBlockMatrixTypelistB>::CColumnWidthsListB CColumnWidthsListB; /**< @brief list of unique block column widths (of the right-hand-side matrix) */
+		typedef typename fbs_ut::deprecate::CFixedBlockSize_BinaryBase<CBlockMatrixTypelistA, CBlockMatrixTypelistB>::CRowHeightsListA CRowHeightsListA; /**< @brief list of unique block row heights (of the left-hand-side matrix) */
+		typedef typename fbs_ut::deprecate::CFixedBlockSize_BinaryBase<CBlockMatrixTypelistA, CBlockMatrixTypelistB>::CColumnWidthsListA CColumnWidthsListA; /**< @brief list of unique block column widths (of the left-hand-side matrix) */
+		typedef typename fbs_ut::deprecate::CFixedBlockSize_BinaryBase<CBlockMatrixTypelistA, CBlockMatrixTypelistB>::CDimsList_UniqA CDimsList_UniqA; /**< @brief list of block sizes as CCTSize2D (of the left-hand-side matrix; duplicate records removed) */
+		typedef typename fbs_ut::deprecate::CFixedBlockSize_BinaryBase<CBlockMatrixTypelistA, CBlockMatrixTypelistB>::CDimsList_UniqB CDimsList_UniqB; /**< @brief list of block sizes as CCTSize2D (of the right-hand-side matrix; duplicate records removed) */
 
 		/**
 		 *	@brief (outer) loop of the matrix-matrix multiplication kernel template
@@ -208,7 +210,7 @@ public:
 					_ASSERTE(r_t_column_A.n_width == r_row_list_B[n_row_id_B].n_height);
 					// lookup which column in A corresponds with current block row in B
 
-					//if(r_t_column_A.block_list.empty()) // better enter decission tree; empty columns are rare in realworld applications
+					//if(r_t_column_A.block_list.empty()) // better enter decision tree; empty columns are rare in realworld applications
 					//	continue;
 					// otherwise block width mismatch occurs
 
@@ -276,7 +278,7 @@ public:
 					_ASSERTE(r_t_column_A.n_width == r_row_list_B[n_row_id_B].n_height);
 					// lookup which column in A corresponds with current block row in B
 
-					//if(r_t_column_A.block_list.empty()) // better enter decission tree; empty columns are rare in realworld applications
+					//if(r_t_column_A.block_list.empty()) // better enter decision tree; empty columns are rare in realworld applications
 					//	continue;
 					// otherwise block width mismatch occurs
 
@@ -309,7 +311,7 @@ public:
 
 		public:
 			/**
-			 *	@brief wraps the outer loop of matrix-matrix multiplication in a block size decission tree
+			 *	@brief wraps the outer loop of matrix-matrix multiplication in a block size decision tree
 			 *
 			 *	@param[in] r_t_column_A is the current block column of the right-hand matrix
 			 *	@param[in] r_row_list_A is list of the left-hand matrix block rows
@@ -346,7 +348,7 @@ public:
 			}
 
 			/**
-			 *	@brief wraps the outer loop of matrix-matrix multiplication in a block size decission tree
+			 *	@brief wraps the outer loop of matrix-matrix multiplication in a block size decision tree
 			 *
 			 *	@param[in] r_t_column_A is the current block column of the right-hand matrix
 			 *	@param[in] r_row_list_A is list of the left-hand matrix block rows
@@ -540,7 +542,7 @@ public:
 
 		public:
 			/**
-			 *	@brief wraps the inner loop of matrix-matrix multiplication in block size decission tree
+			 *	@brief wraps the inner loop of matrix-matrix multiplication in block size decision tree
 			 *
 			 *	@param[out] r_transpose_column is the transpose product matrix block column to store the new block
 			 *	@param[in] p_block_A is pointer to dense data of the current block in the left-hand matrix
@@ -749,11 +751,11 @@ public:
 	 *		matrices with known compile-time sizes
 	 */
 	template <class CBlockMatrixTypelist>
-	class CFBS_ElementwiseUnaryOp : public fbs_ut::CFixedBlockSize_UnaryBase<CBlockMatrixTypelist> {
+	class CFBS_ElementwiseUnaryOp : public fbs_ut::deprecate::CFixedBlockSize_UnaryBase<CBlockMatrixTypelist> {
 	public:
-		//typedef typename fbs_ut::CFixedBlockSize_UnaryBase<CBlockMatrixTypelist>::CRowHeightsList CRowHeightsList; /**< @brief list of unique block row heights */
-		//typedef typename fbs_ut::CFixedBlockSize_UnaryBase<CBlockMatrixTypelist>::CColumnWidthsList CColumnWidthsList; /**< @brief list of unique block column widths */
-		typedef typename fbs_ut::CFixedBlockSize_UnaryBase<CBlockMatrixTypelist>::CDimsList_Uniq CDimsList_Uniq; /**< @brief list of block sizes as CCTSize2D (duplicate records removed) */
+		//typedef typename fbs_ut::deprecate::CFixedBlockSize_UnaryBase<CBlockMatrixTypelist>::CRowHeightsList CRowHeightsList; /**< @brief list of unique block row heights */
+		//typedef typename fbs_ut::deprecate::CFixedBlockSize_UnaryBase<CBlockMatrixTypelist>::CColumnWidthsList CColumnWidthsList; /**< @brief list of unique block column widths */
+		typedef typename fbs_ut::deprecate::CFixedBlockSize_UnaryBase<CBlockMatrixTypelist>::CDimsList_Uniq CDimsList_Uniq; /**< @brief list of block sizes as CCTSize2D (duplicate records removed) */
 
 		typedef typename CUniqueTypelist<typename CTransformTypelist<CDimsList_Uniq,
 			fbs_ut::CTransformDimensionToAreaSize>::_TyResult>::_TyResult CBlockAreasList; /**< @brief list of unique block areas (for elementwise ops) */
@@ -917,11 +919,11 @@ public:
 	 *		matrices with known compile-time sizes
 	 */
 	template <class CBlockMatrixTypelist>
-	class CFBS_ElementwiseBinaryOp : public fbs_ut::CFixedBlockSize_UnaryBase<CBlockMatrixTypelist> {
+	class CFBS_ElementwiseBinaryOp : public fbs_ut::deprecate::CFixedBlockSize_UnaryBase<CBlockMatrixTypelist> {
 	public:
-		//typedef typename fbs_ut::CFixedBlockSize_UnaryBase<CBlockMatrixTypelist>::CRowHeightsList CRowHeightsList; /**< @brief list of unique block row heights */
-		//typedef typename fbs_ut::CFixedBlockSize_UnaryBase<CBlockMatrixTypelist>::CColumnWidthsList CColumnWidthsList; /**< @brief list of unique block column widths */
-		typedef typename fbs_ut::CFixedBlockSize_UnaryBase<CBlockMatrixTypelist>::CDimsList_Uniq CDimsList_Uniq; /**< @brief list of block sizes as CCTSize2D (duplicate records removed) */
+		//typedef typename fbs_ut::deprecate::CFixedBlockSize_UnaryBase<CBlockMatrixTypelist>::CRowHeightsList CRowHeightsList; /**< @brief list of unique block row heights */
+		//typedef typename fbs_ut::deprecate::CFixedBlockSize_UnaryBase<CBlockMatrixTypelist>::CColumnWidthsList CColumnWidthsList; /**< @brief list of unique block column widths */
+		typedef typename fbs_ut::deprecate::CFixedBlockSize_UnaryBase<CBlockMatrixTypelist>::CDimsList_Uniq CDimsList_Uniq; /**< @brief list of block sizes as CCTSize2D (duplicate records removed) */
 
 		typedef typename CUniqueTypelist<typename CTransformTypelist<CDimsList_Uniq,
 			fbs_ut::CTransformDimensionToAreaSize>::_TyResult>::_TyResult CBlockAreasList; /**< @brief list of unique block areas (for elementwise ops) */
@@ -1295,11 +1297,11 @@ public:
 	 *		matrices with known compile-time sizes
 	 */
 	template <class CBlockMatrixTypelist>
-	class CFBS_PostMAD : public fbs_ut::CFixedBlockSize_UnaryBase<CBlockMatrixTypelist> {
+	class CFBS_PostMAD : public fbs_ut::deprecate::CFixedBlockSize_UnaryBase<CBlockMatrixTypelist> {
 	public:
-		typedef typename fbs_ut::CFixedBlockSize_UnaryBase<CBlockMatrixTypelist>::CRowHeightsList CRowHeightsList; /**< @brief list of unique block row heights */
-		typedef typename fbs_ut::CFixedBlockSize_UnaryBase<CBlockMatrixTypelist>::CColumnWidthsList CColumnWidthsList; /**< @brief list of unique block column widths */
-		typedef typename fbs_ut::CFixedBlockSize_UnaryBase<CBlockMatrixTypelist>::CDimsList_Uniq CDimsList_Uniq; /**< @brief list of block sizes as CCTSize2D (duplicate records removed) */
+		typedef typename fbs_ut::deprecate::CFixedBlockSize_UnaryBase<CBlockMatrixTypelist>::CRowHeightsList CRowHeightsList; /**< @brief list of unique block row heights */
+		typedef typename fbs_ut::deprecate::CFixedBlockSize_UnaryBase<CBlockMatrixTypelist>::CColumnWidthsList CColumnWidthsList; /**< @brief list of unique block column widths */
+		typedef typename fbs_ut::deprecate::CFixedBlockSize_UnaryBase<CBlockMatrixTypelist>::CDimsList_Uniq CDimsList_Uniq; /**< @brief list of block sizes as CCTSize2D (duplicate records removed) */
 
 		/**
 		 *	@brief inner loop of the post multiply add kernel
@@ -1539,7 +1541,7 @@ public:
 					CPostMAD_InnerLoop<_TyGppContext, _CSelectedRowHeightsList,
 						CLastColumnWidth>::Loop(r_t_block,
 						r_t_row, /*r_t_col,*/ dest, p_src_vector);
-					// wrap the inner loop in a block size decission tree
+					// wrap the inner loop in a block size decision tree
 				}
 			}
 
@@ -1604,270 +1606,99 @@ public:
 	 *		matrices with known compile-time sizes
 	 */
 	template <class CBlockMatrixTypelist>
-	class CFBS_PreMAD : public fbs_ut::CFixedBlockSize_UnaryBase<CBlockMatrixTypelist> {
+	class CFBS_PreMAD {
 	public:
-		typedef typename fbs_ut::CFixedBlockSize_UnaryBase<CBlockMatrixTypelist>::CRowHeightsList CRowHeightsList; /**< @brief list of unique block row heights */
-		typedef typename fbs_ut::CFixedBlockSize_UnaryBase<CBlockMatrixTypelist>::CColumnWidthsList CColumnWidthsList; /**< @brief list of unique block column widths */
-		typedef typename fbs_ut::CFixedBlockSize_UnaryBase<CBlockMatrixTypelist>::CDimsList_Uniq CDimsList_Uniq; /**< @brief list of block sizes as CCTSize2D (duplicate records removed) */
-
 		/**
 		 *	@brief inner loop of the post multiply add kernel
-		 *
 		 *	Performs a single block-vector multiplication and accumulation.
-		 *
-		 *	@tparam _TyGppContext is template instance context for g++ (compatibility workarround)
-		 *	@tparam _CRowHeightsList is list of possible row heights
 		 *	@tparam CColumnWidth is current column width
 		 */
-		template <class _TyGppContext, class _CRowHeightsList, class CColumnWidth>
+		template <class CColumnWidth>
 		class CPreMAD_InnerLoop {
 		public:
-			typedef typename _CRowHeightsList::_TyHead CCurrentRowHeight; /**< @brief row height for this decision tree recursion */
-			typedef typename CMakeVectorRef<CColumnWidth::n_size>::_Ty _TySrcVectorShape; /**< @brief source vector Eigen::Map type (note it is unaligned) */
+			typedef typename CMakeVectorRef<CColumnWidth::n_size>::_TyConst _TySrcVectorShape; /**< @brief source vector Eigen::Map type (note it is unaligned) */
 
-			/**
-			 *	@brief wraps loop body in block size decision tree
-			 *
-			 *	@param[in] r_t_block is current matrix block
-			 *	@param[in] r_t_row is row for the current matrix block
-			 *	@param[out] p_dest_vector is pointer to the (whole) destination vector
-			 *	@param[in] r_src is source vector map (only the part
-			 *		that aligns with the current matrix block)
-			 */
-#if defined(_MSC_VER) && !defined(__MWERKS__)
-			#pragma inline_recursion(on)
-#endif // _MSC_VER && !__MWERKS__
-			static __forceinline void Loop(const TColumn::TBlockEntry &r_t_block, const TRow &r_t_row,
-				/*const TColumn &r_t_col,*/ double *p_dest_vector, const _TySrcVectorShape &r_src)
-			{
-				if(r_t_row.n_height == CCurrentRowHeight::n_size) {
-					CPreMAD_InnerLoop<_TyGppContext, CTypelist<CCurrentRowHeight, CTypelistEnd>,
-						CColumnWidth>::Loop(r_t_block, r_t_row, /*r_t_col,*/ p_dest_vector, r_src);
-					// execute inner loop (use the specialization for end-of-the-list that actually
-					// contains the implementaiton - avoids having the same code in two places)
-				} else {
-					CPreMAD_InnerLoop<_TyGppContext, typename _CRowHeightsList::_TyTail, CColumnWidth>::Loop(
-						r_t_block, r_t_row, /*r_t_col,*/ p_dest_vector, r_src);
-					// not CCurrentRowHeight::n_size, gotta be one of the rest of the list
-				}
-			}
+		protected:
+			const TColumn::TBlockEntry m_r_t_block;
+			const TRow &m_r_t_row;
+			/*const TColumn &m_r_t_col;*/
+			double *m_p_dest_vector;
+			const _TySrcVectorShape m_r_src;
 
-#ifdef __UBER_BLOCK_MATRIX_FIXED_BLOCK_SIZE_DEBUGGING
-
-			/**
-			 *	@brief prints (unindented) pseudocode of the loop to stdout
-			 *	@note This is only available if
-			 *		__UBER_BLOCK_MATRIX_FIXED_BLOCK_SIZE_DEBUGGING is defined.
-			 */
-			static void Debug()
-			{
-				printf("if(r_t_row.n_height == %d) {\n", CCurrentRowHeight::n_size);
-				CPreMAD_InnerLoop<_TyGppContext, CTypelist<CCurrentRowHeight,
-					CTypelistEnd>, CColumnWidth>::Debug();
-				printf("} else {\n");
-				CPreMAD_InnerLoop<_TyGppContext, typename _CRowHeightsList::_TyTail, CColumnWidth>::Debug();
-				printf("}\n");
-			}
-
-#endif // __UBER_BLOCK_MATRIX_FIXED_BLOCK_SIZE_DEBUGGING
-		};
-
-		/**
-		 *	@brief inner loop of the post multiply add kernel
-		 *		(specialization for the end-of-the-list (branch-less))
-		 *
-		 *	Performs a single block-vector multiplication and accumulation.
-		 *
-		 *	@tparam _TyGppContext is template instance context for g++ (compatibility workarround)
-		 *	@tparam CLastRowHeight is height of the row at the end of the list (current)
-		 *	@tparam CColumnWidth is current column width
-		 */
-		template <class _TyGppContext, class CLastRowHeight, class CColumnWidth>
-		class CPreMAD_InnerLoop<_TyGppContext, CTypelist<CLastRowHeight, CTypelistEnd>, CColumnWidth> {
 		public:
-			typedef typename CMakeVectorRef<CColumnWidth::n_size>::_Ty _TySrcVectorShape; /**< @brief source vector Eigen::Map type (note it is unaligned) */
-			typedef typename CMakeVectorRef<CLastRowHeight::n_size>::_Ty _TyDestVectorShape; /**< @brief destination vector Eigen::Map type (note it is unaligned) */
-			typedef typename CMakeMatrixRef<CLastRowHeight::n_size, CColumnWidth::n_size>::_Ty _TyBlockShape; /**< @brief matrix block Eigen::Map type */
+			CPreMAD_InnerLoop(const TColumn::TBlockEntry r_t_block, const TRow &r_t_row,
+				/*const TColumn &r_t_col,*/ double *p_dest_vector, const _TySrcVectorShape r_src)
+				:m_r_t_block(r_t_block), m_r_t_row(r_t_row), m_p_dest_vector(p_dest_vector), m_r_src(r_src)
+			{}
 
-			/**
-			 *	@brief performs a single block-vector multiplication and accumulation
-			 *
-			 *	@param[in] r_t_block is current matrix block
-			 *	@param[in] r_t_row is row for the current matrix block
-			 *	@param[out] p_dest_vector is pointer to the (whole) destination vector
-			 *	@param[in] r_src is source vector map (only the part
-			 *		that aligns with the current matrix block)
-			 */
-#if defined(_MSC_VER) && !defined(__MWERKS__)
-			#pragma inline_recursion(on)
-#endif // _MSC_VER && !__MWERKS__
-			static __forceinline void Loop(const TColumn::TBlockEntry &r_t_block, const TRow &r_t_row,
-				/*const TColumn &r_t_col,*/ double *p_dest_vector, const _TySrcVectorShape &r_src)
+			template <class CRowHeight>
+			__forceinline void operator ()()
 			{
-				_ASSERTE(r_t_row.n_height == CLastRowHeight::n_size); // this is the last option, make sure it is this one (omits the branch)
-				const size_t n_row = r_t_row.n_cumulative_height_sum; // src vector offset
+				typedef typename CMakeVectorRef<CColumnWidth::n_size>::_Ty _TySrcVectorShape; /**< @brief source vector Eigen::Map type (note it is unaligned) */
+				typedef typename CMakeVectorRef<CRowHeight::n_size>::_Ty _TyDestVectorShape; /**< @brief destination vector Eigen::Map type (note it is unaligned) */
+				typedef typename CMakeMatrixRef<CRowHeight::n_size, CColumnWidth::n_size>::_Ty _TyBlockShape; /**< @brief matrix block Eigen::Map type */
+
+				_ASSERTE(m_r_t_row.n_height == CRowHeight::n_size); // this is the last option, make sure it is this one (omits the branch)
+				const size_t n_row = m_r_t_row.n_cumulative_height_sum; // src vector offset
 				// for-each row
 
-				_TyDestVectorShape dest(p_dest_vector + n_row);
-				_TyBlockShape block((double*)r_t_block.second);
+				_TyDestVectorShape dest(m_p_dest_vector + n_row);
+				_TyBlockShape block((double*)m_r_t_block.second);
 
 #ifdef __UBER_BLOCK_MATRIX_FBS_LAZY_PRODUCT
-				dest += block.lazyProduct(r_src); // fbsla
+				dest += block.lazyProduct(m_r_src); // fbsla
 #else // __UBER_BLOCK_MATRIX_FBS_LAZY_PRODUCT
-				dest.noalias() += block * r_src; // axpy
+				dest.noalias() += block * m_r_src; // axpy
 #endif // __UBER_BLOCK_MATRIX_FBS_LAZY_PRODUCT
 				// perform the multiplication, one block at a time
 			}
-
-#ifdef __UBER_BLOCK_MATRIX_FIXED_BLOCK_SIZE_DEBUGGING
-
-			/**
-			 *	@brief prints (unindented) pseudocode of the loop to stdout
-			 *	@note This is only available if
-			 *		__UBER_BLOCK_MATRIX_FIXED_BLOCK_SIZE_DEBUGGING is defined.
-			 */
-			static void Debug()
-			{
-				printf("_ASSERTE(r_t_row.n_heigh == %d);\n", CLastRowHeight::n_size);
-				printf("typedef Eigen::Map<Eigen::Matrix<double, %d, %d> > _TyDestVectorShape;\n",
-					CLastRowHeight::n_size, 1);
-				printf("typedef Eigen::Map<Eigen::Matrix<double, %d, %d> > _TyBlockShape;\n",
-					CColumnWidth::n_size, CLastRowHeight::n_size);
-				printf("r_dest += block * src; // axpy\n");
-			}
-
-#endif // __UBER_BLOCK_MATRIX_FIXED_BLOCK_SIZE_DEBUGGING
 		};
 
 		/**
 		 *	@brief outer loop of the post multiply add kernel
-		 *
 		 *	Iterates through all the blocks of the column.
-		 *
-		 *	@tparam _TyGppContext is template instance context for g++ (compatibility workarround)
-		 *	@tparam _CColumnWidthsList is list of possible column widths
 		 */
-		template <class _TyGppContext, class _CColumnWidthsList>
 		class CPreMAD_OuterLoop {
+		protected:
+			const TColumn &m_r_t_col;
+			double *m_p_dest_vector;
+			const double *m_p_src_vector;
+			const std::vector<TRow> &m_r_row_list;
+
 		public:
-			typedef typename _CColumnWidthsList::_TyHead CCurrentColumnWidth; /**< @brief column width for this decision tree recursion */
-
-			/**
-			 *	@brief wraps loop body in block size decision tree
-			 *
-			 *	@param[in] r_t_col is current column
-			 *	@param[out] p_dest_vector is pointer to the (whole) destination vector
-			 *	@param[in] p_src_vector is pointer to the (whole) source vector
-			 *	@param[in] r_row_list is matrix row layout
-			 */
-#if defined(_MSC_VER) && !defined(__MWERKS__)
-			#pragma inline_recursion(on)
-#endif // _MSC_VER && !__MWERKS__
-			static __forceinline void Loop(const TColumn &r_t_col, double *p_dest_vector,
+			CPreMAD_OuterLoop(const TColumn &r_t_col, double *p_dest_vector,
 				const double *p_src_vector, const std::vector<TRow> &r_row_list)
+				:m_r_t_col(r_t_col), m_p_dest_vector(p_dest_vector),
+				m_p_src_vector(p_src_vector), m_r_row_list(r_row_list)
+			{}
+
+			template <class CColWidth>
+			__forceinline void operator ()()
 			{
-				if(r_t_col.n_width == CCurrentColumnWidth::n_size) {
-					CPreMAD_OuterLoop<_TyGppContext, CTypelist<CCurrentColumnWidth, CTypelistEnd> >::Loop(
-						r_t_col, p_dest_vector, p_src_vector, r_row_list);
-					// execute inner loop (use the specialization for end-of-the-list that actually
-					// contains the implementaiton - avoids having the same code in two places)
-				} else {
-					CPreMAD_OuterLoop<_TyGppContext, typename _CColumnWidthsList::_TyTail>::Loop(
-						r_t_col, p_dest_vector, p_src_vector, r_row_list);
-					// not CCurrentColumnWidth::n_size, gotta be one of the rest of the list
-				}
-			}
+				typedef typename CMakeVectorRef<CColWidth::n_size>::_TyConst _TySrcVectorShape; /**< @brief source vector Eigen::Map type (note it is unaligned) */
 
-#ifdef __UBER_BLOCK_MATRIX_FIXED_BLOCK_SIZE_DEBUGGING
-
-			/**
-			 *	@brief prints (unindented) pseudocode of the loop to stdout
-			 *	@note This is only available if
-			 *		__UBER_BLOCK_MATRIX_FIXED_BLOCK_SIZE_DEBUGGING is defined.
-			 */
-			static void Debug()
-			{
-				printf("if(r_t_col.n_width == %d) {\n", CCurrentColumnWidth::n_size);
-				CPreMAD_OuterLoop<_TyGppContext, CTypelist<CCurrentColumnWidth, CTypelistEnd> >::Debug();
-				printf("} else {\n");
-				CPreMAD_OuterLoop<_TyGppContext, typename _CColumnWidthsList::_TyTail>::Debug();
-				printf("}\n");
-			}
-
-#endif // __UBER_BLOCK_MATRIX_FIXED_BLOCK_SIZE_DEBUGGING
-		};
-
-		/**
-		 *	@brief outer loop of the post multiply add kernel
-		 *		(specialization for the end-of-the-list (branch-less))
-		 *
-		 *	Iterates through all the blocks of the column.
-		 *
-		 *	@tparam _TyGppContext is template instance context for g++ (compatibility workarround)
-		 *	@tparam CLastColumnWidth is width of the column at the end of the list (current)
-		 */
-		template <class _TyGppContext, class CLastColumnWidth>
-		class CPreMAD_OuterLoop<_TyGppContext, CTypelist<CLastColumnWidth, CTypelistEnd> > {
-		public:
-			typedef typename CMakeVectorRef<CLastColumnWidth::n_size>::_Ty _TySrcVectorShape; /**< @brief source vector Eigen::Map type (note it is unaligned) */
-			typedef typename CFilterTypelist2<CRowHeightsList, CLastColumnWidth,
-				fbs_ut::CHaveRowHeightForColumnWidth, CDimsList_Uniq>::_TyResult _CSelectedRowHeightsList; /**< @brief row heights list, filtered by the selected column width */
-
-			/**
-			 *	@brief iterates through all the blocks in the current
-			 *		column and calls the inner loop
-			 *
-			 *	@param[in] r_t_col is current column
-			 *	@param[out] p_dest_vector is pointer to the (whole) destination vector
-			 *	@param[in] p_src_vector is pointer to the (whole) source vector
-			 *	@param[in] r_row_list is matrix row layout
-			 */
-#if defined(_MSC_VER) && !defined(__MWERKS__)
-			#pragma inline_recursion(on)
-#endif // _MSC_VER && !__MWERKS__
-			static __forceinline void Loop(const TColumn &r_t_col, double *p_dest_vector,
-				const double *p_src_vector, const std::vector<TRow> &r_row_list)
-			{
-				_ASSERTE(r_t_col.block_list.empty() || r_t_col.n_width == CLastColumnWidth::n_size); // this is the last option, make sure it is this one (omits the branch)
-				const size_t n_column = r_t_col.n_cumulative_width_sum; // dest vector offset
+				_ASSERTE(m_r_t_col.block_list.empty() || m_r_t_col.n_width == CColWidth::n_size); // this is the last option, make sure it is this one (omits the branch)
+				const size_t n_column = m_r_t_col.n_cumulative_width_sum; // dest vector offset
 				// for-each column
 
-				_TySrcVectorShape src((double*)p_src_vector + n_column); // forces unaligned memory - no SSE2 (p_dest_vector can't be aligned due to block size)
+				_TySrcVectorShape src(m_p_src_vector + n_column); // forces unaligned memory - no SSE2 (p_dest_vector can't be aligned due to block size)
 				// gets dest vector as eigen blah
 
 				for(_TyBlockConstIter p_block_it =
-				   r_t_col.block_list.begin(), p_end_it = r_t_col.block_list.end();
+				   m_r_t_col.block_list.begin(), p_end_it = m_r_t_col.block_list.end();
 				   p_block_it != p_end_it; ++ p_block_it) {
 					const TColumn::TBlockEntry &r_t_block = *p_block_it;
 					// for each column, for each block ...
 
-					const TRow &r_t_row = r_row_list[r_t_block.first];
+					const TRow &r_t_row = m_r_row_list[r_t_block.first];
 					// get block row ...
 
-					CPreMAD_InnerLoop<_TyGppContext, _CSelectedRowHeightsList, CLastColumnWidth>::Loop(r_t_block,
-						r_t_row, /*r_t_col,*/ p_dest_vector, src);
-					// wrap the inner loop in a block size decission tree
+					fbs_ut::CWrap3<>::In_RowHeight_DecisionTree_Given_ColumnWidth<CBlockMatrixTypelist,
+						CColWidth::n_size>(r_t_row.n_height, CPreMAD_InnerLoop<CColWidth>(r_t_block,
+						r_t_row, /*r_t_col,*/ m_p_dest_vector, src));
+					// wrap the inner loop in a row height decision tree
 				}
 			}
-
-#ifdef __UBER_BLOCK_MATRIX_FIXED_BLOCK_SIZE_DEBUGGING
-
-			/**
-			 *	@brief prints (unindented) pseudocode of the loop to stdout
-			 *	@note This is only available if
-			 *		__UBER_BLOCK_MATRIX_FIXED_BLOCK_SIZE_DEBUGGING is defined.
-			 */
-			static void Debug()
-			{
-				printf("_ASSERTE(r_t_col.n_width == %d);\n", CLastColumnWidth::n_size);
-				printf("typedef Eigen::Map<Eigen::Matrix<double, %d, %d> > _TyDestVectorShape;\n",
-					1, CLastColumnWidth::n_size);
-				printf("for(each p_block_it in r_t_col.block_list) {\n");
-				CPreMAD_InnerLoop<_TyGppContext, _CSelectedRowHeightsList, CLastColumnWidth>::Debug();
-				printf("}\n");
-			}
-
-#endif // __UBER_BLOCK_MATRIX_FIXED_BLOCK_SIZE_DEBUGGING
 		};
 
 		/**
@@ -1883,9 +1714,9 @@ public:
 			double *p_dest_vector, const double *p_src_vector,
 			const std::vector<TRow> &r_row_list)
 		{
-			CPreMAD_OuterLoop<CBlockMatrixTypelist, CColumnWidthsList>::Loop(r_t_col,
-				p_dest_vector, p_src_vector, r_row_list);
-			// wrap the outer loop body in a column size decision tree
+			fbs_ut::CWrap3<fbs_ut::CCallFnOp>::In_ColumnWidth_DecisionTree<CBlockMatrixTypelist>(r_t_col.n_width,
+				CPreMAD_OuterLoop(r_t_col, p_dest_vector, p_src_vector, r_row_list), !r_t_col.block_list.empty()); // only mind mismatches if not empty
+			// use a decision tree
 		}
 
 #ifdef __UBER_BLOCK_MATRIX_FIXED_BLOCK_SIZE_DEBUGGING
@@ -1896,11 +1727,7 @@ public:
 		 *		__UBER_BLOCK_MATRIX_FIXED_BLOCK_SIZE_DEBUGGING macro is defined.
 		 */
 		static void Debug_PreMAD()
-		{
-			printf("for(each p_col_it in m_block_cols_list) {\n");
-			CPreMAD_OuterLoop<CBlockMatrixTypelist, CColumnWidthsList>::Debug();
-			printf("}\n\n");
-		}
+		{}
 
 #endif // __UBER_BLOCK_MATRIX_FIXED_BLOCK_SIZE_DEBUGGING
 	};
@@ -1911,11 +1738,11 @@ public:
 	 *		matrices with known compile-time sizes
 	 */
 	template <class CBlockMatrixTypelist>
-	class CFBS_PreATA : public fbs_ut::CFixedBlockSize_UnaryBase<CBlockMatrixTypelist> {
+	class CFBS_PreATA : public fbs_ut::deprecate::CFixedBlockSize_UnaryBase<CBlockMatrixTypelist> {
 	public:
-		typedef typename fbs_ut::CFixedBlockSize_UnaryBase<CBlockMatrixTypelist>::CRowHeightsList CRowHeightsList; /**< @brief list of unique block row heights */
-		typedef typename fbs_ut::CFixedBlockSize_UnaryBase<CBlockMatrixTypelist>::CColumnWidthsList CColumnWidthsList; /**< @brief list of unique block column widths */
-		typedef typename fbs_ut::CFixedBlockSize_UnaryBase<CBlockMatrixTypelist>::CDimsList_Uniq CDimsList_Uniq; /**< @brief list of block sizes as CCTSize2D (duplicate records removed) */
+		typedef typename fbs_ut::deprecate::CFixedBlockSize_UnaryBase<CBlockMatrixTypelist>::CRowHeightsList CRowHeightsList; /**< @brief list of unique block row heights */
+		typedef typename fbs_ut::deprecate::CFixedBlockSize_UnaryBase<CBlockMatrixTypelist>::CColumnWidthsList CColumnWidthsList; /**< @brief list of unique block column widths */
+		typedef typename fbs_ut::deprecate::CFixedBlockSize_UnaryBase<CBlockMatrixTypelist>::CDimsList_Uniq CDimsList_Uniq; /**< @brief list of block sizes as CCTSize2D (duplicate records removed) */
 
 		/**
 		 *	@brief inner loop of the part part of the AtA kernel
@@ -2494,7 +2321,7 @@ public:
 					CPreATA_UpperTri_InnerLoop<_TyGppContext, _CSelectedTransposeSecondRowHeightList,
 						CTransposeFirstRowHeight, CTransposeColumnWidth>::Loop(r_t_first_block,
 						r_t_second_block, r_transpose_row_list, r_col_list_dest, r_allocator);
-					// wrap the inner loop in a (second) block size decission tree
+					// wrap the inner loop in a (second) block size decision tree
 				}
 				// for each next block below the current block in the current column in A
 			}
@@ -2538,7 +2365,7 @@ public:
 						CTransposeFirstRowHeight, CTransposeColumnWidth>::Loop(r_t_first_block,
 						r_t_second_block, r_transpose_row_list, r_col_list_dest,
 						r_t_mutex, r_allocator);
-					// wrap the inner loop in a (second) block size decission tree
+					// wrap the inner loop in a (second) block size decision tree
 				}
 				// for each next block below the current block in the current column in A
 			}
@@ -2716,7 +2543,7 @@ public:
 						_CSelectedTransposeRowHeightsList, CTransposeColumnWidth>::Loop(
 						r_t_first_block, ++ p_first_block_it, p_block_end_it,
 						r_transpose_row_list, r_col_list_dest, r_allocator);
-					// wrap the middle loop in a (first) block size decission tree
+					// wrap the middle loop in a (first) block size decision tree
 				}
 				// for each block in the current column in A
 			}
@@ -2753,7 +2580,7 @@ public:
 						_CSelectedTransposeRowHeightsList, CTransposeColumnWidth>::Loop(
 						r_t_first_block, ++ p_first_block_it, p_block_end_it,
 						r_transpose_row_list, r_col_list_dest, r_t_mutex, r_allocator);
-					// wrap the middle loop in a (first) block size decission tree
+					// wrap the middle loop in a (first) block size decision tree
 				}
 				// for each block in the current column in A
 			}
@@ -3043,7 +2870,7 @@ public:
 
 					CPreATA_Diagonal_InnerLoop<_TyGppContext, _CSelectedRowHeightsList, CColumnWidth>::Loop(block_dest,
 						r_t_block, r_row_list);
-					// wrap the inner loop in a block size decission tree
+					// wrap the inner loop in a block size decision tree
 
 					// t_odo - remove B from varname, call innerloop
 					// t_odo - write debug, debug
@@ -3083,7 +2910,7 @@ public:
 
 					CPreATA_Diagonal_InnerLoop<_TyGppContext, _CSelectedRowHeightsList, CColumnWidth>::Loop(block_dest,
 						r_t_block, r_row_list);
-					// wrap the inner loop in a block size decission tree
+					// wrap the inner loop in a block size decision tree
 
 					// t_odo - remove B from varname, call innerloop
 					// t_odo - write debug, debug
@@ -3230,10 +3057,10 @@ public:
 	 *	@todo write documentations for members, sort members, write debug functions
 	 */
 	template <class CBlockMatrixTypelist>
-	class CFBS_Cholesky : public fbs_ut::CFixedBlockSize_UnaryBase<CBlockMatrixTypelist> {
+	class CFBS_Cholesky : public fbs_ut::deprecate::CFixedBlockSize_UnaryBase<CBlockMatrixTypelist> {
 	public:
-		typedef typename fbs_ut::CFixedBlockSize_UnaryBase<CBlockMatrixTypelist>::CColumnWidthsList CColumnWidthsList; /**< @brief list of unique block column widths */
-		typedef typename fbs_ut::CFixedBlockSize_UnaryBase<CBlockMatrixTypelist>::CDimsList_Uniq CDimsList_Uniq; /**< @brief list of block sizes as CCTSize2D (duplicate records removed) */
+		typedef typename fbs_ut::deprecate::CFixedBlockSize_UnaryBase<CBlockMatrixTypelist>::CColumnWidthsList CColumnWidthsList; /**< @brief list of unique block column widths */
+		typedef typename fbs_ut::deprecate::CFixedBlockSize_UnaryBase<CBlockMatrixTypelist>::CDimsList_Uniq CDimsList_Uniq; /**< @brief list of block sizes as CCTSize2D (duplicate records removed) */
 
 		/**
 		 *	@brief off-diagonal loop of the Cholesky factorization kernel
@@ -3246,7 +3073,7 @@ public:
 		 *	@param[in] p_j_block_end_it is iterator pointing one past the last block in j-th column
 		 *	@param[in] p_k_block_it is iterator to blocks in k-th column
 		 *	@param[in] p_k_block_end_it is iterator pointing one past the last block in k-th column
-		 *	@param[in] t_block_A is input block at A(j, k), same size as the dest block 
+		 *	@param[in] t_block_A is input block at A(j, k), same size as the dest block
 		 *	@param[in] k is index of the previous column
 		 *	@param[in] r_block_cols_list is block column layout of the (symmetric) matrix
 		 */
@@ -3286,7 +3113,7 @@ public:
 			 *	@param[in] p_j_block_end_it is iterator pointing one past the last block in j-th column
 			 *	@param[in] p_k_block_it is iterator to blocks in k-th column
 			 *	@param[in] p_k_block_end_it is iterator pointing one past the last block in k-th column
-			 *	@param[in] t_block_A is input block at A(j, k), same size as the dest block 
+			 *	@param[in] t_block_A is input block at A(j, k), same size as the dest block
 			 *	@param[in] k is index of the previous column
 			 *	@param[in] r_block_cols_list is block column layout of the (symmetric) matrix
 			 */
@@ -3339,7 +3166,7 @@ public:
 			 *	@param[in] p_j_block_end_it is iterator pointing one past the last block in j-th column
 			 *	@param[in] p_k_block_it is iterator to blocks in k-th column
 			 *	@param[in] p_k_block_end_it is iterator pointing one past the last block in k-th column
-			 *	@param[in] t_block_A is input block at A(j, k), same size as the dest block 
+			 *	@param[in] t_block_A is input block at A(j, k), same size as the dest block
 			 *	@param[in] k is index of the previous column
 			 *	@param[in] r_block_cols_list is block column layout of the (symmetric) matrix
 			 */
@@ -3376,7 +3203,7 @@ public:
 			 *	@param[in] p_j_block_end_it is iterator pointing one past the last block in j-th column
 			 *	@param[in] p_k_block_it is iterator to blocks in k-th column
 			 *	@param[in] p_k_block_end_it is iterator pointing one past the last block in k-th column
-			 *	@param[in] t_block_A is input block at A(j, k), same size as the dest block 
+			 *	@param[in] t_block_A is input block at A(j, k), same size as the dest block
 			 *	@param[in] k is index of the previous column
 			 *	@param[in] r_block_cols_list is block column layout of the (symmetric) matrix
 			 */
@@ -3427,7 +3254,7 @@ public:
 			 *	@param[in] p_j_block_end_it is iterator pointing one past the last block in j-th column
 			 *	@param[in] p_k_block_it is iterator to blocks in k-th column
 			 *	@param[in] p_k_block_end_it is iterator pointing one past the last block in k-th column
-			 *	@param[in] t_block_A is input block at A(j, k), same size as the dest block 
+			 *	@param[in] t_block_A is input block at A(j, k), same size as the dest block
 			 *	@param[in] k is index of the previous column
 			 *	@param[in] r_block_cols_list is block column layout of the (symmetric) matrix
 			 */
@@ -3466,7 +3293,7 @@ public:
 			 *	@param[in] p_j_block_end_it is iterator pointing one past the last block in j-th column
 			 *	@param[in] p_k_block_it is iterator to blocks in k-th column
 			 *	@param[in] p_k_block_end_it is iterator pointing one past the last block in k-th column
-			 *	@param[in] t_block_A is input block at A(j, k), same size as the dest block 
+			 *	@param[in] t_block_A is input block at A(j, k), same size as the dest block
 			 *	@param[in] k is index of the previous column
 			 *	@param[in] r_block_cols_list is block column layout of the (symmetric) matrix
 			 */
@@ -3548,7 +3375,7 @@ public:
 			 *	@param[in] p_j_block_end_it is iterator pointing one past the last block in j-th column
 			 *	@param[in] p_k_block_it is iterator to blocks in k-th column
 			 *	@param[in] p_k_block_end_it is iterator pointing one past the last block in k-th column
-			 *	@param[in] t_block_A is input block at A(j, k), same size as the dest block 
+			 *	@param[in] t_block_A is input block at A(j, k), same size as the dest block
 			 *	@param[in] k is index of the previous column
 			 *	@param[in] r_block_cols_list is block column layout of the (symmetric) matrix
 			 */
@@ -3634,7 +3461,7 @@ public:
 			 *	@param[in] p_j_block_end_it is iterator pointing one past the last block in j-th column
 			 *	@param[in] p_k_block_it is iterator to blocks in k-th column
 			 *	@param[in] p_k_block_end_it is iterator pointing one past the last block in k-th column
-			 *	@param[in] t_block_A is input block at A(j, k), same size as the dest block 
+			 *	@param[in] t_block_A is input block at A(j, k), same size as the dest block
 			 *	@param[in] k is index of the previous column
 			 *	@param[in] r_block_cols_list is block column layout of the (symmetric) matrix
 			 */
@@ -4323,11 +4150,11 @@ public:
 	 *		matrices with known compile-time sizes
 	 */
 	template <class CBlockMatrixTypelist>
-	class CFBS_TriangularSolve : public fbs_ut::CFixedBlockSize_UnaryBase<CBlockMatrixTypelist> {
+	class CFBS_TriangularSolve : public fbs_ut::deprecate::CFixedBlockSize_UnaryBase<CBlockMatrixTypelist> {
 	public:
-		typedef typename fbs_ut::CFixedBlockSize_UnaryBase<CBlockMatrixTypelist>::CRowHeightsList CRowHeightsList; /**< @brief list of unique block row heights */
-		typedef typename fbs_ut::CFixedBlockSize_UnaryBase<CBlockMatrixTypelist>::CColumnWidthsList CColumnWidthsList; /**< @brief list of unique block column widths */
-		typedef typename fbs_ut::CFixedBlockSize_UnaryBase<CBlockMatrixTypelist>::CDimsList_Uniq CDimsList_Uniq; /**< @brief list of block sizes as CCTSize2D (duplicate records removed) */
+		typedef typename fbs_ut::deprecate::CFixedBlockSize_UnaryBase<CBlockMatrixTypelist>::CRowHeightsList CRowHeightsList; /**< @brief list of unique block row heights */
+		typedef typename fbs_ut::deprecate::CFixedBlockSize_UnaryBase<CBlockMatrixTypelist>::CColumnWidthsList CColumnWidthsList; /**< @brief list of unique block column widths */
+		typedef typename fbs_ut::deprecate::CFixedBlockSize_UnaryBase<CBlockMatrixTypelist>::CDimsList_Uniq CDimsList_Uniq; /**< @brief list of block sizes as CCTSize2D (duplicate records removed) */
 
 		/**
 		 *	@brief inner loop of the forward / back substitution kernels,
@@ -4689,8 +4516,12 @@ public:
 #endif // _DEBUG
 
 					double f_diag = diag_block(i, i);
+#ifdef __UBER_BLOCK_MATRIX_TRIANGULAR_SOLVE_NEVER_FAILS
+					_ASSERTE(f_diag != 0);
+#else // __UBER_BLOCK_MATRIX_TRIANGULAR_SOLVE_NEVER_FAILS
 					if(f_diag == 0) // what about negative zero? does it cover it? yes.
 						return false; // note that if diag_x(i) is zero as well, it probably means "infinite number of solutions", and not "no solution". could still produce one of them.
+#endif // __UBER_BLOCK_MATRIX_TRIANGULAR_SOLVE_NEVER_FAILS
 					diag_x(i) = f_old_x / f_diag;
 				}
 				// resolve values of the diagonal x
@@ -4727,8 +4558,12 @@ public:
 					-- i; // !!
 
 					double f_diag = diag_block(i, i);
+#ifdef __UBER_BLOCK_MATRIX_TRIANGULAR_SOLVE_NEVER_FAILS
+					_ASSERTE(f_diag != 0);
+#else // __UBER_BLOCK_MATRIX_TRIANGULAR_SOLVE_NEVER_FAILS
 					if(f_diag == 0) // what about negative zero? does it cover it? yes.
 						return false; // note that if diag_x(i) is zero as well, it probably means "infinite number of solutions", and not "no solution". could still produce one of them.
+#endif // __UBER_BLOCK_MATRIX_TRIANGULAR_SOLVE_NEVER_FAILS
 					double f_new_x = (diag_x(i) /= f_diag); // f_new_x = diag_x(i)
 					for(size_t j = 0; j < i; ++ j) // elements strictly above diagonal
 						diag_x(j) -= diag_block(j, i) * f_new_x;
@@ -4842,11 +4677,11 @@ public:
 	 *		matrices with known compile-time sizes
 	 */
 	template <class CBlockMatrixTypelist>
-	class CFBS_BlockwiseUnaryOp : public fbs_ut::CFixedBlockSize_UnaryBase<CBlockMatrixTypelist> {
+	class CFBS_BlockwiseUnaryOp : public fbs_ut::deprecate::CFixedBlockSize_UnaryBase<CBlockMatrixTypelist> {
 	public:
-		typedef typename fbs_ut::CFixedBlockSize_UnaryBase<CBlockMatrixTypelist>::CRowHeightsList CRowHeightsList; /**< @brief list of unique block row heights */
-		typedef typename fbs_ut::CFixedBlockSize_UnaryBase<CBlockMatrixTypelist>::CColumnWidthsList CColumnWidthsList; /**< @brief list of unique block column widths */
-		typedef typename fbs_ut::CFixedBlockSize_UnaryBase<CBlockMatrixTypelist>::CDimsList_Uniq CDimsList_Uniq; /**< @brief list of block sizes as CCTSize2D (duplicate records removed) */
+		typedef typename fbs_ut::deprecate::CFixedBlockSize_UnaryBase<CBlockMatrixTypelist>::CRowHeightsList CRowHeightsList; /**< @brief list of unique block row heights */
+		typedef typename fbs_ut::deprecate::CFixedBlockSize_UnaryBase<CBlockMatrixTypelist>::CColumnWidthsList CColumnWidthsList; /**< @brief list of unique block column widths */
+		typedef typename fbs_ut::deprecate::CFixedBlockSize_UnaryBase<CBlockMatrixTypelist>::CDimsList_Uniq CDimsList_Uniq; /**< @brief list of block sizes as CCTSize2D (duplicate records removed) */
 
 		// todo - make loops with >1 blocks (like if i want to process all blocks of the matrix in a loop)
 		// todo - make loops with a single operand (src = dest), now it is unary operation, but where src != dest
@@ -5154,21 +4989,29 @@ public:
 
 	/**
 	 *	@brief simple static functor
-	 *	@tparam n_size is size of the matrix
 	 */
-	template <const int n_size>
 	class CCallDenseCholesky {
+	protected:
+		CUberBlockMatrix &m_r_matrix;
+		bool &m_r_b_result;
+
 	public:
+		CCallDenseCholesky(CUberBlockMatrix &r_matrix, bool &r_b_result)
+			:m_r_matrix(r_matrix), m_r_b_result(r_b_result)
+		{}
+
 		/**
-		 *	@brief function operator-like function (needs to be static)
-		 *	@param[in, out] context is the function context
+		 *	@brief function operator-like function
 		 */
-		static inline void Do(ref_pair<CUberBlockMatrix&, bool&> context)
+		template <class CMatrixSize>
+		inline void operator ()()
 		{
-			context.second = context.first.Cholesky_Dense<n_size>();
+			m_r_b_result = m_r_matrix.Cholesky_Dense<CMatrixSize::n_size>();
 			// call debse cholesky and store result in context
 		}
 	};
 };
+
+} // ~blockmatrix_detail
 
 #endif // !__UBER_BLOCK_MATRIX_FIXED_BLOCK_SIZE_OPS_IMPLEMENTATION_INCLUDED

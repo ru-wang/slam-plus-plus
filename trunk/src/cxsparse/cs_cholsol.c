@@ -1,4 +1,4 @@
-#include "cs.h"
+#include "cxsparse/cs.h"
 /* x=A\b where A is symmetric positive definite; b overwritten with solution */
 CS_INT cs_cholsol (CS_INT order, const cs *A, CS_ENTRY *b)
 {

@@ -1,4 +1,4 @@
-#include "cs.h"
+#include "cxsparse/cs.h"
 /* compute the etree of A (using triu(A), or A'A without forming A'A */
 CS_INT *cs_etree (const cs *A, CS_INT ata)
 {

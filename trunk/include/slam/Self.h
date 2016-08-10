@@ -25,14 +25,14 @@
  *	Rewritten using a more elegant staric assert method. Otherwise remains the same.
  */
 
-#include "slam/Integer.h"
-#include "slam/Unused.h"
+//#include "slam/Integer.h" // included from slam/TypeList.h
+//#include "slam/Unused.h" // included from slam/TypeList.h
 #include "slam/TypeList.h"
 
 /**
  *	@brief namespace for checking the _TySelf type consistency
  */
-namespace __self {
+namespace self_detail {
 
 #if 0
 /**
@@ -96,7 +96,7 @@ inline void __self_check_helper(_TyB *UNUSED(p_this))
 	/** checks the consistency of _TySelf type (calling it has no effect) */ \
 	inline void __self_check() \
 	{ \
-		__self::__self_check_helper<_TySelf>(this); \
+		self_detail::__self_check_helper<_TySelf>(this); \
 	}
 
 /**
@@ -109,7 +109,7 @@ inline void __self_check_helper(_TyB *UNUSED(p_this))
 	__SELF_CHECK \
 	/** @brief a part of check of _TySelf type for templates */ \
 	enum { __static_self_check_token = __LINE__ /**< @brief pseudounique self-check token */ }; \
-	typedef __self::CStaticAssert<sizeof(__self::CSELF_TYPE_MUST_BE_THE_SAME_AS_CLASS_TYPE2< \
+	typedef self_detail::CStaticAssert<sizeof(self_detail::CSELF_TYPE_MUST_BE_THE_SAME_AS_CLASS_TYPE2< \
 		__static_self_check_token == _TySelf::__static_self_check_token>)> \
 		__static_self_check /**< @brief check of _TySelf type for templates */
 #else // 0
@@ -155,7 +155,7 @@ inline void __self_check_helper(_TyB *UNUSED(p_this))
 	/** checks the consistency of _TySelf type (calling it has no effect) */ \
 	inline void __self_check() \
 	{ \
-		__self::__self_check_helper<_TySelf>(this); \
+		self_detail::__self_check_helper<_TySelf>(this); \
 	}
 
 /**
@@ -168,12 +168,12 @@ inline void __self_check_helper(_TyB *UNUSED(p_this))
 	__SELF_CHECK \
 	/** @brief a part of check of _TySelf type for templates */ \
 	enum { __static_self_check_token = __LINE__ /**< @brief pseudounique self-check token */ }; \
-	typedef __self::CStaticAssert<__static_self_check_token == \
+	typedef self_detail::CStaticAssert<__static_self_check_token == \
 		_TySelf::__static_self_check_token>::SelfType_MustBeTheSameAs_ClassType \
 		__static_self_check /**< @brief check of _TySelf type for templates */
 
 #endif // 0
 
-} // ~__self
+} // ~self_detail
 
 #endif // !__SELF_TYPE_DECLARATION_INCLUDED

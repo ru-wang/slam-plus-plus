@@ -22,31 +22,47 @@
  */
 
 #include "slam_app/Config.h"
+#include "slam/ConfigSolvers.h" // need solver types for commandline parser
 
 /**
  *	@mainpage SLAM ++
  *
  *  @section intro_sec Introduction
  *
- *	SLAM ++ is a fast nonlinear-optimization package. At the moment, it is not fully
- *	featured yet, but it is very fast in both batch and incremental modes.
+ *	SLAM ++ is a fast nonlinear optimization package for solving sparse graph problems.
+ *	It is very fast in both batch and incremental modes and offers highly efficient marginal
+ *	covariance recovery.
  *
  *	@section install_sec Building
  *
  *	There is a CMakeFile. To be able to change the code and commit back
  *	to the svn, do an out-of-source build, like this:
  *
- *	@code{.sh}
+ *	@code{.f}
  *	$ mkdir slam
  *	$ cd slam
  *	$ svn checkout svn://svn.code.sf.net/p/slam-plus-plus/code/trunk .
  *	$ cd build
- *	$ cmake -i ..
+ *	$ cmake ..
  *	@endcode
  *
- *	This will configure the project (user input is required: press enter many times, real quick).
- *	One interesting option is to specify default linear solver. In Windows CHOLMOD is the fastest,
- *	in Linux CSparse is even faster.
+ *	This will configure the project using the default configuration. To change configuration, run <tt>cmake -i ..</tt>
+ *	instead of the last line above (or at a later time, should a change in the configuration be needed).
+ *	One interesting option is to specify the default linear solver. Supernodal CHOLMOD or block Cholesky are
+ *	the fastest, CSparse is slightly slower and simplical CHOLMOD is the slowest.
+ *	Another option is to enable GPU acceleration support, which currently applies to the Schur complement
+ *	solver only (specify <tt>-us</tt> when running SLAM ++; requires CUDA and CULA toolkits).
+ *
+ *	On Mac, you might want to configure your C and C++ compilers to be the GNU ones (e.g. from the
+ *	MacPorts project) rather than Clang which does not support OpenMP nowadays and your code will be
+ *	somewhat slower. You can do that by using:
+ *
+ *	@code{.sh}
+ *	$ cmake -D CMAKE_C_COMPILER=/opt/local/bin/gcc-mp-4.7 -D CMAKE_CXX_COMPILER=/opt/local/bin/g++-mp-4.7 ..
+ *	@endcode
+ *
+ *	Where you might want to change the version to the latest one that you have installed. But it will
+ *	build and run correctly even without that.
  *
  *	@code{.sh} $ make @endcode
  *
@@ -56,9 +72,88 @@
  *	$ make -j
  *	@endcode
  *
+ *	This seemed to work on Ubuntu (x64 or x86 alike), and on Mac.
+ *
+ *	In case you are working on Windows, rather than generating a new Visual Studio workspace,
+ *	there is a pre-configured workspace inside the <tt>build</tt> folder in the source code
+ *	distribution. CMake does not support having both x86 and x64 targets at the same time
+ *	and there are also some aliasing issues in building Eigen's BLAS and LAPACK in Windows.
+ *
  *	You should now be able to run by typing:
  *
  *	@code{.sh} $ ../bin/SLAM_plus_plus --help @endcode
+ *
+ *	Which should reveal something like this (also depending on the actual configuration):
+ *
+ *	\htmlonly
+ *	<div class="fragment">
+ *	<div class="line">General use:																				</div>
+ *	<div class="line">    ./SLAM_plus_plus -i &lt;filename&gt; --no-detailed-timing								</div>
+ *	<div class="line">																							</div>
+ *	<div class="line">To run the pose-only datasets more quickly:												</div>
+ *	<div class="line">    ./SLAM_plus_plus -i &lt;filename&gt; --pose-only --no-detailed-timing					</div>
+ *	<div class="line">																							</div>
+ *	<div class="line">To run incrementally:																		</div>
+ *	<div class="line">    ./SLAM_plus_plus -nsp &lt;optimize-each-N-verts&gt; -fL -i &lt;filename&gt; --no-detailed-timing	</div>
+ *	<div class="line">																							</div>
+ *	<div class="line">This generates initial.txt and initial.tga, a description and image of the				</div>
+ *	<div class="line">system before the final optimization, and solution.txt and solution.tga, a				</div>
+ *	<div class="line">description and image of the final optimized system (unless --no-bitmaps					</div>
+ *	<div class="line">is specified).																			</div>
+ *	<div class="line">																							</div>
+ *	<div class="line">--help|-h         displays this help screen												</div>
+ *	<div class="line">--verbose|-v      displays verbose output while running (may slow down,					</div>
+ *	<div class="line">                  especially in windows and if running incrementally)						</div>
+ *	<div class="line">--silent|-s       suppresses displaying verbose output									</div>
+ *	<div class="line">--no-show|-ns     doesn't show output image (windows only)								</div>
+ *	<div class="line">--no-commandline|-nc    doesn't echo command line											</div>
+ *	<div class="line">--no-flags|-nf    doesn't show compiler flags												</div>
+ *	<div class="line">--no-detailed-timing    doesn't show detailed timing breakup (use this, you'll			</div>
+ *	<div class="line">                  get confused)															</div>
+ *	<div class="line">--no-bitmaps|-nb  doesn't write bitmaps initial.tga and solution.tga (neither				</div>
+ *	<div class="line">                  the text files)															</div>
+ *	<div class="line">--xz-plots|-xz    turns bitmaps initial.tga and solution.tga into the X-Z plane			</div>
+ *	<div class="line">--dump-system-matrix|-dsm    writes system matrix as system.mtx (matrix market)			</div>
+ *	<div class="line">                  and system.bla (block layout) before optimization						</div>
+ *	<div class="line">--pose-only|-po   enables optimisation for pose-only slam (will warn and ignore			</div>
+ *	<div class="line">                  on datasets with landmarks (only the first 1000 lines checked,			</div>
+ *	<div class="line">                  in case there are landmarks later, it would segfault))					</div>
+ *	<div class="line">--use-old-code|-uogc    uses the old CSparse code (no block matrices in it)				</div>
+ *	<div class="line">--a-solver|-A     uses A solver															</div>
+ *	<div class="line">--lambda|-,\      uses lambda solver (default, preferred batch solver)					</div>
+ *	<div class="line">--lambda-lm|-,\lm uses lambda solver with Levenberg Marquardt (default for BA)			</div>
+ *	<div class="line">--lambda-dl|-,\dl uses lambda solver with Dogleg and fluid relinearization				</div>
+ *	<div class="line">--l-solver|-L     uses L solver															</div>
+ *	<div class="line">--fast-l|-fL      uses the new fast L solver (preferred incremental solver)				</div>
+ *	<div class="line">--use-schur|-us   uses Schur complement to accelerate linear solving						</div>
+ *	<div class="line">--do-marginals|-dm enables marginal covariance calculation (experimental)					</div>
+ *	<div class="line">--infile|-i &lt;filename&gt;    specifies input file &lt;filename&gt;; it can cope with	</div>
+ *	<div class="line">                  many file types and conventions											</div>
+ *	<div class="line">--parse-lines-limit|-pll &lt;N&gt;    sets limit of lines read from the input file		</div>
+ *	<div class="line">                  (handy for testing), note this does not set limit of vertices			</div>
+ *	<div class="line">                  nor edges!																</div>
+ *	<div class="line">--linear-solve-period|-lsp &lt;N&gt;    sets period for incrementally running linear		</div>
+ *	<div class="line">                  solver (default 0: disabled)											</div>
+ *	<div class="line">--nonlinear-solve-period|-nsp &lt;N&gt;    sets period for incrementally running			</div>
+ *	<div class="line">                  non-linear solver (default 0: disabled)									</div>
+ *	<div class="line">--max-nonlinear-solve-iters|-mnsi &lt;N&gt;    sets maximal number of nonlinear			</div>
+ *	<div class="line">                  solver iterations (default 10)											</div>
+ *	<div class="line">--nonlinear-solve-error-thresh|-nset &lt;f&gt;    sets nonlinear solve error threshold	</div>
+ *	<div class="line">                  (default 20)															</div>
+ *	<div class="line">--max-final-nonlinear-solve-iters|-mfnsi &lt;N&gt;    sets maximal number of final		</div>
+ *	<div class="line">                  optimization iterations (default 5)										</div>
+ *	<div class="line">--final-nonlinear-solve-error-thresh|-fnset &lt;f&gt;    sets final nonlinear solve		</div>
+ *	<div class="line">                  error threshold (default 0.01)											</div>
+ *	<div class="line">--run-matrix-benchmarks|-rmb &lt;benchmark-name&gt; &lt;benchmark-type&gt;    runs block	</div>
+ *	<div class="line">                  matrix benchmarks (benchmark-name is name of a folder with				</div>
+ *	<div class="line">                  UFLSMC benchmark, benchmark-type is one of alloc, factor, all)			</div>
+ *	<div class="line">--run-matrix-unit-tests|-rmut    runs block matrix unit tests								</div>
+ *	<div class="line">--omp-set-num-threads &lt;N&gt; sets number of threads to N (default is to use as many	</div>
+ *	<div class="line">                  threads as there are CPU cores)											</div>
+ *	<div class="line">--omp-set-dynamic &lt;N&gt; enables dynamic adjustment of the number of threads is N is	</div>
+ *	<div class="line">                  nonzero, disables if zero (disabled by default)							</div>
+ *	</div>
+ *	\endhtmlonly
  *
  *	@section use_sec Usage
  *
@@ -66,90 +161,32 @@
  *
  *	@code{.sh} $ ../bin/SLAM_plus_plus -i ../data/manhattanOlson3500.txt --pose-only @endcode
  *
- *	Which should reveal something like this (also depending on the actual configuration):
+ *	In case you want to do incremental processing, use:
  *
- *	@code{.txt}
- *	General use:
- *		./SLAM_plus_plus -i <filename> --no-detailed-timing
+ *	@code{.sh} $ ../bin/SLAM_plus_plus -i ../data/manhattanOlson3500.txt -nsp 1 -fL --pose-only @endcode
  *
- *	To run the pose-only datasets more quickly:
- *		./SLAM_plus_plus -i <filename> --pose-only --no-detailed-timing
+ *	Where <tt>nsp</tt> is nonlinear solve period (solve at each new vertex) and <tt>fL</tt> selects the
+ *	fast incremental solver. To do Bundle Adjustment, one can:
  *
- *	To run incrementally:
- *		./SLAM_plus_plus -lsp <optimize-each-N-steps> -i <filename> --no-detailed-timing
+ *	@code{.sh} $ ../bin/SLAM_plus_plus -i ../data/venice791.g2o -us @endcode
  *
- *	This generates initial.txt and initial.tga, a description and image of the
- *	system before the final optimization, and solution.txt and solution.tga, a
- *	description and image of the final optimized system (unless --no-bitmaps
- *	is specified).
- *
- *	--help|-h         displays this help screen
- *	--verbose|-v      displays verbose output while running (may slow down,
- *					  especially in windows and if running incrementally)
- *	--silent|-s       suppresses displaying verbose output
- *	--no-show|-ns     doesn't show output image (windows only)
- *	--no-commandline|-nc    doesn't echo command line
- *	--no-flags|-nf    doesn't show compiler flags
- *	--no-detailed-timing    doesn't show detailed timing breakup (use this, you'll
- *					  get confused)
- *	--no-bitmaps|-nb  doesn't write bitmaps initial.tga and solution.tga (neither
- *					  the text files)
- *	--dump-system-matrix|-dsm    writes system matrix as system.mtx (matrix market)
- *					  and system.bla (block layout)
- *	--pose-only|-po   enables optimisation for pose-only slam (will warn and ignore
- *					  on datasets with landmarks (only the first 1000 lines checked
- *					  in case there are landmarks later, it would segfault))
- *	--use-old-code|-uogc    uses the old CSparse code (no block matrices in it)
- *	--a-slam|-A       uses A-SLAM
- *	--lambda|-,\      uses lambda-SLAM (default, preferred batch solver)
- *	--l-slam|-L       uses L-SLAM
- *	--fast-l-slam|-fL uses the new fast L-SLAM solver (preferred incremental solver)
- *	--use-schur|-us   uses Schur complement to accelerate linear solving
- *	--do-marginals|-dm enables marginal covariance calculation (experimental)
- *	--infile|-i <filename>    specifies input file <filename>; it can cope with
- *					  many file types and conventions
- *	--parse-lines-limit|-pll <N>    sets limit of lines read from the input file
- *					  (handy for testing), note this does not set limit of vertices
- *					  nor edges!
- *	--linear-solve-period|-lsp <N>    sets period for incrementally running linear
- *					  solver (default 0: disabled)
- *	--nonlinear-solve-period|-nsp <N>    sets period for incrementally running
- *					  non-linear solver (default 0: disabled)
- *	--max-nonlinear-solve-iters|-mnsi <N>    sets maximal number of nonlinear
- *					  solver iterations (default 10)
- *	--nonlinear-solve-error-thresh|-nset <f>    sets nonlinear solve error threshold
- *					  (default 20)
- *	--max-final-nonlinear-solve-iters|-mfnsi <N>    sets maximal number of final
- *					  optimization iterations (default 5)
- *	--final-nonlinear-solve-error-thresh|-fnset <f>    sets final nonlinear solve
- *					  error threshold (default .01)
- *	--run-matrix-benchmarks|-rmb <benchmark-name> <benchmark-type>    runs block
- *					  matrix benchmarks (benchmark-name is name of a folder with
- *					  UFLSMC benchmark, benchmark-type is one of alloc, factor, all)
- *	--run-matrix-unit-tests|-rmut    runs block matrix unit tests
- *	--omp-set-num-threads <N> sets number of threads to N (default is to use as many
- *					  threads as there are CPU cores)
- *	--omp-set-dynamic <N> enables dynamic adjustment of the number of threads is N is
- *					  nonzero, disables if zero (disabled by default)
- *	@endcode
- *
- *	This seemed to work on Ubuntu (x64 or x86 alike), and on Mac.
- *
- *	In case you are working on Windows, you can conveniently use CMakeGUI and
- *	generate solution for Visual Studio (Graph\@FIT members can also get pre-configured
- *	workspace from Matylda).
+ *	Where <tt>us</tt> enables the use of the Schur complement.
  *
  *	@section next_sec Next Steps
  *
  *	Some basic topics are covered here:
  *	* \ref simpleexample shows how to use SLAM++ for batch solving
  *	* \ref onlineexample shows how to implement a simple online solver
+ *	* \ref rot3d discusses different representations of rotations in 3D
+ *	* \ref baifaceexample shows how to easily wrap SLAM++ with a simple interface
  *
  *	@section adv_sec Advanced
  *
  *	Some advanced topics are covered in the following pages:
  *	* \ref facades shows how to access edges and vertices stored in the optimized graph
  *	* \ref ownsolvers shows how to implement solver for a custom problem
+ *	* \ref constvertices shows how to use constant vertices
+ *	* \ref unaryfactors shows how to use unary factors
  */
 
 /**
@@ -416,10 +453,6 @@
  *	        m_p_vertex1 = &r_system.template r_Get_Vertex<CVertexPose2D>(r_t_edge.m_n_node_1, CRelative_to_Absolute_XYT_Initializer(m_p_vertex0->r_v_State(), r_t_edge)); // rename your initializer if required
  *	        // get vertices (initialize if required)
  *	        // the strange syntax with "template" is required by g++, otherwise gives "expected primary-expression before '>' token"
- *
- *	        _ASSERTE(r_system.r_Vertex_Pool()[r_t_edge.m_n_node0].n_Dimension() == 3); // get the vertices from the vertex pool to ensure a correct type is used, do not use m_p_vertex0 / m_p_vertex1 for this
- *	        _ASSERTE(r_system.r_Vertex_Pool()[r_t_edge.m_n_node1].n_Dimension() == 3); // change the dimensionality here, if required (full type control currently not possible to make sure that the indices in the edge really point to vertices that are of the expected type. e.g. the edge might expect both vertices to be poses, but if the dataset is not "nice", one of the vertices can very well be a landmark)
- *	        // make sure the dimensionality is correct (might not be)
  *	    }
  *
  *	    inline void Calculate_Jacobians_Expectation_Error(Eigen::Matrix3d &r_t_jacobian0,
@@ -427,7 +460,7 @@
  *	        Eigen::Vector3d &r_v_error) const // change dimensionality of eigen types, if required
  *	    {
  *	        C2DJacobians::Absolute_to_Relative(m_p_vertex0->r_v_State(),
- *	            m_p_vertex1->r_v_State(), r_v_expectation, r_t_jacobian0, r_t_jacobian1); // write your jacobian calculation code here (vertex state vectors are inputs, the rest are the outputs
+ *	            m_p_vertex1->r_v_State(), r_v_expectation, r_t_jacobian0, r_t_jacobian1); // write your jacobian calculation code here (vertex state vectors are inputs, the rest are the outputs)
  *	            that you need to fill)
  *	        // calculates the expectation and the jacobians
  *
@@ -447,6 +480,18 @@
  *	    }
  *	};
  *	@endcode
+ *
+ *	Note that there is \ref CBaseEdgeImpl::CInitializeNullVertex which initializes a vertex state to a null
+ *	vector, and also \ref CBaseEdgeImpl::CInitializeVertex_Disallow which does not allow a vertex being
+ *	initialized by and edge and will throw a <tt>std::runtime_error</tt> exception if the vertex in question
+ *	does not yet exist in the system. Also, if you want to initialize all the vertices to null, you don't have
+ *	to write the code for that, but just call the <tt>CBaseEdgeImpl</tt> constructor with the
+ *	\ref CBaseEdge::null_initialize_vertices tag. Alternately if the vertices cannot be meaningfully initialized
+ *	by the edge (such as e.g. in bundle adjustment) and you want exceptions thrown automatically, use the
+ *	\ref CBaseEdge::explicitly_initialized_vertices tag. The constructors in \ref CBaseEdgeImpl also support
+ *	specifying vertices not to be auto-initialized or not to be checked for existence (for unary edges using
+ *	a bool flag, for binary edges using a bit field and for hyperedges using a typelist of \ref fbs_ut::CCTSize
+ *	indices).
  *
  *	@section sec4 Implement edge type traits to connect to parse loop
  *
@@ -599,6 +644,56 @@
  *	If you run in any problems while implementing your SLAM, let me know (to help you and to improve
  *	this tutorial / the code).
  *
+ */
+
+/**
+ *	@defgroup ubm Block Matrix
+ *	@brief Entities related to sparse block matrices and sparse block BLAS.
+ */
+
+/**
+ *	@defgroup linsolve Linear Solvers
+ *	@brief Solvers of linear systems of equations.
+ */
+
+/**
+ *	@defgroup nlsolve Nonlinear Solvers
+ *	@brief Nonlinear Least Squares solvers.
+ */
+
+/**
+ *	@defgroup parser Parser
+ *	@brief Parsing related objects and the parser template.
+ */
+
+/**
+ *	@defgroup covs Covariances
+ *	@brief Support for calculating covariances of the estimate.
+ */
+
+/**
+ *	@defgroup graph Graph
+ *	@brief Core functionality related to optimizable graphs.
+ */
+
+/**
+ *	@defgroup se2 SE(2)
+ *	@brief Edges and vertices in the SE(2) group.
+ */
+
+/**
+ *	@defgroup se3 SE(3)
+ *	@brief Edges and vertices in the SE(3) group.
+ */
+
+/**
+ *	@defgroup sim3 Sim(3)
+ *	@brief Edges and vertices in the Sim(3) group.
+ */
+
+/**
+ *	@defgroup ba_group Bundle Adjustment
+ *	@brief Edges and vertices for Bundle Adjustment.
  */
 
 /**
@@ -775,6 +870,15 @@ struct TDatasetPeeker : public CParserBase::CParserAdaptor {
 	 *	@brief appends the system with a projection measurement
 	 *	@param[in] r_t_edge is the measurement to be appended
 	 */
+	virtual void AppendSystem(const CParserBase::TEdgeC2CE &UNUSED(r_t_edge))
+	{
+		b_has_ba = true;
+	}
+
+	/**
+	 *	@brief appends the system with a projection measurement
+	 *	@param[in] r_t_edge is the measurement to be appended
+	 */
 	virtual void AppendSystem(const CParserBase::TEdgeP2CI3D &UNUSED(r_t_edge))
 	{
 		b_has_ba_intrinsics = true;
@@ -827,8 +931,8 @@ struct TDatasetPeeker : public CParserBase::CParserAdaptor {
 	}
 };
 
-#include "slam/Marginals.h"
-#include "slam/IncrementalPolicy.h"
+//#include "slam/Marginals.h"
+//#include "slam/IncrementalPolicy.h"
 
 /**
  *	@brief a helper template for running tests with given type configuration (to avoid repeating the same code)
@@ -838,12 +942,14 @@ struct TDatasetPeeker : public CParserBase::CParserAdaptor {
  *	@tparam CEdgeTraitsType is edge traits template name
  *	@tparam CVertexTraitsType is vertex traits template name
  *	@tparam CParseLoopType is parse loop template name
+ *	@tparam CParsedPrimitives is a list of parsed primitives (default CStandardParsedPrimitives)
  */
 template <class CSystemType,
 	template <class, class/*, class*/> class CNonlinearSolverType,
 	template <class> class CEdgeTraitsType,
 	template <class> class CVertexTraitsType,
-	template <class, class, template <class> class, template <class> class> class CParseLoopType>
+	template <class, class, template <class> class, template <class> class> class CParseLoopType,
+	class CParsedPrimitives = CStandardParsedPrimitives>
 class CTester {
 public:
 #ifdef __USE_NATIVE_CHOLESKY
@@ -860,6 +966,122 @@ public:
 	typedef CLinearSolver_CSparse CLinearSolverType; /**< @brief linear solver type (CSparse) */
 #endif // __USE_CXSPARSE
 #endif // __USE_NATIVE_CHOLESKY
+
+	/**
+	 *	@brief utility for saving the system matrix sparsity pattern (handlers solvers which cannot export)
+	 *
+	 *	@tparam CSolverType is specialized nonlinear solver type
+	 *	@tparam b_can_get_A is solver dump capability flag (extracted from solver traits)
+	 *	@tparam b_can_get_Lambda is solver dump capability flag (extracted from solver traits)
+	 *	@tparam b_can_get_R is solver dump capability flag (extracted from solver traits)
+	 */
+	template <class CSolverType, const bool b_can_get_A, const bool b_can_get_Lambda, const bool b_can_get_R>
+	class CDumpSystemMatrix_SparsityPattern {
+	public:
+		/**
+		 *	@brief saves the system matrix
+		 *
+		 *	@param[in] r_solver is solver to save the matrix
+		 *	@param[in] p_s_name is output file name (will be saved in matrix market format)
+		 *
+		 *	@return Returns false.
+		 */
+		static bool Dump(const CSolverType &r_solver, const char *p_s_name = "system.mtx")
+		{
+			fprintf(stderr, "warning: the selected solver cannot save the system matrix\n");
+			return false;
+		}
+	};
+
+	/**
+	 *	@brief utility for saving the system matrix sparsity pattern (specialization for lambda solvers)
+	 *
+	 *	@tparam CSolverType is specialized nonlinear solver type
+	 *	@tparam b_can_get_A is solver dump capability flag (extracted from solver traits)
+	 *	@tparam b_can_get_R is solver dump capability flag (extracted from solver traits)
+	 */
+	template <class CSolverType, const bool b_can_get_A, const bool b_can_get_R>
+	class CDumpSystemMatrix_SparsityPattern<CSolverType, b_can_get_A, true, b_can_get_R> {
+	public:
+		/**
+		 *	@brief saves the system matrix
+		 *
+		 *	@param[in] r_solver is solver to save the matrix
+		 *	@param[in] p_s_name is output file name (will be saved in matrix market format)
+		 *
+		 *	@return Returns true on success, false on failure.
+		 */
+		static bool Dump(const CSolverType &r_solver, const char *p_s_name = "system_Lambda.tga")
+		{
+			const CUberBlockMatrix &r_sysmat = const_cast<CSolverType&>(r_solver).r_Lambda(); // LM modifies the solver, in order to remove the damping ... no good way around that
+			cs *p_bs;
+			if(!(p_bs = r_sysmat.p_BlockStructure_to_Sparse()))
+				return false;
+			bool b_result = CDebug::Dump_SparseMatrix_Subsample(p_s_name, p_bs, 0, 640, true);
+			cs_spfree(p_bs);
+			return b_result;
+		}
+	};
+
+	/**
+	 *	@brief utility for saving the system matrix sparsity pattern (specialization for R solvers)
+	 *
+	 *	@tparam CSolverType is specialized nonlinear solver type
+	 *	@tparam b_can_get_A is solver dump capability flag (extracted from solver traits)
+	 *	@tparam b_can_get_Lambda is solver dump capability flag (extracted from solver traits)
+	 */
+	template <class CSolverType, const bool b_can_get_A, const bool b_can_get_Lambda>
+	class CDumpSystemMatrix_SparsityPattern<CSolverType, b_can_get_A, b_can_get_Lambda, true> {
+	public:
+		/**
+		 *	@brief saves the system matrix
+		 *
+		 *	@param[in] r_solver is solver to save the matrix
+		 *	@param[in] p_s_name is output file name (will be saved in matrix market format)
+		 *
+		 *	@return Returns true on success, false on failure.
+		 */
+		static bool Dump(const CSolverType &r_solver, const char *p_s_name = "system_R.tga")
+		{
+			const CUberBlockMatrix &r_sysmat = r_solver.r_R();
+			cs *p_bs;
+			if(!(p_bs = r_sysmat.p_BlockStructure_to_Sparse()))
+				return false;
+			bool b_result = CDebug::Dump_SparseMatrix_Subsample(p_s_name, p_bs, 0, 640);
+			cs_spfree(p_bs);
+			return b_result;
+		}
+	};
+
+	/**
+	 *	@brief utility for saving the system matrix sparsity pattern (specialization for A solvers)
+	 *
+	 *	@tparam CSolverType is specialized nonlinear solver type
+	 *	@tparam b_can_get_Lambda is solver dump capability flag (extracted from solver traits)
+	 *	@tparam b_can_get_R is solver dump capability flag (extracted from solver traits)
+	 */
+	template <class CSolverType, const bool b_can_get_Lambda, const bool b_can_get_R>
+	class CDumpSystemMatrix_SparsityPattern<CSolverType, true, b_can_get_Lambda, b_can_get_R> {
+	public:
+		/**
+		 *	@brief saves the system matrix
+		 *
+		 *	@param[in] r_solver is solver to save the matrix
+		 *	@param[in] p_s_name is output file name (will be saved in matrix market format)
+		 *
+		 *	@return Returns true on success, false on failure.
+		 */
+		static bool Dump(const CSolverType &r_solver, const char *p_s_name = "system_A.tga")
+		{
+			const CUberBlockMatrix &r_sysmat = r_solver.r_A();
+			cs *p_bs;
+			if(!(p_bs = r_sysmat.p_BlockStructure_to_Sparse()))
+				return false;
+			bool b_result = CDebug::Dump_SparseMatrix_Subsample(p_s_name, p_bs, 0, 640);
+			cs_spfree(p_bs);
+			return b_result;
+		}
+	};
 
 	/**
 	 *	@brief utility for saving the system matrix
@@ -922,7 +1144,8 @@ public:
 	 *	@param[in] b_verbose is verbosity flag
 	 *	@param[in] b_use_schur is Schur complement flag
 	 *	@param[in] b_show_detailed_timing is detailed timing flag
-	 *	@param[in] b_write_bitmaps is flag for writing (2D) bitmaps of initial and optimized system
+	 *	@param[in] b_write_bitmaps is flag for writing (2D) bitmaps of the initial and the optimized system
+	 *	@param[in] b_xz_plots is flag for writing 3D bitmaps of the initial and the optimized system
 	 *	@param[in] b_write_system_matrix is flag for writing the system matrix (at unspecified state; this is solver dependent)
 	 *
 	 *	@return Returns true on success, false on failure.
@@ -931,7 +1154,8 @@ public:
 		size_t n_max_lines_to_process, TIncrementalSolveSetting t_incremental_cfg,
 		size_t n_max_final_optimization_iteration_num, double f_final_optimization_threshold,
 		TMarginalsComputationPolicy t_marginals_cfg, bool b_verbose, bool b_use_schur,
-		bool b_show_detailed_timing, bool b_write_bitmaps, bool b_write_system_matrix)
+		bool b_show_detailed_timing, bool b_write_bitmaps, bool b_xz_plots,
+		bool b_write_system_matrix)
 	{
 		CSystemType system;
 
@@ -945,8 +1169,15 @@ public:
 		enum {
 			b_solver_can_save = CSpecializedNonlinearSolverType::solver_ExportsJacobian ||
 				CSpecializedNonlinearSolverType::solver_ExportsHessian ||
-				CSpecializedNonlinearSolverType::solver_ExportsFactor
+				CSpecializedNonlinearSolverType::solver_ExportsFactor,
+			b_can_get_A = CSpecializedNonlinearSolverType::solver_ExportsJacobian &&
+				!CSpecializedNonlinearSolverType::solver_ExportsHessian &&
+				!CSpecializedNonlinearSolverType::solver_ExportsFactor, // only if we can't get any other matrix
+			b_can_get_Lambda = CSpecializedNonlinearSolverType::solver_ExportsHessian, // any time
+			b_can_get_R = CSpecializedNonlinearSolverType::solver_ExportsFactor &&
+				!CSpecializedNonlinearSolverType::solver_ExportsHessian // only if we can't get lambda
 		};
+		_ASSERTE(((b_can_get_A)? 1 : 0) + ((b_can_get_Lambda)? 1 : 0) + ((b_can_get_R)? 1 : 0) <= 1);
 		// see whether the solver can dump a matrix
 
 		CSpecializedNonlinearSolverType nonlinear_solver(system, t_incremental_cfg,
@@ -974,7 +1205,7 @@ public:
 
 		//printf("n_max_lines_to_process = %d\n", int(n_max_lines_to_process)); // debug
 		//CParser p;
-		CParserTemplate<CSpecializedParseLoop, CStandardParsedPrimitives> p;
+		CParserTemplate<CSpecializedParseLoop, CParsedPrimitives> p;
 		if(!p.Parse(p_s_input_file, parse_loop, n_max_lines_to_process)) {
 			fprintf(stderr, "error: failed to parse input file\n");
 			return false;
@@ -995,7 +1226,10 @@ public:
 
 		double f_time_initial_save_start = t.f_Time();
 		if(b_write_bitmaps) {
-			system.Plot2D("initial.tga");
+			if(b_xz_plots)
+				system.Plot3D("initial.tga");
+			else
+				system.Plot2D("initial.tga");
 			system.Dump("initial.txt");
 			// save the initial configuration to a file
 
@@ -1004,9 +1238,16 @@ public:
 			// need to calculate jacobians & errors first, don't do it ...
 		}
 		if(b_write_system_matrix) {
-			nonlinear_solver.Optimize(0); // force the solver to build the matrices
+			nonlinear_solver.Optimize(0);
+			// force the solver to build the matrices (will do the marginals as well
+			// though but this is only for debugging anyways)
+
 			CDumpSystemMatrix<CSpecializedNonlinearSolverType, b_solver_can_save>::Dump(nonlinear_solver);
 			// calls solver.Save_SystemMatrix_MM("system.mtx"); but only if the solver supports it
+
+			CDumpSystemMatrix_SparsityPattern<CSpecializedNonlinearSolverType,
+				b_can_get_A, b_can_get_Lambda, b_can_get_R>::Dump(nonlinear_solver);
+			// also save the sparsity pattern
 		}
 		double f_time_initial_save_end = t.f_Time();
 
@@ -1036,20 +1277,24 @@ public:
 		// test the marginals*/
 
 		if(b_write_bitmaps) {
-			/*if(!nonlinear_solver.Dump_SystemMatrix("g:\\system_matrix.tga", 5) &&
-			   !nonlinear_solver.Dump_SystemMatrix("g:\\system_matrix.tga", 4) &&
-			   !nonlinear_solver.Dump_SystemMatrix("g:\\system_matrix.tga", 3) &&
-			   !nonlinear_solver.Dump_SystemMatrix("g:\\system_matrix.tga", 2))
-				fprintf(stderr, "error: failed to dump system matrix\n");*/
-			system.Plot2D("solution.tga");
-			system.Plot2D("solution_print.tga", 2048, 2048, 10, 3, 7, 1, true, false, 10); // print size images
-			system.Plot2D("solution_print_landmarks.tga", 2048, 2048, 10, 3, 7, 1, true, false, 10, true); // print size images
-			system.Plot2D("solution_print_noticks.tga", 2048, 2048, 0, 0, 7, 1, true, false, 4); // print size images
-			//system.Plot3D("solution_print3d.tga", 2048, 2048, 10, 3, 7, 1, true, false, 10); // print size images
-			//system.Plot3D("solution_print_landmarks3d.tga", 2048, 2048, 10, 3, 7, 1, true, false, 10, true); // print size images
-			//system.Plot3D("solution_print_noticks3d.tga", 2048, 2048, 0, 0, 7, 1, true, false, 4); // print size images
-			//nonlinear_solver.Save_SystemMatrix_MM("system_matrix.mtx");
+			/*if(!nonlinear_solver.Dump_SystemMatrix("system_matrix.tga", 5) &&
+			   !nonlinear_solver.Dump_SystemMatrix("system_matrix.tga", 4) &&
+			   !nonlinear_solver.Dump_SystemMatrix("system_matrix.tga", 3) &&
+			   !nonlinear_solver.Dump_SystemMatrix("system_matrix.tga", 2))
+				fprintf(stderr, "error: failed to dump system matrix image\n");*/
+			if(b_xz_plots) {
+				system.Plot3D("solution.tga");
+				system.Plot3D("solution_print.tga", 2048, 2048, 10, 3, 7, 1, true, false, 10); // print size images
+				system.Plot3D("solution_print_landmarks.tga", 2048, 2048, 10, 3, 7, 1, true, false, 10, true); // print size images
+				system.Plot3D("solution_print_noticks.tga", 2048, 2048, 0, 0, 7, 1, true, false, 4); // print size images
+			} else {
+				system.Plot2D("solution.tga");
+				system.Plot2D("solution_print.tga", 2048, 2048, 10, 3, 7, 1, true, false, 10); // print size images
+				system.Plot2D("solution_print_landmarks.tga", 2048, 2048, 10, 3, 7, 1, true, false, 10, true); // print size images
+				system.Plot2D("solution_print_noticks.tga", 2048, 2048, 0, 0, 7, 1, true, false, 4); // print size images
+			}
 			system.Dump("solution.txt");
+			//nonlinear_solver.Save_SystemMatrix_MM("system_optimized.mtx");
 		}
 		// save the solution to a file
 
@@ -1085,13 +1330,14 @@ public:
 
 		CBlockMatrixBenchmark bmb(n_iter_num, CBlockMatrixBenchmark::order_RectOutline); // more realistic type of fill as incremental SLAM
 
-		char p_s_infile[256];
+		/*char p_s_infile[256];
 #if defined(_WIN32) || defined(_WIN64)
 		strcpy(p_s_infile, "G:\\uflsmc\\");
 #else // _WIN32 || _WIN64
 		strcpy(p_s_infile, "../data/"); // ubuntu
 #endif // _WIN32 || _WIN64
-		strcat(p_s_infile, p_s_bench_name);
+		strcat(p_s_infile, p_s_bench_name);*/
+		const char *p_s_infile = p_s_bench_name;
 		if(!strcmp(p_s_bench_type, "alloc") || !strcmp(p_s_bench_type, "all")) {
 			if(!bmb.template Run_AllocationBenchmark<n_block_size>(p_s_infile)) {
 				fprintf(stderr, "error: benchmark failed\n");
@@ -1168,15 +1414,13 @@ void PrintHelp();
  */
 void DisplaySwitches();
 
-#include "slam/ConfigSolvers.h"
-// need solver types for commandline parser
-
 /**
  *	@brief structure, containing values of all the commandline arguments
  */
 struct TCommandLineArgs {
 	ENonlinearSolverType n_solver_choice; /**< @brief nonlinear solver selector */
 	bool b_write_bitmaps; /**< @brief bitmaps write flag */
+	bool b_xz_plots; /**< @brief x-z bitmaps orientation flag */
 	bool b_write_system_matrix; /**< @brief matrix write flag */
 	bool b_no_show; /**< @brief bitmaps show flag (only on windows) */
 	bool b_show_commandline; /**< @brief commandline repeat flag */
@@ -1211,52 +1455,7 @@ struct TCommandLineArgs {
 	/**
 	 *	@brief selects default values for commandline args
 	 */
-	void Defaults()
-	{
-		n_solver_choice = nlsolver_Lambda; /**< @brief nonlinear solver selector */
-		// solver selection
-
-		b_write_bitmaps = true;
-		b_write_system_matrix = false;
-		b_no_show = false;
-		b_show_commandline = true;
-		b_show_flags = true;
-		b_show_detailed_timing = true;
-		b_verbose = true;
-		// verbosity
-
-		b_use_schur = false;
-
-		b_run_matrix_benchmarks = false;
-		b_run_matrix_unit_tests = false;
-		b_use_old_system = false; // t_odo - make this commandline
-		b_pose_only = false;
-		b_use_SE3 = false; // note this is not overriden in commandline but detected in peek-parsing
-		b_use_BA = false; // note this is not overriden in commandline but detected in peek-parsing
-		b_use_BAS = false; // note this is not overriden in commandline but detected in peek-parsing
-		b_use_BAI = false; // note this is not overriden in commandline but detected in peek-parsing
-		b_use_spheron = false;
-		b_use_rocv = false;
-
-		p_s_input_file = 0; /** <@brief path to the data file */
-		n_max_lines_to_process = 0; /** <@brief maximal number of lines to process */
-
-		n_linear_solve_each_n_steps = 0; /**< @brief linear solve period, in steps (0 means disabled) */
-		n_nonlinear_solve_each_n_steps = 0; /**< @brief nonlinear solve period, in steps (0 means disabled) */
-		n_max_nonlinear_solve_iteration_num = 10; /**< @brief maximal number of iterations in nonlinear solve step */
-		f_nonlinear_solve_error_threshold = 20; /**< @brief error threshold for nonlinear solve */
-		n_max_final_optimization_iteration_num = 5; // as many other solvers
-		f_final_optimization_threshold = .01;
-		// optimization mode for slam
-
-		p_s_bench_name = 0;
-		p_s_bench_type = "all";
-
-		n_omp_threads = size_t(-1);
-		b_omp_dynamic = false;
-
-		b_do_marginals = false;
-	}
+	void Defaults();
 
 	/**
 	 *	@brief parse commandline arguments
@@ -1266,98 +1465,7 @@ struct TCommandLineArgs {
 	 *
 	 *	@return Returns true on success, false on failure.
 	 */
-	bool Parse(int n_arg_num, const char **p_arg_list)
-	{
-		for(int i = 1; i < n_arg_num; ++ i) {
-			if(!strcmp(p_arg_list[i], "--help") || !strcmp(p_arg_list[i], "-h")) {
-				PrintHelp();
-				//fprintf(stderr, "no help for you! mwuhahaha! (please read Main.cpp)\n"); // t_odo
-				return false; // quit
-			} else if(!strcmp(p_arg_list[i], "--verbose") || !strcmp(p_arg_list[i], "-v"))
-				b_verbose = true;
-			else if(!strcmp(p_arg_list[i], "--silent") || !strcmp(p_arg_list[i], "-s"))
-				b_verbose = false;
-			else if(!strcmp(p_arg_list[i], "--use-schur") || !strcmp(p_arg_list[i], "-us"))
-				b_use_schur = true;
-			else if(!strcmp(p_arg_list[i], "--no-show") || !strcmp(p_arg_list[i], "-ns"))
-				b_no_show = true;
-			else if(!strcmp(p_arg_list[i], "--no-commandline") || !strcmp(p_arg_list[i], "-nc"))
-				b_show_commandline = false;
-			else if(!strcmp(p_arg_list[i], "--do-marginals") || !strcmp(p_arg_list[i], "-dm"))
-				b_do_marginals = true;
-			else if(!strcmp(p_arg_list[i], "--lambda") || !strcmp(p_arg_list[i], "-,\\"))
-				n_solver_choice = nlsolver_Lambda;
-			else if(!strcmp(p_arg_list[i], "--lambda-lm") || !strcmp(p_arg_list[i], "-,\\lm"))
-				n_solver_choice = nlsolver_LambdaLM;
-			else if(!strcmp(p_arg_list[i], "--no-flags") || !strcmp(p_arg_list[i], "-nf"))
-				b_show_flags = false;
-			else if(!strcmp(p_arg_list[i], "--run-matrix-unit-tests") || !strcmp(p_arg_list[i], "-rmut"))
-				b_run_matrix_unit_tests = true;
-			else if(!strcmp(p_arg_list[i], "--no-detailed-timing") || !strcmp(p_arg_list[i], "-ndt"))
-				b_show_detailed_timing = false;
-			else if(!strcmp(p_arg_list[i], "--use-old-code") || !strcmp(p_arg_list[i], "-uogc"))
-				b_use_old_system = true;
-			else if(!strcmp(p_arg_list[i], "--dump-system-matrix") || !strcmp(p_arg_list[i], "-dsm"))
-				b_write_system_matrix = true;
-			else if(!strcmp(p_arg_list[i], "--no-bitmaps") || !strcmp(p_arg_list[i], "-nb")) {
-				b_write_bitmaps = false;
-				b_no_show = true; // no bitmaps ... what can it show?
-			} else if(!strcmp(p_arg_list[i], "--pose-only") || !strcmp(p_arg_list[i], "-po"))
-				b_pose_only = true;
-			else if(!strcmp(p_arg_list[i], "--a-slam") || !strcmp(p_arg_list[i], "-A"))
-				n_solver_choice = nlsolver_A;
-			else if(!strcmp(p_arg_list[i], "--l-slam") || !strcmp(p_arg_list[i], "-L"))
-				n_solver_choice = nlsolver_L;
-			else if(!strcmp(p_arg_list[i], "--fast-l-slam") || !strcmp(p_arg_list[i], "-fL"))
-				n_solver_choice = nlsolver_FastL;
-			else if(i + 1 == n_arg_num) {
-				fprintf(stderr, "error: argument \'%s\': missing value or an unknown argument\n", p_arg_list[i]);
-				return false;
-			} else if(!strcmp(p_arg_list[i], "--infile") || !strcmp(p_arg_list[i], "-i"))
-				p_s_input_file = p_arg_list[++ i];
-			else if(!strcmp(p_arg_list[i], "--parse-lines-limit") || !strcmp(p_arg_list[i], "-pll"))
-				n_max_lines_to_process = atol(p_arg_list[++ i]);
-			else if(!strcmp(p_arg_list[i], "--linear-solve-period") || !strcmp(p_arg_list[i], "-lsp"))
-				n_linear_solve_each_n_steps = atol(p_arg_list[++ i]);
-			else if(!strcmp(p_arg_list[i], "--nonlinear-solve-period") || !strcmp(p_arg_list[i], "-nsp"))
-				n_nonlinear_solve_each_n_steps = atol(p_arg_list[++ i]);
-			else if(!strcmp(p_arg_list[i], "--max-nonlinear-solve-iters") || !strcmp(p_arg_list[i], "-mnsi"))
-				n_max_nonlinear_solve_iteration_num = atol(p_arg_list[++ i]);
-			else if(!strcmp(p_arg_list[i], "--nonlinear-solve-error-thresh") || !strcmp(p_arg_list[i], "-nset"))
-				f_nonlinear_solve_error_threshold = atof(p_arg_list[++ i]);
-			else if(!strcmp(p_arg_list[i], "--max-final-nonlinear-solve-iters") || !strcmp(p_arg_list[i], "-mfnsi"))
-				n_max_final_optimization_iteration_num = atol(p_arg_list[++ i]);
-			else if(!strcmp(p_arg_list[i], "--final-nonlinear-solve-error-thresh") || !strcmp(p_arg_list[i], "-fnset"))
-				f_final_optimization_threshold = atof(p_arg_list[++ i]);
-			else if(!strcmp(p_arg_list[i], "--omp-set-num-threads"))
-				n_omp_threads = atol(p_arg_list[++ i]);
-			else if(!strcmp(p_arg_list[i], "--omp-set-dynamic"))
-				b_omp_dynamic = (atol(p_arg_list[++ i]) != 0);
-			else if(!strcmp(p_arg_list[i], "--run-matrix-benchmarks") || !strcmp(p_arg_list[i], "-rmb")) {
-				if(i + 2 >= n_arg_num) {
-					fprintf(stderr, "error: argument \'%s\': missing the second value\n", p_arg_list[i]);
-					return false;
-				}
-				b_run_matrix_benchmarks = true;
-				p_s_bench_name = p_arg_list[++ i];
-				p_s_bench_type = p_arg_list[++ i];
-				if(strcmp(p_s_bench_type, "alloc") &&
-				   strcmp(p_s_bench_type, "factor") &&
-				   strcmp(p_s_bench_type, "all")) {
-					fprintf(stderr, "error: argument \'%s\': unknown benchmark type\n", p_arg_list[i]);
-					return false;
-				}
-			} else if(!strcmp(p_arg_list[i], "--dummy-param") || !strcmp(p_arg_list[i], "-dp"))
-				n_dummy_param = atol(p_arg_list[++ i]);
-			else {
-				fprintf(stderr, "error: argument \'%s\': an unknown argument\n", p_arg_list[i]);
-				return false;
-			}
-		}
-		// "parse" cmdline
-
-		return true;
-	}
+	bool Parse(int n_arg_num, const char **p_arg_list);
 
 	/**
 	 *	@brief runs the application, using this solver
@@ -1366,13 +1474,15 @@ struct TCommandLineArgs {
 	 *	@tparam CEdgeTraitsType is edge traits template name
 	 *	@tparam CVertexTraitsType is vertex traits template name
 	 *	@tparam CParseLoopType is parse loop template name
+	 *	@tparam CParsedPrimitives is a list of parsed primitives (e.g. CStandardParsedPrimitives)
 	 *
 	 *	@return Returns true on success, false on failure.
 	 */
 	template <class CSystemType, template <class, class/*, class*/> class CNonlinearSolverType,
 		template <class> class CEdgeTraitsType, template <class> class CVertexTraitsType,
 		template <class, class, template <class> class vcneedsnamehere,
-		template <class> class vcneedsnamehereaswell> class CParseLoopType>
+		template <class> class vcneedsnamehereaswell> class CParseLoopType,
+		class CParsedPrimitives>
 	inline bool Run() // throw(std::runtime_error, std::bad_alloc)
 	{
 		TIncrementalSolveSetting t_incremental_cfg(solve::linear, frequency::Every(n_linear_solve_each_n_steps),
@@ -1390,11 +1500,11 @@ struct TCommandLineArgs {
 		// for both increment / relin, and nothing for miss
 
 		return CTester<CSystemType, CNonlinearSolverType, CEdgeTraitsType,
-			CVertexTraitsType, CParseLoopType>::Run_and_Shout(
-			p_s_input_file, n_max_lines_to_process, t_incremental_cfg, 
+			CVertexTraitsType, CParseLoopType, CParsedPrimitives>::Run_and_Shout(
+			p_s_input_file, n_max_lines_to_process, t_incremental_cfg,
 			n_max_final_optimization_iteration_num,
 			f_final_optimization_threshold, t_marginals_cfg, b_verbose, b_use_schur,
-			b_show_detailed_timing, b_write_bitmaps, b_write_system_matrix);
+			b_show_detailed_timing, b_write_bitmaps, b_xz_plots, b_write_system_matrix);
 		// run with parameters
 	}
 };
@@ -1406,10 +1516,12 @@ struct TCommandLineArgs {
  *	@tparam CEdgeTraitsType is edge traits template name
  *	@tparam CVertexTraitsType is vertex traits template name
  *	@tparam CParseLoopType is parse loop template name
+ *	@tparam CParsedPrimitives is a list of parsed primitives (default CStandardParsedPrimitives)
  */
 template <class CSystemType, template <class> class CEdgeTraitsType,
 	template <class> class CVertexTraitsType, template <class, class,
-	template <class> class, template <class> class> class CParseLoopType>
+	template <class> class, template <class> class> class CParseLoopType,
+	class CParsedPrimitives = CStandardParsedPrimitives>
 class CSolverCaller {
 protected:
 	TCommandLineArgs m_t_args; /**< @brief copy of parsed commandline args */
@@ -1433,7 +1545,7 @@ public:
 	{
 		if(m_t_args.n_solver_choice == int(CSolverType::solver_type_Id)) {
 			m_n_result = (CSolverType::template Run_MainApp<CSystemType, CEdgeTraitsType,
-				CVertexTraitsType, CParseLoopType>(m_t_args))? 0 : -1;
+				CVertexTraitsType, CParseLoopType, CParsedPrimitives>(m_t_args))? 0 : -1;
 			// call the traits
 		}
 		// find the solver in the list
@@ -1454,62 +1566,62 @@ public:
  *	@param[in] t_args is a copy of parsed commandline arguments
  *	@return Returns 0 on success, -1 on failure.
  */
-int n_Run_BA_Solver(TCommandLineArgs t_args); // throw(std::runtime_error, std::bad_alloc)
+int n_Run_BA_Solver(const TCommandLineArgs &t_args); // throw(std::runtime_error, std::bad_alloc)
 
 /**
  *	@brief runs bundle adjustment with a specified solver
  *	@param[in] t_args is a copy of parsed commandline arguments
  *	@return Returns 0 on success, -1 on failure.
  */
-int n_Run_BA_Intrinsics_Solver(TCommandLineArgs t_args); // throw(std::runtime_error, std::bad_alloc)
+int n_Run_BA_Intrinsics_Solver(const TCommandLineArgs &t_args); // throw(std::runtime_error, std::bad_alloc)
 
 /**
  *	@brief runs bundle adjustment with a specified solver
  *	@param[in] t_args is a copy of parsed commandline arguments
  *	@return Returns 0 on success, -1 on failure.
  */
-int n_Run_Spheron_Solver(TCommandLineArgs t_args); // throw(std::runtime_error, std::bad_alloc)
+int n_Run_Spheron_Solver(const TCommandLineArgs &t_args); // throw(std::runtime_error, std::bad_alloc)
 
 /**
  *	@brief runs stereo bundle adjustment with a specified solver
  *	@param[in] t_args is a copy of parsed commandline arguments
  *	@return Returns 0 on success, -1 on failure.
  */
-int n_Run_BA_Stereo_Solver(TCommandLineArgs t_args); // throw(std::runtime_error, std::bad_alloc)
+int n_Run_BA_Stereo_Solver(const TCommandLineArgs &t_args); // throw(std::runtime_error, std::bad_alloc)
 
 /**
  *	@brief runs range-only constant velocity with a specified solver
  *	@param[in] t_args is a copy of parsed commandline arguments
  *	@return Returns 0 on success, -1 on failure.
  */
-int n_Run_ROCV_Solver(TCommandLineArgs t_args); // throw(std::runtime_error, std::bad_alloc)
+int n_Run_ROCV_Solver(const TCommandLineArgs &t_args); // throw(std::runtime_error, std::bad_alloc)
 
 /**
  *	@brief runs pose-landmark 3D SLAM with a specified solver
  *	@param[in] t_args is a copy of parsed commandline arguments
  *	@return Returns 0 on success, -1 on failure.
  */
-int n_Run_SE3_Solver(TCommandLineArgs t_args); // throw(std::runtime_error, std::bad_alloc)
+int n_Run_SE3_Solver(const TCommandLineArgs &t_args); // throw(std::runtime_error, std::bad_alloc)
 
 /**
  *	@brief runs (pose-only) 3D SLAM with a specified solver
  *	@param[in] t_args is a copy of parsed commandline arguments
  *	@return Returns 0 on success, -1 on failure.
  */
-int n_Run_SE3PoseOnly_Solver(TCommandLineArgs t_args); // throw(std::runtime_error, std::bad_alloc)
+int n_Run_SE3PoseOnly_Solver(const TCommandLineArgs &t_args); // throw(std::runtime_error, std::bad_alloc)
 
 /**
  *	@brief runs 2D SLAM with a specified solver
  *	@param[in] t_args is a copy of parsed commandline arguments
  *	@return Returns 0 on success, -1 on failure.
  */
-int n_Run_SE2_Solver(TCommandLineArgs t_args); // throw(std::runtime_error, std::bad_alloc)
+int n_Run_SE2_Solver(const TCommandLineArgs &t_args); // throw(std::runtime_error, std::bad_alloc)
 
 /**
  *	@brief runs pose-only 2D SLAM with a specified solver
  *	@param[in] t_args is a copy of parsed commandline arguments
  *	@return Returns 0 on success, -1 on failure.
  */
-int n_Run_SE2PoseOnly_Solver(TCommandLineArgs t_args); // throw(std::runtime_error, std::bad_alloc)
+int n_Run_SE2PoseOnly_Solver(const TCommandLineArgs &t_args); // throw(std::runtime_error, std::bad_alloc)
 
 #endif // !__SLAMPP_MAIN_INCLUDED

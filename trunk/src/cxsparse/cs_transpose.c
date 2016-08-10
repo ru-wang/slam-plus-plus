@@ -1,4 +1,4 @@
-#include "cs.h"
+#include "cxsparse/cs.h"
 /* C = A' */
 cs *cs_transpose (const cs *A, CS_INT values)
 {

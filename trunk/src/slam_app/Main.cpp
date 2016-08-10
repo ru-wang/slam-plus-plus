@@ -183,6 +183,13 @@ int main(int n_arg_num, const char **p_arg_list)
 		return -1;
 	} else {
 		try {
+			if(t_cmd_args.b_use_BA || t_cmd_args.b_use_BAS ||
+			   t_cmd_args.b_use_BAI || t_cmd_args.b_use_spheron) {
+				if(t_cmd_args.n_solver_choice == nlsolver_Lambda)
+					t_cmd_args.n_solver_choice = nlsolver_LambdaLM;
+			}
+			// use Levenberg-Marquardt for bundle adjustment, GN not good enough
+
 			if(t_cmd_args.b_use_BA || t_cmd_args.b_use_BAS || t_cmd_args.b_use_BAI) { // BA mono / stereo
 				if(t_cmd_args.b_use_BAI && !t_cmd_args.b_use_BAS) {
 					if(n_Run_BA_Intrinsics_Solver(t_cmd_args)) // mono + intrinsics
@@ -250,6 +257,8 @@ int main(int n_arg_num, const char **p_arg_list)
 	return 0;
 }
 
+#include "slam/BaseTypes.h" // to display some of the flags
+
 /**
  *	@brief prints all the important compiler / optimization switches this app was built with
  */
@@ -264,6 +273,9 @@ void DisplaySwitches()
 #ifdef _DEBUG
 	printf("%s\n", "_DEBUG");
 #endif // _DEBUG
+#ifdef __FAST_MATH__
+	printf("%s\n", "__FAST_MATH__");
+#endif // __FAST_MATH__
 #ifdef _OPENMP
 #pragma omp parallel
 #pragma omp master
@@ -360,6 +372,9 @@ void DisplaySwitches()
 #ifdef __SLAM_COUNT_ITERATIONS_AS_VERTICES
 	printf("%s\n", "__SLAM_COUNT_ITERATIONS_AS_VERTICES");
 #endif // __SLAM_COUNT_ITERATIONS_AS_VERTICES
+#ifdef __AUTO_UNARY_FACTOR_ON_VERTEX_ZERO
+	printf("%s\n", "__AUTO_UNARY_FACTOR_ON_VERTEX_ZERO");
+#endif // __AUTO_UNARY_FACTOR_ON_VERTEX_ZERO
 #ifdef __MATRIX_ORDERING_TWO_LEVEL_CONSTRAINT
 	printf("%s\n", "__MATRIX_ORDERING_TWO_LEVEL_CONSTRAINT");
 #endif // __MATRIX_ORDERING_TWO_LEVEL_CONSTRAINT
@@ -389,6 +404,9 @@ void DisplaySwitches()
 	printf("%s\n", "__FLAT_SYSTEM_STATIC_THUNK_TABLE");
 #endif // __FLAT_SYSTEM_STATIC_THUNK_TABLE
 #endif // __FLAT_SYSTEM_USE_THUNK_TABLE
+#ifdef __FLAT_SYSTEM_ALIGNED_MEMORY
+	printf("%s\n", "__FLAT_SYSTEM_ALIGNED_MEMORY");
+#endif // __FLAT_SYSTEM_ALIGNED_MEMORY
 
 #ifdef __SE_TYPES_SUPPORT_A_SOLVERS
 	printf("%s\n", "__SE_TYPES_SUPPORT_A_SOLVERS");
@@ -399,6 +417,23 @@ void DisplaySwitches()
 #ifdef __SE_TYPES_SUPPORT_L_SOLVERS
 	printf("%s\n", "__SE_TYPES_SUPPORT_L_SOLVERS");
 #endif // __SE_TYPES_SUPPORT_L_SOLVERS
+
+#ifdef __BASE_TYPES_ALLOW_CONST_VERTICES
+	printf("%s\n", "__BASE_TYPES_ALLOW_CONST_VERTICES");
+#endif // __BASE_TYPES_ALLOW_CONST_VERTICES
+#ifdef __GRAPH_TYPES_ALIGN_OPERATOR_NEW
+#if defined(_MSC_VER) && !defined(__MWERKS__)
+#define MAKESTRING2(x) #x // msvc fails with a missing argument error when using double stringification
+#else // _MSC_VER && !__MWERKS__
+#define MAKESTRING(x) #x
+#define MAKESTRING2(x) MAKESTRING(x)
+#endif // _MSC_VER && !__MWERKS__
+	if(*MAKESTRING2(__GRAPH_TYPES_ALIGN_OPERATOR_NEW)) // if not an empty macro
+		printf("%s\n", "__GRAPH_TYPES_ALIGN_OPERATOR_NEW");
+#endif // __GRAPH_TYPES_ALIGN_OPERATOR_NEW
+#ifdef __BASE_TYPES_USE_ALIGNED_MATRICES
+	printf("%s\n", "__BASE_TYPES_USE_ALIGNED_MATRICES");
+#endif // __BASE_TYPES_USE_ALIGNED_MATRICES
 
 #ifdef __NONLINEAR_SOLVER_LAMBDA_DUMP_CHI2
 	printf("%s\n", "__NONLINEAR_SOLVER_LAMBDA_DUMP_CHI2");
@@ -477,7 +512,7 @@ void PrintHelp()
 		"    ./SLAM_plus_plus -i <filename> --pose-only --no-detailed-timing\n"
 		"\n"
 		"To run incrementally:\n"
-		"    ./SLAM_plus_plus -lsp <optimize-each-N-steps> -i <filename> --no-detailed-timing\n"
+		"    ./SLAM_plus_plus -nsp <optimize-each-N-verts> -fL -i <filename> --no-detailed-timing\n"
 		"\n"
 		"This generates initial.txt and initial.tga, a description and image of the\n"
 		"system before the final optimization, and solution.txt and solution.tga, a\n"
@@ -495,16 +530,19 @@ void PrintHelp()
 		"                  get confused)\n"
 		"--no-bitmaps|-nb  doesn't write bitmaps initial.tga and solution.tga (neither\n"
 		"                  the text files)\n"
+		"--xz-plots|-xz    turns bitmaps initial.tga and solution.tga into the X-Z plane\n"
 		"--dump-system-matrix|-dsm    writes system matrix as system.mtx (matrix market)\n"
-		"                  and system.bla (block layout)\n"
+		"                  and system.bla (block layout) before optimization\n"
 		"--pose-only|-po   enables optimisation for pose-only slam (will warn and ignore\n"
-		"                  on datasets with landmarks (only the first 1000 lines checked\n"
+		"                  on datasets with landmarks (only the first 1000 lines checked,\n"
 		"                  in case there are landmarks later, it would segfault))\n"
 		"--use-old-code|-uogc    uses the old CSparse code (no block matrices in it)\n"
-		"--a-slam|-A       uses A-SLAM\n"
-		"--lambda|-,\\      uses lambda-SLAM (default, preferred batch solver)\n"
-		"--l-slam|-L       uses L-SLAM\n"
-		"--fast-l-slam|-fL uses the new fast L-SLAM solver (preferred incremental solver)\n"
+		"--a-solver|-A     uses A solver\n"
+		"--lambda|-,\\      uses lambda solver (default, preferred batch solver)\n"
+ 		"--lambda-lm|-,\\lm uses lambda solver with Levenberg Marquardt (default for BA)\n"
+ 		//"--lambda-dl|-,\\dl uses lambda solver with Dogleg and fluid relinearization\n"
+		"--l-solver|-L     uses L solver\n"
+		"--fast-l|-fL      uses the new fast L solver (preferred incremental solver)\n"
 		"--use-schur|-us   uses Schur complement to accelerate linear solving\n"
 		"--do-marginals|-dm enables marginal covariance calculation (experimental)\n"
 		"--infile|-i <filename>    specifies input file <filename>; it can cope with\n"
@@ -523,7 +561,7 @@ void PrintHelp()
 		"--max-final-nonlinear-solve-iters|-mfnsi <N>    sets maximal number of final\n"
 		"                  optimization iterations (default 5)\n"
 		"--final-nonlinear-solve-error-thresh|-fnset <f>    sets final nonlinear solve\n"
-		"                  error threshold (default .01)\n"
+		"                  error threshold (default 0.01)\n"
 		"--run-matrix-benchmarks|-rmb <benchmark-name> <benchmark-type>    runs block\n"
 		"                  matrix benchmarks (benchmark-name is name of a folder with\n"
 		"                  UFLSMC benchmark, benchmark-type is one of alloc, factor, all)\n"
@@ -532,6 +570,151 @@ void PrintHelp()
 		"                  threads as there are CPU cores)\n"
 		"--omp-set-dynamic <N> enables dynamic adjustment of the number of threads is N is\n"
 		"                  nonzero, disables if zero (disabled by default)\n");
+}
+
+void TCommandLineArgs::Defaults()
+{
+	n_solver_choice = nlsolver_Lambda; /**< @brief nonlinear solver selector */
+	// solver selection
+
+	b_write_bitmaps = true;
+	b_xz_plots = false;
+	b_write_system_matrix = false;
+	b_no_show = false;
+	b_show_commandline = true;
+	b_show_flags = true;
+	b_show_detailed_timing = true;
+	b_verbose = true;
+	// verbosity
+
+	b_use_schur = false;
+
+	b_run_matrix_benchmarks = false;
+	b_run_matrix_unit_tests = false;
+	b_use_old_system = false; // t_odo - make this commandline
+	b_pose_only = false;
+	b_use_SE3 = false; // note this is not overriden in commandline but detected in peek-parsing
+	b_use_BA = false; // note this is not overriden in commandline but detected in peek-parsing
+	b_use_BAS = false; // note this is not overriden in commandline but detected in peek-parsing
+	b_use_BAI = false; // note this is not overriden in commandline but detected in peek-parsing
+	b_use_spheron = false;
+	b_use_rocv = false;
+
+	p_s_input_file = 0; /** <@brief path to the data file */
+	n_max_lines_to_process = 0; /** <@brief maximal number of lines to process */
+
+	n_linear_solve_each_n_steps = 0; /**< @brief linear solve period, in steps (0 means disabled) */
+	n_nonlinear_solve_each_n_steps = 0; /**< @brief nonlinear solve period, in steps (0 means disabled) */
+	n_max_nonlinear_solve_iteration_num = 10; /**< @brief maximal number of iterations in nonlinear solve step */
+	f_nonlinear_solve_error_threshold = 20; /**< @brief error threshold for nonlinear solve */
+	n_max_final_optimization_iteration_num = 5; // as many other solvers
+	f_final_optimization_threshold = 0.01;
+	// optimization mode for slam
+
+	p_s_bench_name = 0;
+	p_s_bench_type = "all";
+
+	n_omp_threads = size_t(-1);
+	b_omp_dynamic = false;
+
+	b_do_marginals = false;
+}
+
+bool TCommandLineArgs::Parse(int n_arg_num, const char **p_arg_list)
+{
+	for(int i = 1; i < n_arg_num; ++ i) {
+		if(!strcmp(p_arg_list[i], "--help") || !strcmp(p_arg_list[i], "-h")) {
+			PrintHelp();
+			//fprintf(stderr, "no help for you! mwuhahaha! (please read Main.cpp)\n"); // t_odo
+			return false; // quit
+		} else if(!strcmp(p_arg_list[i], "--verbose") || !strcmp(p_arg_list[i], "-v"))
+			b_verbose = true;
+		else if(!strcmp(p_arg_list[i], "--silent") || !strcmp(p_arg_list[i], "-s"))
+			b_verbose = false;
+		else if(!strcmp(p_arg_list[i], "--use-schur") || !strcmp(p_arg_list[i], "-us"))
+			b_use_schur = true;
+		else if(!strcmp(p_arg_list[i], "--no-show") || !strcmp(p_arg_list[i], "-ns"))
+			b_no_show = true;
+		else if(!strcmp(p_arg_list[i], "--no-commandline") || !strcmp(p_arg_list[i], "-nc"))
+			b_show_commandline = false;
+		else if(!strcmp(p_arg_list[i], "--do-marginals") || !strcmp(p_arg_list[i], "-dm"))
+			b_do_marginals = true;
+		else if(!strcmp(p_arg_list[i], "--lambda") || !strcmp(p_arg_list[i], "-,\\"))
+			n_solver_choice = nlsolver_Lambda;
+		else if(!strcmp(p_arg_list[i], "--lambda-lm") || !strcmp(p_arg_list[i], "-,\\lm"))
+			n_solver_choice = nlsolver_LambdaLM;
+		//else if(!strcmp(p_arg_list[i], "--lambda-dl") || !strcmp(p_arg_list[i], "-,\\dl"))
+		//	n_solver_choice = nlsolver_LambdaDL;
+		else if(!strcmp(p_arg_list[i], "--no-flags") || !strcmp(p_arg_list[i], "-nf"))
+			b_show_flags = false;
+		else if(!strcmp(p_arg_list[i], "--run-matrix-unit-tests") || !strcmp(p_arg_list[i], "-rmut"))
+			b_run_matrix_unit_tests = true;
+		else if(!strcmp(p_arg_list[i], "--no-detailed-timing") || !strcmp(p_arg_list[i], "-ndt"))
+			b_show_detailed_timing = false;
+		else if(!strcmp(p_arg_list[i], "--use-old-code") || !strcmp(p_arg_list[i], "-uogc"))
+			b_use_old_system = true;
+		else if(!strcmp(p_arg_list[i], "--dump-system-matrix") || !strcmp(p_arg_list[i], "-dsm"))
+			b_write_system_matrix = true;
+		else if(!strcmp(p_arg_list[i], "--no-bitmaps") || !strcmp(p_arg_list[i], "-nb")) {
+			b_write_bitmaps = false;
+			b_no_show = true; // no bitmaps ... what can it show?
+		} else if(!strcmp(p_arg_list[i], "--xz-plots") || !strcmp(p_arg_list[i], "-xz"))
+			b_xz_plots = true;
+		else if(!strcmp(p_arg_list[i], "--pose-only") || !strcmp(p_arg_list[i], "-po"))
+			b_pose_only = true;
+		else if(!strcmp(p_arg_list[i], "--a-solver") || !strcmp(p_arg_list[i], "-A"))
+			n_solver_choice = nlsolver_A;
+		else if(!strcmp(p_arg_list[i], "--l-solver") || !strcmp(p_arg_list[i], "-L"))
+			n_solver_choice = nlsolver_L;
+		else if(!strcmp(p_arg_list[i], "--fast-l") || !strcmp(p_arg_list[i], "-fL"))
+			n_solver_choice = nlsolver_FastL;
+		else if(i + 1 == n_arg_num) {
+			fprintf(stderr, "error: argument \'%s\': missing value or an unknown argument\n", p_arg_list[i]);
+			return false;
+		} else if(!strcmp(p_arg_list[i], "--infile") || !strcmp(p_arg_list[i], "-i"))
+			p_s_input_file = p_arg_list[++ i];
+		else if(!strcmp(p_arg_list[i], "--parse-lines-limit") || !strcmp(p_arg_list[i], "-pll"))
+			n_max_lines_to_process = atol(p_arg_list[++ i]);
+		else if(!strcmp(p_arg_list[i], "--linear-solve-period") || !strcmp(p_arg_list[i], "-lsp"))
+			n_linear_solve_each_n_steps = atol(p_arg_list[++ i]);
+		else if(!strcmp(p_arg_list[i], "--nonlinear-solve-period") || !strcmp(p_arg_list[i], "-nsp"))
+			n_nonlinear_solve_each_n_steps = atol(p_arg_list[++ i]);
+		else if(!strcmp(p_arg_list[i], "--max-nonlinear-solve-iters") || !strcmp(p_arg_list[i], "-mnsi"))
+			n_max_nonlinear_solve_iteration_num = atol(p_arg_list[++ i]);
+		else if(!strcmp(p_arg_list[i], "--nonlinear-solve-error-thresh") || !strcmp(p_arg_list[i], "-nset"))
+			f_nonlinear_solve_error_threshold = atof(p_arg_list[++ i]);
+		else if(!strcmp(p_arg_list[i], "--max-final-nonlinear-solve-iters") || !strcmp(p_arg_list[i], "-mfnsi"))
+			n_max_final_optimization_iteration_num = atol(p_arg_list[++ i]);
+		else if(!strcmp(p_arg_list[i], "--final-nonlinear-solve-error-thresh") || !strcmp(p_arg_list[i], "-fnset"))
+			f_final_optimization_threshold = atof(p_arg_list[++ i]);
+		else if(!strcmp(p_arg_list[i], "--omp-set-num-threads"))
+			n_omp_threads = atol(p_arg_list[++ i]);
+		else if(!strcmp(p_arg_list[i], "--omp-set-dynamic"))
+			b_omp_dynamic = (atol(p_arg_list[++ i]) != 0);
+		else if(!strcmp(p_arg_list[i], "--run-matrix-benchmarks") || !strcmp(p_arg_list[i], "-rmb")) {
+			if(i + 2 >= n_arg_num) {
+				fprintf(stderr, "error: argument \'%s\': missing the second value\n", p_arg_list[i]);
+				return false;
+			}
+			b_run_matrix_benchmarks = true;
+			p_s_bench_name = p_arg_list[++ i];
+			p_s_bench_type = p_arg_list[++ i];
+			if(strcmp(p_s_bench_type, "alloc") &&
+			   strcmp(p_s_bench_type, "factor") &&
+			   strcmp(p_s_bench_type, "all")) {
+				fprintf(stderr, "error: argument \'%s\': unknown benchmark type\n", p_arg_list[i]);
+				return false;
+			}
+		} else if(!strcmp(p_arg_list[i], "--dummy-param") || !strcmp(p_arg_list[i], "-dp"))
+			n_dummy_param = atol(p_arg_list[++ i]);
+		else {
+			fprintf(stderr, "error: argument \'%s\': an unknown argument\n", p_arg_list[i]);
+			return false;
+		}
+	}
+	// "parse" cmdline
+
+	return true;
 }
 
 #ifdef __COMPILE_LIBRARY_TESTS

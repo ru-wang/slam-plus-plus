@@ -22,7 +22,12 @@
  */
 
 #include "slam/FlatSystem.h"
-#include "slam/ParseLoop.h"
+#include "slam/ParseLoop.h" // todo this should not be here
+#include "slam/Tuple.h"
+
+/** \addtogroup graph
+ *	@{
+ */
 
 #if !defined(__SE_TYPES_SUPPORT_A_SOLVERS) && \
 	!defined(__SE_TYPES_SUPPORT_LAMBDA_SOLVERS) && \
@@ -35,21 +40,131 @@
 
 // looking for #define __BASE_TYPES_USE_ID_ADDRESSING? it is in slam/FlatSystem.h ...
 
-/*#if !defined(_WIN32) && !defined(_WIN64)
+#ifdef __FLAT_SYSTEM_ALIGNED_MEMORY // defined in slam/FlatSystem.h
+/**
+ *	@def __BASE_TYPES_USE_ALIGNED_MATRICES
+ *	@brief if defined, vectors in vertices and edges will be aligned
+ */
+#define __BASE_TYPES_USE_ALIGNED_MATRICES
+
+/**
+ *	@def __GRAPH_TYPES_ALIGN_OPERATOR_NEW
+ *	@brief evaluates to <tt>EIGEN_MAKE_ALIGNED_OPERATOR_NEW</tt>
+ */
+#define __GRAPH_TYPES_ALIGN_OPERATOR_NEW EIGEN_MAKE_ALIGNED_OPERATOR_NEW
+#else // __FLAT_SYSTEM_ALIGNED_MEMORY
+/**
+ *	@def __GRAPH_TYPES_ALIGN_OPERATOR_NEW
+ *	@brief evaluates to an empty expression 
+ */
+#define __GRAPH_TYPES_ALIGN_OPERATOR_NEW
+#endif // __FLAT_SYSTEM_ALIGNED_MEMORY
+// decide whether to align types
+
+#if defined(__BASE_TYPES_USE_ALIGNED_MATRICES)
+/**
+ *	@def __SE2_TYPES_USE_ALIGNED_VECTORS
+ *	@brief if defined, the base types will use aligned vectors and matrices
+ *	@deprecated This is deprecated in favor of \ref __BASE_TYPES_USE_ALIGNED_MATRICES
+ *		and is provided for backward compatibility only.
+ */
 #define __SE2_TYPES_USE_ALIGNED_VECTORS
-#define __SE2_TYPES_ALIGN_OPERATOR_NEW EIGEN_MAKE_ALIGNED_OPERATOR_NEW
-#else // !_WIN32 && !_WIN64
-#define __SE2_TYPES_ALIGN_OPERATOR_NEW
-#endif // !_WIN32 && !_WIN64*/ // does not work // todo - investigate (low priority, only a small fraction of time is spent there)
-#define __SE2_TYPES_ALIGN_OPERATOR_NEW
-#define __SE3_TYPES_ALIGN_OPERATOR_NEW
-#define __BA_TYPES_ALIGN_OPERATOR_NEW
-// decide whether to align types // todo - document it and add manual overrides
+#elif defined(__SE2_TYPES_USE_ALIGNED_VECTORS)
+#undef __SE2_TYPES_USE_ALIGNED_VECTORS
+#endif // __BASE_TYPES_USE_ALIGNED_MATRICES
+
+/**
+ *	@def __SE2_TYPES_ALIGN_OPERATOR_NEW
+ *	@brief if defined, the base types will have aligned operator new
+ *	@deprecated This is deprecated in favor of \ref __GRAPH_TYPES_ALIGN_OPERATOR_NEW
+ *		and is provided for backward compatibility only.
+ */
+#define __SE2_TYPES_ALIGN_OPERATOR_NEW __GRAPH_TYPES_ALIGN_OPERATOR_NEW
+
+/**
+ *	@def __SE3_TYPES_ALIGN_OPERATOR_NEW
+ *	@brief if defined, the base types will have aligned operator new
+ *	@deprecated This is deprecated in favor of \ref __GRAPH_TYPES_ALIGN_OPERATOR_NEW
+ *		and is provided for backward compatibility only.
+ */
+#define __SE3_TYPES_ALIGN_OPERATOR_NEW __GRAPH_TYPES_ALIGN_OPERATOR_NEW
+
+/**
+ *	@def __BA_TYPES_ALIGN_OPERATOR_NEW
+ *	@brief if defined, the base types will have aligned operator new
+ *	@deprecated This is deprecated in favor of \ref __GRAPH_TYPES_ALIGN_OPERATOR_NEW
+ *		and is provided for backward compatibility only.
+ */
+#define __BA_TYPES_ALIGN_OPERATOR_NEW __GRAPH_TYPES_ALIGN_OPERATOR_NEW
+
+/**
+ *	@def __SIM3_TYPES_ALIGN_OPERATOR_NEW
+ *	@brief if defined, the base types will have aligned operator new
+ *	@deprecated This is deprecated in favor of \ref __GRAPH_TYPES_ALIGN_OPERATOR_NEW
+ *		and is provided for backward compatibility only.
+ */
+#define __SIM3_TYPES_ALIGN_OPERATOR_NEW __GRAPH_TYPES_ALIGN_OPERATOR_NEW
+
+/**
+ *	@brief namespace with helper objects for edges
+ */
+namespace base_edge_detail {
+
+/**
+ *	@brief vertex initialization functor
+ *	Just clears the vertex to null.
+ */
+template <class CVertex>
+class CInitializeNullVertex {
+public:
+	/**
+	 *	@brief function operator
+	 *	@return Returns the value of the vertex being initialized.
+	 */
+	inline operator CVertex() const
+	{
+		typename CVertex::_TyVector v_null;
+		v_null.setZero();
+		return CVertex(v_null);
+	}
+};
+
+/**
+ *	@brief vertex initialization functor
+ *	Throws exception because the edge cannot meaningfully initialize the vertex.
+ */
+template <class CVertex>
+class CInitializeVertex_Disallow {
+public:
+	/**
+	 *	@brief function operator
+	 *	@return Returns the value of the vertex being initialized.
+	 *	@note This function always throws std::runtime_error.
+	 */
+	inline operator CVertex() const // throw(std::runtime_error)
+	{
+		throw std::runtime_error("implicit vertex initialization not allowed");
+		return CInitializeNullVertex<CVertex>(); // just to return something
+	}
+};
+
+} // ~base_edge_detail
 
 /**
  *	@brief namespace with helper objects for hyperedges
  */
 namespace hyperedge_detail {
+
+/**
+ *	@brief configuration stored as enum
+ */
+enum {
+#ifdef __BASE_TYPES_ALLOW_CONST_VERTICES
+	no_ConstVertices = false /**< @brief no const vertices flag @note This is used to optimize away some const-ness checks which the compiler cannot optimize by itself. */
+#else // __BASE_TYPES_ALLOW_CONST_VERTICES
+	no_ConstVertices = true /**< @brief no const vertices flag @note This is used to optimize away some const-ness checks which the compiler cannot optimize by itself. */
+#endif // __BASE_TYPES_ALLOW_CONST_VERTICES
+};
 
 /**
  *	@brief static assertion helper
@@ -89,7 +204,7 @@ struct CStrictlyTriangularOffset {
 };
 
 /**
- *	@brief type transformation functor; makes a pointer to a given type  
+ *	@brief type transformation functor; makes a pointer to a given type
  *	@tparam T is input type
  */
 template <class T>
@@ -98,7 +213,7 @@ struct CMakePointer {
 };
 
 /**
- *	@brief type transformation functor; makes a const pointer to a given type  
+ *	@brief type transformation functor; makes a const pointer to a given type
  *	@tparam T is input type
  */
 template <class T>
@@ -107,7 +222,7 @@ struct CMakeConstPointer {
 };
 
 /**
- *	@brief type transformation functor; always returns size_t  
+ *	@brief type transformation functor; always returns size_t
  *	@tparam T is input type
  */
 template <class T>
@@ -132,7 +247,7 @@ struct CJacobianContext {
 };
 
 /**
- *	@brief vertex type to hessian matrix type conversion
+ *	@brief vertex type to Hessian matrix type conversion
  *	@tparam CVertex is a vertex type
  */
 template <class CVertex>
@@ -155,14 +270,21 @@ struct CMakeRHS {
  *	@brief base edge class
  */
 class CBaseEdge : public CEdgeInterface {
+public:
+	struct null_initialize_vertices_tag {}; /**< @brief tag-scheduling type for automatic vertex initialization */
+	struct explicitly_initialized_vertices_tag {}; /**< @brief tag-scheduling type for explicit vertex initialization */
+
+	static const null_initialize_vertices_tag null_initialize_vertices; /**< @brief tag-scheduling value for automatic vertex initialization */
+	static const explicitly_initialized_vertices_tag explicitly_initialized_vertices; /**< @brief tag-scheduling value for explicit vertex initialization */
+
 protected:
 #ifdef __BASE_TYPES_USE_ID_ADDRESSING
-	size_t m_n_id; /**< @brief edge id (block row in a matrix where the edge block is inseted) */
+	size_t m_n_id; /**< @brief edge id (block row in a matrix where the edge block is inserted) */
 #endif // __BASE_TYPES_USE_ID_ADDRESSING
-	size_t m_n_order; /**< @brief edge order (row in a matrix where the edge block is inseted) */
+	size_t m_n_order; /**< @brief edge order (row in a matrix where the edge block is inserted) */
 
 public:
-	__SE2_TYPES_ALIGN_OPERATOR_NEW
+	__GRAPH_TYPES_ALIGN_OPERATOR_NEW
 
 	/**
 	 *	@copydoc base_iface::CConstEdgeFacade::n_Order
@@ -212,7 +334,7 @@ protected:
 	size_t m_n_order; /**< @brief vertex order (column in a matrix where the vertex block is inseted) */
 
 public:
-	__SE2_TYPES_ALIGN_OPERATOR_NEW
+	__GRAPH_TYPES_ALIGN_OPERATOR_NEW
 
 	/**
 	 *	@brief gets vertex order
@@ -221,6 +343,20 @@ public:
 	inline size_t n_Order() const
 	{
 		return m_n_order;
+	}
+
+	/**
+	 *	@brief determines whether this vertex is a constant vertex
+	 *	@return Returns true if this vertex is a constant vertex, otherwise returns false.
+	 */
+	inline bool b_IsConstant() const
+	{
+#ifdef __BASE_TYPES_ALLOW_CONST_VERTICES
+		return m_n_order == size_t(-1);
+#else // __BASE_TYPES_ALLOW_CONST_VERTICES
+		_ASSERTE(m_n_order != size_t(-1)); // make sure we are not lying here
+		return false;
+#endif // __BASE_TYPES_ALLOW_CONST_VERTICES
 	}
 
 	/**
@@ -262,24 +398,24 @@ typedef CBaseVertex CSEBaseVertex; /**< @brief base vertex for SE types @depreca
 // for backward compatibility
 
 /**
- *	@brief implementation of solver required functions for a generic SE vertex type
+ *	@brief implementation of solver required functions for a generic vertex type
  *
  *	@tparam CDerivedVertex is name of the derived vertex class
  *	@tparam _n_dimension is vertex dimension (number of DOFs)
  */
 template <class CDerivedVertex, int _n_dimension>
-class CSEBaseVertexImpl : public CBaseVertex {
+class CBaseVertexImpl : public CBaseVertex {
 public:
 	/**
 	 *	@brief copy of template parameters
 	 */
 	enum {
 		n_dimension = _n_dimension, /**< @brief vertex dimension (number of DOFs) */
-#ifdef __SE2_TYPES_USE_ALIGNED_VECTORS
+#ifdef __BASE_TYPES_USE_ALIGNED_MATRICES
 		n_matrix_alignment = Eigen::AutoAlign | Eigen::ColMajor
-#else // __SE2_TYPES_USE_ALIGNED_VECTORS
+#else // __BASE_TYPES_USE_ALIGNED_MATRICES
 		n_matrix_alignment = Eigen::DontAlign | Eigen::ColMajor
-#endif // __SE2_TYPES_USE_ALIGNED_VECTORS
+#endif // __BASE_TYPES_USE_ALIGNED_MATRICES
 	};
 
 	typedef Eigen::Matrix<double, n_dimension, 1> _TyVector; /**< @brief state vector type */
@@ -293,26 +429,26 @@ protected:
 #ifdef __SE_TYPES_SUPPORT_LAMBDA_SOLVERS // --- ~lambda-SLAM specific members ---
 #ifndef __LAMBDA_USE_V2_REDUCTION_PLAN
 
-	double *m_p_HtSiH; /**< @brief pointer to diagonal block in the hessian matrix */
+	double *m_p_HtSiH; /**< @brief pointer to diagonal block in the Hessian matrix */
 	_TyVectorAlign m_v_right_hand_side; /**< @brief right-hand side vector */
 
 #endif // !__LAMBDA_USE_V2_REDUCTION_PLAN
 #endif // __SE_TYPES_SUPPORT_LAMBDA_SOLVERS // --- ~lambda-SLAM specific members ---
 
 public:
-	__SE2_TYPES_ALIGN_OPERATOR_NEW
+	__GRAPH_TYPES_ALIGN_OPERATOR_NEW
 
 	/**
 	 *	@brief default constructor; has no effect
 	 */
-	inline CSEBaseVertexImpl()
+	inline CBaseVertexImpl()
 	{}
 
 	/**
 	 *	@brief constructor; initializes state vector
 	 *	@param[in] r_v_state is state vector initializer
 	 */
-	inline CSEBaseVertexImpl(const _TyVector &r_v_state)
+	inline CBaseVertexImpl(const _TyVector &r_v_state)
 		:m_v_state(r_v_state)
 	{}
 
@@ -321,6 +457,15 @@ public:
 	 *	@return Returns reference to vertex state vector.
 	 */
 	inline _TyVectorAlign &r_v_State()
+	{
+		return m_v_state;
+	}
+
+	/**
+	 *	@brief gets vertex state vector
+	 *	@return Returns const reference to vertex state vector.
+	 */
+	inline const _TyVectorAlign &r_v_State() const
 	{
 		return m_v_state;
 	}
@@ -358,38 +503,44 @@ public:
 
 	inline void Alloc_HessianBlocks(CUberBlockMatrix &r_lambda)
 	{
+		if(!b_IsConstant()) {
 #ifdef __BASE_TYPES_USE_ID_ADDRESSING
-		m_p_HtSiH = r_lambda.p_GetBlock_Log(m_n_id, m_n_id, n_dimension, n_dimension, true, false);
+			m_p_HtSiH = r_lambda.p_GetBlock_Log(m_n_id, m_n_id, n_dimension, n_dimension, true, false);
 #else // __BASE_TYPES_USE_ID_ADDRESSING
-		m_p_HtSiH = r_lambda.p_FindBlock(m_n_order, m_n_order, n_dimension, n_dimension, true, false);
+			m_p_HtSiH = r_lambda.p_FindBlock(m_n_order, m_n_order, n_dimension, n_dimension, true, false);
 #endif // __BASE_TYPES_USE_ID_ADDRESSING
-		// find a block for hessian on the diagonal (edges can't do it, would have conflicts)
+			// find a block for Hessian on the diagonal (edges can't do it, would have conflicts)
 
-		_ASSERTE(m_p_HtSiH);
-		// if this triggers, most likely __BASE_TYPES_USE_ID_ADDRESSING is enabled (see FlatSystem.h)
-		// and the edges come in some random order
+			_ASSERTE(m_p_HtSiH);
+			// if this triggers, most likely __BASE_TYPES_USE_ID_ADDRESSING is enabled (see FlatSystem.h)
+			// and the edges come in some random order
+		} else
+			m_p_HtSiH = 0; // this is a const vertex
 	}
 
 	inline void Calculate_Hessians()
 	{
-		Eigen::Map<_TyMatrix, CUberBlockMatrix::map_Alignment> t_HtSiH(m_p_HtSiH); // t_odo - support aligned if the uberblockmatrix is aligned!
-		t_HtSiH.setZero(); // !!
-		m_v_right_hand_side.setZero(); // !!
-		_ASSERTE(!m_edge_list.empty());
-		for(size_t i = 0, n = m_edge_list.size(); i < n; ++ i) {
-			std::pair<const double*, const double*> t_contrib = m_edge_list[i]->t_Get_LambdaEta_Contribution(this);
-			Eigen::Map<_TyMatrix, n_matrix_alignment> t_lambda_contrib((double*)t_contrib.first); // t_odo - support aligned if the member matrices are aligned!
-			t_HtSiH += t_lambda_contrib;
-			Eigen::Map<_TyVector, n_matrix_alignment> v_eta_contrib((double*)t_contrib.second);  // t_odo - support aligned if the member matrices are aligned!
-			m_v_right_hand_side += v_eta_contrib;
+		if(!b_IsConstant()) {
+			Eigen::Map<_TyMatrix, CUberBlockMatrix::map_Alignment> t_HtSiH(m_p_HtSiH); // t_odo - support aligned if the uberblockmatrix is aligned!
+			t_HtSiH.setZero(); // !!
+			m_v_right_hand_side.setZero(); // !!
+			_ASSERTE(!m_edge_list.empty());
+			for(size_t i = 0, n = m_edge_list.size(); i < n; ++ i) {
+				std::pair<const double*, const double*> t_contrib = m_edge_list[i]->t_Get_LambdaEta_Contribution(this);
+				Eigen::Map<_TyMatrix, n_matrix_alignment> t_lambda_contrib((double*)t_contrib.first); // t_odo - support aligned if the member matrices are aligned!
+				t_HtSiH += t_lambda_contrib;
+				Eigen::Map<_TyVector, n_matrix_alignment> v_eta_contrib((double*)t_contrib.second);  // t_odo - support aligned if the member matrices are aligned!
+				m_v_right_hand_side += v_eta_contrib;
+			}
+			// calculate running sum (can't parallelize, in 10k or 100k there is
+			// only about 6 edges / vertex, and that is the top density you get)
 		}
-		// calculate running sum (can't parallelize, in 10k or 100k there is
-		// only about 6 edges / vertex, and that is the top density you get)
 	}
 
 	inline void Get_RightHandSide_Vector(Eigen::VectorXd &r_v_eta) const
 	{
-		r_v_eta.segment<n_dimension>(m_n_order) = m_v_right_hand_side;
+		if(!b_IsConstant())
+			r_v_eta.segment<n_dimension>(m_n_order) = m_v_right_hand_side;
 	}
 
 #endif // !__LAMBDA_USE_V2_REDUCTION_PLAN
@@ -402,17 +553,19 @@ public:
 	 */
 	inline void Alloc_LBlocks(CUberBlockMatrix &r_L) const
 	{
-		double *UNUSED(p_block_addr);
+		if(!b_IsConstant()) {
+			double *UNUSED(p_block_addr);
 #ifdef __BASE_TYPES_USE_ID_ADDRESSING
-		p_block_addr = r_L.p_GetBlock_Log(m_n_id, m_n_id, n_dimension, n_dimension, true, true); // don't care about the pointer, it is handled differently
+			p_block_addr = r_L.p_GetBlock_Log(m_n_id, m_n_id, n_dimension, n_dimension, true, true); // don't care about the pointer, it is handled differently
 #else // __BASE_TYPES_USE_ID_ADDRESSING
-		p_block_addr = r_L.p_FindBlock(m_n_order, m_n_order, n_dimension, n_dimension, true, true); // don't care about the pointer, it is handled differently
+			p_block_addr = r_L.p_FindBlock(m_n_order, m_n_order, n_dimension, n_dimension, true, true); // don't care about the pointer, it is handled differently
 #endif // __BASE_TYPES_USE_ID_ADDRESSING
-		// find a block for hessian on the diagonal (edges can't do it, would have conflicts) // also clear it to zero! L is updated additively
+			// find a block for Hessian on the diagonal (edges can't do it, would have conflicts) // also clear it to zero! L is updated additively
 
-		_ASSERTE(p_block_addr);
-		// if this triggers, most likely __BASE_TYPES_USE_ID_ADDRESSING is enabled (see FlatSystem.h)
-		// and the edges come in some random order
+			_ASSERTE(p_block_addr);
+			// if this triggers, most likely __BASE_TYPES_USE_ID_ADDRESSING is enabled (see FlatSystem.h)
+			// and the edges come in some random order
+		}
 	}
 
 #endif // __SE_TYPES_SUPPORT_L_SOLVERS // --- ~L-SLAM specific functions ---
@@ -422,7 +575,8 @@ public:
 	 */
 	inline void SwapState(Eigen::VectorXd &r_v_x)
 	{
-		m_v_state.swap(r_v_x.segment<n_dimension>(m_n_order)); // swap the numbers
+		if(!b_IsConstant())
+			m_v_state.swap(r_v_x.segment<n_dimension>(m_n_order)); // swap the numbers
 	}
 
 	/**
@@ -430,22 +584,54 @@ public:
 	 */
 	inline void SaveState(Eigen::VectorXd &r_v_x) const
 	{
-		r_v_x.segment<n_dimension>(m_n_order) = m_v_state; // save the state vector
+		if(!b_IsConstant())
+			r_v_x.segment<n_dimension>(m_n_order) = m_v_state; // save the state vector
 	}
- 
+
 	/**
 	 *	@copydoc base_iface::CVertexFacade::LoadState()
 	 */
 	inline void LoadState(const Eigen::VectorXd &r_v_x)
 	{
-		m_v_state = r_v_x.segment<n_dimension>(m_n_order); // restore the state vector
+		if(!b_IsConstant())
+			m_v_state = r_v_x.segment<n_dimension>(m_n_order); // restore the state vector
 	}
 };
 
-#include "slam/Tuple.h"
+/**
+ *	@brief implementation of solver required functions for a generic vertex type
+ *
+ *	@tparam CDerivedVertex is name of the derived vertex class
+ *	@tparam _n_dimension is vertex dimension (number of DOFs)
+ *
+ *	@deprecated This name is deprecated; use CBaseVertexImpl instead.
+ */
+template <class CDerivedVertex, int _n_dimension>
+class CSEBaseVertexImpl : public CBaseVertexImpl<CDerivedVertex, _n_dimension> {
+private:
+	typedef CBaseVertexImpl<CDerivedVertex, _n_dimension> _TyNotDeprecated; /**< @brief name of the parent type that is not deprecated */
+	// this is not intended to be used by the derived classes because CBaseVertexImpl does not have such type
+
+public:
+	__GRAPH_TYPES_ALIGN_OPERATOR_NEW
+
+	/**
+	 *	@copydoc CBaseVertexImpl::CBaseVertexImpl()
+	 */
+	inline CSEBaseVertexImpl()
+		:_TyNotDeprecated()
+	{}
+
+	/**
+	 *	@copydoc CBaseVertexImpl::CBaseVertexImpl(const _TyVector&)
+	 */
+	inline CSEBaseVertexImpl(const typename _TyNotDeprecated::_TyVector &r_v_state)
+		:_TyNotDeprecated(r_v_state)
+	{}
+};
 
 /**
- *	@brief SE base edge implementation
+ *	@brief implementation of solver required functions for a generic edge type
  *
  *	@tparam CDerivedEdge is the name of derived edge class
  *	@tparam CVertexTypeList is list of types of the vertices
@@ -462,9 +648,9 @@ public:
 	typedef CTuple<_TyVertexIndices> _TyVertexIndexTuple; /**< @brief tuple of vertex indices */
 	typedef CTuple<_TyVertexPointers> _TyVertexPointerTuple; /**< @brief tuple of pointers to the vertices */
 	typedef CTuple<_TyVertexConstPointers> _TyVertexConstPointerTuple; /**< @brief tuple of const pointers to the vertices */
-	typedef typename CTypelistItemAt<_TyVertices, 0>::_TyResult _TyVertex0; /**< @brief name of the first edge vertex class */
-	typedef typename CTypelistItemAt<_TyVertices, 1>::_TyResult _TyVertex1; /**< @brief name of the second edge vertex class */
-	typedef typename CTypelistItemAt<_TyVertices, 2>::_TyResult _TyVertex2; /**< @brief name of the third edge vertex class */
+	typedef typename CTypelistItemAt<_TyVertices, 0>::_TyResult _TyVertex0; /**< @brief name of the first vertex class */
+	typedef typename CTypelistItemAt<_TyVertices, 1>::_TyResult _TyVertex1; /**< @brief name of the second vertex class */
+	typedef typename CTypelistItemAt<_TyVertices, 2>::_TyResult _TyVertex2; /**< @brief name of the third vertex class */
 	// note that there may be more than three vertices, but we are unable to predict how many;
 	// just use "typename CTypelistItemAt<_TyVertices, N>::_TyResult" where N is vertex number
 
@@ -476,11 +662,11 @@ public:
 		n_measurement_dimension = _n_residual_dimension, /**< @brief measurement vector dimension (edge dimension) @deprecated This is slightly unclear, use n_residual_dimension and n_storage_dimension instead. */
 		n_residual_dimension = _n_residual_dimension, /**< @brief residual vector dimension */
 		n_storage_dimension = (_n_storage_dimension == -1)? _n_residual_dimension : _n_storage_dimension, /**< @brief edge state storage dimension */
-#ifdef __SE2_TYPES_USE_ALIGNED_VECTORS
+#ifdef __BASE_TYPES_USE_ALIGNED_MATRICES
 		n_matrix_alignment = Eigen::AutoAlign | Eigen::ColMajor, /**< @brief Eigen matrix alignment flags */
-#else // __SE2_TYPES_USE_ALIGNED_VECTORS
+#else // __BASE_TYPES_USE_ALIGNED_MATRICES
 		n_matrix_alignment = Eigen::DontAlign | Eigen::ColMajor, /**< @brief Eigen matrix alignment flags */
-#endif // __SE2_TYPES_USE_ALIGNED_VECTORS
+#endif // __BASE_TYPES_USE_ALIGNED_MATRICES
 		n_offdiag_block_num = (n_vertex_num * n_vertex_num - n_vertex_num) / 2 /**< @brief the number of off-diag blocks */
 		// the number of off-diag blocks rises with O(n^2), it is every-to-every, but only upper diag
 		// (1: 0, 2: 1, 3: 3, 4: 6)
@@ -526,23 +712,16 @@ public:
 	typedef CTuple<_TyVertexJacobians> _TyJacobianTuple; /**< @brief tuple of vertex Jacobians */
 
 	/**
-	 *	@brief vertex initialization functor
-	 *	Just clears the vertex to null.
+	 *	@copydoc base_edge_detail::CInitializeNullVertex
 	 */
 	template <class CVertex = _TyVertex0>
-	class CInitializeNullVertex {
-	public:
-		/**
-		 *	@brief function operator
-		 *	@return Returns the value of the vertex being initialized.
-		 */
-		inline operator CVertex() const
-		{
-			typename CVertex::_TyVector v_null;
-			v_null.setZero();
-			return CVertex(v_null);
-		}
-	};
+	class CInitializeNullVertex: public base_edge_detail::CInitializeNullVertex<CVertex> {};
+
+	/**
+	 *	@copydoc base_edge_detail::CInitializeVertex_Disallow
+	 */
+	template <class CVertex = _TyVertex0>
+	class CInitializeVertex_Disallow : public base_edge_detail::CInitializeVertex_Disallow<CVertex> {};
 
 	typedef Eigen::Matrix<double, n_residual_dimension, 1> _TyVector; /**< @brief edge dimension vector type */
 	typedef Eigen::Matrix<double, n_storage_dimension, 1> _TyStorageVector; /**< @brief storage dimension vector type */
@@ -583,14 +762,14 @@ private:
 	double *m_p_HtSiH_reduce[n_offdiag_block_num]; /**< @brief blocks of memory where Ht * inv(Sigma) * H matrices are stored in the matrix (should there be conflicts between duplicate edges, this is the target of reduction) */
 	bool m_p_first_reductor[n_offdiag_block_num]; /**< @brief reduction flags */
 
-	typedef typename CTransformTypelist<CVertexTypeList, hyperedge_detail::CMakeHessian>::_TyResult _TyVertexHessians; /**< @brief list of types of vertex Jacobians */
-	typedef CTuple<_TyVertexHessians> _TyVertexHessianTuple; /**< @brief tuple of vertex Jacobians */
+	typedef typename CTransformTypelist<CVertexTypeList, hyperedge_detail::CMakeHessian>::_TyResult _TyVertexHessians; /**< @brief list of types of vertex Hessians */
+	typedef CTuple<_TyVertexHessians> _TyVertexHessianTuple; /**< @brief tuple of vertex Hessians */
 
-	typedef typename CTransformTypelist<CVertexTypeList, hyperedge_detail::CMakeRHS>::_TyResult _TyVertexResiduals; /**< @brief list of types of vertex Jacobians */
-	typedef CTuple<_TyVertexResiduals> _TyVertexResidualTuple; /**< @brief tuple of vertex Jacobians */
+	typedef typename CTransformTypelist<CVertexTypeList, hyperedge_detail::CMakeRHS>::_TyResult _TyVertexResiduals; /**< @brief list of types of vertex residuals */
+	typedef CTuple<_TyVertexResiduals> _TyVertexResidualTuple; /**< @brief tuple of vertex residuals */
 
-	_TyVertexHessianTuple m_t_HtSiH_tuple; /**< @brief blocks of memory where Ht * inv(Sigma) * H matrices are stored (the per-vertex contribution) */
-	_TyVertexResidualTuple m_t_right_hand_side_tuple; /**< @brief blocks of memory where right-hand side vectors are stored (the per-vertex contribution) */
+	_TyVertexHessianTuple m_t_HtSiH_tuple; /**< @brief blocks of memory where the Ht * inv(Sigma) * H matrices are stored (the diagonal blocks) */
+	_TyVertexResidualTuple m_t_right_hand_side_tuple; /**< @brief blocks of memory where right-hand side vectors are stored (the per-vertex errors) */
 	// t_odo - this also needs to be passed through the reductor, did not think of this (it is a slightly different
 	// philosophy, it is supposed to reduce to a dense vector, but it will be reduced to a sparse blah. maybe do
 	// the reduction using an offset table only)
@@ -600,7 +779,7 @@ private:
 #endif // __SE_TYPES_SUPPORT_LAMBDA_SOLVERS // --- ~lambda-SLAM specific members ---
 
 public:
-	__SE2_TYPES_ALIGN_OPERATOR_NEW
+	__GRAPH_TYPES_ALIGN_OPERATOR_NEW
 
 	/**
 	 *	@brief default constructor; has no effect
@@ -666,17 +845,92 @@ protected:
 		fbs_ut::CCTSize<n_vertex_num> UNUSED(tag))
 	{}
 
+	/**
+	 *	@brief initializes vertex pointers, adds vertices which do not exist to the system
+	 *		or throws exceptions if implicit initialization is not allowed for that vertex
+	 *
+	 *	@tparam CSystem is type of system where this edge is being stored
+	 *	@tparam CSkipInitIndexList is type list of indices of vertices (as fbs_ut::CCTSize) which
+	 *		are not to be initialized so that the derived edge can initialize them
+	 *		(indices in the edge, for e.g. binary edges those are 0 and 1; use CTypelistEnd for none)
+	 *	@tparam CDisallowInitIndexList is type list of indices of vertices (as fbs_ut::CCTSize) which
+	 *		are not allowed to be initialized implicitly; if they are not in the system yet,
+	 *		a std::runtime_error exception is thrown (indices in the edge, for e.g. binary edges
+	 *		those are 0 and 1; use CTypelistEnd for none)
+	 *	@tparam n_vertex is zero-based vertex index (in this edge)
+	 *
+	 *	@param[in,out] r_system is reference to system (used to query edge vertices)
+	 *	@param[in] t_list_skip is type list of vertex indices (in the edge) for which
+	 *		the initialization should be disabled so that the derived edge can perform it (value unused)
+	 *	@param[in] t_list_disallow is type list of vertex indices (in the edge) for which
+	 *		the initialization is not allowed - if the vertex is not explicitly inizialized
+	 *		prior to calling this function (value unused)
+	 *	@param[in] tag is specialization of fbs_ut::CCTSize for tag dispatch (unused at runtime)
+	 *
+	 *	@note This function throws std::bad_alloc if there is not enough memory for the vertices,
+	 *		and throws std::runtime_error if a vertex in the list of vertices not allowed to
+	 *		initialize implicitly was not explicitly initialized before calling this function.
+	 */
+	template <class CSystem, class CSkipInitIndexList,
+		class CDisallowInitIndexList, const int n_vertex>
+	void _InitializeVertexPtrs(CSystem &r_system,
+		CSkipInitIndexList UNUSED(t_list_skip),
+		CDisallowInitIndexList UNUSED(t_list_disallow),
+		fbs_ut::CCTSize<n_vertex> UNUSED(t_vertex_id)) // throw(std::bad_alloc, std::runtime_error)
+	{
+		typedef typename CVertexTraits<n_vertex>::_TyVertex _TyVertex; // vertex type
+		enum {
+			b_do_init = !CFindTypelistItem<CSkipInitIndexList, fbs_ut::CCTSize<n_vertex> >::b_result, // initialize this vertex?
+			b_disallow_init = CFindTypelistItem<CDisallowInitIndexList, fbs_ut::CCTSize<n_vertex> >::b_result // implicit initialization not allowed?
+		};
+		typedef typename CChooseType<CInitializeVertex_Disallow<_TyVertex>,
+			CInitializeNullVertex<_TyVertex>, b_disallow_init>::_TyResult _TyInitializer; // choose vertex initializer
+
+		if(b_do_init) { // only if not skipping, so that we can skip over disallowed vertices as well
+			m_vertex_ptr.template Get<n_vertex>() = &r_system.template
+				r_Get_Vertex<_TyVertex>(m_p_vertex_id[n_vertex], _TyInitializer());
+		}
+
+		_InitializeVertexPtrs(r_system, t_list_skip, t_list_disallow, fbs_ut::CCTSize<n_vertex + 1>());
+		// recurse
+	}
+
+	/**
+	 *	@brief initializes vertex pointers (specialization for the one past the last vertex)
+	 *
+	 *	@tparam CSystem is type of system where this edge is being stored
+	 *	@tparam CSkipInitIndexList is type list of indices of vertices (as fbs_ut::CCTSize) which
+	 *		are not to be initialized so that the derived edge can initialize them
+	 *		(indices in the edge, for e.g. binary edges those are 0 and 1; use CTypelistEnd for none)
+	 *	@tparam CDisallowInitIndexList is type list of indices of vertices (as fbs_ut::CCTSize) which
+	 *		are not allowed to be initialized implicitly; if they are not in the system yet,
+	 *		a std::runtime_error exception is thrown (indices in the edge, for e.g. binary edges
+	 *		those are 0 and 1; use CTypelistEnd for none)
+	 *
+	 *	@param[in] r_system is reference to system (unused)
+	 *	@param[in] t_list_skip is type list of vertex indices (unused)
+	 *	@param[in] t_list_disallow is type list of vertex indices (unused)
+	 *	@param[in] tag is specialization of fbs_ut::CCTSize for tag dispatch (unused)
+	 */
+	template <class CSystem, class CSkipInitIndexList,
+		class CDisallowInitIndexList>
+	void _InitializeVertexPtrs(CSystem &UNUSED(r_system),
+		CSkipInitIndexList UNUSED(t_list_skip),
+		CDisallowInitIndexList UNUSED(t_list_disallow),
+		fbs_ut::CCTSize<n_vertex_num> UNUSED(t_vertex_id))
+	{}
+
 public:
 	/**
 	 *	@brief constructor
 	 *
 	 *	@param[in] vertex_id_tuple is tuple of vertex ids
-	 *	@param[in] r_v_measurement is the measurement vecot
+	 *	@param[in] r_v_measurement is the measurement vector
 	 *	@param[in] r_t_sigma_inv is inverse sigma matrix
 	 *
 	 *	@note This fills the structure, except for the vertex pointers.
-	 *	@note Any derived class should check for vertex dimensions being really
-	 *		what it expects (not checked elsewhere).
+	 *	@note With thunk tables, the derived classes don't need to check for vertex dimensions
+	 *		being really what they expect (type checking performed by the vertex pool).
 	 *	@note The r_t_sigma_inv is inverse sigma matrix, which is *not* square-rooted.
 	 *		This hasn't changed since the previous releases, but the documentation
 	 *		in parser was misleading back then.
@@ -690,6 +944,237 @@ public:
 	{
 		_CopyVertexIds(vertex_id_tuple, fbs_ut::CCTSize<0>()); // todo - make a loop, or a tuple to array binding; will need to support assignment of different types of tuples (like assignment of a tuple of ints to a tuple of references to ints)
 		// get references to the vertices, initialize the vertices, if neccessary
+
+		// note that errors, expectations and jacobian matrices are not cleared
+	}
+
+	/**
+	 *	@brief constructor with implicit vertex initialization (to null)
+	 *
+	 *	@tparam CSystem is type of system where this edge is being stored
+	 *	@tparam CSkipInitIndexList is type list of indices of vertices (as fbs_ut::CCTSize) which
+	 *		are not to be initialized so that the derived edge can initialize them
+	 *		(indices in the edge, for e.g. binary edges those are 0 and 1; use CTypelistEnd for none)
+	 *	@tparam CDisallowInitIndexList is type list of indices of vertices (as fbs_ut::CCTSize) which
+	 *		are not allowed to be initialized implicitly; if they are not in the system yet,
+	 *		a std::runtime_error exception is thrown (indices in the edge, for e.g. binary edges
+	 *		those are 0 and 1; use CTypelistEnd for none)
+	 *
+	 *	@param[in] vertex_id_tuple is tuple of vertex ids
+	 *	@param[in] r_v_measurement is the measurement vector
+	 *	@param[in] r_t_sigma_inv is inverse sigma matrix
+	 *	@param[in] t_tag is used for tag scheduling, specifies this constructor (value unused)
+	 *	@param[in,out] r_system is reference to system (used to query or insert edge vertices)
+	 *	@param[in] t_list_skip is type list of vertex indices (in the edge) for which
+	 *		the initialization should be disabled so that the derived edge can perform it (value unused)
+	 *	@param[in] t_list_disallow is type list of vertex indices (in the edge) for which
+	 *		the initialization is not allowed - an exception is thrown if the vertex is not
+	 *		explicitly inizialized prior to calling this function (value unused)
+	 *
+	 *	@note This fills the structure, including the vertex pointers, except those indicated
+	 *		in CSkipInitIndexList.
+	 *	@note With thunk tables, the derived classes don't need to check for vertex dimensions
+	 *		being really what they expect (type checking performed by the vertex pool).
+	 *	@note The r_t_sigma_inv is inverse sigma matrix, which is *not* square-rooted.
+	 *		This hasn't changed since the previous releases, but the documentation
+	 *		in parser was misleading back then.
+	 *	@note This function throws std::bad_alloc if there is not enough memory for the vertices,
+	 *		and throws std::runtime_error if a vertex in CDisallowInitIndexList and not in
+	 *		CSkipInitIndexList was not explicitly initialized before calling this function.
+	 *	@note CSkipInitIndexList takes precedence over CDisallowInitIndexList.
+	 */
+	template <class CSystem, class CSkipInitIndexList, class CDisallowInitIndexList>
+	inline CBaseEdgeImpl(_TyVertexIndexTuple vertex_id_tuple,
+		const _TyStorageVector &r_v_measurement, const _TyMatrix &r_t_sigma_inv,
+		null_initialize_vertices_tag UNUSED(t_tag), CSystem &r_system,
+		CSkipInitIndexList UNUSED(t_list_skip),
+		CDisallowInitIndexList UNUSED(t_list_disallow)) // throw(std::bad_alloc, std::runtime_error)
+		:m_v_measurement(r_v_measurement), m_t_sigma_inv(r_t_sigma_inv)
+#ifdef __SE_TYPES_SUPPORT_A_SOLVERS
+		, m_t_square_root_sigma_inv_upper(r_t_sigma_inv.llt().matrixU()) // calculate R
+#endif // __SE_TYPES_SUPPORT_A_SOLVERS
+	{
+		_CopyVertexIds(vertex_id_tuple, fbs_ut::CCTSize<0>()); // todo - make a loop, or a tuple to array binding; will need to support assignment of different types of tuples (like assignment of a tuple of ints to a tuple of references to ints)
+		// get references to the vertices, initialize the vertices, if neccessary
+
+		_InitializeVertexPtrs(r_system, t_list_skip, t_list_disallow, fbs_ut::CCTSize<0>());
+		// initialize vertex pointers
+
+		// note that errors, expectations and jacobian matrices are not cleared
+	}
+
+	/**
+	 *	@brief constructor with implicit vertex initialization (to null; overload without the disallow list)
+	 *
+	 *	@tparam CSystem is type of system where this edge is being stored
+	 *	@tparam CSkipInitIndexList is type list of indices of vertices (as fbs_ut::CCTSize) which
+	 *		are not to be initialized so that the derived edge can initialize them
+	 *		(indices in the edge, for e.g. binary edges those are 0 and 1; use CTypelistEnd for none)
+	 *
+	 *	@param[in] vertex_id_tuple is tuple of vertex ids
+	 *	@param[in] r_v_measurement is the measurement vector
+	 *	@param[in] r_t_sigma_inv is inverse sigma matrix
+	 *	@param[in] t_tag is used for tag scheduling, specifies this constructor (value unused)
+	 *	@param[in,out] r_system is reference to system (used to query or insert edge vertices)
+	 *	@param[in] t_list_skip is type list of vertex indices (in the edge) for which
+	 *		the initialization should be disabled so that the derived edge can perform it (value unused)
+	 *
+	 *	@note This fills the structure, including the vertex pointers, except those indicated
+	 *		in CSkipInitIndexList.
+	 *	@note With thunk tables, the derived classes don't need to check for vertex dimensions
+	 *		being really what they expect (type checking performed by the vertex pool).
+	 *	@note The r_t_sigma_inv is inverse sigma matrix, which is *not* square-rooted.
+	 *		This hasn't changed since the previous releases, but the documentation
+	 *		in parser was misleading back then.
+	 *	@note This function throws std::bad_alloc if there is not enough memory for the vertices.
+	 */
+	template <class CSystem, class CSkipInitIndexList>
+	inline CBaseEdgeImpl(_TyVertexIndexTuple vertex_id_tuple,
+		const _TyStorageVector &r_v_measurement, const _TyMatrix &r_t_sigma_inv,
+		null_initialize_vertices_tag UNUSED(t_tag), CSystem &r_system,
+		CSkipInitIndexList UNUSED(t_list_skip)) // throw(std::bad_alloc)
+		:m_v_measurement(r_v_measurement), m_t_sigma_inv(r_t_sigma_inv)
+#ifdef __SE_TYPES_SUPPORT_A_SOLVERS
+		, m_t_square_root_sigma_inv_upper(r_t_sigma_inv.llt().matrixU()) // calculate R
+#endif // __SE_TYPES_SUPPORT_A_SOLVERS
+	{
+		_CopyVertexIds(vertex_id_tuple, fbs_ut::CCTSize<0>()); // todo - make a loop, or a tuple to array binding; will need to support assignment of different types of tuples (like assignment of a tuple of ints to a tuple of references to ints)
+		// get references to the vertices, initialize the vertices, if neccessary
+
+		_InitializeVertexPtrs(r_system, t_list_skip, CTypelistEnd(), fbs_ut::CCTSize<0>());
+		// initialize vertex pointers
+
+		// note that errors, expectations and jacobian matrices are not cleared
+	}
+
+	/**
+	 *	@brief constructor with implicit vertex initialization (to null; overload without the disallow and skip list)
+	 *
+	 *	@tparam CSystem is type of system where this edge is being stored
+	 *
+	 *	@param[in] vertex_id_tuple is tuple of vertex ids
+	 *	@param[in] r_v_measurement is the measurement vector
+	 *	@param[in] r_t_sigma_inv is inverse sigma matrix
+	 *	@param[in] t_tag is used for tag scheduling, specifies this constructor (value unused)
+	 *	@param[in,out] r_system is reference to system (used to query or insert edge vertices)
+	 *
+	 *	@note This fills the structure, including the vertex pointers.
+	 *	@note With thunk tables, the derived classes don't need to check for vertex dimensions
+	 *		being really what they expect (type checking performed by the vertex pool).
+	 *	@note The r_t_sigma_inv is inverse sigma matrix, which is *not* square-rooted.
+	 *		This hasn't changed since the previous releases, but the documentation
+	 *		in parser was misleading back then.
+	 *	@note This function throws std::bad_alloc if there is not enough memory for the vertices.
+	 */
+	template <class CSystem>
+	inline CBaseEdgeImpl(_TyVertexIndexTuple vertex_id_tuple,
+		const _TyStorageVector &r_v_measurement, const _TyMatrix &r_t_sigma_inv,
+		null_initialize_vertices_tag UNUSED(t_tag), CSystem &r_system) // throw(std::bad_alloc)
+		:m_v_measurement(r_v_measurement), m_t_sigma_inv(r_t_sigma_inv)
+#ifdef __SE_TYPES_SUPPORT_A_SOLVERS
+		, m_t_square_root_sigma_inv_upper(r_t_sigma_inv.llt().matrixU()) // calculate R
+#endif // __SE_TYPES_SUPPORT_A_SOLVERS
+	{
+		_CopyVertexIds(vertex_id_tuple, fbs_ut::CCTSize<0>()); // todo - make a loop, or a tuple to array binding; will need to support assignment of different types of tuples (like assignment of a tuple of ints to a tuple of references to ints)
+		// get references to the vertices, initialize the vertices, if neccessary
+
+		_InitializeVertexPtrs(r_system, CTypelistEnd(), CTypelistEnd(), fbs_ut::CCTSize<0>());
+		// initialize vertex pointers
+
+		// note that errors, expectations and jacobian matrices are not cleared
+	}
+
+	/**
+	 *	@brief constructor for explicit vertex initialization
+	 *
+	 *	@tparam CSystem is type of system where this edge is being stored
+	 *	@tparam CSkipInitIndexList is type list of indices of vertices (as fbs_ut::CCTSize) which
+	 *		are not to be initialized so that the derived edge can initialize them
+	 *		(indices in the edge, for e.g. binary edges those are 0 and 1; use CTypelistEnd for none)
+	 *
+	 *	@param[in] vertex_id_tuple is tuple of vertex ids
+	 *	@param[in] r_v_measurement is the measurement vector
+	 *	@param[in] r_t_sigma_inv is inverse sigma matrix
+	 *	@param[in] t_tag is used for tag scheduling, specifies this constructor (value unused)
+	 *	@param[in] r_system is reference to system (used to query edge vertices)
+	 *	@param[in] t_list_skip is type list of vertex indices (in the edge) for which
+	 *		the initialization should be disabled so that the derived edge can perform it (value unused)
+	 *
+	 *	@note This fills the structure, including the vertex pointers, except those indicated
+	 *		in CSkipInitIndexList.
+	 *	@note With thunk tables, the derived classes don't need to check for vertex dimensions
+	 *		being really what they expect (type checking performed by the vertex pool).
+	 *	@note The r_t_sigma_inv is inverse sigma matrix, which is *not* square-rooted.
+	 *		This hasn't changed since the previous releases, but the documentation
+	 *		in parser was misleading back then.
+	 *	@note This function throws std::runtime_error if a vertex not in CSkipInitIndexList
+	 *		was not explicitly initialized before calling this function.
+	 */
+	template <class CSystem, class CSkipInitIndexList>
+	inline CBaseEdgeImpl(_TyVertexIndexTuple vertex_id_tuple,
+		const _TyStorageVector &r_v_measurement, const _TyMatrix &r_t_sigma_inv,
+		explicitly_initialized_vertices_tag UNUSED(t_tag), CSystem &r_system,
+		CSkipInitIndexList UNUSED(t_list_skip)) // throw(std::runtime_error)
+		:m_v_measurement(r_v_measurement), m_t_sigma_inv(r_t_sigma_inv)
+#ifdef __SE_TYPES_SUPPORT_A_SOLVERS
+		, m_t_square_root_sigma_inv_upper(r_t_sigma_inv.llt().matrixU()) // calculate R
+#endif // __SE_TYPES_SUPPORT_A_SOLVERS
+	{
+		_CopyVertexIds(vertex_id_tuple, fbs_ut::CCTSize<0>()); // todo - make a loop, or a tuple to array binding; will need to support assignment of different types of tuples (like assignment of a tuple of ints to a tuple of references to ints)
+		// get references to the vertices, initialize the vertices, if neccessary
+
+		typedef typename fbs_ut::CTypelistIOTA<n_vertex_num>::_TyResult _TyAllVertsList;
+		// do not allow initialization of any vertex, except for those specified in t_list_skip
+
+		_InitializeVertexPtrs(r_system, t_list_skip, _TyAllVertsList(), fbs_ut::CCTSize<0>());
+		// initialize vertex pointers
+
+		// note that errors, expectations and jacobian matrices are not cleared
+	}
+
+	/**
+	 *	@brief constructor for explicit vertex initialization (overload without the skip list)
+	 *
+	 *	@tparam CSystem is type of system where this edge is being stored
+	 *	@tparam CSkipInitIndexList is type list of indices of vertices (as fbs_ut::CCTSize) which
+	 *		are not to be initialized so that the derived edge can initialize them
+	 *		(indices in the edge, for e.g. binary edges those are 0 and 1; use CTypelistEnd for none)
+	 *
+	 *	@param[in] vertex_id_tuple is tuple of vertex ids
+	 *	@param[in] r_v_measurement is the measurement vector
+	 *	@param[in] r_t_sigma_inv is inverse sigma matrix
+	 *	@param[in] t_tag is used for tag scheduling, specifies this constructor (value unused)
+	 *	@param[in] r_system is reference to system (used to query edge vertices)
+	 *	@param[in] t_list_skip is type list of vertex indices (in the edge) for which
+	 *		the initialization should be disabled so that the derived edge can perform it (value unused)
+	 *
+	 *	@note This fills the structure, including the vertex pointers, except those indicated
+	 *		in CSkipInitIndexList.
+	 *	@note With thunk tables, the derived classes don't need to check for vertex dimensions
+	 *		being really what they expect (type checking performed by the vertex pool).
+	 *	@note The r_t_sigma_inv is inverse sigma matrix, which is *not* square-rooted.
+	 *		This hasn't changed since the previous releases, but the documentation
+	 *		in parser was misleading back then.
+	 *	@note This function throws std::runtime_error if any of the vertices
+	 *		were not explicitly initialized before calling this function.
+	 */
+	template <class CSystem>
+	inline CBaseEdgeImpl(_TyVertexIndexTuple vertex_id_tuple,
+		const _TyStorageVector &r_v_measurement, const _TyMatrix &r_t_sigma_inv,
+		explicitly_initialized_vertices_tag UNUSED(t_tag), CSystem &r_system) // throw(std::runtime_error)
+		:m_v_measurement(r_v_measurement), m_t_sigma_inv(r_t_sigma_inv)
+#ifdef __SE_TYPES_SUPPORT_A_SOLVERS
+		, m_t_square_root_sigma_inv_upper(r_t_sigma_inv.llt().matrixU()) // calculate R
+#endif // __SE_TYPES_SUPPORT_A_SOLVERS
+	{
+		_CopyVertexIds(vertex_id_tuple, fbs_ut::CCTSize<0>()); // todo - make a loop, or a tuple to array binding; will need to support assignment of different types of tuples (like assignment of a tuple of ints to a tuple of references to ints)
+		// get references to the vertices, initialize the vertices, if neccessary
+
+		typedef typename fbs_ut::CTypelistIOTA<n_vertex_num>::_TyResult _TyAllVertsList;
+		// do not allow initialization of any vertex, except for those specified in t_list_skip
+
+		_InitializeVertexPtrs(r_system, CTypelistEnd(), _TyAllVertsList(), fbs_ut::CCTSize<0>());
+		// initialize vertex pointers
 
 		// note that errors, expectations and jacobian matrices are not cleared
 	}
@@ -793,14 +1278,16 @@ protected:
 	template <const int n_vertex>
 	inline void _Alloc_JacobianBlocks(CUberBlockMatrix &r_A, fbs_ut::CCTSize<n_vertex> UNUSED(tag))
 	{
+		if(!m_vertex_ptr.template Get<n_vertex>()->b_IsConstant()) { // if the vertex is not constant
 #ifdef __BASE_TYPES_USE_ID_ADDRESSING
-		m_p_RH[n_vertex] = r_A.p_GetBlock_Log(m_n_id + 1, m_p_vertex_id[n_vertex],
-			n_residual_dimension, CVertexTraits<n_vertex>::n_dimension, true, false);
+			m_p_RH[n_vertex] = r_A.p_GetBlock_Log(m_n_id + 1, m_p_vertex_id[n_vertex],
+				n_residual_dimension, CVertexTraits<n_vertex>::n_dimension, true, false);
 #else // __BASE_TYPES_USE_ID_ADDRESSING
-		m_p_RH[n_vertex] = r_A.p_FindBlock(m_n_order, m_vertex_ptr.template Get<n_vertex>()->n_Order(),
-			n_residual_dimension, CVertexTraits<n_vertex>::n_dimension, true, false);
+			m_p_RH[n_vertex] = r_A.p_FindBlock(m_n_order, m_vertex_ptr.template Get<n_vertex>()->n_Order(),
+				n_residual_dimension, CVertexTraits<n_vertex>::n_dimension, true, false);
 #endif // __BASE_TYPES_USE_ID_ADDRESSING
-		// just place blocks at (edge order, vertex order)
+			// just place blocks at (edge order, vertex order)
+		}
 
 		_Alloc_JacobianBlocks(r_A, fbs_ut::CCTSize<n_vertex + 1>());
 		// loop by recursion
@@ -822,10 +1309,21 @@ public:
 	inline void Alloc_JacobianBlocks(CUberBlockMatrix &r_A)
 	{
 		_Alloc_JacobianBlocks(r_A, fbs_ut::CCTSize<0>());
+#ifdef _DEBUG
+#ifndef __BASE_TYPES_ALLOW_CONST_VERTICES
 		for(size_t i = 0; i < n_vertex_num; ++ i)
 			_ASSERTE(m_p_RH[i]);
 		// if this triggers, most likely __BASE_TYPES_USE_ID_ADDRESSING is enabled (see FlatSystem.h)
 		// and the edges come in some random order
+#else // !__BASE_TYPES_ALLOW_CONST_VERTICES
+		for(size_t i = 0; i < n_vertex_num; ++ i) {
+			if(m_p_RH[i])
+				break;
+			_ASSERTE(i + 1 != n_vertex_num);
+			// if this fails then all vertices in this edge are constant. do not add this edge to the system in the first place
+		}
+#endif // !__BASE_TYPES_ALLOW_CONST_VERTICES
+#endif // _DEBUG
 	}
 
 protected:
@@ -841,13 +1339,15 @@ protected:
 	inline void _Calculate_Jacobians(const _TyJacobianTuple &r_t_jacobian_tuple,
 		fbs_ut::CCTSize<n_vertex> UNUSED(tag))
 	{
-		Eigen::Map<typename CVertexTraits<n_vertex>::_TyJacobianMatrix,
-			CUberBlockMatrix::map_Alignment> t_RH(m_p_RH[n_vertex]);
-		// map hessian matrix
+		if(m_p_RH[n_vertex]) { // may be null if const vertices are allowed
+			Eigen::Map<typename CVertexTraits<n_vertex>::_TyJacobianMatrix,
+				CUberBlockMatrix::map_Alignment> t_RH(m_p_RH[n_vertex]);
+			// map Jacobian matrix
 
-		t_RH = m_t_square_root_sigma_inv_upper * r_t_jacobian_tuple.template Get<n_vertex>();
-		// recalculate RH (transpose cholesky of sigma times the jacobian)
-		// note that this references the A block matrix
+			t_RH = m_t_square_root_sigma_inv_upper * r_t_jacobian_tuple.template Get<n_vertex>();
+			// recalculate RH (transpose cholesky of sigma times the jacobian)
+			// note that this references the A block matrix
+		}
 
 		_Calculate_Jacobians(r_t_jacobian_tuple, fbs_ut::CCTSize<n_vertex + 1>());
 		// loop
@@ -922,12 +1422,7 @@ protected:
 	{
 		// we need to allocate a block between n_vertex1 and n_vertex0
 
-		_ASSERTE((m_p_vertex_id[n_vertex0] > m_p_vertex_id[n_vertex1]) ==
-			(m_vertex_ptr.template Get<n_vertex0>()->n_Order() > m_vertex_ptr.template Get<n_vertex1>()->n_Order()));
-		// if this triggers, then the edge has the vertices assigned in a different
-		// order than the ids (vertex[0] is id[1] and vice versa) consequently, the hessians
-		// will have correct shape in the matrix, but the data will be transposed
-		// and you will get either not pos def / rubbish solutions
+		_ASSERTE(!m_vertex_ptr.template Get<n_vertex0>()->b_IsConstant()); // make sure that n_vertex0 is not constant
 
 		enum {
 			n_block = hyperedge_detail::CStrictlyTriangularOffset<n_vertex0, n_vertex1, n_vertex_num>::n_result
@@ -939,76 +1434,86 @@ protected:
 #endif // _DEBUG
 		// make sure that they are not set twice
 
-		bool b_transpose_block, b_uninit_block;
-		size_t n_dimension0 = CVertexTraits<n_vertex0>::n_dimension;
-		size_t n_dimension1 = CVertexTraits<n_vertex1>::n_dimension;
+		if(!m_vertex_ptr.template Get<n_vertex1>()->b_IsConstant()) { // if n_vertex1 is not constant
+			_ASSERTE((m_p_vertex_id[n_vertex0] > m_p_vertex_id[n_vertex1]) ==
+				(m_vertex_ptr.template Get<n_vertex0>()->n_Order() > m_vertex_ptr.template Get<n_vertex1>()->n_Order()));
+			// if this triggers, then the edge has the vertices assigned in a different
+			// order than the ids (vertex[0] is id[1] and vice versa) consequently, the Hessians
+			// will have correct shape in the matrix, but the data will be transposed
+			// and you will get either not pos def / rubbish solutions
+
+			bool b_transpose_block, b_uninit_block;
+			size_t n_dimension0 = CVertexTraits<n_vertex0>::n_dimension;
+			size_t n_dimension1 = CVertexTraits<n_vertex1>::n_dimension;
 #ifdef __BASE_TYPES_USE_ID_ADDRESSING
-		size_t n_id_0 = m_p_vertex_id[n_vertex0];
-		size_t n_id_1 = m_p_vertex_id[n_vertex1];
-		if((b_transpose_block = (n_id_0 > n_id_1))) {
-			std::swap(n_id_0, n_id_1);
-			std::swap(n_dimension0, n_dimension1);
-		}
-		// make sure the order is sorted (if swapping, will have to transpose the result,
-		// but we will deal with that laters)
-
-		_ASSERTE(n_id_0 != n_id_1); // will otherwise overwrite blocks with vertex blocks (malformed system)
-		_ASSERTE(n_id_0 < n_id_1);
-		// they dont care about the man that ends up under the stage, they only care about the one above (column > row)
-
-		m_p_HtSiH[n_block] = r_lambda.p_GetBlock_Log_Alloc(n_id_0, n_id_1, n_dimension0, n_dimension1, b_uninit_block);
-		// this cannot fragment large empty rows / columns, which becomes a problem with hyperedges
-		// (it is harder to enforce strict vertex order as with binary edges);
-		// t_odo - what if binary and unary edges are mixed with hyperedges? then likely we cannot use
-		// this function either. - actually, unary and binary edges will always use p_FindBlock_Alloc()
-		// unless __BASE_TYPES_USE_ID_ADDRESSING is defined (which is supposed to be used with caution)
-		// so there is no problem
-#else // __BASE_TYPES_USE_ID_ADDRESSING
-		size_t n_order_0 = m_vertex_ptr.template Get<n_vertex0>()->n_Order();
-		size_t n_order_1 = m_vertex_ptr.template Get<n_vertex1>()->n_Order();
-		if((b_transpose_block = (n_order_0 > n_order_1))) {
-			std::swap(n_order_0, n_order_1);
-			std::swap(n_dimension0, n_dimension1);
-		}
-		// make sure the order is sorted (if swapping, will have to transpose the result,
-		// but we will deal with that laters)
-
-		_ASSERTE(n_order_0 != n_order_1); // will otherwise overwrite blocks with vertex blocks (malformed system)
-		_ASSERTE(n_order_0 < n_order_1);
-		// they dont care about the man that ends up under the stage, they only care about the one above (column > row)
-
-		m_p_HtSiH[n_block] = r_lambda.p_FindBlock_Alloc(n_order_0, n_order_1, n_dimension0, n_dimension1, b_uninit_block);
-#endif // __BASE_TYPES_USE_ID_ADDRESSING
-		// find a block for hessian above the diagonal, and with the right shape
-
-		_ASSERTE(m_p_HtSiH[n_block]);
-		// if this triggers, most likely __BASE_TYPES_USE_ID_ADDRESSING is enabled (see FlatSystem.h)
-		// and the edges come in some random order
-
-		{
-			typename CReductionPlan::CLambdaReductor &rp = r_rp.r_Lambda_ReductionPlan();
-
-			if(b_transpose_block) {
-				typedef fbs_ut::CCTSize2D<CVertexTraits<n_vertex1>::n_dimension, CVertexTraits<n_vertex0>::n_dimension> BlockSize;
-				if(b_uninit_block)
-					rp.template p_OffDiagonal_GetTempBlock<BlockSize>(m_p_HtSiH[n_block], &m_p_HtSiH[n_block]); // return value ignored (equals m_p_HtSiH[n_block])
-				else {
-					m_p_HtSiH[n_block] = rp.template p_OffDiagonal_GetTempBlock<BlockSize>(m_p_vertex_id[n_vertex1],
-						m_p_vertex_id[n_vertex0], m_p_HtSiH[n_block]); // potentially perform relocation to a temp block for reduction
-				}
-			} else {
-				typedef fbs_ut::CCTSize2D<CVertexTraits<n_vertex0>::n_dimension, CVertexTraits<n_vertex1>::n_dimension> BlockSize;
-				if(b_uninit_block)
-					rp.template p_OffDiagonal_GetTempBlock<BlockSize>(m_p_HtSiH[n_block], &m_p_HtSiH[n_block]); // return value ignored (equals m_p_HtSiH[n_block])
-				else {
-					m_p_HtSiH[n_block] = rp.template p_OffDiagonal_GetTempBlock<BlockSize>(m_p_vertex_id[n_vertex0],
-						m_p_vertex_id[n_vertex1], m_p_HtSiH[n_block]); // potentially perform relocation to a temp block for reduction
-				}
+			size_t n_id_0 = m_p_vertex_id[n_vertex0];
+			size_t n_id_1 = m_p_vertex_id[n_vertex1];
+			if((b_transpose_block = (n_id_0 > n_id_1))) {
+				std::swap(n_id_0, n_id_1);
+				std::swap(n_dimension0, n_dimension1);
 			}
-			// make space for the edge in the reduction scheme
-		}
+			// make sure the order is sorted (if swapping, will have to transpose the result,
+			// but we will deal with that laters)
 
-		// t_odo - continue with this // there's nothing more to do here
+			_ASSERTE(n_id_0 != n_id_1); // will otherwise overwrite blocks with vertex blocks (malformed system)
+			_ASSERTE(n_id_0 < n_id_1);
+			// they dont care about the man that ends up under the stage, they only care about the one above (column > row)
+
+			m_p_HtSiH[n_block] = r_lambda.p_GetBlock_Log_Alloc(n_id_0, n_id_1, n_dimension0, n_dimension1, b_uninit_block);
+			// this cannot fragment large empty rows / columns, which becomes a problem with hyperedges
+			// (it is harder to enforce strict vertex order as with binary edges);
+			// t_odo - what if binary and unary edges are mixed with hyperedges? then likely we cannot use
+			// this function either. - actually, unary and binary edges will always use p_FindBlock_Alloc()
+			// unless __BASE_TYPES_USE_ID_ADDRESSING is defined (which is supposed to be used with caution)
+			// so there is no problem
+#else // __BASE_TYPES_USE_ID_ADDRESSING
+			size_t n_order_0 = m_vertex_ptr.template Get<n_vertex0>()->n_Order();
+			size_t n_order_1 = m_vertex_ptr.template Get<n_vertex1>()->n_Order();
+			if((b_transpose_block = (n_order_0 > n_order_1))) {
+				std::swap(n_order_0, n_order_1);
+				std::swap(n_dimension0, n_dimension1);
+			}
+			// make sure the order is sorted (if swapping, will have to transpose the result,
+			// but we will deal with that laters)
+
+			_ASSERTE(n_order_0 != n_order_1); // will otherwise overwrite blocks with vertex blocks (malformed system)
+			_ASSERTE(n_order_0 < n_order_1);
+			// they dont care about the man that ends up under the stage, they only care about the one above (column > row)
+
+			m_p_HtSiH[n_block] = r_lambda.p_FindBlock_Alloc(n_order_0, n_order_1, n_dimension0, n_dimension1, b_uninit_block);
+#endif // __BASE_TYPES_USE_ID_ADDRESSING
+			// find a block for Hessian above the diagonal, and with the right shape
+
+			_ASSERTE(m_p_HtSiH[n_block]);
+			// if this triggers, most likely __BASE_TYPES_USE_ID_ADDRESSING is enabled (see FlatSystem.h)
+			// and the edges come in some random order
+
+			{
+				typename CReductionPlan::CLambdaReductor &rp = r_rp.r_Lambda_ReductionPlan();
+
+				if(b_transpose_block) {
+					typedef fbs_ut::CCTSize2D<CVertexTraits<n_vertex1>::n_dimension, CVertexTraits<n_vertex0>::n_dimension> BlockSize;
+					if(b_uninit_block)
+						rp.template p_OffDiagonal_GetTempBlock<BlockSize>(m_p_HtSiH[n_block], &m_p_HtSiH[n_block]); // return value ignored (equals m_p_HtSiH[n_block])
+					else {
+						m_p_HtSiH[n_block] = rp.template p_OffDiagonal_GetTempBlock<BlockSize>(m_p_vertex_id[n_vertex1],
+							m_p_vertex_id[n_vertex0], m_p_HtSiH[n_block]); // potentially perform relocation to a temp block for reduction
+					}
+				} else {
+					typedef fbs_ut::CCTSize2D<CVertexTraits<n_vertex0>::n_dimension, CVertexTraits<n_vertex1>::n_dimension> BlockSize;
+					if(b_uninit_block)
+						rp.template p_OffDiagonal_GetTempBlock<BlockSize>(m_p_HtSiH[n_block], &m_p_HtSiH[n_block]); // return value ignored (equals m_p_HtSiH[n_block])
+					else {
+						m_p_HtSiH[n_block] = rp.template p_OffDiagonal_GetTempBlock<BlockSize>(m_p_vertex_id[n_vertex0],
+							m_p_vertex_id[n_vertex1], m_p_HtSiH[n_block]); // potentially perform relocation to a temp block for reduction
+					}
+				}
+				// make space for the off-diagonal block in the reduction scheme
+			}
+
+			// t_odo - continue with this // there's nothing more to do here
+		} else
+			m_p_HtSiH[n_block] = 0; // the vertex is constant
 
 		_Alloc_HessianBlocks_v2_Inner(r_lambda, r_rp, fbs_ut::CCTSize<n_vertex1 + 1>(), tag1);
 		// loop
@@ -1050,38 +1555,43 @@ protected:
 #endif // _DEBUG
 		// make sure that they are not set twice
 
+		if(!m_vertex_ptr.template Get<n_vertex0>()->b_IsConstant()) { // if the vertex is not constant
 #ifdef __BASE_TYPES_USE_ID_ADDRESSING
-		m_p_HtSiH_vert[n_vertex0] = r_lambda.p_GetBlock_Log(m_p_vertex_id[n_vertex0], m_p_vertex_id[n_vertex0],
-			CVertexTraits<n_vertex0>::n_dimension, CVertexTraits<n_vertex0>::n_dimension, true, false);
+			m_p_HtSiH_vert[n_vertex0] = r_lambda.p_GetBlock_Log(m_p_vertex_id[n_vertex0], m_p_vertex_id[n_vertex0],
+				CVertexTraits<n_vertex0>::n_dimension, CVertexTraits<n_vertex0>::n_dimension, true, false);
 #else // __BASE_TYPES_USE_ID_ADDRESSING
-		m_p_HtSiH_vert[n_vertex0] = r_lambda.p_FindBlock(m_vertex_ptr.template Get<n_vertex0>()->n_Order(),
-			m_vertex_ptr.template Get<n_vertex0>()->n_Order(), CVertexTraits<n_vertex0>::n_dimension,
-			CVertexTraits<n_vertex0>::n_dimension, true, false);
+			m_p_HtSiH_vert[n_vertex0] = r_lambda.p_FindBlock(m_vertex_ptr.template Get<n_vertex0>()->n_Order(),
+				m_vertex_ptr.template Get<n_vertex0>()->n_Order(), CVertexTraits<n_vertex0>::n_dimension,
+				CVertexTraits<n_vertex0>::n_dimension, true, false);
 #endif // __BASE_TYPES_USE_ID_ADDRESSING
-		// find a block for vertices' hessian on the diagonal (do not use the potentially swapped id / order)
-		// note that if this is added after the edge hessian, it will be likely
-		// added at the end of the block list in the matrix
+			// find a block for vertices' Hessian on the diagonal (do not use the potentially swapped id / order)
+			// note that if this is added after the off-diagonal Hessian, it will be likely
+			// added at the end of the block list in the matrix
 
-		{
-			typename CReductionPlan::CLambdaReductor &rp = r_rp.r_Lambda_ReductionPlan();
+			{
+				typename CReductionPlan::CLambdaReductor &rp = r_rp.r_Lambda_ReductionPlan();
 
-			m_p_HtSiH_vert[n_vertex0] = rp.template p_Diagonal_GetTempBlock<typename
-				CVertexTraits<n_vertex0>::_TyMatrixSize>(m_p_vertex_id[n_vertex0],
-				m_p_vertex_id[n_vertex0], m_p_HtSiH_vert[n_vertex0]);
-			// make space for the vertices in the reduction scheme
+				m_p_HtSiH_vert[n_vertex0] = rp.template p_Diagonal_GetTempBlock<typename
+					CVertexTraits<n_vertex0>::_TyMatrixSize>(m_p_vertex_id[n_vertex0],
+					m_p_vertex_id[n_vertex0], m_p_HtSiH_vert[n_vertex0]);
+				// make space for the vertices in the reduction scheme
+			}
+
+			{
+				typename CReductionPlan::CRHSReductor &rp = r_rp.r_RHS_ReductionPlan();
+
+				m_p_RHS_vert[n_vertex0] =
+					rp.template p_Get_ReductionBlock<CVertexTraits<n_vertex0>::n_dimension>(
+					m_vertex_ptr.template Get<n_vertex0>()->n_Order());
+			}
+			// alloc the RHS reduction temporaries
+
+			_Alloc_HessianBlocks_v2_Inner(r_lambda, r_rp, fbs_ut::CCTSize<n_vertex0 + 1>(), tag);
+			// alloc off-diagonal blocks
+		} else {
+			m_p_HtSiH_vert[n_vertex0] = 0;
+			m_p_RHS_vert[n_vertex0] = 0;
 		}
-
-		{
-			typename CReductionPlan::CRHSReductor &rp = r_rp.r_RHS_ReductionPlan();
-
-			m_p_RHS_vert[n_vertex0] =
-				rp.template p_Get_ReductionBlock<CVertexTraits<n_vertex0>::n_dimension>(
-				m_vertex_ptr.template Get<n_vertex0>()->n_Order());
-		}
-		// alloc the RHS reduction temporaries
-
-		_Alloc_HessianBlocks_v2_Inner(r_lambda, r_rp, fbs_ut::CCTSize<n_vertex0 + 1>(), tag);
-		// alloc off-diagonal blocks
 
 		_Alloc_HessianBlocks_v2(r_lambda, r_rp, fbs_ut::CCTSize<n_vertex0 + 1>());
 		// loop
@@ -1104,7 +1614,7 @@ protected:
 
 public:
 	/**
-	 *	@brief allocates hessian block matrices
+	 *	@brief allocates Hessian blocks
 	 *
 	 *	@tparam CReductionPlan is lambda reduction plan instantiation
 	 *
@@ -1138,6 +1648,7 @@ public:
 		// loops for many vertices
 
 #ifdef _DEBUG
+#ifndef __BASE_TYPES_ALLOW_CONST_VERTICES
 		for(int i = 0; i < int(n_offdiag_block_num); ++ i)
 			_ASSERTE(m_p_HtSiH[i]);
 		for(int i = 0; i < int(n_vertex_num); ++ i) {
@@ -1145,6 +1656,16 @@ public:
 			_ASSERTE(m_p_HtSiH_vert[i]);
 		}
 		// make sure all were initialized
+#else // !__BASE_TYPES_ALLOW_CONST_VERTICES
+		bool b_had_nonconst = false;
+		for(int i = 0; i < int(n_vertex_num); ++ i) {
+			_ASSERTE(!m_p_RHS_vert[i] == !m_p_HtSiH_vert[i]); // both zero or not zero at the same time
+			if(m_p_HtSiH_vert[i])
+				b_had_nonconst = true;
+		}
+		_ASSERTE(b_had_nonconst); // if this triggers then all the vertices are constant. do not add this edge to the system in the first place
+		// more basic checks
+#endif // !__BASE_TYPES_ALLOW_CONST_VERTICES
 #endif // _DEBUG
 
 		// in virtual call scenario, either system or solver would need to specialize a virtual interface
@@ -1171,55 +1692,59 @@ protected:
 	{
 		// we need to reduce a block between n_vertex1 and n_vertex0
 
+		_ASSERTE(!m_vertex_ptr.template Get<n_vertex0>()->b_IsConstant()); // make sure that n_vertex0 is not constant
+
 		enum {
 			n_block = hyperedge_detail::CStrictlyTriangularOffset<n_vertex0, n_vertex1, n_vertex_num>::n_result
 		};
 		// calculate index of the block (among all upper triangular blocks of this edge)
 
-		typename CReductionPlan::CLambdaReductor &rp = r_rp.r_Lambda_ReductionPlan();
-		const size_t n_id_0 = m_p_vertex_id[n_vertex0], n_id_1 = m_p_vertex_id[n_vertex1];
+		if(!m_vertex_ptr.template Get<n_vertex1>()->b_IsConstant()) { // if n_vertex1 is not constant
+			typename CReductionPlan::CLambdaReductor &rp = r_rp.r_Lambda_ReductionPlan();
+			const size_t n_id_0 = m_p_vertex_id[n_vertex0], n_id_1 = m_p_vertex_id[n_vertex1];
 #if defined(__BASE_TYPES_USE_ID_ADDRESSING) || !defined(__BASE_TYPES_HYPEREDGES_AVOID_ID_ORDERING)
-		// this would be usually a better choice, but the vertex ordering is more problematic with hyperedges,
-		// it might be hard to make an edge where the vertex order corresponds to vertex ids, therefore we will
-		// not use ids for ordering here, although it would have been faster
+			// this would be usually a better choice, but the vertex ordering is more problematic with hyperedges,
+			// it might be hard to make an edge where the vertex order corresponds to vertex ids, therefore we will
+			// not use ids for ordering here, although it would have been faster
 
-		_ASSERTE((n_id_0 > n_id_1) == (m_vertex_ptr.template Get<n_vertex0>()->n_Order() >
-			m_vertex_ptr.template Get<n_vertex1>()->n_Order())); // if this triggers, then the edge has the vertices assigned in different order than the ids (vertex[0] is id[1] and vice versa)
-		if(n_id_0 > n_id_1) {
+			_ASSERTE((n_id_0 > n_id_1) == (m_vertex_ptr.template Get<n_vertex0>()->n_Order() >
+				m_vertex_ptr.template Get<n_vertex1>()->n_Order())); // if this triggers, then the edge has the vertices assigned in different order than the ids (vertex[0] is id[1] and vice versa)
+			if(n_id_0 > n_id_1) {
 #else // __BASE_TYPES_USE_ID_ADDRESSING || !__BASE_TYPES_HYPEREDGES_AVOID_ID_ORDERING
-		const size_t n_order_0 = m_vertex_ptr.template Get<n_vertex0>()->n_Order();
-		const size_t n_order_1 = m_vertex_ptr.template Get<n_vertex1>()->n_Order();
-		if(n_order_0 > n_order_1) {
+			const size_t n_order_0 = m_vertex_ptr.template Get<n_vertex0>()->n_Order();
+			const size_t n_order_1 = m_vertex_ptr.template Get<n_vertex1>()->n_Order();
+			if(n_order_0 > n_order_1) {
 #endif // __BASE_TYPES_USE_ID_ADDRESSING || !__BASE_TYPES_HYPEREDGES_AVOID_ID_ORDERING
-			typename CReductionPlan::CLambdaReductor::TKey t_key;
-			if(CReductionPlan::CLambdaReductor::b_use_block_coord_keys) // compile-time const
-				t_key = CReductionPlan::CLambdaReductor::t_MakeKey(n_id_1, n_id_0, 0); // pointer ignored
-			else {
-				const double *p_HtSiH = r_lambda.p_GetBlock_Log(n_id_1, n_id_0,
-					CVertexTraits<n_vertex1>::n_dimension, CVertexTraits<n_vertex0>::n_dimension);
-				_ASSERTE(p_HtSiH);
-				t_key = CReductionPlan::CLambdaReductor::t_MakeKey(n_id_1, n_id_0, p_HtSiH);
-				// need the address of the unique *original* block, not of one of the many reduction temporaries
-			}
+				typename CReductionPlan::CLambdaReductor::TKey t_key;
+				if(CReductionPlan::CLambdaReductor::b_use_block_coord_keys) // compile-time const
+					t_key = CReductionPlan::CLambdaReductor::t_MakeKey(n_id_1, n_id_0, 0); // pointer ignored
+				else {
+					const double *p_HtSiH = r_lambda.p_GetBlock_Log(n_id_1, n_id_0,
+						CVertexTraits<n_vertex1>::n_dimension, CVertexTraits<n_vertex0>::n_dimension);
+					_ASSERTE(p_HtSiH);
+					t_key = CReductionPlan::CLambdaReductor::t_MakeKey(n_id_1, n_id_0, p_HtSiH);
+					// need the address of the unique *original* block, not of one of the many reduction temporaries
+				}
 
-			typedef fbs_ut::CCTSize2D<CVertexTraits<n_vertex1>::n_dimension,
-				CVertexTraits<n_vertex0>::n_dimension> BlockSize;
-			rp.template ReduceSingle<BlockSize>(t_key);
-		} else {
-			typename CReductionPlan::CLambdaReductor::TKey t_key;
-			if(CReductionPlan::CLambdaReductor::b_use_block_coord_keys) // compile-time const
-				t_key = CReductionPlan::CLambdaReductor::t_MakeKey(n_id_0, n_id_1, 0); // pointer ignored
-			else {
-				const double *p_HtSiH = r_lambda.p_GetBlock_Log(n_id_0, n_id_1,
-					CVertexTraits<n_vertex0>::n_dimension, CVertexTraits<n_vertex1>::n_dimension);
-				_ASSERTE(p_HtSiH);
-				t_key = CReductionPlan::CLambdaReductor::t_MakeKey(n_id_0, n_id_1, p_HtSiH);
-				// need the address of the unique *original* block, not of one of the many reduction temporaries
-			}
+				typedef fbs_ut::CCTSize2D<CVertexTraits<n_vertex1>::n_dimension,
+					CVertexTraits<n_vertex0>::n_dimension> BlockSize;
+				rp.template ReduceSingle<BlockSize>(t_key);
+			} else {
+				typename CReductionPlan::CLambdaReductor::TKey t_key;
+				if(CReductionPlan::CLambdaReductor::b_use_block_coord_keys) // compile-time const
+					t_key = CReductionPlan::CLambdaReductor::t_MakeKey(n_id_0, n_id_1, 0); // pointer ignored
+				else {
+					const double *p_HtSiH = r_lambda.p_GetBlock_Log(n_id_0, n_id_1,
+						CVertexTraits<n_vertex0>::n_dimension, CVertexTraits<n_vertex1>::n_dimension);
+					_ASSERTE(p_HtSiH);
+					t_key = CReductionPlan::CLambdaReductor::t_MakeKey(n_id_0, n_id_1, p_HtSiH);
+					// need the address of the unique *original* block, not of one of the many reduction temporaries
+				}
 
-			typedef fbs_ut::CCTSize2D<CVertexTraits<n_vertex0>::n_dimension,
-				CVertexTraits<n_vertex1>::n_dimension> BlockSize;
-			rp.template ReduceSingle<BlockSize>(t_key);
+				typedef fbs_ut::CCTSize2D<CVertexTraits<n_vertex0>::n_dimension,
+					CVertexTraits<n_vertex1>::n_dimension> BlockSize;
+				rp.template ReduceSingle<BlockSize>(t_key);
+			}
 		}
 
 		_Reduce_Hessians_v2_Inner(r_lambda, r_rp, fbs_ut::CCTSize<n_vertex1 + 1>(), tag1);
@@ -1256,27 +1781,29 @@ protected:
 	inline void _Reduce_Hessians_v2(const CUberBlockMatrix &r_lambda, CReductionPlan &r_rp,
 		fbs_ut::CCTSize<n_vertex0> tag)
 	{
-		typename CReductionPlan::CLambdaReductor &rp = r_rp.r_Lambda_ReductionPlan();
-		const size_t n_id_0 = m_p_vertex_id[n_vertex0];
+		if(!m_vertex_ptr.template Get<n_vertex0>()->b_IsConstant()) { // if the vertex is not constant
+			typename CReductionPlan::CLambdaReductor &rp = r_rp.r_Lambda_ReductionPlan();
+			const size_t n_id_0 = m_p_vertex_id[n_vertex0];
 
-		typename CReductionPlan::CLambdaReductor::TKey p_key_vert; // one at a time
-		if(CReductionPlan::CLambdaReductor::b_use_block_coord_keys) // compile-time const
-			p_key_vert = CReductionPlan::CLambdaReductor::t_MakeKey(n_id_0, n_id_0, 0); // pointer ignored
-		else { // potentially untested code below
-			const double *p_HtSiH_vert; // one at a time
-			p_HtSiH_vert = r_lambda.p_GetBlock_Log(n_id_0, n_id_0,
-				CVertexTraits<n_vertex0>::n_dimension, CVertexTraits<n_vertex0>::n_dimension);
-			_ASSERTE(p_HtSiH_vert);
-			// need the address of the unique *original* block, not of one of the many reduction temporaries
-			// t_odo - perhaps it would be better to use (row, col) as unique index to the reduction, this lookup would then be avoided
+			typename CReductionPlan::CLambdaReductor::TKey p_key_vert; // one at a time
+			if(CReductionPlan::CLambdaReductor::b_use_block_coord_keys) // compile-time const
+				p_key_vert = CReductionPlan::CLambdaReductor::t_MakeKey(n_id_0, n_id_0, 0); // pointer ignored
+			else { // potentially untested code below
+				const double *p_HtSiH_vert; // one at a time
+				p_HtSiH_vert = r_lambda.p_GetBlock_Log(n_id_0, n_id_0,
+					CVertexTraits<n_vertex0>::n_dimension, CVertexTraits<n_vertex0>::n_dimension);
+				_ASSERTE(p_HtSiH_vert);
+				// need the address of the unique *original* block, not of one of the many reduction temporaries
+				// t_odo - perhaps it would be better to use (row, col) as unique index to the reduction, this lookup would then be avoided
 
-			p_key_vert = CReductionPlan::CLambdaReductor::t_MakeKey(n_id_0, n_id_0, p_HtSiH_vert);
+				p_key_vert = CReductionPlan::CLambdaReductor::t_MakeKey(n_id_0, n_id_0, p_HtSiH_vert);
+			}
+			rp.template ReduceSingle<typename CVertexTraits<n_vertex0>::_TyMatrixSize>(p_key_vert);
+			// reduce the current vertex
+
+			_Reduce_Hessians_v2_Inner(r_lambda, r_rp, fbs_ut::CCTSize<n_vertex0 + 1>(), tag);
+			// reduce off-diagonal blocks
 		}
-		rp.template ReduceSingle<typename CVertexTraits<n_vertex0>::_TyMatrixSize>(p_key_vert);
-		// reduce the current vertex
-
-		_Reduce_Hessians_v2_Inner(r_lambda, r_rp, fbs_ut::CCTSize<n_vertex0 + 1>(), tag);
-		// reduce off-diagonal blocks
 
 		_Reduce_Hessians_v2(r_lambda, r_rp, fbs_ut::CCTSize<n_vertex0 + 1>());
 		// loop
@@ -1299,7 +1826,7 @@ protected:
 
 public:
 	/**
-	 *	@brief sums up edge hessian block contributions to get values of the blocks in lambda
+	 *	@brief sums up Hessian block contributions to get values of the blocks in lambda
 	 *
 	 *	@tparam CReductionPlan is lambda reduction plan instantiation
 	 *
@@ -1307,7 +1834,7 @@ public:
 	 *	@param[in,out] r_rp is lambda reduction plan
 	 *
 	 *	@note This function is required for CNonlinearSolver_Lambda.
-	 *	@note This only reduces the hessians, Calculate_Hessians_v2() must be called
+	 *	@note This only reduces the Hessians, Calculate_Hessians_v2() must be called
 	 *		before to have stuff to calculate.
 	 */
 	template <class CReductionPlan>
@@ -1337,64 +1864,69 @@ protected:
 	{
 		// we need to reduce a block between n_vertex1 and n_vertex0
 
+		_ASSERTE(!m_vertex_ptr.template Get<n_vertex0>()->b_IsConstant()); // make sure that n_vertex0 is not constant
+
 		enum {
 			n_block = hyperedge_detail::CStrictlyTriangularOffset<n_vertex0, n_vertex1, n_vertex_num>::n_result
 		};
 		// calculate index of the block (among all upper triangular blocks of this edge)
 
-		const typename CVertexTraits<n_vertex1>::_TyJacobianMatrix &t_jacobian1 = r_t_jacobians.template Get<n_vertex1>();
+		if(!m_vertex_ptr.template Get<n_vertex1>()->b_IsConstant()) { // if n_vertex1 is not constant
+			const typename CVertexTraits<n_vertex1>::_TyJacobianMatrix &t_jacobian1 =
+				r_t_jacobians.template Get<n_vertex1>();
 
-		bool b_transpose_hessian;
-		size_t n_dimension0 = CVertexTraits<n_vertex0>::n_dimension;
-		size_t n_dimension1 = CVertexTraits<n_vertex1>::n_dimension;
+			bool b_transpose_hessian;
+			size_t n_dimension0 = CVertexTraits<n_vertex0>::n_dimension;
+			size_t n_dimension1 = CVertexTraits<n_vertex1>::n_dimension;
 #if defined(__BASE_TYPES_USE_ID_ADDRESSING) || !defined(__BASE_TYPES_HYPEREDGES_AVOID_ID_ORDERING)
-		// this would be usually a better choice, but the vertex ordering is more problematic with hyperedges,
-		// it might be hard to make an edge where the vertex order corresponds to vertex ids, therefore we will
-		// not use ids for ordering here, although it would have been faster
+			// this would be usually a better choice, but the vertex ordering is more problematic with hyperedges,
+			// it might be hard to make an edge where the vertex order corresponds to vertex ids, therefore we will
+			// not use ids for ordering here, although it would have been faster
 
-		size_t n_id_0 = m_p_vertex_id[n_vertex0];
-		size_t n_id_1 = m_p_vertex_id[n_vertex1]; // this is closer in cache
-		_ASSERTE((n_id_0 > n_id_1) == (m_vertex_ptr.template Get<n_vertex0>()->n_Order() >
-			m_vertex_ptr.template Get<n_vertex1>()->n_Order())); // if this triggers, then the edge has the vertices assigned in different order than the ids (vertex[0] is id[1] and vice versa)
-		if((b_transpose_hessian = (n_id_0 > n_id_1))) {
-			std::swap(n_id_0, n_id_1);
-			std::swap(n_dimension0, n_dimension1);
-		}
-		// make sure the order is sorted (if swapping, will have to transpose the result,
-		// but we will deal with that laters)
+			size_t n_id_0 = m_p_vertex_id[n_vertex0];
+			size_t n_id_1 = m_p_vertex_id[n_vertex1]; // this is closer in cache
+			_ASSERTE((n_id_0 > n_id_1) == (m_vertex_ptr.template Get<n_vertex0>()->n_Order() >
+				m_vertex_ptr.template Get<n_vertex1>()->n_Order())); // if this triggers, then the edge has the vertices assigned in different order than the ids (vertex[0] is id[1] and vice versa)
+			if((b_transpose_hessian = (n_id_0 > n_id_1))) {
+				std::swap(n_id_0, n_id_1);
+				std::swap(n_dimension0, n_dimension1);
+			}
+			// make sure the order is sorted (if swapping, will have to transpose the result,
+			// but we will deal with that laters)
 
-		_ASSERTE(n_id_0 != n_id_1); // will otherwise overwrite blocks with vertex blocks (malformed system)
-		_ASSERTE(n_id_0 < n_id_1);
-		// they dont care about the man that ends up under the stage, they only care about the one above (column > row)
+			_ASSERTE(n_id_0 != n_id_1); // will otherwise overwrite blocks with vertex blocks (malformed system)
+			_ASSERTE(n_id_0 < n_id_1);
+			// they dont care about the man that ends up under the stage, they only care about the one above (column > row)
 #else // __BASE_TYPES_USE_ID_ADDRESSING || !__BASE_TYPES_HYPEREDGES_AVOID_ID_ORDERING
-		size_t n_order_0 = m_vertex_ptr.template Get<n_vertex0>()->n_Order();
-		size_t n_order_1 = m_vertex_ptr.template Get<n_vertex1>()->n_Order();
-		if((b_transpose_hessian = (n_order_0 > n_order_1))) {
-			std::swap(n_order_0, n_order_1);
-			std::swap(n_dimension0, n_dimension1);
-		}
-		// make sure the order is sorted (if swapping, will have to transpose the result,
-		// but we will deal with that laters)
+			size_t n_order_0 = m_vertex_ptr.template Get<n_vertex0>()->n_Order();
+			size_t n_order_1 = m_vertex_ptr.template Get<n_vertex1>()->n_Order();
+			if((b_transpose_hessian = (n_order_0 > n_order_1))) {
+				std::swap(n_order_0, n_order_1);
+				std::swap(n_dimension0, n_dimension1);
+			}
+			// make sure the order is sorted (if swapping, will have to transpose the result,
+			// but we will deal with that laters)
 
-		_ASSERTE(n_order_0 != n_order_1); // will otherwise overwrite blocks with vertex blocks (malformed system)
-		_ASSERTE(n_order_0 < n_order_1);
-		// they dont care about the man that ends up under the stage, they only care about the one above (column > row)
+			_ASSERTE(n_order_0 != n_order_1); // will otherwise overwrite blocks with vertex blocks (malformed system)
+			_ASSERTE(n_order_0 < n_order_1);
+			// they dont care about the man that ends up under the stage, they only care about the one above (column > row)
 #endif // __BASE_TYPES_USE_ID_ADDRESSING || !__BASE_TYPES_HYPEREDGES_AVOID_ID_ORDERING
 
-		if(b_transpose_hessian) {
-			Eigen::Map<Eigen::Matrix<double, CVertexTraits<n_vertex1>::n_dimension, CVertexTraits<n_vertex0>::n_dimension>,
-				CUberBlockMatrix::map_Alignment> t_HtSiH(m_p_HtSiH[n_block]); // t_odo - support aligned if the uberblockmatrix is aligned!
-			// map the matrix above diagonal
+			if(b_transpose_hessian) {
+				Eigen::Map<Eigen::Matrix<double, CVertexTraits<n_vertex1>::n_dimension, CVertexTraits<n_vertex0>::n_dimension>,
+					CUberBlockMatrix::map_Alignment> t_HtSiH(m_p_HtSiH[n_block]); // t_odo - support aligned if the uberblockmatrix is aligned!
+				// map the matrix above diagonal
 
-			t_HtSiH.noalias() = t_jacobian1.transpose() * t_H0_sigma_inv.transpose();
-		} else {
-			Eigen::Map<Eigen::Matrix<double, CVertexTraits<n_vertex0>::n_dimension, CVertexTraits<n_vertex1>::n_dimension>,
-				CUberBlockMatrix::map_Alignment> t_HtSiH(m_p_HtSiH[n_block]); // t_odo - support aligned if the uberblockmatrix is aligned!
-			// map the matrix above diagonal
+				t_HtSiH.noalias() = t_jacobian1.transpose() * t_H0_sigma_inv.transpose();
+			} else {
+				Eigen::Map<Eigen::Matrix<double, CVertexTraits<n_vertex0>::n_dimension, CVertexTraits<n_vertex1>::n_dimension>,
+					CUberBlockMatrix::map_Alignment> t_HtSiH(m_p_HtSiH[n_block]); // t_odo - support aligned if the uberblockmatrix is aligned!
+				// map the matrix above diagonal
 
-			t_HtSiH.noalias() = t_H0_sigma_inv * t_jacobian1;
+				t_HtSiH.noalias() = t_H0_sigma_inv * t_jacobian1;
+			}
+			// calculate the matrix above diagonal
 		}
-		// calculate the matrix above diagonal
 
 		_Calculate_Hessians_v2_Inner(r_t_jacobians,
 			t_H0_sigma_inv, fbs_ut::CCTSize<n_vertex1 + 1>(), tag1);
@@ -1436,32 +1968,34 @@ protected:
 	inline void _Calculate_Hessians_v2(const _TyJacobianTuple &r_t_jacobians,
 		const _TyVector &r_v_error, fbs_ut::CCTSize<n_vertex0> tag)
 	{
-		const typename CVertexTraits<n_vertex0>::_TyJacobianMatrix &t_jacobian0 = r_t_jacobians.template Get<n_vertex0>();
-		//const typename CVertexTraits<n_vertex1>::_TyJacobianMatrix &t_jacobian1 = r_t_jacobians.template Get<n_vertex1>();
-		// can tradeoff a copy for unaligned processing here
+		if(!m_vertex_ptr.template Get<n_vertex0>()->b_IsConstant()) { // if the vertex is not constant
+			const typename CVertexTraits<n_vertex0>::_TyJacobianMatrix &t_jacobian0 = r_t_jacobians.template Get<n_vertex0>();
+			//const typename CVertexTraits<n_vertex1>::_TyJacobianMatrix &t_jacobian1 = r_t_jacobians.template Get<n_vertex1>();
+			// can tradeoff a copy for unaligned processing here
 
-		Eigen::Matrix<double, CVertexTraits<n_vertex0>::n_dimension, n_residual_dimension> t_H0_sigma_inv =
-			t_jacobian0.transpose() * m_t_sigma_inv; // will need to pass this down
+			Eigen::Matrix<double, CVertexTraits<n_vertex0>::n_dimension, n_residual_dimension> t_H0_sigma_inv =
+				t_jacobian0.transpose() * m_t_sigma_inv; // will need to pass this down
 
-		Eigen::Map<typename CVertexTraits<n_vertex0>::_TyMatrixAlign,
-			CUberBlockMatrix::map_Alignment> t_HtSiH_vertex0(m_p_HtSiH_vert[n_vertex0]);
-		t_HtSiH_vertex0.noalias() = t_H0_sigma_inv * t_jacobian0;
-		/*Eigen::Map<typename CVertexTraits<n_vertex1>::_TyMatrixAlign,
-			CUberBlockMatrix::map_Alignment> t_HtSiH_vertex1(m_p_HtSiH_vert[n_vertex1]);
-		t_HtSiH_vertex1.noalias() = t_jacobian1.transpose() * m_t_sigma_inv * t_jacobian1;*/
-		// calculate vertex hessian contributions
+			Eigen::Map<typename CVertexTraits<n_vertex0>::_TyMatrixAlign,
+				CUberBlockMatrix::map_Alignment> t_HtSiH_vertex0(m_p_HtSiH_vert[n_vertex0]);
+			t_HtSiH_vertex0.noalias() = t_H0_sigma_inv * t_jacobian0;
+			/*Eigen::Map<typename CVertexTraits<n_vertex1>::_TyMatrixAlign,
+				CUberBlockMatrix::map_Alignment> t_HtSiH_vertex1(m_p_HtSiH_vert[n_vertex1]);
+			t_HtSiH_vertex1.noalias() = t_jacobian1.transpose() * m_t_sigma_inv * t_jacobian1;*/
+			// calculate diagonal Hessian contributions
 
-		Eigen::Map<typename CVertexTraits<n_vertex0>::_TyVectorAlign,
-			CUberBlockMatrix::map_Alignment> t_right_hand_vertex0(m_p_RHS_vert[n_vertex0]);
-		t_right_hand_vertex0.noalias() = t_jacobian0.transpose() * (m_t_sigma_inv * r_v_error);
-		/*Eigen::Map<typename CVertexTraits<n_vertex1>::_TyVectorAlign,
-			CUberBlockMatrix::map_Alignment> t_right_hand_vertex1(m_p_RHS_vert[n_vertex1]);
-		t_right_hand_vertex1.noalias() = t_jacobian1.transpose() * (m_t_sigma_inv * r_v_error);*/
-		// calculate right hand side vector contributions
+			Eigen::Map<typename CVertexTraits<n_vertex0>::_TyVectorAlign,
+				CUberBlockMatrix::map_Alignment> t_right_hand_vertex0(m_p_RHS_vert[n_vertex0]);
+			t_right_hand_vertex0.noalias() = t_jacobian0.transpose() * (m_t_sigma_inv * r_v_error);
+			/*Eigen::Map<typename CVertexTraits<n_vertex1>::_TyVectorAlign,
+				CUberBlockMatrix::map_Alignment> t_right_hand_vertex1(m_p_RHS_vert[n_vertex1]);
+			t_right_hand_vertex1.noalias() = t_jacobian1.transpose() * (m_t_sigma_inv * r_v_error);*/
+			// calculate right hand side vector contributions
 
-		_Calculate_Hessians_v2_Inner(r_t_jacobians, t_H0_sigma_inv,
-			fbs_ut::CCTSize<n_vertex0 + 1>(), tag);
-		// calculate off-diagonal blocks
+			_Calculate_Hessians_v2_Inner(r_t_jacobians, t_H0_sigma_inv,
+				fbs_ut::CCTSize<n_vertex0 + 1>(), tag);
+			// calculate off-diagonal blocks
+		}
 
 		_Calculate_Hessians_v2(r_t_jacobians, r_v_error, fbs_ut::CCTSize<n_vertex0 + 1>());
 		// loop
@@ -1486,9 +2020,9 @@ protected:
 
 public:
 	/**
-	 *	@brief calculates hessian contributions
+	 *	@brief calculates Hessian contributions
 	 *
-	 *	@note This only calculates the hessians, either Reduce_Hessians_v2() or the
+	 *	@note This only calculates the Hessians, either Reduce_Hessians_v2() or the
 	 *		reduction plan needs to be used to fill lambda with values.
 	 */
 	inline void Calculate_Hessians_v2()
@@ -1504,6 +2038,7 @@ public:
 #else // __LAMBDA_USE_V2_REDUCTION_PLAN
 
 #error this code is not updated to work with hyperedges (low priority TODO)
+#error this code is not updated to work with const vertices (low priority TODO)
 
 	inline bool Notify_HessianBlock_Conflict(double *p_block, CUberBlockMatrix &r_lambda)
 	{
@@ -1513,9 +2048,9 @@ public:
 				// get a temporary block
 
 				memcpy(m_p_HtSiH, p_block, CVertexTraits<0>::n_dimension * CVertexTraits<1>::n_dimension * sizeof(double));
-				// this edge's hessian might already have significant value, need to store it
+				// this off-diagonal Hessian might already have significant value, need to store it
 			}
-			// first time around this is called, alloc a different block to store this edge's hessian
+			// first time around this is called, alloc a different block to store this off-diagonal Hessian
 
 			m_p_HtSiH_reduce = p_block;
 			m_b_first_reductor = true; // i was the first
@@ -1529,12 +2064,12 @@ public:
 	{
 		m_p_vertex0->Add_ReferencingEdge(this);
 		m_p_vertex1->Add_ReferencingEdge(this);
-		// the vertices need to know this edge in order to calculate sum of jacobians on the diagonal of lambda // t_odo - should the lambda solver call this instead? might avoid duplicate records in the future // lambda solver is calling this only once in it's lifetime, no duplicates will occur
+		// the vertices need to know this edge in order to calculate sum of Hessians on the diagonal of lambda // t_odo - should the lambda solver call this instead? might avoid duplicate records in the future // lambda solver is calling this only once in it's lifetime, no duplicates will occur
 
 		_ASSERTE((m_p_vertex_id[0] > m_p_vertex_id[1]) ==
 			(m_p_vertex0->n_Order() > m_p_vertex1->n_Order()));
 		// if this triggers, then the edge has the vertices assigned in a different
-		// order than the ids (vertex[0] is id[1] and vice versa) consequently, the hessians
+		// order than the ids (vertex[0] is id[1] and vice versa) consequently, the Hessians
 		// will have correct shape in the matrix, but the data will be transposed
 		// and you will get either not pos def / rubbish solutions
 
@@ -1572,7 +2107,7 @@ public:
 
 		m_p_HtSiH = r_lambda.p_FindBlock_Alloc(n_order_0, n_order_1, n_dimension0, n_dimension1, b_uninit_block);
 #endif // __BASE_TYPES_USE_ID_ADDRESSING
-		// find a block for hessian above the diagonal, and with the right shape
+		// find a block for Hessian above the diagonal, and with the right shape
 
 		// t_odo - need a new function that finds a block, and says if it was there before, or not.
 		// that could break, if the lambda was already allocated. does that ever happen?
@@ -1606,7 +2141,7 @@ public:
 			// finally, the reduction needs to be carried out somehow
 
 			// each duplicate edge between two vertices can be processed by either of the vertices,
-			// in CSEBaseVertexImpl::Calculate_Hessians(). there are some problems with load balancing, but
+			// in CBaseVertexImpl::Calculate_Hessians(). there are some problems with load balancing, but
 			// it should generally work. there is a problem with matrix size, as the vertices do not have
 			// to be the same size, and each vertex does not know about the other vertex' dimension
 
@@ -1688,7 +2223,7 @@ public:
 
 		m_t_HtSiH_vertex0.noalias() = t_H0_sigma_inv * t_jacobian0;
 		m_t_HtSiH_vertex1.noalias() = t_jacobian1.transpose() * m_t_sigma_inv * t_jacobian1;
-		// calculate vertex hessian contributions
+		// calculate diagonal Hessian contributions
 
 		m_t_right_hand_vertex0.noalias() = t_jacobian0.transpose() * (m_t_sigma_inv * v_error);
 		m_t_right_hand_vertex1.noalias() = t_jacobian1.transpose() * (m_t_sigma_inv * v_error);
@@ -1717,10 +2252,10 @@ public:
 						CUberBlockMatrix::map_Alignment> t_HtSiH(m_p_HtSiH), t_HtSiH_reduce(m_p_HtSiH_reduce);
 					t_HtSiH_reduce.noalias() += t_HtSiH;
 				}
-				// this is otherwise nicely ordered by the loop in CSEBaseVertexImpl::Calculate_Hessians()
+				// this is otherwise nicely ordered by the loop in CBaseVertexImpl::Calculate_Hessians()
 			}
 		}
-		// take care of hessian reduction, kind of silently, but it is guaranteed
+		// take care of Hessian reduction, kind of silently, but it is guaranteed
 		// that this is called for all the updated vertices
 
 		// this is annoying. could we come up with some more general "reduction scheme" for calculating
@@ -1733,7 +2268,7 @@ public:
 		return (p_which == m_p_vertex0)?
 			std::make_pair(m_t_HtSiH_vertex0.data(), m_t_right_hand_vertex0.data()) :
 			std::make_pair(m_t_HtSiH_vertex1.data(), m_t_right_hand_vertex1.data());
-		// return pointer to the matrix data with hessian contribution
+		// return pointer to the matrix data with Hessian contribution
 	}
 
 #endif // __LAMBDA_USE_V2_REDUCTION_PLAN
@@ -1752,16 +2287,18 @@ protected:
 	template <const int n_vertex>
 	double _f_Max_VertexHessianDiagValue(double f_max, fbs_ut::CCTSize<n_vertex> UNUSED(tag)) const // todo surround with levenberg support ifdef
 	{
+		if(!m_vertex_ptr.template Get<n_vertex>()->b_IsConstant()) { // if the vertex is not constant
 #ifdef __LAMBDA_USE_V2_REDUCTION_PLAN
-		Eigen::Map<typename CVertexTraits<n_vertex>::_TyMatrix,
-			CUberBlockMatrix::map_Alignment> t_HtSiH_vertex(m_p_HtSiH_vert[n_vertex]); // uses pointer array
+			Eigen::Map<typename CVertexTraits<n_vertex>::_TyMatrix,
+				CUberBlockMatrix::map_Alignment> t_HtSiH_vertex(m_p_HtSiH_vert[n_vertex]); // uses pointer array
 #else // __LAMBDA_USE_V2_REDUCTION_PLAN
-		const Eigen::Map<typename CVertexTraits<n_vertex>::_TyMatrix,
-			CUberBlockMatrix::map_Alignment> &t_HtSiH_vertex = m_t_HtSiH_tuple.Get<n_vertex>(); // uses tuple
+			const Eigen::Map<typename CVertexTraits<n_vertex>::_TyMatrix,
+				CUberBlockMatrix::map_Alignment> &t_HtSiH_vertex = m_t_HtSiH_tuple.Get<n_vertex>(); // uses tuple
 #endif // __LAMBDA_USE_V2_REDUCTION_PLAN
 
-		for(size_t i = 0; i < CVertexTraits<n_vertex>::n_dimension; ++ i)
-			f_max = std::max(f_max, t_HtSiH_vertex(i, i));
+			for(size_t i = 0; i < CVertexTraits<n_vertex>::n_dimension; ++ i)
+				f_max = std::max(f_max, t_HtSiH_vertex(i, i));
+		}
 
 		return _f_Max_VertexHessianDiagValue(f_max, fbs_ut::CCTSize<n_vertex + 1>());
 	}
@@ -1826,46 +2363,50 @@ protected:
 	{
 		// we need to allocate a block between n_vertex1 and n_vertex0
 
-		_ASSERTE((m_p_vertex_id[n_vertex0] > m_p_vertex_id[n_vertex1]) ==
-			(m_vertex_ptr.template Get<n_vertex0>()->n_Order() > m_vertex_ptr.template Get<n_vertex1>()->n_Order()));
-		// if this triggers, then the edge has the vertices assigned in a different
-		// order than the ids (vertex[0] is id[1] and vice versa) consequently, the hessians
-		// will have correct shape in the matrix, but the data will be transposed
-		// and you will get either not pos def / rubbish solutions
+		_ASSERTE(!m_vertex_ptr.template Get<n_vertex0>()->b_IsConstant()); // make sure that n_vertex0 is not constant
 
-		enum {
-			n_block = hyperedge_detail::CStrictlyTriangularOffset<n_vertex0, n_vertex1, n_vertex_num>::n_result,
-			n_block_dim0 = CVertexTraits<n_vertex0>::n_dimension,
-			n_block_dim1 = CVertexTraits<n_vertex1>::n_dimension
-		};
-		// calculate index of the block (among all upper triangular blocks of this edge)
+		if(!m_vertex_ptr.template Get<n_vertex1>()->b_IsConstant()) { // if n_vertex1 is not constant
+			_ASSERTE((m_p_vertex_id[n_vertex0] > m_p_vertex_id[n_vertex1]) ==
+				(m_vertex_ptr.template Get<n_vertex0>()->n_Order() > m_vertex_ptr.template Get<n_vertex1>()->n_Order()));
+			// if this triggers, then the edge has the vertices assigned in a different
+			// order than the ids (vertex[0] is id[1] and vice versa) consequently, the Hessians
+			// will have correct shape in the matrix, but the data will be transposed
+			// and you will get either not pos def / rubbish solutions
 
-		size_t n_dimension0 = n_block_dim0, n_dimension1 = n_block_dim1;
-		size_t n_order_0 = m_vertex_ptr.template Get<n_vertex0>()->n_Order();
-		size_t n_order_1 = m_vertex_ptr.template Get<n_vertex1>()->n_Order();
-		if(n_order_0 > n_order_1) {
-			std::swap(n_order_0, n_order_1);
-			std::swap(n_dimension0, n_dimension1);
+			enum {
+				n_block = hyperedge_detail::CStrictlyTriangularOffset<n_vertex0, n_vertex1, n_vertex_num>::n_result,
+				n_block_dim0 = CVertexTraits<n_vertex0>::n_dimension,
+				n_block_dim1 = CVertexTraits<n_vertex1>::n_dimension
+			};
+			// calculate index of the block (among all upper triangular blocks of this edge)
+
+			size_t n_dimension0 = n_block_dim0, n_dimension1 = n_block_dim1;
+			size_t n_order_0 = m_vertex_ptr.template Get<n_vertex0>()->n_Order();
+			size_t n_order_1 = m_vertex_ptr.template Get<n_vertex1>()->n_Order();
+			if(n_order_0 > n_order_1) {
+				std::swap(n_order_0, n_order_1);
+				std::swap(n_dimension0, n_dimension1);
+			}
+			// make sure the order is sorted (if swapping, will have to transpose the result,
+			// but we will deal with that laters)
+
+			_ASSERTE(n_order_0 != n_order_1); // will otherwise overwrite blocks with vertex blocks (malformed system)
+			_ASSERTE(n_order_0 < n_order_1);
+			// they dont care about the man that ends up under the stage, they only care about the one above (column > row)
+
+			_ASSERTE(n_order_0 >= n_min_vertex_order && n_order_1 >= n_min_vertex_order);
+			double *p_block = r_omega.p_FindBlock(n_order_0 - n_min_vertex_order,
+				n_order_1 - n_min_vertex_order, n_dimension0, n_dimension1, true, true);
+			// find a block for Hessian above the diagonal, and with the right shape
+
+			_ASSERTE(p_block && m_p_HtSiH[n_block]);
+			// if this triggers, most likely this is called before Alloc_HessianBlocks() was called
+
+			Eigen::Map<Eigen::Matrix<double, n_block_dim0, n_block_dim1> > dest_map(p_block); // note that we ignore the transpose-ness here, it actually might be n_block_dim1 * n_block_dim0, but it does not matter as the elements are tightly packed
+			Eigen::Map<const Eigen::Matrix<double, n_block_dim0, n_block_dim1> > src_map(m_p_HtSiH[n_block]); // note that we ignore the transpose-ness here, it actually might be n_block_dim1 * n_block_dim0, but it does not matter as the elements are tightly packed
+			dest_map += src_map;
+			// use Eigen for addition (assumes that the Hessians are up to date)
 		}
-		// make sure the order is sorted (if swapping, will have to transpose the result,
-		// but we will deal with that laters)
-
-		_ASSERTE(n_order_0 != n_order_1); // will otherwise overwrite blocks with vertex blocks (malformed system)
-		_ASSERTE(n_order_0 < n_order_1);
-		// they dont care about the man that ends up under the stage, they only care about the one above (column > row)
-
-		_ASSERTE(n_order_0 >= n_min_vertex_order && n_order_1 >= n_min_vertex_order);
-		double *p_block = r_omega.p_FindBlock(n_order_0 - n_min_vertex_order,
-			n_order_1 - n_min_vertex_order, n_dimension0, n_dimension1, true, true);
-		// find a block for hessian above the diagonal, and with the right shape
-
-		_ASSERTE(p_block && m_p_HtSiH[n_block]);
-		// if this triggers, most likely this is called before Alloc_HessianBlocks() was called
-
-		Eigen::Map<Eigen::Matrix<double, n_block_dim0, n_block_dim1> > dest_map(p_block); // note that we ignore the transpose-ness here, it actually might be n_block_dim1 * n_block_dim0, but it does not matter as the elements are tightly packed
-		Eigen::Map<const Eigen::Matrix<double, n_block_dim0, n_block_dim1> > src_map(m_p_HtSiH[n_block]); // note that we ignore the transpose-ness here, it actually might be n_block_dim1 * n_block_dim0, but it does not matter as the elements are tightly packed
-		dest_map += src_map;
-		// use Eigen for addition (assumes that the hessians are up to date)
 
 		Get_OmegaBlocks_v2_Inner(r_omega, n_min_vertex_order, fbs_ut::CCTSize<n_vertex1 + 1>(), tag1);
 		// loop
@@ -1901,28 +2442,30 @@ protected:
 	inline void Get_OmegaBlocks_v2(CUberBlockMatrix &r_omega, size_t n_min_vertex_order,
 		fbs_ut::CCTSize<n_vertex0> tag) const // throw(std::bad_alloc)
 	{
-		size_t n_order_0 = m_vertex_ptr.template Get<n_vertex0>()->n_Order();
-		enum {
-			n_dimension0 = CVertexTraits<n_vertex0>::n_dimension
-		};
+		if(!m_vertex_ptr.template Get<n_vertex0>()->b_IsConstant()) { // if the vertex is not constant
+			size_t n_order_0 = m_vertex_ptr.template Get<n_vertex0>()->n_Order();
+			enum {
+				n_dimension0 = CVertexTraits<n_vertex0>::n_dimension
+			};
 
-		_ASSERTE(n_order_0 >= n_min_vertex_order);
-		double *p_block = r_omega.p_FindBlock(n_order_0 - n_min_vertex_order,
-			n_order_0 - n_min_vertex_order, n_dimension0, n_dimension0, true, true);
-		// find a block for vertices' hessian on the diagonal (do not use the potentially swapped id / order)
-		// note that if this is added after the edge hessian, it will be likely
-		// added at the end of the block list in the matrix
+			_ASSERTE(n_order_0 >= n_min_vertex_order);
+			double *p_block = r_omega.p_FindBlock(n_order_0 - n_min_vertex_order,
+				n_order_0 - n_min_vertex_order, n_dimension0, n_dimension0, true, true);
+			// find a block for vertices' Hessian on the diagonal (do not use the potentially swapped id / order)
+			// note that if this is added after the off-diagonal Hessian, it will be likely
+			// added at the end of the block list in the matrix
 
-		_ASSERTE(p_block && m_p_HtSiH_vert[n_vertex0]);
-		// if this triggers, most likely this is called before Alloc_HessianBlocks() was called
+			_ASSERTE(p_block && m_p_HtSiH_vert[n_vertex0]);
+			// if this triggers, most likely this is called before Alloc_HessianBlocks() was called
 
-		Eigen::Map<Eigen::Matrix<double, n_dimension0, n_dimension0> > dest_map(p_block);
-		Eigen::Map<const Eigen::Matrix<double, n_dimension0, n_dimension0> > src_map(m_p_HtSiH_vert[n_vertex0]);
-		dest_map += src_map;
-		// use Eigen for addition (assumes that the hessians are up to date)
+			Eigen::Map<Eigen::Matrix<double, n_dimension0, n_dimension0> > dest_map(p_block);
+			Eigen::Map<const Eigen::Matrix<double, n_dimension0, n_dimension0> > src_map(m_p_HtSiH_vert[n_vertex0]);
+			dest_map += src_map;
+			// use Eigen for addition (assumes that the Hessians are up to date)
 
-		Get_OmegaBlocks_v2_Inner(r_omega, n_min_vertex_order, fbs_ut::CCTSize<n_vertex0 + 1>(), tag);
-		// alloc off-diagonal blocks
+			Get_OmegaBlocks_v2_Inner(r_omega, n_min_vertex_order, fbs_ut::CCTSize<n_vertex0 + 1>(), tag);
+			// alloc off-diagonal blocks
+		}
 
 		Get_OmegaBlocks_v2(r_omega, n_min_vertex_order, fbs_ut::CCTSize<n_vertex0 + 1>());
 		// loop
@@ -1952,7 +2495,7 @@ public:
 	 *
 	 *	@param[out] r_omega is the omega matrix to be filled (must be initially empty)
 	 *	@param[in] n_min_vertex_order is order offset, in elements, used to position
-	 *		the hessian blocks in the upper-left corner of omega
+	 *		the Hessian blocks in the upper-left corner of omega
 	 */
 	inline void Calculate_Omega(CUberBlockMatrix &r_omega, size_t n_min_vertex_order) const
 	{
@@ -1962,7 +2505,7 @@ public:
 		// recalculate from scratch, or use values already calculated by the lambda solver?
 
 		_ASSERTE(!b_recalculate);
-		// this only copies the already calculated hessians into omega, doesn't actually
+		// this only copies the already calculated Hessians into omega, doesn't actually
 		// calculate anything (would be trivial to add should it ever be needed; but for
 		// the binary edge it was never needed so far)
 
@@ -1975,11 +2518,15 @@ public:
 		_ASSERTE(n_vertex_num == 2);
 		if(n_vertex_num != 2)
 			throw std::runtime_error("the fastL solver cannot be used with hyperedges just yet");
-		// todo - will have to separate writing diagonal hessians and off-diagonal ones, then split to loops
+		// todo - will have to separate writing diagonal Hessians and off-diagonal ones, then split to loops
 
 		enum {
 			n_vertex0 = 0, n_vertex1 = 1, // dummy
 		};
+
+		if(m_vertex_ptr.template Get<n_vertex0>()->b_IsConstant() ||
+		   m_vertex_ptr.template Get<n_vertex1>()->b_IsConstant()) // if either vertex is constant
+			throw std::runtime_error("v1 reduction plan does not support const vertices in hyperedges");
 
 		enum {
 			n_block = hyperedge_detail::CStrictlyTriangularOffset<n_vertex0, n_vertex1, n_vertex_num>::n_result
@@ -2005,7 +2552,7 @@ public:
 
 		_ASSERTE(n_order_0 >= n_min_vertex_order); // note this might be superficial // t_odo - make this an assert
 		//	return;
-		// this edge doesn't have any hessians inside omega
+		// this edge doesn't have any Hessians inside omega
 
 		double *p_edge = r_omega.p_FindBlock(n_order_0 - n_min_vertex_order,
 			n_order_1 - n_min_vertex_order, n_dimension0, n_dimension1, true, true); // needs to be initialized, in case there are duplicate edges; totally not true -> // doesn't need to be initialized, there's only one
@@ -2013,7 +2560,7 @@ public:
 			n_order_0 - n_min_vertex_order, n_dimension0, n_dimension0, true, true);
 		double *p_v1 = r_omega.p_FindBlock(n_order_1 - n_min_vertex_order,
 			n_order_1 - n_min_vertex_order, n_dimension1, n_dimension1, true, true);
-		// alloc and initialize / find existing blocks for all the hessians, above the diagonal only
+		// alloc and initialize / find existing blocks for all the Hessians, above the diagonal only
 
 		bool b_recalculate = false;
 		// recalculate from scratch, or use values already calculated by the lambda solver?
@@ -2079,13 +2626,63 @@ public:
 			t_HtSiH_v1 += m_t_HtSiH_vertex1;
 #endif // __LAMBDA_USE_V2_REDUCTION_PLAN
 		}
-		// calculate vertex hessian contributions (note the increments)
+		// calculate diagonal Hessian contributions (note the increments)
 #endif // __LAMBDA_USE_V2_REDUCTION_PLAN
 	}
+};
+
+/**
+ *	@brief implementation of solver required functions for a generic edge type
+ *
+ *	@tparam CDerivedEdge is the name of derived edge class
+ *	@tparam CVertexTypeList is list of types of the vertices
+ *	@tparam _n_residual_dimension is residual vector dimension
+ *	@tparam _n_storage_dimension is state vector storage dimension (or -1 if the same as _n_residual_dimension)
+ *
+ *	@deprecated This name is deprecated; use CBaseEdgeImpl instead.
+ */
+template <class CDerivedEdge, class CVertexTypeList, int _n_residual_dimension, int _n_storage_dimension = -1>
+class CSEBaseEdgeImpl : public CBaseEdgeImpl<CDerivedEdge, CVertexTypeList, _n_residual_dimension, _n_storage_dimension> {
+private:
+	typedef CBaseEdgeImpl<CDerivedEdge, CVertexTypeList, _n_residual_dimension,
+		_n_storage_dimension> _TyNotDeprecated; /**< @brief name of the parent type that is not deprecated */
+	// this is not intended to be used by the derived classes because CBaseEdgeImpl does not have such type
+
+public:
+	__GRAPH_TYPES_ALIGN_OPERATOR_NEW
+
+	/**
+	 *	@brief default constructor; has no effect
+	 */
+	inline CSEBaseEdgeImpl()
+		:_TyNotDeprecated()
+	{}
+
+	/**
+	 *	@brief constructor
+	 *
+	 *	@param[in] vertex_id_tuple is tuple of vertex ids
+	 *	@param[in] r_v_measurement is the measurement vector
+	 *	@param[in] r_t_sigma_inv is inverse sigma matrix
+	 *
+	 *	@note This fills the structure, except for the vertex pointers.
+	 *	@note With thunk tables, the derived classes don't need to check for vertex dimensions
+	 *		being really what they expect (type checking performed by the vertex pool).
+	 *	@note The r_t_sigma_inv is inverse sigma matrix, which is *not* square-rooted.
+	 *		This hasn't changed since the previous releases, but the documentation
+	 *		in parser was misleading back then.
+	 */
+	inline CSEBaseEdgeImpl(typename _TyNotDeprecated::_TyVertexIndexTuple vertex_id_tuple,
+		const typename _TyNotDeprecated::_TyStorageVector &r_v_measurement,
+		const typename _TyNotDeprecated::_TyMatrix &r_t_sigma_inv)
+		:_TyNotDeprecated(vertex_id_tuple, r_v_measurement, r_t_sigma_inv)
+	{}
 };
 
 #include "slam/BaseTypes_Unary.h"
 #include "slam/BaseTypes_Binary.h"
 // include the specializations
+
+/** @} */ // end of group
 
 #endif // !__BASE_SE_PRIMITIVE_TYPES_INCLUDED

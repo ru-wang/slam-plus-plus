@@ -30,28 +30,35 @@
  *
  */
 
-#ifndef _USE_MATH_DEFINES
-/**
- *	@def _USE_MATH_DEFINES
- *	@brief enables math defines such as M_PI in MSVC
- */
-#define _USE_MATH_DEFINES
-#endif // _USE_MATH_DEFINES
-#include <math.h>
-#include <float.h>
-#include <iostream>
+//#include <math.h> // included from slam/BlockMatrix.h
+//#include <float.h> // included from slam/BlockMatrix.h
 #include "slam/BlockMatrix.h"
-#include "eigen/Eigen/Cholesky"
+//#include "eigen/Eigen/Cholesky" // included from slam/BlockMatrix.h
 #include "slam/3DSolverBase.h" // conversions between axis angles and rotation matrices
+#include <iostream>
+
+/** \addtogroup ba_group
+ *	@{
+ */
+
+// inject the 5D types into Eigen namespace
+namespace Eigen {
+
+#ifndef HAVE_EIGEN_5D_DOUBLE_VECTOR
+#define HAVE_EIGEN_5D_DOUBLE_VECTOR
+typedef Eigen::Matrix<double, 5, 1> Vector5d; /**< @brief a 5D vector */
+#endif // !HAVE_EIGEN_5D_DOUBLE_VECTOR
+
+} // ~Eigen
 
 /**
- *	@brief implementation of Jacobian calculations, required by 3D solvers
+ *	@brief implementation of Jacobian calculations, required by Bundle Adjustment solvers
  */
 class CBAJacobians {
 public:
-	typedef Eigen::Matrix<double, 5, 1> Vector5d; /**< @brief 5D vector type */
-	typedef Eigen::Matrix<double, 6, 1> Vector6d; /**< @brief 6D vector type */
-	typedef Eigen::Matrix<double, 6, 6> Matrix6d; /**< @brief 6x6 matrix type */
+	typedef Eigen::Vector5d Vector5d; /**< @brief 5D vector type */
+	typedef Eigen::Vector6d Vector6d; /**< @brief 6D vector type */
+	typedef Eigen::Matrix6d Matrix6d; /**< @brief 6x6 matrix type */
 
 public:
 
@@ -237,7 +244,7 @@ public:
 	}
 
 	/**
-	 *	@brief converts projects point from 3D to 2D camera image
+	 *	@brief projects a point from 3D to 2D camera image
 	 *
 	 *	@tparam Derived0 is Eigen derived matrix type for the first matrix argument
 	 *	@tparam Derived1 is Eigen derived matrix type for the second matrix argument
@@ -260,7 +267,7 @@ public:
 		DimensionCheck<Eigen::Vector3d>(r_t_vertex2);
 		DimensionCheck<Eigen::Vector2d>(r_t_dest);
 
-		//construct camera r_t_intrinsics matrix
+		//construct camera intrinsics matrix
 		double fx = r_t_intrinsics(0);
 		double fy = r_t_intrinsics(1);
 		//double ap = 1.0029;
@@ -320,7 +327,126 @@ public:
 	}
 
 	/**
-	 *	@brief converts projects point from 3D to 2D camera image
+	 *	@brief measures the error of epipolar constraint between two cameras. Error is equal to the
+	 *	sum of distances of corresponding points from epiolar lines
+	 *
+	 *	@tparam Derived0 is Eigen derived matrix type for the first matrix argument
+	 *	@tparam Derived1 is Eigen derived matrix type for the second matrix argument
+	 *	@tparam Derived2 is Eigen derived matrix type for the third matrix argument
+	 *	@tparam Derived3 is Eigen derived matrix type for the fourth matrix argument
+	 *
+	 *	@param[in] r_t_vertex1 is the first vertex - camera
+	 *	@param[in] r_t_vertex2 is the second vertex - camera
+	 *	@param[in] r_t_intrinsics0 is the intrinsics of first camera
+	 *	@param[in] r_t_intrinsics1 is the intrinsics of second camera
+	 *	@param[out] r_t_measurement is filled with measurement values, left and right
+	 *	@param[out] r_t_dest is filled with absolute coordinates of result
+	 */
+	template <class Derived0, class Derived1, class Derived2, class Derived3, class Derived4, class Derived5>
+	static void Project_PC2CE(const Eigen::MatrixBase<Derived0> &r_t_vertex0,
+		const Eigen::MatrixBase<Derived1> &r_t_vertex1,
+		const Eigen::MatrixBase<Derived2> &r_t_intrinsics0,
+		const Eigen::MatrixBase<Derived3> &r_t_intrinsics1,
+		Eigen::MatrixBase<Derived4> &r_t_measurement,
+		Eigen::MatrixBase<Derived5> &r_t_dest)
+	{
+		DimensionCheck<Vector6d>(r_t_vertex0);
+		DimensionCheck<Eigen::Vector6d>(r_t_vertex1);
+		DimensionCheck<Eigen::Vector4d>(r_t_measurement);
+		DimensionCheck<Eigen::Vector4d>(r_t_dest);
+		DimensionCheck<Eigen::Vector5d>(r_t_intrinsics0);
+		DimensionCheck<Eigen::Vector5d>(r_t_intrinsics1);
+
+		// construct 3x3 camera matrices
+		Eigen::Matrix3d A0;
+		A0 << r_t_intrinsics0(0),  0, r_t_intrinsics0(2),
+			  0, r_t_intrinsics0(1), r_t_intrinsics0(3),
+			  0,  0,  1;
+
+		Eigen::Matrix3d A1;
+		A1 << r_t_intrinsics1(0),  0, r_t_intrinsics1(2),
+			  0, r_t_intrinsics1(1), r_t_intrinsics1(3),
+			  0,  0,  1;
+
+		// normalize the points - x^hat = A^-1 * x
+		Eigen::Vector3d x_0 = Eigen::Vector3d::Ones();
+		x_0.head<2>() << r_t_measurement(0), r_t_measurement(1);
+		x_0 = A0.inverse() * x_0;
+
+		Eigen::Vector3d x_1 = Eigen::Vector3d::Ones();
+		x_1.head<2>() << r_t_measurement(2), r_t_measurement(3);
+		x_1 = A1.inverse() * x_1;
+
+		// get relative transform from first cam to second
+		Eigen::Vector6d relative;
+		C3DJacobians::Absolute_to_Relative(r_t_vertex1, r_t_vertex0, relative);
+		// construct Essential matrix E = [t]_x R
+		Eigen::Matrix3d R;
+		R = C3DJacobians::t_AxisAngle_to_RotMatrix(relative.tail<3>());
+		Eigen::Matrix3d tx = Eigen::Matrix3d::Zero();
+		tx << 0, 			-relative(2), relative(1),	// this constructs skew symmetric matrix [t]_x
+			  relative(2), 	0,			  -relative(0),
+			  -relative(1), relative(0),  0;
+		/*tx(0,1) = -relative(2);
+		tx(1,0) =  relative(2);
+		tx(0,2) =  relative(1);
+		tx(2,0) = -relative(1);
+		tx(1,2) = -relative(0);
+		tx(2,1) =  relative(0);*/
+
+		Eigen::Matrix3d E;
+		E = tx * R;
+
+		// measure the error
+		// compute epiline 0 -> 1
+		Eigen::Vector3d l_1;
+		l_1 = E * x_0;
+		// compute epiline 1 -> 0
+		Eigen::Vector3d l_0;
+		l_0 = E.transpose() * x_1;
+
+		//std::cout << E << std::endl;
+		//std::cout << "test: " << l_0.transpose() * x_0 << " | " << l_1.transpose() * x_1 << std::endl;
+
+		// compute points on line closest to the correspondence point (https://en.wikipedia.org/wiki/Distance_from_a_point_to_a_line)
+		Eigen::Vector3d p_0 = Eigen::Vector3d::Ones();
+		p_0(0) = ( l_0(1) * (l_0(1) * x_0(0) - l_0(0) * x_0(1)) - l_0(0) * l_0(2) ) /
+				            (l_0(0) * l_0(0) + l_0(1) * l_0(1));	// x
+		p_0(1) = ( l_0(0) * (-l_0(1) * x_0(0) + l_0(0) * x_0(1)) - l_0(1) * l_0(2) ) /
+							(l_0(0) * l_0(0) + l_0(1) * l_0(1));	// y
+		//std::cout << "l0 " << l_0.transpose() << " |x0 " << x_0.transpose() << " |p0 " << p_0.transpose() << std::endl;
+
+		// compute points on line closest to the correspondence point (https://en.wikipedia.org/wiki/Distance_from_a_point_to_a_line)
+		Eigen::Vector3d p_1 = Eigen::Vector3d::Ones();
+		p_1(0) = ( l_1(1) * (l_1(1) * x_1(0) - l_1(0) * x_1(1)) - l_1(0) * l_1(2) ) /
+							(l_1(0) * l_1(0) + l_1(1) * l_1(1));	// x
+		p_1(1) = ( l_1(0) * (-l_1(1) * x_1(0) + l_1(0) * x_1(1)) - l_1(1) * l_1(2) ) /
+							(l_1(0) * l_1(0) + l_1(1) * l_1(1));	// y
+
+		double lp_dist0 = fabs(l_0(0)*x_0(0) + l_0(1)*x_0(1) + l_0(2)) / sqrt(l_0(0)*l_0(0) + l_0(1)*l_0(1));
+		double lp_dist1 = fabs(l_1(0)*x_1(0) + l_1(1)*x_1(1) + l_1(2)) / sqrt(l_1(0)*l_1(0) + l_1(1)*l_1(1));
+
+		// compute error as L1 distance of measured point and closest point
+		Eigen::Vector3d dist0 = Eigen::Vector3d::Ones();
+		dist0 = x_0 - p_0;
+		Eigen::Vector3d dist1 = Eigen::Vector3d::Ones();
+		dist1 = x_1 - p_1;
+
+		// transform the error to pixels
+		//dist0 = A0 * dist0;
+		//dist1 = A1 * dist1;
+
+		// try distance to line instead
+
+		// compute error as L1 distance of measured point and closest point
+		r_t_dest << dist0(0), dist0(1), dist1(0), dist1(1);
+		//r_t_dest << lp_dist0 / 2, lp_dist0 / 2, lp_dist1 / 2, lp_dist1 / 2;
+		r_t_dest = r_t_dest * 100;	// Todo: this is temporary, have to express error in pixel unit
+		//std::cout << "err " << r_t_dest.transpose() << std::endl;
+	}
+
+	/**
+	 *	@brief projects a point from 3D to 2D stereo camera image
 	 *
 	 *	@tparam Derived0 is Eigen derived matrix type for the first matrix argument
 	 *	@tparam Derived1 is Eigen derived matrix type for the second matrix argument
@@ -343,7 +469,7 @@ public:
 		DimensionCheck<Eigen::Vector3d>(r_t_vertex2);
 		DimensionCheck<Eigen::Vector3d>(r_t_dest);
 
-		//construct camera r_t_intrinsics matrix
+		//construct camera intrinsics matrix
 		double fx = r_t_intrinsics(0);
 		double fy = r_t_intrinsics(1);
 		//double ap = 1.0029;
@@ -411,8 +537,7 @@ public:
 	}
 
 	/**
-	 *	@brief converts xyz axis angle coordinates from absolute measurement to relative measurement
-	 *		and calculates the jacobians
+	 *	@brief projects a 3D point to 2D camera image and calculates the jacobians
 	 *
 	 *	@tparam Derived0 is Eigen derived matrix type for the first matrix argument
 	 *	@tparam Derived1 is Eigen derived matrix type for the second matrix argument
@@ -427,6 +552,8 @@ public:
 	 *	@param[out] r_t_dest is filled with relative coordinates of the second vertex
 	 *	@param[out] r_t_pose3_pose1 is filled with the first jacobian
 	 *	@param[out] r_t_pose3_pose2 is filled with the second jacobian
+	 *
+	 *	@note Neither of the input parameters may be reused as output.
 	 */
 	template <class Derived0, class Derived1, class Derived2, class Derived3, class Derived4, class Derived5> // want to be able to call this with differnent dest types (sometimes generic VectorXd / MatrixXd, sometimes with Vector3d / Matrix3d)
 	static void Project_P2C(const Eigen::MatrixBase<Derived0> &r_t_vertex1,
@@ -440,6 +567,12 @@ public:
 		DimensionCheck<Eigen::Vector2d>(r_t_dest);
 		DimensionCheck<Eigen::Matrix<double, 2, 6> >(r_t_pose3_pose1);
 		DimensionCheck<Eigen::Matrix<double, 2, 3> >(r_t_pose3_pose2);
+
+		_ASSERTE((const void*)&r_t_vertex1 != (const void*)&r_t_dest);
+		_ASSERTE((const void*)&r_t_intrinsics != (const void*)&r_t_dest);
+		_ASSERTE((const void*)&r_t_vertex2 != (const void*)&r_t_dest); // cant compare addresses directly, the inputs may be maps or expressions and their type may not be convertible
+		// make sure that neither vector is the same as the destination, otherwise it is overwritten
+		// by the first call to Absolute_to_Relative() and then the jacobians are not computed correcly
 
 		/* TODO: make more efficient */
 		//lets try it according to g2o
@@ -532,8 +665,7 @@ public:
 	}
 
 	/**
-	 *	@brief converts xyz axis angle coordinates from absolute measurement to relative measurement
-	 *		and calculates the jacobians
+	 *	@brief projects a 3D point to 2D camera image and calculates the jacobians, including the one for the intrinsics
 	 *
 	 *	@tparam Derived0 is Eigen derived matrix type for the first matrix argument
 	 *	@tparam Derived1 is Eigen derived matrix type for the second matrix argument
@@ -550,6 +682,8 @@ public:
 	 *	@param[out] r_t_cam_measurement is filled with the first jacobian
 	 *	@param[out] r_t_xyz_measurement is filled with the second jacobian
 	 *	@param[out] r_t_intrinsics_measurement is filled with the third jacobian
+	 *
+	 *	@note Neither of the input parameters may be reused as output.
 	 */
 	template <class Derived0, class Derived1, class Derived2,
 		class Derived3, class Derived4, class Derived5, class Derived6>
@@ -566,6 +700,12 @@ public:
 		DimensionCheck<Eigen::Matrix<double, 2, 6> >(r_t_cam_measurement);
 		DimensionCheck<Eigen::Matrix<double, 2, 3> >(r_t_xyz_measurement);
 		DimensionCheck<Eigen::Matrix<double, 2, 5> >(r_t_intrinsics_measurement);
+
+		_ASSERTE((const void*)&r_t_vertex1 != (const void*)&r_t_dest);
+		_ASSERTE((const void*)&r_t_intrinsics != (const void*)&r_t_dest);
+		_ASSERTE((const void*)&r_t_vertex2 != (const void*)&r_t_dest); // cant compare addresses directly, the inputs may be maps or expressions and their type may not be convertible
+		// make sure that neither vector is the same as the destination, otherwise it is overwritten
+		// by the first call to Absolute_to_Relative() and then the jacobians are not computed correcly
 
 		/* TODO: make more efficient */
 		//lets try it according to g2o
@@ -619,8 +759,7 @@ public:
 	}
 
 	/**
-	 *	@brief converts xyz axis angle coordinates from absolute measurement to relative measurement
-	 *		and calculates the jacobians
+	 *	@brief projects a 3D point to 2D stereo camera image and calculates the jacobians
 	 *
 	 *	@tparam Derived0 is Eigen derived matrix type for the first matrix argument
 	 *	@tparam Derived1 is Eigen derived matrix type for the second matrix argument
@@ -635,6 +774,8 @@ public:
 	 *	@param[out] r_t_dest is filled with relative coordinates of the second vertex
 	 *	@param[out] r_t_pose3_pose1 is filled with the first jacobian
 	 *	@param[out] r_t_pose3_pose2 is filled with the second jacobian
+	 *
+	 *	@note Neither of the input parameters may be reused as output.
 	 */
 	template <class Derived0, class Derived1, class Derived2, class Derived3, class Derived4, class Derived5> // want to be able to call this with differnent dest types (sometimes generic VectorXd / MatrixXd, sometimes with Vector3d / Matrix3d)
 	static void Project_P2SC(const Eigen::MatrixBase<Derived0> &r_t_vertex1,
@@ -648,6 +789,12 @@ public:
 		DimensionCheck<Eigen::Vector3d>(r_t_dest);
 		DimensionCheck<Eigen::Matrix<double, 3, 6> >(r_t_pose3_pose1);
 		DimensionCheck<Eigen::Matrix3d>(r_t_pose3_pose2);
+
+		_ASSERTE((const void*)&r_t_vertex1 != (const void*)&r_t_dest);
+		_ASSERTE((const void*)&r_t_intrinsics != (const void*)&r_t_dest);
+		_ASSERTE((const void*)&r_t_vertex2 != (const void*)&r_t_dest); // cant compare addresses directly, the inputs may be maps or expressions and their type may not be convertible
+		// make sure that neither vector is the same as the destination, otherwise it is overwritten
+		// by the first call to Absolute_to_Relative() and then the jacobians are not computed correcly
 
 		/* TODO: make more efficient */
 		//lets try it according to g2o
@@ -671,9 +818,9 @@ public:
 		Eigen::Vector3d d1;
 		Vector6d p_delta;
 		Eigen::Vector3d p_delta2;
+
 		//for XYZ and RPY
 		for(int j = 0; j < 6; ++ j) {
-
 			C3DJacobians::Relative_to_Absolute(r_t_vertex1, Eps.col(j), p_delta);
 			Project_P2SC(p_delta, r_t_intrinsics, r_t_vertex2, d1);
 			//if(j < 6)
@@ -692,6 +839,88 @@ public:
 			}
 		}
 	}
+
+	/**
+	 *	@brief projects 2d points to 2d plane in other camera. measures epipolar error
+	 *
+	 *	@tparam Derived0 is Eigen derived matrix type for the first matrix argument
+	 *	@tparam Derived1 is Eigen derived matrix type for the second matrix argument
+	 *	@tparam Derived2 is Eigen derived matrix type for the third matrix argument
+	 *	@tparam Derived3 is Eigen derived matrix type for the fourth matrix argument
+	 *	@tparam Derived4 is Eigen derived matrix type for the fifth matrix argument
+	 *	@tparam Derived5 is Eigen derived matrix type for the sixth matrix argument
+	 *
+	 *	@param[in] r_t_vertex1 is the first vertex, in absolute coordinates - CAM
+	 *	@param[in] r_t_intrinsics is instrinsic parameters of the camera
+	 *	@param[in] r_t_vertex2 is the second vertex, also in absolute coordinates - XYZ
+	 *	@param[out] r_t_dest is filled with relative coordinates of the second vertex
+	 *	@param[out] r_t_pose3_pose1 is filled with the first jacobian
+	 *	@param[out] r_t_pose3_pose2 is filled with the second jacobian
+	 *
+	 *	@note Neither of the input parameters may be reused as output.
+	 */
+	template <class Derived0, class Derived1, class Derived2, class Derived3, class Derived4,
+			class Derived5, class Derived6, class Derived7> // want to be able to call this with differnent dest types (sometimes generic VectorXd / MatrixXd, sometimes with Vector3d / Matrix3d)
+	static void Project_PC2CE(const Eigen::MatrixBase<Derived0> &r_t_vertex0,
+		const Eigen::MatrixBase<Derived1> &r_t_vertex1,
+		const Eigen::MatrixBase<Derived2> &r_t_intrinsics0,
+		const Eigen::MatrixBase<Derived3> &r_t_intrinsics1,
+		Eigen::MatrixBase<Derived4> &r_t_measurement,
+		Eigen::MatrixBase<Derived5> &r_t_dest,
+		Eigen::MatrixBase<Derived6> &r_t_pose3_pose0,
+		Eigen::MatrixBase<Derived7> &r_t_pose3_pose1)
+	{
+		DimensionCheck<Vector6d>(r_t_vertex0);
+		DimensionCheck<Vector6d>(r_t_vertex1);
+		DimensionCheck<Vector5d>(r_t_intrinsics0);
+		DimensionCheck<Vector5d>(r_t_intrinsics1);
+		DimensionCheck<Eigen::Vector4d>(r_t_measurement);
+		DimensionCheck<Eigen::Vector4d>(r_t_dest);
+		DimensionCheck<Eigen::Matrix<double, 4, 6> >(r_t_pose3_pose0);
+		DimensionCheck<Eigen::Matrix<double, 4, 6> >(r_t_pose3_pose1);
+
+		_ASSERTE((const void*)&r_t_vertex0 != (const void*)&r_t_dest);
+		_ASSERTE((const void*)&r_t_intrinsics0 != (const void*)&r_t_dest);
+		_ASSERTE((const void*)&r_t_vertex1 != (const void*)&r_t_dest); // cant compare addresses directly, the inputs may be maps or expressions and their type may not be convertible
+		_ASSERTE((const void*)&r_t_intrinsics1 != (const void*)&r_t_dest);
+		// make sure that neither vector is the same as the destination, otherwise it is overwritten
+		// by the first call to Absolute_to_Relative() and then the jacobians are not computed correcly
+
+		/* TODO: make more efficient */
+		//lets try it according to g2o
+		const double delta = 1e-9;
+		const double scalar = 1.0 / (delta);
+
+		Matrix6d Eps;// = delta * Eigen::MatrixXd::Identity(10, 10); // MatrixXd needs to allocate storage on heap ... many milliseconds lost
+		Eps = Matrix6d::Identity() * delta; // faster, all memory on stack
+
+		Eigen::MatrixBase<Derived6> &H1 = r_t_pose3_pose0;
+		Eigen::MatrixBase<Derived7> &H2 = r_t_pose3_pose1;
+		// can actually work inplace
+
+		Project_PC2CE(r_t_vertex0, r_t_vertex1, r_t_intrinsics0, r_t_intrinsics1, r_t_measurement, r_t_dest);
+
+		Eigen::Vector4d d1;
+		Vector6d p_delta;
+
+		//for Camera vertices
+		for(int j = 0; j < 6; ++ j) {
+			C3DJacobians::Relative_to_Absolute(r_t_vertex0, Eps.col(j), p_delta);
+			Project_PC2CE(p_delta, r_t_vertex1, r_t_intrinsics0, r_t_intrinsics1, r_t_measurement, d1);
+
+			H1.col(j) = (r_t_dest - d1) * scalar;
+		}
+		for(int j = 0; j < 6; ++ j) {
+			C3DJacobians::Relative_to_Absolute(r_t_vertex1, Eps.col(j), p_delta);
+			//std::cout << "mv: " << p_delta.transpose() << std::endl;
+			Project_PC2CE(r_t_vertex0, p_delta, r_t_intrinsics0, r_t_intrinsics1, r_t_measurement, d1);
+			//std::cout << "meas: " << d1.transpose() << " (" << r_t_dest.transpose() << ")" << std::endl;
+
+			H2.col(j) = (r_t_dest - d1) * scalar;
+		}
+	}
 };
+
+/** @} */ // end of group
 
 #endif // !__BA_SOLVER_BASE_INCLUDED

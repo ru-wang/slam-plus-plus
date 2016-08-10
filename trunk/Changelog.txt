@@ -1,11 +1,41 @@
+Changes from 1.5 to 2.1 (2016-08-09):
+
+* Added documentation groups.
+* Added edge constructors with implicit and explicit vertex initialization to make
+  it easier to write new edge types.
+* Injected 5D and 6D matrix and vertex types into the Eigen namespace.
+* Added nicer antialiased line rasterizer.
+* Added proper support for constant vertices.
+* Reduced memory usage in covariances calculation.
+* Added Eigenvalue calculation capabilities.
+* Added tools for error evaluation in SLAM implementations.
+* Added a tool fur calculating exact numbers of FLOPs in sparse matrix operations.
+* Added new BA examples.
+* Added support for Sim(3) types.
+* Optimized includes for faster builds (using Deheader).
+* Plenty of improvements to the block matrix class.
+
+
+Changes from 1.5 to 2.0 RC (2015-11-25):
+
+* Blazing-fast marginal covariance recovery. More details can be found at
+  https://sourceforge.net/p/slam-plus-plus/wiki/Fast%20Covariance%20Recovery/.
+* Added native support for hypergraphs (the current version supports hypergraphs,
+  but does not contain any hypergraph edge implementations).
+* Improved Lambda solver for faster bundle adjustment.
+* Support for GPU acceleration (experimental; need to enable that in CMake).
+
+
 Changes from 1.12 to 1.5 (2015-02-30):
 
 * The distortion parameter in BA (both mono and stereo) is scaled by focal
   length in the internal representation. This is compensated for in the parser.
 
+
 Changes from 1.1 to 1.12 (2013-11-28):
 
 * Added small_online_example.
+
 
 Changes from 1.10 to 1.11 (2013-11-08):
 
@@ -13,12 +43,14 @@ Changes from 1.10 to 1.11 (2013-11-08):
 * Improved parser design to support vertex initialization (for BA).
 * Changed CMakeLists.txt and added slam_small_example.
 
+
 Changes from 1.1 to 1.10 (2013-08-02):
 
 * Fixed some bugs in bundle adjustment.
 * Fixed some old typos.
 * Added more configuration options to CMakeLists.txt.
 * Prepared some stuff for Raspberry Pi.
+
 
 Changes from 1.01 to 1.1 (2013-06-24):
 

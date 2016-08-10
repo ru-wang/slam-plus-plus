@@ -241,11 +241,11 @@
 			/>
 			<Tool
 				Name="VCCLCompilerTool"
-				AdditionalOptions="/MP"
+				AdditionalOptions="/MP /bigobj"
 				Optimization="2"
 				EnableIntrinsicFunctions="true"
 				FavorSizeOrSpeed="1"
-				WholeProgramOptimization="true"
+				WholeProgramOptimization="false"
 				AdditionalIncludeDirectories="../include/cholmod;../include/cholmod/AMD;../include/cholmod/CAMD;../include/cholmod/CCOLAMD;../include/cholmod/COLAMD;../include/cholmod/GKlib;../include/cholmod/METIS;../include/cholmod/CHOLMOD;../include/cholmod/SuiteSparse"
 				PreprocessorDefinitions="WIN32;NDEBUG;_LIB;DLONG;USE_GKREGEX;__thread=;NPARTITION"
 				RuntimeLibrary="2"
@@ -715,34 +715,6 @@
 					<File
 						RelativePath="..\src\cholmod\CHOLMOD\Partition\cholmod_metis.c"
 						>
-						<FileConfiguration
-							Name="Debug|Win32"
-							>
-							<Tool
-								Name="VCCLCompilerTool"
-							/>
-						</FileConfiguration>
-						<FileConfiguration
-							Name="Debug|x64"
-							>
-							<Tool
-								Name="VCCLCompilerTool"
-							/>
-						</FileConfiguration>
-						<FileConfiguration
-							Name="Release|Win32"
-							>
-							<Tool
-								Name="VCCLCompilerTool"
-							/>
-						</FileConfiguration>
-						<FileConfiguration
-							Name="Release|x64"
-							>
-							<Tool
-								Name="VCCLCompilerTool"
-							/>
-						</FileConfiguration>
 					</File>
 					<File
 						RelativePath="..\src\cholmod\CHOLMOD\Partition\cholmod_nesdis.c"
@@ -802,6 +774,10 @@
 				Name="METIS"
 				>
 				<File
+					RelativePath="..\src\cholmod\METIS\auxapi.c"
+					>
+				</File>
+				<File
 					RelativePath="..\src\cholmod\METIS\balance.c"
 					>
 				</File>
@@ -810,7 +786,7 @@
 					>
 				</File>
 				<File
-					RelativePath="..\src\cholmod\METIS\ccgraph.c"
+					RelativePath="..\src\cholmod\METIS\checkgraph.c"
 					>
 				</File>
 				<File
@@ -822,11 +798,11 @@
 					>
 				</File>
 				<File
-					RelativePath="..\src\cholmod\METIS\debug.c"
+					RelativePath="..\src\cholmod\METIS\contig.c"
 					>
 				</File>
 				<File
-					RelativePath="..\src\cholmod\METIS\estmem.c"
+					RelativePath="..\src\cholmod\METIS\debug.c"
 					>
 				</File>
 				<File
@@ -842,6 +818,10 @@
 					>
 				</File>
 				<File
+					RelativePath="..\src\cholmod\METIS\gklib.c"
+					>
+				</File>
+				<File
 					RelativePath="..\src\cholmod\METIS\graph.c"
 					>
 				</File>
@@ -854,10 +834,6 @@
 					>
 				</File>
 				<File
-					RelativePath="..\src\cholmod\METIS\kvmetis.c"
-					>
-				</File>
-				<File
 					RelativePath="..\src\cholmod\METIS\kwayfm.c"
 					>
 				</File>
@@ -866,31 +842,7 @@
 					>
 				</File>
 				<File
-					RelativePath="..\src\cholmod\METIS\kwayvolfm.c"
-					>
-				</File>
-				<File
-					RelativePath="..\src\cholmod\METIS\kwayvolrefine.c"
-					>
-				</File>
-				<File
-					RelativePath="..\src\cholmod\METIS\match.c"
-					>
-				</File>
-				<File
-					RelativePath="..\src\cholmod\METIS\mbalance.c"
-					>
-				</File>
-				<File
-					RelativePath="..\src\cholmod\METIS\mbalance2.c"
-					>
-				</File>
-				<File
-					RelativePath="..\src\cholmod\METIS\mcoarsen.c"
-					>
-				</File>
-				<File
-					RelativePath="..\src\cholmod\METIS\memory.c"
+					RelativePath="..\src\cholmod\METIS\mcutil.c"
 					>
 				</File>
 				<File
@@ -902,11 +854,7 @@
 					>
 				</File>
 				<File
-					RelativePath="..\src\cholmod\METIS\mfm.c"
-					>
-				</File>
-				<File
-					RelativePath="..\src\cholmod\METIS\mfm2.c"
+					RelativePath="..\src\cholmod\METIS\minconn.c"
 					>
 				</File>
 				<File
@@ -914,55 +862,15 @@
 					>
 				</File>
 				<File
-					RelativePath="..\src\cholmod\METIS\minitpart.c"
-					>
-				</File>
-				<File
-					RelativePath="..\src\cholmod\METIS\minitpart2.c"
-					>
-				</File>
-				<File
-					RelativePath="..\src\cholmod\METIS\mkmetis.c"
-					>
-				</File>
-				<File
-					RelativePath="..\src\cholmod\METIS\mkwayfmh.c"
-					>
-				</File>
-				<File
-					RelativePath="..\src\cholmod\METIS\mkwayrefine.c"
-					>
-				</File>
-				<File
-					RelativePath="..\src\cholmod\METIS\mmatch.c"
-					>
-				</File>
-				<File
 					RelativePath="..\src\cholmod\METIS\mmd.c"
 					>
 				</File>
 				<File
-					RelativePath="..\src\cholmod\METIS\mpmetis.c"
-					>
-				</File>
-				<File
-					RelativePath="..\src\cholmod\METIS\mrefine.c"
-					>
-				</File>
-				<File
-					RelativePath="..\src\cholmod\METIS\mrefine2.c"
-					>
-				</File>
-				<File
-					RelativePath="..\src\cholmod\METIS\mutil.c"
-					>
-				</File>
-				<File
-					RelativePath="..\src\cholmod\METIS\myqsort.c"
-					>
-				</File>
-				<File
 					RelativePath="..\src\cholmod\METIS\ometis.c"
+					>
+				</File>
+				<File
+					RelativePath="..\src\cholmod\METIS\options.c"
 					>
 				</File>
 				<File
@@ -971,10 +879,6 @@
 				</File>
 				<File
 					RelativePath="..\src\cholmod\METIS\pmetis.c"
-					>
-				</File>
-				<File
-					RelativePath="..\src\cholmod\METIS\pqueue.c"
 					>
 				</File>
 				<File
@@ -998,15 +902,15 @@
 					>
 				</File>
 				<File
-					RelativePath="..\src\cholmod\METIS\subdomains.c"
-					>
-				</File>
-				<File
 					RelativePath="..\src\cholmod\METIS\timing.c"
 					>
 				</File>
 				<File
 					RelativePath="..\src\cholmod\METIS\util.c"
+					>
+				</File>
+				<File
+					RelativePath="..\src\cholmod\METIS\wspace.c"
 					>
 				</File>
 			</Filter>
@@ -1050,6 +954,50 @@
 					>
 				</File>
 				<File
+					RelativePath="..\src\cholmod\GKlib\graph.c"
+					>
+					<FileConfiguration
+						Name="Debug|Win32"
+						>
+						<Tool
+							Name="VCCLCompilerTool"
+							AssemblerListingLocation="$(IntDir)\gk\"
+							ObjectFile="$(IntDir)\gk\"
+							XMLDocumentationFileName="$(IntDir)\gk\"
+						/>
+					</FileConfiguration>
+					<FileConfiguration
+						Name="Debug|x64"
+						>
+						<Tool
+							Name="VCCLCompilerTool"
+							AssemblerListingLocation="$(IntDir)\gk\"
+							ObjectFile="$(IntDir)\gk\"
+							XMLDocumentationFileName="$(IntDir)\gk\"
+						/>
+					</FileConfiguration>
+					<FileConfiguration
+						Name="Release|Win32"
+						>
+						<Tool
+							Name="VCCLCompilerTool"
+							AssemblerListingLocation="$(IntDir)\gk\"
+							ObjectFile="$(IntDir)\gk\"
+							XMLDocumentationFileName="$(IntDir)\gk\"
+						/>
+					</FileConfiguration>
+					<FileConfiguration
+						Name="Release|x64"
+						>
+						<Tool
+							Name="VCCLCompilerTool"
+							AssemblerListingLocation="$(IntDir)\gk\"
+							ObjectFile="$(IntDir)\gk\"
+							XMLDocumentationFileName="$(IntDir)\gk\"
+						/>
+					</FileConfiguration>
+				</File>
+				<File
 					RelativePath="..\src\cholmod\GKlib\htable.c"
 					>
 				</File>
@@ -1083,6 +1031,10 @@
 				</File>
 				<File
 					RelativePath="..\src\cholmod\GKlib\random.c"
+					>
+				</File>
+				<File
+					RelativePath="..\src\cholmod\GKlib\rw.c"
 					>
 				</File>
 				<File
@@ -1708,6 +1660,10 @@
 				</File>
 				<File
 					RelativePath="..\include\cholmod\GKlib\gk_mkpqueue.h"
+					>
+				</File>
+				<File
+					RelativePath="..\include\cholmod\GKlib\gk_mkpqueue2.h"
 					>
 				</File>
 				<File

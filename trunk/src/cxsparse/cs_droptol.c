@@ -1,4 +1,4 @@
-#include "cs.h"
+#include "cxsparse/cs.h"
 static CS_INT cs_tol (CS_INT i, CS_INT j, CS_ENTRY aij, void *tol)
 {
     return (CS_ABS (aij) > *((double *) tol)) ;

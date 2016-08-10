@@ -1,4 +1,4 @@
-#include "cs.h"
+#include "cxsparse/cs.h"
 /* apply the ith Householder vector to x */
 CS_INT cs_happly (const cs *V, CS_INT i, double beta, CS_ENTRY *x)
 {

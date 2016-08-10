@@ -242,6 +242,21 @@ int main(int UNUSED(n_arg_num), const char **UNUSED(p_arg_list))
  *		Eigen::Vector3d(1.02765, -0.00745597, 0.00483283), information, system)));
  *	@endcode
  *
+ *	A part of the optimization decision process is also a threshold on the norm of the residual. If the
+ *	residual (the step by which all the vertices in the system would be displaced) is very small, the
+ *	solver does not update anything. The size of this threshold is set along with the \ref incrementalsolvepolicy
+ *	"incremental solving policy", and can be set explicitly in the solver constructor, like this:
+ *
+ *	@code
+ *	CNonlinearSolverType solver(system, solve::Nonlinear(frequency::Every(1), 5, 0.01));
+ *	@endcode
+ *
+ *	Where <tt>5</tt> is the numbef of iterations the nonlinear solver is allowed to take and <tt>0.01</tt>
+ *	is the threshold on the residual norm. You can use \ref CNonlinearSolver_FastL::Dump() to print the
+ *	number of iterations the solver took (among other statistics). If this number is zero, then a high
+ *	threshold might have prevented the solver from actually optimizing anything (the norm of the residual
+ *	depends on the scale and parameterization of the problem).
+ *
  *	\section stateaccess Accessing the State
  *
  *	Now that a new measurement was added, the system state now entails two vertices. One we initialized

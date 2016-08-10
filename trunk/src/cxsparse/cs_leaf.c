@@ -1,4 +1,4 @@
-#include "cs.h"
+#include "cxsparse/cs.h"
 /* consider A(i,j), node j in ith row subtree and return lca(jprev,j) */
 CS_INT cs_leaf (CS_INT i, CS_INT j, const CS_INT *first, CS_INT *maxfirst, CS_INT *prevleaf,
     CS_INT *ancestor, CS_INT *jleaf)

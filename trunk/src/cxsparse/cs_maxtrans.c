@@ -1,4 +1,4 @@
-#include "cs.h"
+#include "cxsparse/cs.h"
 /* find an augmenting path starting at column k and extend the match if found */
 static void cs_augment (CS_INT k, const cs *A, CS_INT *jmatch, CS_INT *cheap, CS_INT *w,
         CS_INT *js, CS_INT *is, CS_INT *ps)

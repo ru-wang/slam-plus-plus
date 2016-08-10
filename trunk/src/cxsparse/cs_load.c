@@ -1,4 +1,4 @@
-#include "cs.h"
+#include "cxsparse/cs.h"
 /* load a triplet matrix from a file */
 cs *cs_load (FILE *f)
 {

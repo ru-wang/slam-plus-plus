@@ -1,6 +1,10 @@
 ADD_SUBDIRECTORY(csparse)
 ADD_SUBDIRECTORY(cxsparse)
+ADD_SUBDIRECTORY(sparse_flops)
 #ADD_SUBDIRECTORY(eigen)
 ADD_SUBDIRECTORY(slam)
 ADD_SUBDIRECTORY(slam_app)
 ADD_SUBDIRECTORY(cholmod)
+ADD_SUBDIRECTORY(ba_interface_example)
+ADD_SUBDIRECTORY(ba_marginals_example)
+

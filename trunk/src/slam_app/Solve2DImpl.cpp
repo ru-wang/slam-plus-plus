@@ -23,13 +23,15 @@
  */
 #define __SE2_ENABLED
 
-#include "slam_app/Main.h"
+#include <stdio.h>
+struct TCommandLineArgs; // forward declaration
 #ifdef __SE2_ENABLED
-#include "slam/ConfigSolvers.h" // only included in files that actually need the solvers (slow to compile)
+#include "slam_app/Main.h"
+//#include "slam/ConfigSolvers.h" // included via slam_app/Main.h
 #include "slam/SE2_Types.h"
 #endif // __SE2_ENABLED
 
-int n_Run_SE2_Solver(TCommandLineArgs t_args) // throw(std::runtime_error, std::bad_alloc)
+int n_Run_SE2_Solver(const TCommandLineArgs &t_args) // throw(std::runtime_error, std::bad_alloc)
 {
 #ifdef __SE2_ENABLED
 	typedef MakeTypelist2(CVertexPose2D, CVertexLandmark2D) TVertexTypelist;

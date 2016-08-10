@@ -197,4 +197,4 @@ namespace cx {
 #define cxs_ddone CS_NAME (_ddone)
 // define new names with 'x' in them
 
-}
+} // ~cx

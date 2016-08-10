@@ -22,10 +22,9 @@
  *	@date 2012
  */
 
-#include <csparse/cs.hpp>
-
-#include "eigen/Eigen/Dense"
-#include "eigen/Eigen/Core"
+//#include <csparse/cs.hpp>
+//#include "eigen/Eigen/Dense"
+//#include "eigen/Eigen/Core"
 #include <stdio.h>
 #include <time.h>
 #if defined(_WIN32) || defined(_WIN64)
@@ -34,10 +33,10 @@
 #include <windows.h>
 #include <shellapi.h> // ShellExecute()
 #endif // _WIN32 || _WIN64
-#include "slam/Debug.h"
-#include "slam/Unused.h"
+//#include "slam/Debug.h"
+//#include "slam/Unused.h"
 #include "slam_app/ParsePrimitives.h"
-#include "slam/Timer.h"
+//#include "slam/Timer.h"
 
 /**
  *	@def __PIMP_MY_WINDOW
@@ -129,13 +128,13 @@
  */
 #define __SE_TYPES_SUPPORT_L_SOLVERS // disable L for the reduction plan debugging
 
-#include "slam/Segregated.h"
-#include "slam/BlockMatrix.h"
+//#include "slam/Segregated.h"
+//#include "slam/BlockMatrix.h"
 //#include "slam/Tetris.h" // disable to speed up builds
 //#include "slam/BlockUnit.h" // don't need this right now
-//#include "slam/BlockBench.h" // don't need this right now
-#include "slam/FlatSystem.h"
-#include "slam/ParseLoop.h"
+//#include "slam_app/BlockBench.h" // don't need this right now
+//#include "slam/FlatSystem.h"
+//#include "slam/ParseLoop.h"
 #include "slam/LinearSolver_UberBlock.h" // always include
 #if defined(__USE_NATIVE_CHOLESKY)
 // ...

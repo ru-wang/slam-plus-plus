@@ -28,6 +28,10 @@
  *
  */
 
+/** \addtogroup linsolve
+ *	@{
+ */
+
 /**
  *	@brief default tag for all the linear solvers
  */
@@ -129,5 +133,7 @@ public:
 		return r_solver.Solve_PosDef_Blocky(r_lambda, r_v_eta);
 	}
 };
+
+/** @} */ // end of group
 
 #endif // !__LINEAR_SOLVER_TAGS_INCLUDED

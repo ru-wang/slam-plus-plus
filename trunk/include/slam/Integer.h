@@ -86,8 +86,10 @@
 // for linux builds
 
 #if defined(__STDC_VERSION__) && __STDC_VERSION__ >= 199901L
+	#define __STDC_FORMAT_MACROS
 	#include <inttypes.h>
 #elif defined(__sun__)
+	#define __STDC_FORMAT_MACROS
 	#include <inttypes.h>
 	#if defined(__STDC__)
 		typedef char int8_t; /**< 8 bit signed integer */
@@ -105,6 +107,7 @@
 		#endif /* __arch64__ */
 	#endif /* __STDC__ */
 #elif defined(__VMS)
+	#define __STDC_FORMAT_MACROS
 	#include <inttypes.h>
 #elif defined(__SCO__) || defined(__USLC__)
 	#include <stdint.h>
@@ -129,6 +132,7 @@
 	typedef unsigned __int32 uint32_t; /**< 64 bit signed integer */
 	typedef unsigned __int64 uint64_t; /**< 64 bit unsigned integer */
 #else // fallback
+	#define __STDC_FORMAT_MACROS
 	#include <inttypes.h>
 #endif
 // define int types
@@ -326,7 +330,7 @@ struct CIsSigned {
  *	@brief integer type predicate
  *
  *	Decides wheter a type is integer, or floating point. Value of CIsInteger<_Ty>::result
- *		is set to true uf _Ty is integer type, otherwise it's false.
+ *		is set to true if _Ty is integer type, otherwise it's false.
  *
  *	@tparam _Ty is type tested for being integer
  */
@@ -336,7 +340,7 @@ struct CIsInteger {
 	 *	@brief result, stored as enum
 	 */
 	enum {
-		result = _Ty(.5) == 0 /**< is set to true uf _Ty is integer type, otherwise it's false */
+		result = _Ty(.5) == 0 /**< is set to true if _Ty is integer type, otherwise it's false */
 	};
 };
 
@@ -1161,6 +1165,27 @@ inline _Ty n_LeadingZero_Num(_Ty n_x)
  *		values (some compilers limit maximum size of enum to 31 or 32 bits).
  */
 #define n_LeadingZero_Num_Static(n_x) (n_SetBit_Num_Static(~n_RightFill_Ones_Static(n_x)))
+
+/**
+ *	@brief calculates the number of bits needed to store the input number
+ *	@tparam _Ty is integer data type
+ *	@param[in] n_x is the input number
+ *	@return Returns number of bits required to store n_x.
+ */
+template <class _Ty>
+inline unsigned int n_Bit_Width(_Ty n_x)
+{
+	return (n_x)? n_SetBit_Num(n_RightFill_Ones(n_x)) : 1;
+}
+
+/**
+ *	@brief calculates the number of bits needed to store the input number, at compile-time
+ *	@param[in] n_x is the input number
+ *	@return Returns number of bits required to store n_x.
+ *	@note This uses templates and enums, and may therefore have limited range of input
+ *		values (some compilers limit maximum size of enum to 31 or 32 bits).
+ */
+#define n_Bit_Width_Static(n_x) ((n_x)? n_SetBit_Num_Static(n_RightFill_Ones_Static(n_x)) : 1)
 
 /*
  *								=== ~bit hacks ===

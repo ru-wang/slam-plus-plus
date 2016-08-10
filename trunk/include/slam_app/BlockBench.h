@@ -970,6 +970,11 @@ protected:
 						(r_raw_trip_matrix.n_col_num + block_Size - 1) / block_Size);
 					std::for_each(block_list.begin(), block_list.end(), CAppendBlock<TBlockMatrix, block_Size>(bm));
 
+					b_is_usolvable = b_is_usolvable && bm.b_UpperBlockTriangular();
+					b_is_utsolvable = b_is_utsolvable && b_is_usolvable;
+					b_is_lsolvable = b_is_usolvable && bm.b_LowerBlockTriangular();
+					b_is_ltsolvable = b_is_utsolvable && b_is_usolvable;
+
 					m_p_parent->StopTimer("ublock-compress");
 
 					m_p_parent->StartTimer("ublock-transpose");

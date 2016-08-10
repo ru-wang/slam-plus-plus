@@ -21,17 +21,15 @@
  *	@date 2012-04-05
  */
 
-#ifndef _USE_MATH_DEFINES
-/**
- *	@def _USE_MATH_DEFINES
- *	@brief enables math defines such as M_PI in MSVC
+//#include <math.h> // included from slam/BlockMatrix.h
+//#include <float.h> // included from slam/BlockMatrix.h
+#include "slam/BlockMatrix.h" // DimensionCheck
+#include "slam/Debug.h" // _finite(), _isnan()
+//#include "eigen/Eigen/Cholesky" // included from slam/BlockMatrix.h
+
+/** \addtogroup se2
+ *	@{
  */
-#define _USE_MATH_DEFINES
-#endif // _USE_MATH_DEFINES
-#include <math.h>
-#include <float.h>
-#include "slam/BlockMatrix.h" // _finite(), _isnan()
-#include "eigen/Eigen/Cholesky"
 
 /**
  *	@brief implementation of Jacobian calculations, required by 2D solvers
@@ -165,6 +163,98 @@ public:
 	}
 
 	/**
+	 *	@brief converts xyt coordinates from relative measurement to absolute measurement
+	 *
+	 *	@tparam Derived0 is Eigen derived matrix type for the first matrix argument
+	 *	@tparam Derived1 is Eigen derived matrix type for the second matrix argument
+	 *	@tparam Derived2 is Eigen derived matrix type for the third matrix argument
+	 *	@tparam Derived3 is Eigen derived matrix type for the fourth matrix argument
+	 *	@tparam Derived4 is Eigen derived matrix type for the fifth matrix argument
+	 *
+	 *	@param[in] r_t_vertex1 is the first vertex, in absolute coordinates
+	 *	@param[in] r_t_vertex2 is the second vertex, relative to the first one
+	 *	@param[out] r_t_dest is filled with absolute coordinates of the second vertex
+	 *	@param[out] r_t_pose3_pose1 is filled with the first jacobian
+	 *	@param[out] r_t_pose3_pose2 is filled with the second jacobian
+	 */
+	template <class Derived0, class Derived1, class Derived2, class Derived3, class Derived4>
+	static void Relative_to_Absolute(const Eigen::MatrixBase<Derived0> &r_t_vertex1,
+		const Eigen::MatrixBase<Derived1> &r_t_vertex2, Eigen::MatrixBase<Derived2> &r_t_dest,
+		Eigen::MatrixBase<Derived3> &r_t_pose3_pose1, Eigen::MatrixBase<Derived4> &r_t_pose3_pose2)
+	{
+		DimensionCheck<Eigen::Vector3d>(r_t_vertex1);
+		DimensionCheck<Eigen::Vector3d>(r_t_vertex2);
+		DimensionCheck<Eigen::Vector3d>(r_t_dest);
+		DimensionCheck<Eigen::Matrix3d>(r_t_pose3_pose1);
+		DimensionCheck<Eigen::Matrix3d>(r_t_pose3_pose2);
+
+		double p1e = r_t_vertex1(0);
+		double p1n = r_t_vertex1(1);
+		double p1a = r_t_vertex1(2);
+
+		double p2e = r_t_vertex2(0);
+		double p2n = r_t_vertex2(1);
+		double p2a = r_t_vertex2(2);
+
+		//double pre, prn, o, co, so, p3e, p3n, p3a;
+
+		/*
+		syms p1e p1n p1a p2e p2n p2a real
+		*/
+
+		double o = p1a;
+		double co = cos(o);
+		double so = sin(o);
+
+		double pre = co * p2e - so * p2n;
+		double prn = so * p2e + co * p2n;
+
+		double p3e = p1e + pre;
+		double p3n = p1n + prn;
+		double p3a = p1a + p2a;
+
+		/*
+		p1 = [p1e,p1n,p1a]';
+		p2 = [p2e,p2n,p2a]';
+		p3 = [p3e,p3n,p3a]';
+		simplify(jacobian(p3,p1))
+		simplify(jacobian(p3,p2))
+
+		ans =
+		[ 1, 0, - p2n*cos(p1a) - p2e*sin(p1a)]
+		[ 0, 1,   p2e*cos(p1a) - p2n*sin(p1a)]
+		[ 0, 0,                             1]
+		ans =
+		[ cos(p1a), -sin(p1a), 0]
+		[ sin(p1a),  cos(p1a), 0]
+		[        0,         0, 1]
+		*/
+
+		p3a = f_ClampAngle_2Pi(p3a);
+
+		r_t_dest(0) = p3e;
+		r_t_dest(1) = p3n;
+		r_t_dest(2) = p3a;
+		// write the result
+
+		double dx = p2n, dy = p2a; // rename
+		{
+			Eigen::MatrixBase<Derived3> &F = r_t_pose3_pose1;
+			F(0, 0) =  1;		F(0, 1) =  0;		F(0, 2) = -so * dx - co * dy;
+			F(1, 0) =  0;		F(1, 1) =  1;		F(1, 2) =  co * dx - so * dy;
+			F(2, 0) =  0;		F(2, 1) =  0;		F(2, 2) =  1;
+			// Jacobian of Relative2Absolute w.r.t P
+		}
+		{
+			Eigen::MatrixBase<Derived4> &W = r_t_pose3_pose2;
+			W(0, 0) = co;	W(0, 1) = -so;		W(0, 2) = 0;
+			W(1, 0) = so;	W(1, 1) =  co;		W(1, 2) = 0;
+			W(2, 0) =  0;	W(2, 1) =   0;		W(2, 2) = 1;
+			// Jacobian of Relative2Absolute w.r.t D
+		}
+	}
+
+	/**
 	 *	@brief converts xyt coordinates from absolute measurement to relative measurement
 	 *
 	 *	@tparam Derived0 is Eigen derived matrix type for the first matrix argument
@@ -240,6 +330,27 @@ public:
 		r_t_dest(0) = prf;
 		r_t_dest(1) = prl;
 		r_t_dest(2) = pra;
+	}
+
+	/**
+	 *	@brief inverts a pose
+	 *
+	 *	@tparam Derived0 is Eigen derived matrix type for the first matrix argument
+	 *	@tparam Derived1 is Eigen derived matrix type for the second matrix argument
+	 *
+	 *	@param[in] r_t_pose is a pose
+	 *	@param[out] r_t_dest is filled with the inverse pose
+	 *
+	 *	@note This function can work inplace, r_t_pose and r_t_dest may point to the same vector.
+	 */
+	template <class Derived0, class Derived1>
+	static void Pose_Inverse(const Eigen::MatrixBase<Derived0> &r_t_pose,
+		Eigen::MatrixBase<Derived1> &r_t_dest)
+	{
+		DimensionCheck<Eigen::Vector3d>(r_t_pose);
+		DimensionCheck<Eigen::Vector3d>(r_t_dest);
+
+		Absolute_to_Relative(r_t_pose, Eigen::Vector3d::Zero(), r_t_dest); // not the most efficient perhaps ...
 	}
 
 	/**
@@ -384,5 +495,7 @@ public:
 		}
 	}
 };
+
+/** @} */ // end of group
 
 #endif // !__2D_SOLVER_BASE_INCLUDED

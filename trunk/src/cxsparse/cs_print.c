@@ -1,4 +1,4 @@
-#include "cs.h"
+#include "cxsparse/cs.h"
 /* print a sparse matrix; use %g for integers to avoid differences with CS_INT */
 CS_INT cs_print (const cs *A, CS_INT brief)
 {
