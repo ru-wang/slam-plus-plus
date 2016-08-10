@@ -41,6 +41,9 @@
 #include <sys/types.h>
 #include <sys/time.h>
 #include <sys/resource.h>
+#ifdef __APPLE__
+#include <mach/mach.h>
+#endif // __APPLE__
 #endif // _WIN32 || _WIN64
 #include "slam/Integer.h"
 
@@ -76,6 +79,15 @@ public:
 		GetProcessMemoryInfo(GetCurrentProcess(), &t_info, sizeof(t_info));
 		return t_info.WorkingSetSize; // in bytes
 		// there is also t_info.PeakWorkingSetSize, also in bytes
+#elif defined(__APPLE__)
+		struct task_basic_info t_info;
+		mach_msg_type_number_t t_info_count = TASK_BASIC_INFO_COUNT;
+		if(task_info(mach_task_self(), TASK_BASIC_INFO,
+		   (task_info_t)&t_info, &t_info_count) != KERN_SUCCESS)
+			return uint64_t(-1);
+		// resident size is in t_info.resident_size;
+		// virtual size is in t_info.virtual_size; // seems thats a relatively constant value, several GB from the start
+		return t_info.resident_size;
 #else // _WIN32 || _WIN64
 #if 0
 		struct rusage t_info;
@@ -122,7 +134,10 @@ public:
 			char p_s_command[1024];
 			int n_pid = getpid();
 			sprintf(p_s_command, "grep VmData /proc/%d/status > %s", n_pid, p_s_temp_file_name);
-			system(p_s_command);
+			if(system(p_s_command)) {
+				remove(p_s_temp_file_name); // don't leave stuff around
+				return -1; // fail
+			}
 			//sprintf(p_s_command, "grep VmData /proc/%d/status > %s", n_pid, "debug.txt");
 			//system(p_s_command);
 		}

@@ -783,6 +783,8 @@ public:
 
 #endif // __DUMP_RSS2013_PRESENTATION_ANIMATION_DATA
 
+#ifdef __TEST_SCHUR_ORDERINGS
+
 #include "slam_app/Config.h"
 
 /**
@@ -949,3 +951,210 @@ public:
 		cs_spfree(p_lambda);
 	}
 } mis_test; /**< @brief test of maximum independent set calculation */
+
+#endif // __TEST_SCHUR_ORDERINGS
+
+#ifdef __TEST_VECTOR_REFS
+
+#include "slam/BlockMatrixBase.h"
+#include "eigen/Eigen/Core"
+#include <iostream>
+
+class CTestEigenMapConversions {
+public:
+	CTestEigenMapConversions()
+	{
+		Run();
+	}
+
+	static void Run()
+	{
+		Eigen::VectorXd vec = Eigen::VectorXd::Ones(3);
+		Eigen::Vector3d vec3 = Eigen::Vector3d::Ones() * 3.0;
+
+		//Eigen::Map<Eigen::VectorXd> map(vec); // not ok, Eigen does not support that internally
+		//Eigen::Map<Eigen::Vector3d> map3(vec3); // not ok, Eigen does not support that internally
+		Eigen::Map<Eigen::VectorXd> map(vec.data(), vec.rows()); // ok
+		std::cout << map << std::endl;
+		Eigen::Map<Eigen::VectorXd> map_static(vec3.data(), vec3.RowsAtCompileTime); // ok
+		std::cout << map_static << std::endl;
+		Eigen::Map<Eigen::Vector3d> map3(vec3.data(), vec3.rows()); // ok
+		std::cout << map3 << std::endl;
+		//Eigen::Map<Eigen::VectorXd> map_from3(map3); // not ok, Eigen does not support that internally
+		Eigen::Map<Eigen::VectorXd> map_from3(map3.data(), map3.rows()); // ok
+		std::cout << map_from3 << std::endl;
+		Eigen::Map<Eigen::VectorXd> map_from3_static(map3.data(), map3.RowsAtCompileTime); // ok
+		std::cout << map_from3_static << std::endl;
+		Eigen::Map<Eigen::Vector3d> map3_fromX(map.data(), map.rows()); // ok
+		std::cout << map3_fromX << std::endl;
+		Eigen::Map<Eigen::Vector3d> map3_from_static(map3.data(), map3.RowsAtCompileTime); // ok
+		std::cout << map3_from_static << std::endl;
+
+		Eigen::Map<Eigen::VectorXd> map_ref(t_MakeVectorRef<Eigen::Map<Eigen::VectorXd> >(vec)); // ok
+		Eigen::Map<Eigen::VectorXd> map_static_ref(t_MakeVectorRef<Eigen::Map<Eigen::VectorXd> >(vec3)); // ok
+		Eigen::Map<Eigen::Vector3d> map3_Xref(t_MakeVectorRef<Eigen::Map<Eigen::Vector3d> >(vec)); // ok
+		Eigen::Map<Eigen::Vector3d> map3_ref(t_MakeVectorRef<Eigen::Map<Eigen::Vector3d> >(vec3)); // ok
+		Eigen::Map<Eigen::VectorXd> map_from3_ref(t_MakeVectorRef<Eigen::Map<Eigen::VectorXd> >(map3)); // ok
+		Eigen::Map<Eigen::VectorXd> map_fromX_ref(t_MakeVectorRef<Eigen::Map<Eigen::VectorXd> >(map)); // ok
+		Eigen::Map<Eigen::Vector3d> map3_fromX_ref(t_MakeVectorRef<Eigen::Map<Eigen::Vector3d> >(map)); // ok
+		Eigen::Vector3d &ref3_fromv3 = t_MakeVectorRef<Eigen::Vector3d&>(vec3); // ok
+		Eigen::VectorXd &ref_fromvX = t_MakeVectorRef<Eigen::VectorXd&>(vec); // ok
+		//Eigen::VectorXd &ref_fromv3 = t_MakeVectorRef<Eigen::VectorXd&>(vec3); // not ok (expected) // caught by msvc
+		//Eigen::Vector3d &ref3_fromvX = t_MakeVectorRef<Eigen::Vector3d&>(vec); // not ok (expected) // caught by msvc
+		//Eigen::Vector3d &ref3_fromm3 = t_MakeVectorRef<Eigen::Vector3d&>(map3); // not ok (expected) // caught by msvc
+		//Eigen::Vector3d &ref3_frommX = t_MakeVectorRef<Eigen::Vector3d&>(map); // not ok (expected) // caught by msvc
+		//Eigen::VectorXd &ref_fromm3 = t_MakeVectorRef<Eigen::VectorXd&>(map3); // not ok (expected) // caught by msvc
+		//Eigen::VectorXd &ref_frommX = t_MakeVectorRef<Eigen::VectorXd&>(map); // not ok (expected) // caught by msvc
+	}
+} run_eigconvtest;
+
+#endif // __TEST_VECTOR_REFS
+
+#ifdef __TEST_ROTATION_AVERAGING
+
+#include "slam/3DSolverBase.h"
+
+/**
+ *	@brief rotation averaging test
+ *
+ *	This is roughly the implementation of Algorithm 1 (A1) in Govindu, Venu Madhav,
+ *	"Lie-algebraic averaging for globally consistent motion estimation," CVPR, 2004.
+ *	Note that the Algorithm 2 degenerates to Algorithm 1 if there is only a single
+ *	camera pair, reobserved many times.
+ */
+class CRotationAveragingTest {
+public:
+	CRotationAveragingTest()
+	{
+		Run();
+		exit(0);
+	}
+
+	typedef C3DJacobians::TSE3 TPose;
+
+	static TPose t_Random_Pose(double f_translation_scale, double f_rotation_angle)
+	{
+		Eigen::Vector3d v_random_axis = Eigen::Vector3d::Random();
+		v_random_axis.normalize();
+		v_random_axis *= f_rotation_angle;
+		Eigen::Quaterniond q;
+		C3DJacobians::AxisAngle_to_Quat(v_random_axis, q);
+		// get a random axis
+
+		Eigen::Vector3d v_random_translation = Eigen::Vector3d::Random();
+		v_random_translation *= f_translation_scale;
+
+		return TPose(v_random_translation, q);
+	}
+
+	template <class X, class Y>
+	struct TPair {
+		X first;
+		Y second;
+
+		TPair(const X &r_first, const Y &r_second)
+			:first(r_first), second(r_second)
+		{}
+
+		TPair(const TPair &r_other)
+			:first(r_other.first), second(r_other.second)
+		{}
+	};
+
+	static void Run()
+	{
+		for(int n_outer_pass = 0; n_outer_pass < 10; ++ n_outer_pass) {
+			TPose t_measurement = t_Random_Pose(20, 1.3);
+			// make a random measurement
+
+			std::vector<TPair<TPose, TPose> > observations; // will not compile in 32-bit MSVC. just needed to try it quickly, aligned allocator won't help.
+
+			for(int i = 0; i < 100; ++ i) {
+				TPose t_noise0 = t_Random_Pose(.5, .1);
+				TPose t_noise1 = t_Random_Pose(.5, .1);
+				// generate random noise at pose observations of both cameras
+
+				TPose t_observation0 = t_noise0;
+				TPose t_observation1 = t_measurement;
+				t_observation1 *= t_noise1;
+				// calculate absolute observations
+
+				observations.push_back(TPair<TPose, TPose>(t_observation0, t_observation1));
+
+				/*Eigen::Vector6f v_obs0 = t_observation0.v_Exp();
+				Eigen::Vector6f v_obs1 = t_observation1.v_Exp();*/
+				// exponential map
+			}
+			// generate a bunch of observations
+
+			TPose t_estimated = TPose::t_Identity();
+			for(int n_pass = 0; n_pass < 5; ++ n_pass) {
+				Eigen::Vector6d v_residual_se3 = Eigen::Vector6d::Zero();
+				for(size_t i = 0, n = observations.size(); i < n; ++ i) {
+					TPose t_observation = observations[i].first;
+					t_observation.Inverse_Compose(observations[i].second);
+					// take a delta observation
+
+					if(!n_pass && !n_outer_pass) {
+						double f_error = (t_observation.v_Log() - t_measurement.v_Log()).norm();
+						printf("observation error: %f\n", f_error);
+					}
+					// debug
+
+					TPose t_difference = t_estimated;
+					t_difference.Inverse_Compose(t_observation);
+					v_residual_se3 += t_difference.v_Log();
+				}
+				v_residual_se3 /= double(observations.size());
+				t_estimated *= TPose(v_residual_se3, TPose::from_se3_vector);
+				// update
+
+				printf("residual norm: %f\n", v_residual_se3.norm());
+			}
+
+			double f_error = (t_estimated.v_Log() - t_measurement.v_Log()).norm();
+			printf("final error: %f\n", f_error);
+			// that seems to work well. however, there's no way to get the covariance
+		}
+	}
+} run_rotavg;
+
+#endif // __TEST_ROTATION_AVERAGING
+
+#ifdef __TEST_ERROR_EVAL
+
+#include "slam/ErrorEval.h"
+
+static class CRunMe {
+public:
+	CRunMe()
+	{
+		printf("in 3D:\n");
+		CErrorEvaluation<false>::Test(); // debug
+		printf("\nin 2D:\n");
+		CErrorEvaluation<true>::Test(); // debug
+		if(rand() > RAND_MAX) {
+			CErrorEvaluation<false>::_TyVectorUnalign v;
+			C3DJacobians::Pose_Inverse(v, v);
+		}
+	}
+} runme;
+
+#endif // __TEST_ERROR_EVAL
+
+#ifdef __TEST_EIGENSOLVER
+
+void Eigenvalues_UnitTest();
+
+#include <stdlib.h>
+
+static class CMyEigsUnitTest {
+public:
+	CMyEigsUnitTest()
+	{
+		Eigenvalues_UnitTest();
+		exit(0);
+	}
+} run_eigs_test;
+
+#endif // __TEST_EIGENSOLVER

@@ -1,4 +1,4 @@
-#include "cs.h"
+#include "cxsparse/cs.h"
 /* x = x + beta * A(:,j), where x is a dense vector and A(:,j) is sparse */
 CS_INT cs_scatter (const cs *A, CS_INT j, CS_ENTRY beta, CS_INT *w, CS_ENTRY *x, CS_INT mark,
     cs *C, CS_INT nz)

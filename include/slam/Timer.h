@@ -244,7 +244,7 @@ public:
 	 *	@brief gets time in seconds
 	 *	@return Returns time since creation of this object, since
 	 *		the last call to Reset() or since the last call to
-	 *		f_Time(), whichever occured last, in seconds.
+	 *		f_Time(), whichever occurred last, in seconds.
 	 *	@note This should cope nicely with counter overflows.
 	 */
 	double f_Time() const;

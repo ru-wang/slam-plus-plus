@@ -22,11 +22,15 @@
  */
 
 #include "slam/BlockMatrix.h"
-#include "slam/Timer.h"
-#include "slam/Integer.h"
+//#include "slam/Timer.h" // included from slam/BlockMatrix.h
+//#include "slam/Integer.h" // included from slam/BlockMatrix.h
 #include "slam/IncrementalPolicy.h" // block matrix part names
 #include "eigen/Eigen/Core"
 #include "slam/OrderingMagic.h"
+
+/** \addtogroup covs
+ *	@{
+ */
 
 /**
  *	@def __MARGINALS_RECURRENT_KERNEL_USE_DENSE_BLOCK_LOOKUP
@@ -48,6 +52,13 @@
  *		the payoff will likely diminissh with growing block size.
  */
 #define __MARGINALS_RECURRENT_KERNEL_USE_BLOCKY_DIAGONAL_LOOP
+
+/**
+ *	@def __MARGINALS_COMPACT_UPDATE
+ *	@brief if defined, \ref CMarginals::Update_BlockDiagonalMarginals_FBS_ExOmega() will
+ *		use less memory in exchange for potentially unaligned operations
+ */
+#define __MARGINALS_COMPACT_UPDATE
 
 /**
  *	@brief prototype marginal covariance methods implementation
@@ -84,6 +95,8 @@ public:
 		}
 		r_marginals = R_inv * R_inv.transpose(); // C = SS^T, might need some memory
 		// calculate the covariance (assume that this is correct)
+
+		// 2015-08-17 - seems to work ok
 	}
 
 	/**
@@ -156,12 +169,14 @@ public:
 	 *	@param[in] p_inv_order is inverse ordering on the R factor
 	 *	@param[in] n_order_size is size of the ordering (must match number of block columns in R)
 	 *	@param[in] b_lower_diag_only is lower-diagonal flag
+	 *	@param[in] b_band_only is band flag (only the specified band of the matrix is then stored)
 	 *
 	 *	@note This function throws std::bad_alloc.
 	 */
 	static void Calculate_DenseMarginals_Fast_ColumnBand(Eigen::MatrixXd &r_marginals,
 		const CUberBlockMatrix &r_R, size_t n_start_column, size_t n_end_column,
-		const size_t *p_inv_order, size_t n_order_size, bool b_lower_diag_only = false) // throw(std::bad_alloc)
+		const size_t *p_inv_order, size_t n_order_size, bool b_lower_diag_only = false,
+		bool b_band_only = false) // throw(std::bad_alloc)
 	{
 		_ASSERTE(!b_lower_diag_only);
 		// missing code to correctly resume, always calculating full
@@ -173,7 +188,7 @@ public:
 		const size_t n = r_R.n_Column_Num(); // in elements
 		_ASSERTE(n_start_column <= n_end_column);
 		_ASSERTE(n_end_column <= n); // not more than that
-		r_marginals.resize(n, n); // should already have the size if called from Calculate_DenseMarginals_Fast(), then it is a no-op
+		r_marginals.resize(n, (b_band_only)? n_end_column - n_start_column : n); // should already have the size if called from Calculate_DenseMarginals_Fast(), then it is a no-op
 
 		Eigen::VectorXd perm_column(n);
 
@@ -218,7 +233,7 @@ public:
 			//_ASSERTE(n_block_col + 1 == nb || i + n_col_remains == r_R.n_BlockColumn_Base(n_block_col + 1)); // will only work with a single block size
 			// make sure that the numbers are correct
 
-			double *p_column = &r_marginals.col(i)(0);
+			double *p_column = &r_marginals.col((b_band_only)? i - n_start_column : i)(0);
 #ifdef _DEBUG
 			memset(p_column, 0, n * sizeof(double));
 			p_column[i] = 1;
@@ -248,10 +263,14 @@ public:
 			r_R.Permute_LeftHandSide_Vector(p_column, &perm_column(0), n, p_inv_order, n_order_size);
 			// solve for the whole column thing, generates one column at a time
 		}
+
+		// 2015-08-17 - seems to work ok
 	}
 
 	/**
 	 *	@brief fast FBS function that calculates dense marginals matrix
+	 *
+	 *	@tparam CBlockMatrixTypelist is list of Eigen::Matrix block sizes
 	 *
 	 *	@param[out] r_marginals is filled with the marginals matrix
 	 *	@param[in] r_R is the Cholesky factor
@@ -384,7 +403,7 @@ public:
 			// solve for the whole column thing, generates one column at a time
 		}
 	}
-	
+
 	/**
 	 *	@brief fast FBS function that calculates a block of a dense marginals matrix
 	 *
@@ -395,6 +414,9 @@ public:
 	 *	zero. The number of rows of the block must match the sum of sizes of block rows
 	 *	selected by p_inv_order and n_smaller_order_size (must be block aligned).
 	 *
+	 *	@tparam CBlockMatrixTypelist is list of Eigen::Matrix block sizes
+	 *	@tparam Derived0 is Eigen derived matrix type for the first matrix argument
+	 *
 	 *	@param[in,out] r_marginals is filled with the marginals matrix (must come preallocated)
 	 *	@param[in] r_R is the Cholesky factor
 	 *	@param[in] n_start_column is zero-based index of the first column (in elements)
@@ -404,9 +426,14 @@ public:
 	 *		block (less or equal to n_order_size)
 	 *
 	 *	@note This function throws std::bad_alloc.
+	 *	@note This used to be called Calculate_DenseMarginals_Fast_ColumnBand_FBS() which is
+	 *		unfortunate because the function actually stores only a subblock of the marginals matrix
+	 *		rather than the dense matrix and the semantics depend on the type of the matrix
+	 *		(Eigen::MatrixXd for full matrix and anything else for matrix band). Seems wrong
+	 *		to call them the same.
 	 */
-	template <class CBlockMatrixTypelist, class CBlockExpr>
-	static void Calculate_DenseMarginals_Fast_ColumnBand_FBS(CBlockExpr r_marginals,
+	template <class CBlockMatrixTypelist, class Derived0>
+	static void Calculate_SubblockMarginals_Fast_ColumnBand_FBS(Eigen::MatrixBase<Derived0> &r_marginals,
 		const CUberBlockMatrix &r_R, size_t n_start_column,
 		const size_t *p_inv_order, size_t n_order_size, size_t n_smaller_order_size) // throw(std::bad_alloc)
 	{
@@ -1432,7 +1459,7 @@ public:
 				}
 #endif // _DEBUG
 				// check the block
-			}		
+			}
 		};
 
 		/**
@@ -1624,7 +1651,7 @@ public:
 		 *
 		 *	@tparam CMatrixBlockSizeList is a list of possible matrix block sizes
 		 *
-		 *	@param[in] n_column_i_size is 
+		 *	@param[in] n_column_i_size is size of the current column
 		 *	@param[in] n_column_i is zero-based index of the current column
 		 *	@param[in] L is reference to the L factor matrix
 		 *	@param[in] R is reference to the R factor matrix (only its block structure is relevant)
@@ -2634,7 +2661,7 @@ public:
 
 						CUberBlockMatrix::_TyMatrixXdRef block_j_k = L.t_GetBlock_Log(n_block_k, n_block_j);
 						if(!block_j_k.cols())
-							continue; // no such block (zero, sparse) // todo - rewrite to form of a loop over *existing* blocks 
+							continue; // no such block (zero, sparse) // todo - rewrite to form of a loop over *existing* blocks
 
 						f_sum_Rjk_Cik += r_marginals(i, k) * block_j_k(k - n_block_k_base, j - n_block_j_base);
 						// product
@@ -2824,7 +2851,7 @@ public:
 
 						CUberBlockMatrix::_TyConstMatrixXdRef block_j_k = L.t_GetBlock_Log(n_block_k, n_block_j);
 						if(!block_j_k.cols())
-							continue; // no such block (zero, sparse) // todo - rewrite to form of a loop over *existing* blocks 
+							continue; // no such block (zero, sparse) // todo - rewrite to form of a loop over *existing* blocks
 
 						f_sum_Rjk_Cik += r_marginals(i, k) * block_j_k(k - n_block_k_base, j - n_block_j_base);
 						// product
@@ -3049,7 +3076,7 @@ public:
 
 						CUberBlockMatrix::_TyMatrixXdRef block_j_k = L.t_GetBlock_Log(n_block_k, n_block_j);
 						if(!block_j_k.cols())
-							continue; // no such block (zero, sparse) // todo - rewrite to form of a loop over *existing* blocks 
+							continue; // no such block (zero, sparse) // todo - rewrite to form of a loop over *existing* blocks
 
 						f_sum_Rjk_Cik += r_marginals(i, k) * block_j_k(k - n_block_k_base, j - n_block_j_base);
 						// product
@@ -3169,7 +3196,7 @@ public:
 
 						CUberBlockMatrix::_TyMatrixXdRef block_j_k = L.t_GetBlock_Log(n_block_k, n_block_j);
 						if(!block_j_k.cols())
-							continue; // no such block (zero, sparse) // todo - rewrite to form of a loop over *existing* blocks 
+							continue; // no such block (zero, sparse) // todo - rewrite to form of a loop over *existing* blocks
 
 						f_sum_Rjk_Cik += r_marginals(i, k) * block_j_k(k - n_block_k_base, j - n_block_j_base);
 						// product
@@ -3689,6 +3716,51 @@ public:
 		return sqrt(f_error);
 	}
 
+	/**
+	 *	@brief calculates norm of difference between two sparse (incomplete) solutions
+	 *
+	 *	@param[in] r_incomplete_a is partially calculated sparse block matrix containing the marginals
+	 *	@param[in] r_incomplete_b is partially calculated sparse block matrix with the same marginals
+	 *
+	 *	@return Returns norm of differences of the two matrices, ignoting the parts of the
+	 *		dense matrix where the sparse block matrix doesn't have values.
+	 */
+	static double f_IncompleteDifference(size_t &r_n_common_block_num,
+		const CUberBlockMatrix &r_incomplete_a, const CUberBlockMatrix &r_incomplete_b)
+	{
+		_ASSERTE(r_incomplete_a.n_Row_Num() == r_incomplete_b.n_Row_Num() &&
+			r_incomplete_a.n_Column_Num() == r_incomplete_b.n_Column_Num());
+		_ASSERTE(r_incomplete_a.b_EqualLayout(r_incomplete_b));
+		// should be same size and the same layout
+
+		r_n_common_block_num = 0;
+
+		double f_error = 0;
+		for(size_t i = 0, n = r_incomplete_b.n_BlockColumn_Num(); i < n; ++ i) {
+			for(size_t j = 0, m = r_incomplete_a.n_BlockColumn_Block_Num(i),
+			   k = 0, o = r_incomplete_b.n_BlockColumn_Block_Num(i); j < m && k < o;) {
+				size_t n_block_row_j = r_incomplete_a.n_Block_Row(i, j),
+					n_block_row_k = r_incomplete_b.n_Block_Row(i, k);
+
+				if(n_block_row_j == n_block_row_k) {
+					CUberBlockMatrix::_TyConstMatrixXdRef t_block_j = r_incomplete_a.t_Block_AtColumn(i, j),
+						t_block_k = r_incomplete_b.t_Block_AtColumn(i, k);
+					f_error += (t_block_j - t_block_k).squaredNorm();
+					++ r_n_common_block_num;
+
+					++ j;
+					++ k;
+				} else if(n_block_row_j < n_block_row_k)
+					++ j;
+				else
+					++ k;
+			}
+		}
+		// sum up error under blocks that were evaluated
+
+		return sqrt(f_error);
+	}
+
 #if 0
 	void Marginals_DevelCode()
 	{
@@ -3863,7 +3935,7 @@ public:
 
 						CUberBlockMatrix::_TyMatrixXdRef block_j_k = R_tr.t_GetBlock_Log(n_block_k, n_block_j);
 						if(!block_j_k.cols())
-							continue; // no such block (zero, sparse) // todo - rewrite to form of a loop over *existing* blocks 
+							continue; // no such block (zero, sparse) // todo - rewrite to form of a loop over *existing* blocks
 
 						f_sum_Rjk_Cik += C_dep(i, k) * block_j_k(k - n_block_k_base, j - n_block_j_base);
 						// product
@@ -3999,7 +4071,7 @@ public:
 			const CMatrixOrdering &r_mord; /**< @brief reference to the ordering, used in the Cholesky factorization of r_R */
 			bool b_update_diag_only; /**< @brief diagonal update flag (if set, only the diagonal is updated) */
 			// parameters
- 
+
 			/**
 			 *	@brief default constructor
 			 *
@@ -4248,7 +4320,7 @@ public:
 					size_t n_block_cols = omega_slim.n_BlockColumn_Column_Num(i);
 					// get dimensions of this block
 
-					CMarginals::Calculate_DenseMarginals_Fast_ColumnBand_FBS<
+					CMarginals::Calculate_SubblockMarginals_Fast_ColumnBand_FBS<
 						typename CSystemType::_TyHessianMatrixBlockList>(
 						Tu_full.block(0, n_block_base_Tu, n_cur_state_size, n_block_cols),
 						r_R, n_block_base_margs, mord.p_Get_InverseOrdering(),
@@ -4622,7 +4694,7 @@ public:
 			size_t n_block_cols = omega_slim.n_BlockColumn_Column_Num(i);
 			// get dimensions of this block
 
-			CMarginals::Calculate_DenseMarginals_Fast_ColumnBand_FBS<
+			CMarginals::Calculate_SubblockMarginals_Fast_ColumnBand_FBS<
 				typename CSystemType::_TyHessianMatrixBlockList>(
 				Tu_full.block(0, n_block_base_Tu, n_cur_state_size, n_block_cols),
 				r_R, n_block_base_margs, mord.p_Get_InverseOrdering(),
@@ -5118,7 +5190,7 @@ public:
 
 		return Update_BlockDiagonalMarginals_FBS_ExOmega<b_enable_timer>(system, r_prev_marginals,
 			r_lambda_in_natural_order, r_R, mord, n_edges_in_prev_marginals, n_matrix_part,
-			f_omega_build_time, omega, required_column_list);
+			f_omega_build_time, omega, required_column_list); // massif: +35,893,584B (via a matrix product) +35,893,584B (via a matrix product) +8,388,608B (via block matrix p_Find_Block())
 	}
 
 	/**
@@ -5149,7 +5221,6 @@ public:
 	static bool Update_BlockDiagonalMarginals_FBS_ExOmega(const CSystemType &system, CUberBlockMatrix &r_prev_marginals,
 		const CUberBlockMatrix &r_lambda_in_natural_order, const CUberBlockMatrix &r_R,
 		const CMatrixOrdering &mord, size_t n_edges_in_prev_marginals, EBlockMatrixPart n_matrix_part,
-		
 		double f_omega_build_time, const CUberBlockMatrix &omega, const std::vector<size_t> &required_column_list) // additional params to pass:
 	{
 		typedef typename CTimerSamplerTraits<b_enable_timer>::_TyTimerSampler _TyTimerSampler;
@@ -5168,7 +5239,7 @@ public:
 		const size_t n_order_min = required_column_list.front(); // basically contains ids of affected vertices, and is sorted
 		const size_t n_elem_order_min = r_prev_marginals.n_BlockColumn_Base(n_order_min);
 
-		// todo - we need to have omega; split this function ro two, with entry point where omega is already available
+		// t_odo - we need to have omega; split this function ro two, with entry point where omega is already available
 
 		CTimer t;
 		_TyTimerSampler timer(t);
@@ -5260,6 +5331,11 @@ public:
 		omega_slim.Convert_to_Dense(omega_dense);
 		// get dense omega
 
+#ifdef _DEBUG
+		/*double f_omega_diag_min_abs_coeff = omega_dense.diagonal().array().abs().minCoeff();
+		printf("debug: min diag coeff in omega: %g\n", f_omega_diag_min_abs_coeff);*/
+#endif // _DEBUG
+
 		//omega_dense.bottomRightCorner(omega_dense.rows() - omega_slim.n_BlockColumn_Column_Num(0),
 		//	omega_dense.cols() - omega_slim.n_BlockColumn_Column_Num(0)).diagonal().array() += .1;
 		// slightly lift the diagonal (except the first vertex), like it would happen in damped least squares
@@ -5277,7 +5353,7 @@ public:
 		const size_t n_prev_state_block_num = r_prev_marginals.n_BlockColumn_Num();
 		const size_t n_omega_elems = omega_slim.n_Column_Num();
 
-		Eigen::MatrixXd Tu_full(n_cur_state_size, n_omega_elems); // do not allocate it smaller, will need these to update the new covs!
+		Eigen::MatrixXd Tu_full(n_cur_state_size, n_omega_elems); // massif: 35,897,688B // do not allocate it smaller, will need these to update the new covs!
 		_ASSERTE(n_packed_block_column_num <= INT_MAX);
 		int _n_packed_block_column_num = int(n_packed_block_column_num);
 		#pragma omp parallel for if(n_prev_state_block_num > 1000)
@@ -5287,14 +5363,16 @@ public:
 			size_t n_block_cols = omega_slim.n_BlockColumn_Column_Num(i);
 			// get dimensions of this block
 
-			CMarginals::Calculate_DenseMarginals_Fast_ColumnBand_FBS<
-				typename CSystemType::_TyHessianMatrixBlockList>(
-				Tu_full.block(0, n_block_base_Tu, n_cur_state_size, n_block_cols),
+			Eigen::Block<Eigen::MatrixXd> Tu_block =
+				Tu_full.block(0, n_block_base_Tu, n_cur_state_size, n_block_cols); // g++ requires a temporary
+			CMarginals::Calculate_SubblockMarginals_Fast_ColumnBand_FBS<
+				typename CSystemType::_TyHessianMatrixBlockList>(Tu_block
+				/*Tu_full.block(0, n_block_base_Tu, n_cur_state_size, n_block_cols)*/,
 				r_R, n_block_base_margs, mord.p_Get_InverseOrdering(),
 				mord.n_Ordering_Size(), mord.n_Ordering_Size()/*n_prev_state_block_num*/);
 			// really calculate a block of dense marginals
 		}
-		Eigen::Block<Eigen::MatrixXd> Tu = Tu_full.topLeftCorner(n_prev_state_size, n_omega_elems);
+		Eigen::Block<Eigen::MatrixXd> Tu = Tu_full.topRows/*LeftCorner*/(n_prev_state_size/*, n_omega_elems*/);
 		// assemble Tu
 
 		Eigen::MatrixXd s(n_omega_elems, n_omega_elems);
@@ -5329,6 +5407,11 @@ public:
 		Eigen::MatrixXd V = Eigen::MatrixXd::Identity(n_omega_elems, n_omega_elems) - s * omega_dense;
 		// calculate V
 
+#ifdef _DEBUG
+		/*double f_V_diag_min_abs_coeff = V.diagonal().array().abs().minCoeff();
+		printf("debug: min diag coeff in S: %g (will invert it)\n", f_V_diag_min_abs_coeff); // in the video this is called S*/
+#endif // _DEBUG
+
 		// t_odo - do more manual inversion (with LU?) of V,
 		// in case it is not invertible, refrain to use batch marginals
 
@@ -5342,16 +5425,23 @@ public:
 
 		typedef forward_allocated_pool<double, 0, 64> CAlloc;
 		const size_t n_omega_stride = n_Align_Up_POT(n_omega_elems, size_t(8));
-		double *p_tut_buffer = (double*)CAlloc::aligned_alloc(n_omega_stride * n_prev_state_size * sizeof(double));
-		double *p_bu_buffer = (double*)CAlloc::aligned_alloc(n_omega_stride * n_prev_state_size * sizeof(double));
+		double *p_bu_buffer = (double*)CAlloc::aligned_alloc(n_omega_stride * n_prev_state_size * sizeof(double)); // massif: +73,886,208B/2
+		Eigen::Map<Eigen::MatrixXd, Eigen::Aligned, Eigen::OuterStride<> > Bu(p_bu_buffer, n_omega_elems,
+			n_prev_state_size, Eigen::OuterStride<>(n_omega_stride)); // why did I do that as a map? to have stride?
 		// t_odo - try to increase n_omega_elems to the next multiple of 8
 
+#ifdef __MARGINALS_COMPACT_UPDATE
+		// ommit TuT
+
+		Bu.noalias() = (omega_dense * luV.inverse()) * Tu.transpose(); // a suspicious matrix product, this is probably where massif detects +35,893,584B +35,893,584B
+#else // __MARGINALS_COMPACT_UPDATE
+		double *p_tut_buffer = (double*)CAlloc::aligned_alloc(n_omega_stride * n_prev_state_size * sizeof(double)); // massif: +73,886,208B/2
 		Eigen::Map<Eigen::MatrixXd, Eigen::Aligned, Eigen::OuterStride<> > TuT(p_tut_buffer, n_omega_elems,
 			n_prev_state_size, Eigen::OuterStride<>(n_omega_stride));
-		Eigen::Map<Eigen::MatrixXd, Eigen::Aligned, Eigen::OuterStride<> > Bu(p_bu_buffer, n_omega_elems,
-			n_prev_state_size, Eigen::OuterStride<>(n_omega_stride));
 		TuT = Tu.transpose(); // keep this as well, for a better memory locality
-		Bu = (omega_dense * luV.inverse()) * TuT;
+
+		Bu.noalias() = (omega_dense * luV.inverse()) * TuT; // a suspicious matrix product, this is probably where massif detects +35,893,584B +35,893,584B
+#endif // __MARGINALS_COMPACT_UPDATE
 		// t_odo - produce the symmetrical product; or double the memory and have e.g. right side
 		// of the product mutliply Tu (that way at least the computation is saved, if not storage)
 
@@ -5397,6 +5487,9 @@ public:
 		_ASSERTE(!b_full_only_last || !b_diag_only_last); // at most one is set
 		_ASSERTE(!(b_diag_only_last && b_full_update)); // never at the same time; if b_diag_only_last is set, full can't be set
 
+		bool b_purged = false;
+		size_t n_max_size = 0;
+
 		if(b_update_interior) {
 			const size_t n_news_stat_block_num = lambda.n_BlockColumn_Num();
 			_ASSERTE(n_prev_state_block_num <= INT_MAX);
@@ -5409,10 +5502,20 @@ public:
 
 			CUberBlockMatrix new_margs_tmp;
 			bool b_update_to_temporary = ((n_matrix_part & mpart_LastColumn) ==
-				mpart_LastColumn && !b_last_col_is_part_of_interior) && !b_full_update;
+				mpart_LastColumn && !b_last_col_is_part_of_interior) &&
+				n_matrix_part != mpart_FullMatrix/*!b_full_update*/; // b_full_update means something else
 			// decide whether to update to a temporary matrix
 
-			b_update_to_temporary = false; // don't want to use it, the relinearization will take care of throwing away the dense parts
+			if(b_update_to_temporary) {
+				if(r_prev_marginals.n_Storage_Size() / 2 < (n_max_size = std::max(size_t(1048576), r_R.n_Storage_Size()))) // n_Storage_Size() is in elements, not bytes // could align up to whole blocks, like this it sometimes deletes right after allocation
+					b_update_to_temporary = false; // don't want to use it, the relinearization will take care of throwing away the dense parts
+				else {
+					//printf("purge\n");
+					b_purged = true;
+				}
+			} /*else
+				printf("cannot purge\n");*/
+			// only allow updating to a temporary if the marginals matrix takes much more space than the factor
 
 			bool b_run_in_parallel = true;
 			if(b_update_to_temporary) { // note that this is probably slightly more costy as it is doing M' = M + U istead of M += U
@@ -5436,7 +5539,7 @@ public:
 				if(1) {
 					for(int i = n_first; i < _n_prev_state_block_num; ++ i) {
 						const size_t n_cols = new_margs_tmp.n_BlockColumn_Column_Num(i);
-						new_margs_tmp.t_GetBlock_Log(i, i, n_cols, n_cols, true, false);
+						new_margs_tmp.t_GetBlock_Log(i, i, n_cols, n_cols, true, false); // massif: 8,388,608B
 					}
 					// preallocate structure
 				} else
@@ -5474,12 +5577,23 @@ public:
 					// zero out other blocks so that it is obvious which parts are up to date (debug)
 
 					if(b_update_to_temporary) {
+#ifdef __MARGINALS_COMPACT_UPDATE
+						new_margs_tmp.t_GetBlock_Log(i, i, n_cols, n_cols, true, false) =
+							r_prev_marginals.t_GetBlock_Log(i, i) - Tu.middleRows(n_col_base,
+							n_cols).lazyProduct(Bu.middleCols(n_col_base, n_cols));
+#else // __MARGINALS_COMPACT_UPDATE
 						new_margs_tmp.t_GetBlock_Log(i, i, n_cols, n_cols, true, false) =
 							r_prev_marginals.t_GetBlock_Log(i, i) - TuT.middleCols(n_col_base,
 							n_cols).transpose().lazyProduct(Bu.middleCols(n_col_base, n_cols));
+#endif // __MARGINALS_COMPACT_UPDATE
 					} else {
+#ifdef __MARGINALS_COMPACT_UPDATE
+						r_prev_marginals.t_GetBlock_Log(i, i) -= Tu.middleRows(n_col_base,
+							n_cols).lazyProduct(Bu.middleCols(n_col_base, n_cols));
+#else // __MARGINALS_COMPACT_UPDATE
 						r_prev_marginals.t_GetBlock_Log(i, i) -= TuT.middleCols(n_col_base,
 							n_cols).transpose().lazyProduct(Bu.middleCols(n_col_base, n_cols));
+#endif // __MARGINALS_COMPACT_UPDATE
 					}
 					// maybe it would be faster using Tu_full? it makes no difference here.
 					// t_odo - could FBS these products*/
@@ -5502,12 +5616,23 @@ public:
 
 						_ASSERTE(!b_update_to_temporary); // would copy the whole matrix anyway
 						/*if(b_update_to_temporary) {
+#ifdef __MARGINALS_COMPACT_UPDATE
+							new_margs_tmp.t_GetBlock_Log(n_row, i, n_rows, n_cols, true, false) =
+								r_prev_marginals.t_Block_AtColumn(i, j) - Tu.middleRows(n_row_base,
+								n_rows).lazyProduct(Bu.middleCols(n_col_base, n_cols));
+#else // __MARGINALS_COMPACT_UPDATE
 							new_margs_tmp.t_GetBlock_Log(n_row, i, n_rows, n_cols, true, false) =
 								r_prev_marginals.t_Block_AtColumn(i, j) - TuT.middleCols(n_row_base,
 								n_rows).transpose().lazyProduct(Bu.middleCols(n_col_base, n_cols));
+#endif // __MARGINALS_COMPACT_UPDATE
 						} else*/ {
+#ifdef __MARGINALS_COMPACT_UPDATE
+							r_prev_marginals.t_Block_AtColumn(i, j) -= Tu.middleRows(n_row_base,
+								n_rows).lazyProduct(Bu.middleCols(n_col_base, n_cols));
+#else // __MARGINALS_COMPACT_UPDATE
 							r_prev_marginals.t_Block_AtColumn(i, j) -= TuT.middleCols(n_row_base,
 								n_rows).transpose().lazyProduct(Bu.middleCols(n_col_base, n_cols));
+#endif // __MARGINALS_COMPACT_UPDATE
 							//r_prev_marginals.t_Block_AtColumn(i, j) -=
 							//	Tu_full.block(n_row_base, 0, n_rows, n_omega_elems).lazyProduct(
 							//	Bu.block(0, n_col_base, n_omega_elems, n_cols)); // maybe it would be faster using Tu_full? it makes no difference here.
@@ -5576,8 +5701,8 @@ public:
 					for(size_t j = 0, m = lambda.n_BlockColumn_Num(); j < m; ++ j) { // note that the other blocks presumably calculated from bottom to top
 						size_t n_rows = lambda.n_BlockColumn_Column_Num(j); // should be row, but lambda is symmetric and this is in cache
 						size_t n_row_in_Tu = lambda.n_BlockColumn_Base(j);
-						r_prev_marginals.t_GetBlock_Log(j, n_vertex, n_rows, n_dim, true, false) =
-							Tu_full.block(n_row_in_Tu, n_col_in_Tu, n_rows, n_dim);
+						r_prev_marginals.t_GetBlock_Log(j, n_vertex, n_rows, n_dim, true, false) = // massif: 33,554,432B
+							Tu_full.block(n_row_in_Tu, n_col_in_Tu, n_rows, n_dim); // massif: 13,107,200B
 					}
 					// for each block in the column
 				}
@@ -5588,13 +5713,18 @@ public:
 		// precision (or maybe instability, when mixed with the updated parts - that depends)
 
 		CAlloc::aligned_free(p_bu_buffer);
+#ifndef __MARGINALS_COMPACT_UPDATE
 		CAlloc::aligned_free(p_tut_buffer);
+#endif // !__MARGINALS_COMPACT_UPDATE
 		// should free in catch(bad_alloc) as well, will leave memory allocated if something throws
 
 		timer.Accum_DiffSample(f_extend_time);
 
 		_TySample f_total_time = 0;
 		timer.Accum_CumTime_LastSample(f_total_time);
+
+		/*if(b_purged && r_prev_marginals.n_Storage_Size() / 2 > n_max_size)
+			printf("failed purge, the matrix still takes more\n");*/
 
 		if(b_enable_timer) {
 			printf("marginals update took %.5f msec\n", f_total_time * 1000.0);
@@ -5741,7 +5871,7 @@ public:
 			size_t n_block_cols = omega_slim.n_BlockColumn_Column_Num(i);
 			// get dimensions of this block
 
-			CMarginals::Calculate_DenseMarginals_Fast_ColumnBand_FBS<
+			CMarginals::Calculate_SubblockMarginals_Fast_ColumnBand_FBS<
 				typename CSystemType::_TyHessianMatrixBlockList>(
 				Tu_full.block(0, n_block_base_Tu, n_cur_state_size, n_block_cols),
 				r_R, n_block_base_margs, mord.p_Get_InverseOrdering(),
@@ -6241,7 +6371,7 @@ public:
 				// calculate a block of dense marginals by whatever metod (in current time frame; here we just copy it from a full matrix)
 #endif // 0
 
-				CMarginals::Calculate_DenseMarginals_Fast_ColumnBand_FBS<typename CSystemType::_TyHessianMatrixBlockList>(
+				CMarginals::Calculate_SubblockMarginals_Fast_ColumnBand_FBS<typename CSystemType::_TyHessianMatrixBlockList>(
 					Tu.block(0, n_block_base_Tu, /*n_rows*/n_prev_state_size, n_block_cols),
 					cur_R_ord, n_block_base_margs, mord.p_Get_InverseOrdering(), mord.n_Ordering_Size(),
 					lambda_prev.n_BlockColumn_Num());
@@ -6325,7 +6455,7 @@ public:
 			Eigen::MatrixXd V = Eigen::MatrixXd::Identity(n_omega_elems, n_omega_elems) -
 				H * s * H.transpose() * d.asDiagonal();
 			// calculate V
-	 
+
 			size_t n_zero_num = 0;
 			{
 				CDebug::Print_DenseMatrix_in_MatlabFormat(stdout, d, "d = ", "\n", " %g");
@@ -7029,6 +7159,52 @@ public:
 		// at the moment, all of the matrix is available, requests have no effect.
 		// this will change with more efficient algorithms in the future ...
 	}
+
+	/**
+	 *	@brief diagonals of the diagonal blocks of the marginals to a file
+	 *	@param[in] p_s_filename is a null-termibnated string with output filename (default "marginals.txt")
+	 *	@return Returns true on success, false on failure.
+	 *	@note This does not do any checking whether the matrix is up to date.
+	 */
+	bool Dump_Diagonal(const char *p_s_filename = "marginals.txt") const
+	{
+		const CUberBlockMatrix &r_marginals = r_SparseMatrix();
+		FILE *p_fw;
+		if((p_fw = fopen(p_s_filename, "w"))) {
+			for(size_t i = 0, n = r_marginals.n_BlockColumn_Num(); i < n; ++ i) {
+				size_t n_order = r_marginals.n_BlockColumn_Base(i);
+				size_t n_dimension = r_marginals.n_BlockColumn_Column_Num(i);
+				// get col
+
+				CUberBlockMatrix::_TyConstMatrixXdRef block =
+					r_marginals.t_FindBlock(n_order, n_order);
+				// get block
+
+				//fprintf(p_fw, "block_%d_%d = ", int(i), int(i));
+				//CDebug::Print_DenseMatrix_in_MatlabFormat(p_fw, block);
+				// prints the matrix
+
+				_ASSERTE(block.rows() == block.cols() && block.cols() == n_dimension);
+				for(size_t i = 0; i < n_dimension; ++ i) {
+					double f = block(i, i);
+					fprintf(p_fw, (fabs(f) > 1)? ((i)? " %.15f" : "%.15f") : ((i)? " %.15g" : "%.15g"), f);
+				}
+				fprintf(p_fw, "\n");
+				// print just the diagonal, one line per every vertex
+			}
+			if(ferror(p_fw)) {
+				fclose(p_fw);
+				return false;
+			}
+			fclose(p_fw);
+			return true;
+		}
+		// dump diagonal blocks of the marginals to a file
+
+		return false;
+	}
 };
+
+/** @} */ // end of group
 
 #endif // !__MARGINALS_INCLUDED

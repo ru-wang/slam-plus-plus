@@ -1,4 +1,4 @@
-#include "cs.h"
+#include "cxsparse/cs.h"
 /* post order a forest */
 CS_INT *cs_post (const CS_INT *parent, CS_INT n)
 {

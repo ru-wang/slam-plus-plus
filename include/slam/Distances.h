@@ -22,9 +22,13 @@
  */
 
 #include "slam/BlockMatrix.h"
-#include "slam/Timer.h"
-#include "slam/Integer.h"
-#include "eigen/Eigen/Core"
+//#include "slam/Timer.h" // included from slam/BlockMatrix.h
+//#include "slam/Integer.h" // included from slam/BlockMatrix.h
+//#include "eigen/Eigen/Core" // included from slam/BlockMatrix.h
+
+/** \addtogroup covs
+ *	@{
+ */
 
 /**
  *	@brief identity distance transform; does not change the distance in any way
@@ -59,12 +63,12 @@ public:
 	 *	@param[in] r_vertex_0 is state of the first vertex (unused)
 	 *	@param[in] r_vertex_1 is state of the second vertex (unused)
 	 *	@param[in,out] r_mean_d is distance between the vertices (unused - left as is)
-	 *	@param[in,out] r_Sigma_d is distribution of the distance (unused - left as is)
+	 *	@param[in,out] r_t_Sigma_d is distribution of the distance (unused - left as is)
 	 *	@param[in] edge_list_tag is tag to carry CEdgeTypeList (value unused)
 	 */
 	template <class CVertex0, class CVertex1, class CMeanMeasurement, class CMeanDistribution, class CEdgeTypeList>
 	void operator ()(const CVertex0 &UNUSED(r_vertex_0), const CVertex1 &UNUSED(r_vertex_1),
-		CMeanMeasurement &UNUSED(r_mean_d), CMeanDistribution &UNUSED(r_Sigma_d),
+		CMeanMeasurement &UNUSED(r_mean_d), CMeanDistribution &UNUSED(r_t_Sigma_d),
 		CEdgeTypeList UNUSED(edge_list_tag)) const
 	{}
 };
@@ -102,12 +106,12 @@ public:
 	 *	@param[in] r_vertex_0 is state of the first vertex
 	 *	@param[in] r_vertex_1 is state of the second vertex
 	 *	@param[in,out] r_mean_d is distance between the vertices
-	 *	@param[in,out] r_Sigma_d is distribution of the distance
+	 *	@param[in,out] r_t_Sigma_d is distribution of the distance
 	 *	@param[in] edge_list_tag is tag to carry CEdgeTypeList (value unused)
 	 */
 	template <class CVertex0, class CVertex1, class CMeanMeasurement, class CMeanDistribution, class CEdgeTypeList>
 	void operator ()(const CVertex0 &r_vertex_0, const CVertex1 &r_vertex_1,
-		CMeanMeasurement &r_mean_d, CMeanDistribution &r_Sigma_d, CEdgeTypeList UNUSED(edge_list_tag)) const
+		CMeanMeasurement &r_mean_d, CMeanDistribution &r_t_Sigma_d, CEdgeTypeList UNUSED(edge_list_tag)) const
 	{
 		Eigen::Matrix<double, 4, 6> H_transform = Eigen::Matrix<double, 4, 6>::Identity();
 		const double Aa = r_mean_d(3), Ab = r_mean_d(4), Ac = r_mean_d(5);
@@ -129,7 +133,7 @@ public:
 		r_mean_d.conservativeResize(4);
 		// transform mean
 
-		r_Sigma_d = H_transform * r_Sigma_d * H_transform.transpose();
+		r_t_Sigma_d = H_transform * r_t_Sigma_d * H_transform.transpose();
 		// transform the sigma
 	}
 };
@@ -168,12 +172,12 @@ public:
 	 *	@param[in] r_vertex_0 is state of the first vertex
 	 *	@param[in] r_vertex_1 is state of the second vertex
 	 *	@param[in,out] r_mean_d is distance between the vertices
-	 *	@param[in,out] r_Sigma_d is distribution of the distance
+	 *	@param[in,out] r_t_Sigma_d is distribution of the distance
 	 *	@param[in] edge_list_tag is tag to carry CEdgeTypeList (value unused)
 	 */
 	template <class CVertex0, class CVertex1, class CMeanMeasurement, class CMeanDistribution, class CEdgeTypeList>
 	void operator ()(const CVertex0 &r_vertex_0, const CVertex1 &r_vertex_1,
-		CMeanMeasurement &r_mean_d, CMeanDistribution &r_Sigma_d, CEdgeTypeList UNUSED(edge_list_tag)) const
+		CMeanMeasurement &r_mean_d, CMeanDistribution &r_t_Sigma_d, CEdgeTypeList UNUSED(edge_list_tag)) const
 	{
 		Eigen::Matrix<double, 4, 6> H_transform = Eigen::Matrix<double, 4, 6>::Identity();
 		const double Aa = r_mean_d(3), Ab = r_mean_d(4), Ac = r_mean_d(5);
@@ -196,7 +200,7 @@ public:
 			r_mean_d.conservativeResize(4);
 			// transform mean
 
-			r_Sigma_d = H_transform * r_Sigma_d * H_transform.transpose();
+			r_t_Sigma_d = H_transform * r_t_Sigma_d * H_transform.transpose();
 			// transform the sigma
 
 			return;
@@ -215,9 +219,9 @@ public:
 		// transformation
 
 		double f_angular_distance = acos(f_cos_angle);
-		// calcualte the angle
+		// calculate the angle
 
-		double t1, t2, t3, t4, t6, t7, t8, J[3];
+		/*double t1, t2, t3, t4, t6, t7, t8, J[3];
 		t1 = Aa * Aa + Ab * Ab + Ac * Ac; // D
 		t2 = sin(sqrt(t1) / 2); // real quaternion scaler
 		t3 = cos(sqrt(t1) / 2); // imaginary quaternion scaler
@@ -228,14 +232,82 @@ public:
 		J[0] = Aa * t7 * (t6 + t8);
 		J[1] = Ab * t7 * (t6 + t8);
 		J[2] = Ac * t7 * (t6 - t8);
-		// quaternion version of the same jacobian (all hail subexpr(); identical results to the top formula)
+		// quaternion version of the same jacobian (all hail subexpr(); identical results to the top formula)*/ // todo - use this instead, there's nothing wrong with it
 
 		r_mean_d(3) = f_angular_distance;
 		r_mean_d.conservativeResize(4);
 		// transform mean
 
-		r_Sigma_d = H_transform * r_Sigma_d * H_transform.transpose();
+		r_t_Sigma_d = H_transform * r_t_Sigma_d * H_transform.transpose();
 		// transform the sigma
+	}
+};
+
+/**
+ *	@brief utility code for distances calculation
+ */
+class CDistancesUtils {
+public:
+	/**
+	 *	@brief error function
+	 *	@param[in] x is value of the argument
+	 *	@return Returns approximate <tt>erf(x)</tt>.
+	 */
+	static double f_Erf(double x)
+	{
+		const double p = 0.3275911, a1 = 0.254829592, a2 = -0.284496736,
+			a3 = 1.421413741, a4 = -1.453152027, a5 = 1.061405429;
+		double t = 1 / (1 + p * fabs(x));
+		double t2 = t * t;
+		double t3 = t2 * t;
+		double t4 = t2 * t2;
+		double t5 = t4 * t;
+		double f_sign = ((x < 0)? -1 : 1);
+		double f_exp = exp(-x * x);
+		return (1 - (a1 * t + a2 * t2 + a3 * t3 + a4 * t4 + a5 * t5) * f_exp) * f_sign;
+	}
+
+	/**
+	 *	@brief Gaussian CPD function
+	 *
+	 *	@tparam Derived0 is Eigen derived matrix type for the first matrix argument
+	 *	@tparam Derived1 is Eigen derived matrix type for the second matrix argument
+	 *	@tparam Derived2 is Eigen derived matrix type for the third matrix argument
+	 *
+	 *	@param[in] r_v_mean_d is mean distance value
+	 *	@param[in] r_t_Sigma_d is distance distribution
+	 *	@param[in] v_threshold is distance threshold
+	 *
+	 *	@return Returns the vector of probabilities that the distances are below the threshold.
+	 */
+	template <class Derived0, class Derived1, class Derived2>
+	static typename CDeriveMatrixType<Derived0, true>::_TyResult v_GaussianCPD(const Eigen::MatrixBase<Derived0> &r_v_mean_d,
+		const Eigen::MatrixBase<Derived1> &r_t_Sigma_d, const Eigen::MatrixBase<Derived2> &v_threshold)
+	{
+		typename CDeriveMatrixType<Derived0, true>::_TyResult p = ((v_threshold - r_v_mean_d).array() /
+			(r_t_Sigma_d.diagonal() * 2.0).array().sqrt()).matrix();
+		for(size_t i = 0, n = p.rows(); i < n; ++ i)
+			p(i) = (1 + f_Erf(p(i))) / 2;
+		return p;
+	}
+
+	/**
+	 *	@brief calculates the information gain
+	 *
+	 *	@tparam Derived0 is Eigen derived matrix type for the first matrix argument
+	 *	@tparam Derived1 is Eigen derived matrix type for the second matrix argument
+	 *
+	 *	@param[in] r_t_Sigma_e is the covariance of the measurement
+	 *	@param[in] r_t_Sigma_d is the covariance of the update
+	 *
+	 *	@return Returns the information gain \f$0.5 log(|\Sigma_e^{-1}| * |\Sigma_e + \Sigma_d|)\f$.
+	 */
+	template <class Derived0, class Derived1>
+	static inline double f_Information_Gain(const Eigen::MatrixBase<Derived0> &r_t_Sigma_e, const Eigen::MatrixBase<Derived1> &r_t_Sigma_d)
+	{
+		double f_det0 = r_t_Sigma_e.determinant(), f_det1 = (r_t_Sigma_e + r_t_Sigma_d).determinant();
+		double f_det_prod = f_det1 / f_det0;
+		return 0.5 * log(f_det_prod);
 	}
 };
 
@@ -323,6 +395,8 @@ protected:
 		typedef typename _TyValidEdges::_TyHead _TyEdge; /**< @brief the edge type to be used for distance calculation */ // we will use this edge type to calculate the jacobians
 		// choose an edge to use
 
+		typedef typename _TyEdge::template CVertexTraits<0>::_TyVector _TyState0; /**< @brief state vector of the first vertex */
+		typedef typename _TyEdge::template CVertexTraits<1>::_TyVector _TyState1; /**< @brief state vector of the second vertex */
 		typedef typename _TyEdge::template CVertexTraits<0>::_TyJacobianMatrix _TyJacobian0; /**< @brief jacobian of the first vertex */
 		typedef typename _TyEdge::template CVertexTraits<1>::_TyJacobianMatrix _TyJacobian1; /**< @brief jacobian of the second vertex */
 		typedef typename _TyEdge::_TyVector _TyResidualVector; /**< @brief edge residual vector */
@@ -334,8 +408,25 @@ protected:
 		 */
 		enum {
 			b_edge_type_found = CFindTypelistItem<CEdgeTypeList, _TyEdge>::b_result, /**< @brief should be always true */
-			n_edge_type_index = CFindTypelistItem<CEdgeTypeList, _TyEdge>::n_index /**< @brief index of the edge in the edge type list */
+			n_edge_type_index = CFindTypelistItem<CEdgeTypeList, _TyEdge>::n_index, /**< @brief index of the edge in the edge type list */
+
+			n_residual_dim = _TyEdge::n_residual_dimension, /**< @brief dimension of the edge residual */
+			n_vertex0_dim = _TyEdge::template CVertexTraits<0>::n_dimension, /**< @brief dimension of the first vertex */
+			n_vertex1_dim = _TyEdge::template CVertexTraits<1>::n_dimension /**< @brief dimension of the second vertex */
 		};
+
+		typedef typename CDistanceTransform::template CTransformedDimension<_TyEdge> CTrDim; // transformed dimension type
+
+		enum {
+			n_transformed_dimension = CTrDim::n_result, // todo - make sure this is not Eigen::Dynamic
+
+			n_max_result_dimension = (int(n_residual_dim) > int(n_transformed_dimension))? int(n_residual_dim) : int(n_transformed_dimension),
+			n_result_dimension = (int(n_residual_dim) == int(n_transformed_dimension))? int(n_residual_dim) : int(Eigen::Dynamic)
+		};
+
+		typedef Eigen::Matrix<double, n_result_dimension, 1, Eigen::ColMajor | Eigen::AutoAlign, n_max_result_dimension, 1> _TyResultVec; /**< @brief result vector type */
+		typedef Eigen::Matrix<double, n_result_dimension, n_result_dimension, Eigen::ColMajor |
+			Eigen::AutoAlign, n_max_result_dimension, n_max_result_dimension> _TyResultMat; /**< @brief result matrix type */
 
 	protected:
 		const CSystemType &r_system; /**< @brief const reference to the optimized system (need to access edge and vertex pools) */
@@ -369,49 +460,32 @@ protected:
 		}
 
 		/**
-		 *	@brief error function
-		 *	@param[in] x is value of the argument
-		 *	@return Returns erf(x).
-		 */
-		static double f_Erf(double x) // this should be outside
-		{
-			const double p = 0.3275911, a1 = 0.254829592, a2 = -0.284496736,
-				a3 = 1.421413741, a4 = -1.453152027, a5 = 1.061405429;
-			double t = 1 / (1 + p * fabs(x));
-			double t2 = t * t;
-			double t3 = t2 * t;
-			double t4 = t2 * t2;
-			double t5 = t4 * t;
-			return (1 - (a1 * t + a2 * t2 + a3 * t3 + a4 * t4 +
-				a5 * t5) * exp(-x * x)) * ((x < 0)? -1 : 1);
-		}
-
-		/**
 		 *	@brief Gaussian CPD function
 		 *
 		 *	@param[in] r_v_mean_d is mean distance value
-		 *	@param[in] r_Sigma_d is distance distribution
+		 *	@param[in] r_t_Sigma_d is distance distribution
 		 *	@param[in] v_threshold is distance threshold
 		 *
 		 *	@return Returns the vector of probabilities that the distances are below the threshold.
+		 *
+		 *	@note This is not a generic function. It is specialized for the dimensions of this distance.
 		 */
-		static Eigen::VectorXd/*_TyResidualVector*/ v_GaussianCPD(const Eigen::VectorXd/*_TyResidualVector*/ &r_v_mean_d,
-			const Eigen::MatrixXd &r_Sigma_d, const Eigen::VectorXd/*_TyResidualVector*/ &v_threshold) // not sure why dont we use _TyResidualVector here?
+		static _TyResultVec v_GaussianCPD(const _TyResultVec &r_v_mean_d,
+			const _TyResultMat &r_t_Sigma_d, const Eigen::VectorXd &v_threshold)
 		{
-			Eigen::VectorXd/*_TyResidualVector*/ p = ((v_threshold - r_v_mean_d).array() /
-				(r_Sigma_d.diagonal() * 2.0).array().sqrt()).matrix();
-			for(int i = 0, n = int(p.rows()); i < n; ++ i)
-				p(i) = (1 + f_Erf(p(i))) / 2;
+			_TyResultVec p = ((v_threshold - r_v_mean_d).array() /
+				(r_t_Sigma_d.diagonal() * 2.0).array().sqrt()).matrix();
+			_ASSERTE(p.rows() == n_transformed_dimension);
+			for(int i = 0; i < n_transformed_dimension; ++ i)
+				p(i) = (1 + CDistancesUtils::f_Erf(p(i))) / 2;
 			return p;
 		}
 
 		/**
-		 *	@brief calculates the distance of the vertices specified in the constructor
-		 *	@param[out] r_Sigma_d is reference to the \f$\Sigma_d\f$ matrix
-		 *	@return Returns the distance probability vector.
-		 *	@note This function throws std::bad_alloc.
+		 *	@brief calculates the \f$\Sigma_d\f$ matrix of the vertices specified in the constructor
+		 *	@param[out] r_t_Sigma_d is filled with the \f$\Sigma_d\f$ matrix
 		 */
-		Eigen::VectorXd v_Distance(Eigen::MatrixXd &r_Sigma_d) const // throw(std::bad_alloc)
+		_TyResultVec v_Mean_d_Sigma_d(_TyResultMat &r_t_Sigma_d) const
 		{
 			_TyJacobian0 J0;
 			_TyJacobian1 J1;
@@ -427,65 +501,95 @@ protected:
 			// difficult as we know all the types from the edge, we would just need to change the
 			// interface a bit to allow for specification of the remaining vertex indices)
 
-			Eigen::VectorXd mean_d = v_expectation; // absolute to relative inside Calculate_Jacobians()
-			// need as Eigen::VectorXd because of the transform potentially changing the dimension
-
-			Eigen::VectorXd mean_0 = r_v0.v_State();
-			Eigen::VectorXd mean_1 = r_v1.v_State();
-			CUberBlockMatrix::_TyConstMatrixXdRef Sigma_00 = r_marginals.t_FindBlock(r_v0.n_Order(), r_v0.n_Order());
-			CUberBlockMatrix::_TyConstMatrixXdRef Sigma_01 = r_marginals.t_FindBlock(r_v0.n_Order(), r_v1.n_Order());
-			CUberBlockMatrix::_TyConstMatrixXdRef Sigma_11 = r_marginals.t_FindBlock(r_v1.n_Order(), r_v1.n_Order());
+			typename CUberBlockMatrix::template CMakeMatrixRef<n_vertex0_dim, n_vertex0_dim>::_TyConst
+				Sigma_00(r_marginals.p_FindBlock(r_v0.n_Order(), r_v0.n_Order(), n_vertex0_dim, n_vertex0_dim));
+			typename CUberBlockMatrix::template CMakeMatrixRef<n_vertex0_dim, n_vertex1_dim>::_TyConst
+				Sigma_01(r_marginals.p_FindBlock(r_v0.n_Order(), r_v1.n_Order(), n_vertex0_dim, n_vertex1_dim));
+			typename CUberBlockMatrix::template CMakeMatrixRef<n_vertex1_dim, n_vertex1_dim>::_TyConst
+				Sigma_11(r_marginals.p_FindBlock(r_v1.n_Order(), r_v1.n_Order(), n_vertex1_dim, n_vertex1_dim));
 			//CUberBlockMatrix::_TyConstMatrixXdRef Sigma_10 = Sigma_01.transpose();
 			// get all the blocks
 			// could do this with fixed size matrices
 
-			Eigen::Matrix<double, _TyJacobian0::RowsAtCompileTime,
-				_TyJacobian0::ColsAtCompileTime + _TyJacobian1::ColsAtCompileTime> J_stacked;
-			J_stacked.template leftCols<_TyJacobian0::ColsAtCompileTime>() = J0;
-			J_stacked.template rightCols<_TyJacobian1::ColsAtCompileTime>() = J1;
+			Eigen::Matrix<double, n_residual_dim, n_vertex0_dim + n_vertex1_dim> J_stacked;
+			J_stacked.template leftCols<n_vertex0_dim>() = J0;
+			J_stacked.template rightCols<n_vertex1_dim>() = J1;
 			// stack the jacobians
 			// could do this with fixed size matrices
 
-			Eigen::MatrixXd sigma_dense(Sigma_00.rows() + Sigma_11.rows(), Sigma_00.cols() + Sigma_11.cols());
-			sigma_dense.topLeftCorner(Sigma_00.rows(), Sigma_00.cols()) = Sigma_00;
-			sigma_dense.topRightCorner(Sigma_01.rows(), Sigma_01.cols()) = Sigma_01;
-			sigma_dense.bottomLeftCorner(Sigma_01.cols(), Sigma_01.rows()) = Sigma_01.transpose();
-			sigma_dense.bottomRightCorner(Sigma_11.rows(), Sigma_11.cols()) = Sigma_11;
+			Eigen::Matrix<double, n_vertex0_dim + n_vertex1_dim, n_vertex0_dim + n_vertex1_dim> sigma_dense;
+			sigma_dense.template topLeftCorner<n_vertex0_dim, n_vertex0_dim>() = Sigma_00;
+			sigma_dense.template topRightCorner<n_vertex0_dim, n_vertex1_dim>() = Sigma_01;
+			sigma_dense.template bottomLeftCorner<n_vertex1_dim, n_vertex0_dim>() = Sigma_01.transpose();
+			sigma_dense.template bottomRightCorner<n_vertex1_dim, n_vertex1_dim>() = Sigma_11;
 			// stack the sigmas
 			// could do this with fixed size matrices
 
-			r_Sigma_d = J_stacked * sigma_dense * J_stacked.transpose();
+			r_t_Sigma_d = J_stacked * sigma_dense * J_stacked.transpose();
+			_ASSERTE(r_t_Sigma_d.rows() == r_t_Sigma_d.cols() && r_t_Sigma_d.cols() == n_residual_dim);
 			// perform the actual calculation
 
+			_TyResultVec v_mean_d = v_expectation; // absolute to relative inside Calculate_Jacobians()
+			// need as _TyResultVec because of the transform potentially changing the dimension
+			// t_odo - use a (statically allocated) dynamic vector with maximum dimensions, we know what will both dimensions be
+
+			const _TyState0 &r_v_mean_0 = r_v0.r_v_State();
+			const _TyState1 &r_v_mean_1 = r_v1.r_v_State();
+
 			typedef typename MakeTypelist(_TyEdge) TEdgeTypeTag;
-			m_transform(mean_0, mean_1, mean_d, r_Sigma_d, TEdgeTypeTag());
-			typedef typename CDistanceTransform::template CTransformedDimension<_TyEdge> CTrDim;
-			_ASSERTE(mean_d.rows() == CTrDim::n_result);
-			_ASSERTE(r_Sigma_d.rows() == r_Sigma_d.cols());
-			_ASSERTE(r_Sigma_d.rows() == CTrDim::n_result);
+			m_transform(r_v_mean_0, r_v_mean_1, v_mean_d, r_t_Sigma_d, TEdgeTypeTag());
+			_ASSERTE(v_mean_d.rows() == n_transformed_dimension);
+			_ASSERTE(r_t_Sigma_d.rows() == r_t_Sigma_d.cols() && r_t_Sigma_d.rows() == n_transformed_dimension);
 			// transform the distance
 
-			_ASSERTE(p_distance_threshold_list[n_edge_type_index]->rows() == CTrDim::n_result);
-			const Eigen::VectorXd &thresh = *p_distance_threshold_list[n_edge_type_index];
+			return v_mean_d;
+		}
+
+		/**
+		 *	@brief calculates the \f$\Sigma_d\f$ matrix of the vertices specified in the constructor
+		 *	@return Returns the covariance matrix.
+		 */
+		_TyResultMat t_Sigma_d() const
+		{
+			_TyResultMat Sigma_d;
+			v_Mean_d_Sigma_d(Sigma_d); // note that there is no overhead here, as the distance transform needs to be called with v_mean_d anyway
+			// calculates sigma_d
+			// need as Eigen::MatrixXd because of the transform potentially changing the dimension
+
+			return Sigma_d;
+		}
+
+		/**
+		 *	@brief calculates the distance of the vertices specified in the constructor
+		 *	@param[out] r_t_Sigma_d is reference to the \f$\Sigma_d\f$ matrix
+		 *	@return Returns the distance probability vector.
+		 */
+		_TyResultVec v_Distance(_TyResultMat &r_t_Sigma_d) const
+		{
+			_TyResultVec v_mean_d = v_Mean_d_Sigma_d(r_t_Sigma_d);
+			// calculates sigma_d
+			// need as _TyResultVec because of the transform potentially changing the dimension
+
+			_ASSERTE(p_distance_threshold_list[n_edge_type_index]->rows() == n_transformed_dimension);
+			const Eigen::VectorXd &r_v_thresh = *p_distance_threshold_list[n_edge_type_index];
 			// specify the threshold, the dimension matches *after* the transform
 
 #if 0
-			Eigen::VectorXd p = ((thresh - mean_d).array() /
-				(r_Sigma_d.diagonal() * 2.0).array().sqrt()).matrix();
-			//_TyResidualVector pr = ((-thresh - mean_d).array() /
-			//	(r_Sigma_d.diagonal() * 2.0).array().sqrt()).matrix();
+			Eigen::VectorXd p = ((r_v_thresh - v_mean_d).array() /
+				(r_t_Sigma_d.diagonal() * 2.0).array().sqrt()).matrix();
+			//_TyResidualVector pr = ((-r_v_thresh - v_mean_d).array() /
+			//	(r_t_Sigma_d.diagonal() * 2.0).array().sqrt()).matrix();
 			// element-wise quotients, left and right side of the algebraic integral
 
-			for(int i = 0; i < _TyResidualVector::RowsAtCompileTime; ++ i)
-				p(i) = (1 + f_Erf(p(i))) / 2;
-				//p(i) = (f_Erf(p(i)) - f_Erf(pr(i))) / 2;
+			for(int i = 0; i < p.rows(); ++ i)
+				p(i) = (1 + CDistancesUtils::f_Erf(p(i))) / 2;
+				//p(i) = (CDistancesUtils::f_Erf(p(i)) - CDistancesUtils::f_Erf(pr(i))) / 2;
 			// calculare element-wise error function
-#else
-			Eigen::VectorXd p = v_GaussianCPD(mean_d, r_Sigma_d, thresh) -
-				v_GaussianCPD(mean_d, r_Sigma_d, -thresh);
-#endif
 
 			return p;
+#else
+			return v_GaussianCPD(v_mean_d, r_t_Sigma_d, r_v_thresh) - v_GaussianCPD(v_mean_d, r_t_Sigma_d, -r_v_thresh);
+#endif
 		}
 	};
 
@@ -498,6 +602,14 @@ protected:
 	 */
 	template <class CVertex0, class CVertex1>
 	class CCalculateDistance<CVertex0, CVertex1, CTypelistEnd> {
+	public:
+		enum {
+			b_edge_type_found = false
+		};
+
+		typedef Eigen::VectorXd _TyResultVec; /**< @brief result vector type */
+		typedef Eigen::MatrixXd _TyResultMat; /**< @brief result matrix type */
+
 	public:
 		/**
 		 *	@brief default constructor
@@ -517,21 +629,43 @@ protected:
 		{}
 
 		/**
-		 *	@brief calculates the distance of the vertices specified in the constructor
-		 *	@param[out] r_Sigma_d is reference to the \f$\Sigma_d\f$ matrix (unused)
-		 *	@return Returns the distance probability vector (returns en empty vector).
+		 *	@brief calculates the \f$\Sigma_d\f$ matrix of the vertices specified in the constructor
+		 *	@return Returns the covariance matrix (returns an empty matrix).
 		 */
-		Eigen::VectorXd v_Distance(Eigen::MatrixXd &UNUSED(r_Sigma_d)) const
+		_TyResultMat t_Sigma_d() const
+		{
+			return Eigen::MatrixXd(static_cast<Eigen::MatrixXd::Index>(0),
+				static_cast<Eigen::MatrixXd::Index>(0));
+		}
+
+		/**
+		 *	@brief calculates the distance of the vertices specified in the constructor
+		 *	@param[out] r_t_Sigma_d is reference to the \f$\Sigma_d\f$ matrix (unused)
+		 *	@return Returns the distance probability vector (returns an empty vector).
+		 */
+		_TyResultVec v_Distance(_TyResultMat &UNUSED(r_t_Sigma_d)) const
 		{
 			return Eigen::VectorXd(static_cast<Eigen::VectorXd::Index>(0));
 		}
+	};
+
+	template <class CVertexType, class CMatrixType>
+	struct TResult {
+		CVertexType *p_distance; // might be null
+		CMatrixType *p_sigma_d; // might be null
+		CVertexType *p_mean_d; // might be null
+		bool b_success;
+
+		TResult(CVertexType *_p_distance, CMatrixType *_p_sigma_d, CVertexType *_p_mean_d = 0)
+			:p_distance(_p_distance), p_sigma_d(_p_sigma_d), p_mean_d(_p_mean_d), b_success(false)
+		{}
 	};
 
 	/**
 	 *	@brief helper for vertex 1 type inference
 	 *	@tparam CVertex0 is type of the first vertex
 	 */
-	template <class CVertex0>
+	template <class CResultType, class CVertex0>
 	class CGetType_V1 {
 	protected:
 		typedef CVertex0 _TyVertex0; /**< @brief type of the first vertex */
@@ -540,29 +674,33 @@ protected:
 		const CUberBlockMatrix &r_marginals; /**< @brief const reference to the marginals matrix */
 		const Eigen::VectorXd **p_distance_threshold_list; /**< @brief list of distance thresholds */
 		const _TyVertex0 &r_v0; /**< @brief reference to the first vertex */
-		Eigen::VectorXd &m_r_v_distance; /**< @brief reference to the (output) distance probability vector */
-		Eigen::MatrixXd &m_r_Sigma_d; /**< @brief reference to the (output) \f$\Sigma_d\f$ matrix */
+
+		//Eigen::VectorXd &m_r_v_distance; /**< @brief reference to the (output) distance probability vector */
+		//Eigen::MatrixXd &m_r_Sigma_d; /**< @brief reference to the (output) \f$\Sigma_d\f$ matrix */
+		CResultType &m_r_t_result; /**< @brief reference to the result container */
+
 		CDistanceTransform m_transform; /**< @brief distance transformation object */
-		
+
 	public:
 		/**
 		 *	@brief default constructor
 		 *
-		 *	@param[out] r_v_distance is reference to the distance probability vector (output, written once the function operator is called)
-		 *	@param[out] r_Sigma_d is reference to the \f$\Sigma_d\f$ matrix (output, written once the function operator is called)
+		 *	@param[out] r_t_result is reference to the results container, filled once the function operator is called
 		 *	@param[in] _r_system is const reference to the optimized system
 		 *	@param[in] _r_marginals is const reference to the marginals matrix
 		 *	@param[in] _p_distance_threshold_list is list of distance thresholds
 		 *	@param[in] _r_v0 is reference to the first vertex
 		 *	@param[in] transform is distance transformation object
 		 */
-		CGetType_V1(Eigen::VectorXd &r_v_distance, Eigen::MatrixXd &r_Sigma_d, const CSystemType &_r_system,
-			const CUberBlockMatrix &_r_marginals,
+		// *	@param[out] r_v_distance is reference to the distance probability vector (output, written once the function operator is called)
+		// *	@param[out] r_t_Sigma_d is reference to the \f$\Sigma_d\f$ matrix (output, written once the function operator is called)
+		CGetType_V1(/*Eigen::VectorXd &r_v_distance, Eigen::MatrixXd &r_t_Sigma_d,*/CResultType &r_t_result,
+			const CSystemType &_r_system, const CUberBlockMatrix &_r_marginals,
 			const Eigen::VectorXd **_p_distance_threshold_list, const _TyVertex0 &_r_v0, CDistanceTransform transform)
 			:r_system(_r_system), r_marginals(_r_marginals),
 			p_distance_threshold_list(_p_distance_threshold_list), r_v0(_r_v0),
-			m_r_v_distance(r_v_distance),
-			m_r_Sigma_d(r_Sigma_d), m_transform(transform)
+			/*m_r_v_distance(r_v_distance), m_r_Sigma_d(r_t_Sigma_d),*/
+			m_r_t_result(r_t_result), m_transform(transform)
 		{}
 
 		/**
@@ -581,9 +719,27 @@ protected:
 			// note that the list may be empty and we need to solve this gracefully,
 			// requiring one more template layer
 
-			CCalculateDistance<_TyVertex0, _TyVertex1, _TyValidEdges> cd(r_system,
-				r_marginals, p_distance_threshold_list, r_v0, r_v1, m_transform);
-			m_r_v_distance = cd.v_Distance(m_r_Sigma_d);
+			typedef CCalculateDistance<_TyVertex0, _TyVertex1, _TyValidEdges> _TyCD;
+
+			m_r_t_result.b_success = _TyCD::b_edge_type_found;
+			// see if we can calculate the distance
+
+			_TyCD cd(r_system, r_marginals, p_distance_threshold_list, r_v0, r_v1, m_transform);
+			if(m_r_t_result.p_distance) { // want distance
+				typename _TyCD::_TyResultMat sigma_d;
+				*m_r_t_result.p_distance = cd.v_Distance(sigma_d);
+				if(m_r_t_result.p_sigma_d)
+					*m_r_t_result.p_sigma_d = sigma_d;
+			} else { // want only sigma d
+				_ASSERTE(m_r_t_result.p_sigma_d);
+				if(m_r_t_result.p_mean_d) {
+					typename _TyCD::_TyResultMat sigma_d;
+					*m_r_t_result.p_mean_d = cd.v_Mean_d_Sigma_d(sigma_d);
+					*m_r_t_result.p_sigma_d = sigma_d;
+				} else
+					*m_r_t_result.p_sigma_d = cd.t_Sigma_d();
+			}
+			//m_r_v_distance = cd.v_Distance(m_r_Sigma_d);
 			// calculate the distance (or not, if there are no edges)
 		}
 	};
@@ -591,35 +747,41 @@ protected:
 	/**
 	 *	@brief helper for vertex 0 type inference
 	 */
+	template <class CResultType>
 	struct CGetType_V0 {
 	protected:
 		const CSystemType &r_system; /**< @brief const reference to the optimized system (need to access edge and vertex pools) */
 		const CUberBlockMatrix &r_marginals; /**< @brief const reference to the marginals matrix */
 		const Eigen::VectorXd **p_distance_threshold_list; /**< @brief list of distance thresholds */
 		size_t n_vertex1; /**< @brief id of the second vertex */
-		Eigen::VectorXd &m_r_v_distance; /**< @brief reference to the (output) distance probability vector */
-		Eigen::MatrixXd &m_r_Sigma_d; /**< @brief reference to the (output) \f$\Sigma_d\f$ matrix */
+
+		//Eigen::VectorXd &m_r_v_distance; /**< @brief reference to the (output) distance probability vector */
+		//Eigen::MatrixXd &m_r_Sigma_d; /**< @brief reference to the (output) \f$\Sigma_d\f$ matrix */
+		CResultType &m_r_t_result; /**< @brief reference to the result container */
+
 		CDistanceTransform m_transform; /**< @brief distance transformation object */
 
 	public:
 		/**
 		 *	@brief default constructor
 		 *
-		 *	@param[out] r_v_distance is reference to the distance probability vector (output, written once the function operator is called)
-		 *	@param[out] r_Sigma_d is reference to the \f$\Sigma_d\f$ matrix (output, written once the function operator is called)
+		 *	@param[out] r_t_result is reference to the results container, filled once the function operator is called
 		 *	@param[in] _r_system is const reference to the optimized system
 		 *	@param[in] _r_marginals is const reference to the marginals matrix
 		 *	@param[in] _p_distance_threshold_list is list of distance thresholds
 		 *	@param[in] _n_vertex1 is id of the second vertex
 		 *	@param[in] transform is distance transformation object
 		 */
-		CGetType_V0(Eigen::VectorXd &r_v_distance, Eigen::MatrixXd &r_Sigma_d, const CSystemType &_r_system,
-			const CUberBlockMatrix &_r_marginals,
+		// *	@param[out] r_v_distance is reference to the distance probability vector (output, written once the function operator is called)
+		// *	@param[out] r_t_Sigma_d is reference to the \f$\Sigma_d\f$ matrix (output, written once the function operator is called)
+		CGetType_V0(CResultType &r_t_result,
+			/*Eigen::VectorXd &r_v_distance, Eigen::MatrixXd &r_t_Sigma_d,*/
+			const CSystemType &_r_system, const CUberBlockMatrix &_r_marginals,
 			const Eigen::VectorXd **_p_distance_threshold_list, size_t _n_vertex1, CDistanceTransform transform)
 			:r_system(_r_system), r_marginals(_r_marginals),
 			p_distance_threshold_list(_p_distance_threshold_list),
-			n_vertex1(_n_vertex1), m_r_v_distance(r_v_distance),
-			m_r_Sigma_d(r_Sigma_d), m_transform(transform)
+			n_vertex1(_n_vertex1), /*m_r_v_distance(r_v_distance),
+			m_r_Sigma_d(r_t_Sigma_d),*/m_r_t_result(r_t_result), m_transform(transform)
 		{}
 
 		/**
@@ -631,7 +793,7 @@ protected:
 		void operator ()(const _TyVertex0 &r_v0) // throw(std::bad_alloc)
 		{
 			r_system.r_Vertex_Pool().For_Each(n_vertex1, n_vertex1 + 1,
-				CGetType_V1<_TyVertex0>(m_r_v_distance,m_r_Sigma_d, r_system, r_marginals,
+				CGetType_V1<CResultType, _TyVertex0>(m_r_t_result/*m_r_v_distance, m_r_Sigma_d*/, r_system, r_marginals,
 				p_distance_threshold_list, r_v0, m_transform));
 		}
 	};
@@ -668,7 +830,7 @@ protected:
 			_ASSERTE((*m_p_distance_threshold_list)->rows() ==
 				CDistanceTransform::template CTransformedDimension<CEdgeType>::n_result);
 			// make sure that the residual and the thresghold have the same dimension
-			// if this triggers, then most likely the list of edges does not match the list of thresholds 
+			// if this triggers, then most likely the list of edges does not match the list of thresholds
 
 			++ m_p_distance_threshold_list;
 		}
@@ -735,15 +897,17 @@ public:
 	/**
 	 *	@brief calculates probability that the vertices are below distance threshold
 	 *
+	 *	@tparam Derived is Eigen derived matrix type for the first matrix argument
+	 *
+	 *	@param[out] r_v_distance is filled with distance probability between the specified vertices, after the specified transformation
 	 *	@param[in] n_vertex0 is id of the first vertex (must be in the system)
 	 *	@param[in] n_vertex1 is id of the second vertex (must be in the system)
 	 *	@param[in] transform is distance transform instance
 	 *
-	 *	@return Returns the distance probability between the specified vertices, after the specified transformation.
-	 *
-	 *	@note This function throws std::bad_alloc.
+	 *	@return Returns true on success, or false if there are no edge types that can be used to calculate the distance.
 	 */
-	Eigen::VectorXd Calculate_Distance(size_t n_vertex0, size_t n_vertex1, CDistanceTransform transform = CDistanceTransform()) const // throw(std::bad_alloc)
+	template <class Derived>
+	bool Calculate_Distance(Eigen::MatrixBase<Derived> &r_v_distance, size_t n_vertex0, size_t n_vertex1, CDistanceTransform transform = CDistanceTransform()) const // throw(std::bad_alloc)
 	{
 		_ASSERTE(m_r_marginals.b_SymmetricLayout()); // this code can only be used on marginals with symmetric structure (addressable by vertex ids); if this triggers the matrix is likely not a marginals matrix
 		_ASSERTE(m_r_marginals.n_BlockColumn_Num() == m_r_system.r_Vertex_Pool().n_Size()); // if this triggers, the marginals are not up to date
@@ -753,28 +917,34 @@ public:
 			CDimensionCheck(m_p_distance_threshold_list)); // if this triggers, the dimensions of thresholds changed; if it crashes, the array with dimensions (or the vectors pointed to) went out of scope and was deleted from memory
 		// make sure that the dimensions of the thresholds match (can change over time)
 
-		Eigen::VectorXd v_distance;
-		Eigen::MatrixXd Sigma_d;
+		typedef Eigen::MatrixBase<Derived> _TyDistance;
+		typedef TResult<_TyDistance, Eigen::MatrixXd> _TyResult;
+		_TyResult result(&r_v_distance, 0);
+
 		m_r_system.r_Vertex_Pool().For_Each(n_vertex0, n_vertex0 + 1,
-			CGetType_V0(v_distance, Sigma_d, m_r_system, m_r_marginals,
+			CGetType_V0<_TyResult>(result/*r_v_distance, Sigma_d*/, m_r_system, m_r_marginals,
 			m_p_distance_threshold_list, n_vertex1, transform));
-		return v_distance;
+
+		return result.b_success;
 	}
 
 	/**
 	 *	@brief calculates probability that the vertices are below distance threshold and returns both the distance and the covariance
 	 *
+	 *	@tparam Derived0 is Eigen derived matrix type for the first matrix argument
+	 *	@tparam Derived1 is Eigen derived matrix type for the second matrix argument
+	 *
+	 *	@param[out] r_v_distance is filled with distance probability between the specified vertices, after the specified transformation
+	 *	@param[out] r_t_Sigma_d is filled with the probability distribution \f$\Sigma_d\f$, after the specified transformation
 	 *	@param[in] n_vertex0 is id of the first vertex (must be in the system)
 	 *	@param[in] n_vertex1 is id of the second vertex (must be in the system)
 	 *	@param[in] transform is distance transform instance
 	 *
-	 *	@return Returns the distance probability between the specified vertices
-	 *		along with its distribution, after the specified transformation.
-	 *
-	 *	@note This function throws std::bad_alloc.
+	 *	@return Returns true on success, or false if there are no edge types that can be used to calculate the distance.
 	 */
-	std::pair<Eigen::VectorXd, Eigen::MatrixXd> Calculate_Distance_Sigma_d(size_t n_vertex0,
-		size_t n_vertex1, CDistanceTransform transform = CDistanceTransform()) const // throw(std::bad_alloc)
+	template <class Derived0, class Derived1>
+	bool Calculate_Distance_Sigma_d(Eigen::MatrixBase<Derived0> &r_v_distance, Eigen::MatrixBase<Derived1> &r_t_Sigma_d,
+		size_t n_vertex0, size_t n_vertex1, CDistanceTransform transform = CDistanceTransform()) const
 	{
 		_ASSERTE(m_r_marginals.b_SymmetricLayout()); // this code can only be used on marginals with symmetric structure (addressable by vertex ids); if this triggers the matrix is likely not a marginals matrix
 		_ASSERTE(m_r_marginals.n_BlockColumn_Num() == m_r_system.r_Vertex_Pool().n_Size()); // if this triggers, the marginals are not up to date
@@ -784,28 +954,112 @@ public:
 			CDimensionCheck(m_p_distance_threshold_list)); // if this triggers, the dimensions of thresholds changed; if it crashes, the array with dimensions (or the vectors pointed to) went out of scope and was deleted from memory
 		// make sure that the dimensions of the thresholds match (can change over time)
 
-		Eigen::VectorXd v_distance;
-		Eigen::MatrixXd Sigma_d;
+		typedef Eigen::MatrixBase<Derived0> _TyDistance;
+		typedef Eigen::MatrixBase<Derived1> _TySigma;
+		typedef TResult<_TyDistance, _TySigma> _TyResult;
+		_TyResult result(&r_v_distance, &r_t_Sigma_d);
+
 		m_r_system.r_Vertex_Pool().For_Each(n_vertex0, n_vertex0 + 1,
-			CGetType_V0(v_distance, Sigma_d, m_r_system, m_r_marginals,
+			CGetType_V0<_TyResult>(result/*v_distance, Sigma_d*/, m_r_system, m_r_marginals,
 			m_p_distance_threshold_list, n_vertex1, transform));
-		return std::make_pair(v_distance, Sigma_d);
+
+		return result.b_success;
 	}
 
 	/**
-	 *	@brief calculates the information gain
+	 *	@brief calculates probabilty distribution between two vertices
 	 *
-	 *	@param[in] Sigma_d is the covariance of the update
-	 *	@param[in] Sigma_e is the covariance of the measurement
+	 *	@tparam Derived is Eigen derived matrix type for the first matrix argument
 	 *
-	 *	@return Returns the information gain \f$0.5 log(|\Sigma_e^{-1}| * |\Sigma_e + \Sigma_d|)\f$.
+	 *	@param[out] r_t_Sigma_d is filled with the probability distribution \f$\Sigma_d\f$, after the specified transformation
+	 *	@param[in] n_vertex0 is id of the first vertex (must be in the system)
+	 *	@param[in] n_vertex1 is id of the second vertex (must be in the system)
+	 *	@param[in] transform is distance transform instance
+	 *
+	 *	@return Returns true on success, or false if there are no edge types that can be used to calculate the distance.
+	 *
+	 *	@note This is still kind of imperfect, as this does not require the distance list at all, yet one
+	 *		needs to specify in the constructor. Could write a static version which would get a reference
+	 *		to the system and the marginals only.
 	 */
-	static double Information_Gain(Eigen::MatrixXd Sigma_e, Eigen::MatrixXd Sigma_d)
+	template <class Derived>
+	bool Calculate_Sigma_d(Eigen::MatrixBase<Derived> &r_t_Sigma_d,
+		size_t n_vertex0, size_t n_vertex1, CDistanceTransform transform = CDistanceTransform()) const
 	{
-		double f_det0 = Sigma_e.inverse().determinant(), f_det1 = (Sigma_e + Sigma_d).determinant();
-		double f_det_prod = f_det0 * f_det1;
-		return 0.5 * log(f_det_prod);
+		_ASSERTE(m_r_marginals.b_SymmetricLayout()); // this code can only be used on marginals with symmetric structure (addressable by vertex ids); if this triggers the matrix is likely not a marginals matrix
+		_ASSERTE(m_r_marginals.n_BlockColumn_Num() == m_r_system.r_Vertex_Pool().n_Size()); // if this triggers, the marginals are not up to date
+		// make sure the marginals matrix looks good (can change over time)
+
+		CTypelistForEach<CEdgeTypeList, CDimensionCheck>::Run(
+			CDimensionCheck(m_p_distance_threshold_list)); // if this triggers, the dimensions of thresholds changed; if it crashes, the array with dimensions (or the vectors pointed to) went out of scope and was deleted from memory
+		// make sure that the dimensions of the thresholds match (can change over time)
+
+		typedef Eigen::MatrixBase<Derived> _TySigma;
+		typedef TResult<Eigen::VectorXd, _TySigma> _TyResult;
+		_TyResult result(0, &r_t_Sigma_d);
+
+		m_r_system.r_Vertex_Pool().For_Each(n_vertex0, n_vertex0 + 1,
+			CGetType_V0<_TyResult>(result/*v_distance, Sigma_d*/, m_r_system, m_r_marginals,
+			m_p_distance_threshold_list, n_vertex1, transform));
+
+		return result.b_success;
+	}
+
+	/**
+	 *	@brief calculates mean spatial distance and the associated probabilty distribution between two vertices
+	 *
+	 *	@tparam Derived0 is Eigen derived matrix type for the first matrix argument
+	 *	@tparam Derived1 is Eigen derived matrix type for the second matrix argument
+	 *
+	 *	@param[out] r_v_mean_d is filled with spatial distance between the specified vertices, after the specified transformation
+	 *	@param[out] r_t_Sigma_d is filled with the probability distribution \f$\Sigma_d\f$, after the specified transformation
+	 *	@param[in] n_vertex0 is id of the first vertex (must be in the system)
+	 *	@param[in] n_vertex1 is id of the second vertex (must be in the system)
+	 *	@param[in] transform is distance transform instance
+	 *
+	 *	@return Returns true on success, or false if there are no edge types that can be used to calculate the distance.
+	 *
+	 *	@note This is still kind of imperfect, as this does not require the distance list at all, yet one
+	 *		needs to specify in the constructor. Could write a static version which would get a reference
+	 *		to the system and the marginals only.
+	 */
+	template <class Derived0, class Derived1>
+	bool Calculate_Mean_d_Sigma_d(Eigen::MatrixBase<Derived0> &r_v_mean_d, Eigen::MatrixBase<Derived1> &r_t_Sigma_d,
+		size_t n_vertex0, size_t n_vertex1, CDistanceTransform transform = CDistanceTransform()) const
+	{
+		_ASSERTE(m_r_marginals.b_SymmetricLayout()); // this code can only be used on marginals with symmetric structure (addressable by vertex ids); if this triggers the matrix is likely not a marginals matrix
+		_ASSERTE(m_r_marginals.n_BlockColumn_Num() == m_r_system.r_Vertex_Pool().n_Size()); // if this triggers, the marginals are not up to date
+		// make sure the marginals matrix looks good (can change over time)
+
+		CTypelistForEach<CEdgeTypeList, CDimensionCheck>::Run(
+			CDimensionCheck(m_p_distance_threshold_list)); // if this triggers, the dimensions of thresholds changed; if it crashes, the array with dimensions (or the vectors pointed to) went out of scope and was deleted from memory
+		// make sure that the dimensions of the thresholds match (can change over time)
+
+		typedef Eigen::MatrixBase<Derived0> _TyMeanD;
+		typedef Eigen::MatrixBase<Derived1> _TySigma;
+		typedef TResult<_TyMeanD, _TySigma> _TyResult;
+		_TyResult result(0, &r_t_Sigma_d, &r_v_mean_d);
+
+		m_r_system.r_Vertex_Pool().For_Each(n_vertex0, n_vertex0 + 1,
+			CGetType_V0<_TyResult>(result/*v_distance, Sigma_d*/, m_r_system, m_r_marginals,
+			m_p_distance_threshold_list, n_vertex1, transform));
+
+		return result.b_success;
+	}
+
+	/**
+	 *	@copydoc CDistancesUtils::f_Information_Gain
+	 *	@note This is only a convenience function, it actually does not depend on any of the
+	 *		template arguments. It is possible to use CDistancesUtils::f_Information_Gain().
+	 */
+	template <class Derived0, class Derived1>
+	static inline double f_Information_Gain(const Eigen::MatrixBase<Derived0> &r_t_Sigma_e,
+		const Eigen::MatrixBase<Derived1> &r_t_Sigma_d)
+	{
+		return CDistancesUtils::f_Information_Gain(r_t_Sigma_e, r_t_Sigma_d);
 	}
 };
+
+/** @} */ // end of group
 
 #endif // !__DISTANCES_INCLUDED

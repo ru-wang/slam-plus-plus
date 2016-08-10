@@ -24,6 +24,10 @@
 
 #include "slam/BlockMatrixBase.h"
 
+/** \addtogroup ubm
+ *	@{
+ */
+
 /**
  *	@brief fixed block size utility classes and functions
  */
@@ -104,7 +108,8 @@ protected:
 	enum {
 		s0 = _T1::n_size, /**< @brief value of the first scalar */
 		s1 = _T2::n_size, /**< @brief value of the second scalar */
-		n_result = (s0 > s1)? s0 : s1 /**< @brief the maximum (in here to avoid template problems when using the greater-than operator) */
+		n_result = (size_t(s0) > size_t(s1))? s0 : s1 /**< @brief the maximum (in here to avoid template problems when using the greater-than operator) */
+		// g++ requires cast to size_t here, to avoid the enum comparison warning
 	};
 
 public:
@@ -176,6 +181,16 @@ template <class CVertex>
 class CGetVertexDimension {
 public:
 	typedef fbs_ut::CCTSize<CVertex::n_dimension> _TyResult; /**< @brief vertex dimension */
+};
+
+/**
+ *	@brief gets state vector type of a given vertex
+ *	@tparam CVertex is vertex type
+ */
+template <class CVertex>
+class CGetVertexVectorType {
+public:
+	typedef typename CVertex::_TyVectorAlign _TyResult; /**< @brief aligned state vector type */
 };
 
 /**
@@ -299,6 +314,19 @@ public:
 };
 
 /**
+ *	@brief conversion of a CCTSize2D to its transpose size
+ *
+ *	@tparam CSize2 is a specialization of CCTSize2D
+ */
+template <class CSize2>
+class CSize2DToTransposeSize2D {
+public:
+	typedef CCTSize2D<CSize2::n_column_num, CSize2::n_row_num> _TyResult; /**< @brief the resulting 2D size type */
+};
+
+#if 0 // unused
+
+/**
  *	@brief compile-time assertion (_FBS functions do not work
  *		with dynamic-size block matrices)
  *	@tparam b_expression is the expression being asserted
@@ -312,6 +340,8 @@ class CMATRIX_BLOCK_DIMENSIONS_MUST_BE_KNOWN_AT_COMPILE_TIME;
  */
 template <>
 class CMATRIX_BLOCK_DIMENSIONS_MUST_BE_KNOWN_AT_COMPILE_TIME<true> {};
+
+#endif // 0
 
 /**
  *	@brief predicate for filtering row height list by selected column width
@@ -375,16 +405,28 @@ public:
 };
 
 /**
- *	@brief conversion of a pair of CCTSize to CCTSize2D matrix type with
+ *	@brief conversion of a pair of CCTSize to CCTSize2D type with
  *		known compile-time sizes (the result can be found in the _TyResult type)
  *
- *	@tparam _T1 is a specialization of CCTSize, containing number of matrix rows
- *	@tparam _T2 is a specialization of CCTSize, containing number of matrix columns
+ *	@tparam CTRows is a specialization of CCTSize, containing number of matrix rows
+ *	@tparam CTCols is a specialization of CCTSize, containing number of matrix columns
  */
-template <class _T1, class _T2>
+template <class CTRows, class CTCols>
 class CMakeCTSize2DType {
 public:
-	typedef CCTSize2D<_T1::n_size, _T2::n_size> _TyResult; /**< @brief the resulting 2D size type */
+	typedef CCTSize2D<CTRows::n_size, CTCols::n_size> _TyResult; /**< @brief the resulting 2D size type */
+};
+
+/**
+ *	@brief conversion of a CCTSize to square CCTSize2D type with
+ *		known compile-time size (the result can be found in the _TyResult type)
+ *
+ *	@tparam CSize is a specialization of CCTSize, containing number of matrix rows and columns
+ */
+template <class CSize>
+class CMakeCTSize2DSquareType {
+public:
+	typedef CCTSize2D<CSize::n_size, CSize::n_size> _TyResult; /**< @brief the resulting 2D size type */
 };
 
 /**
@@ -458,7 +500,7 @@ public:
 	 *	@param[in] t_size is pair with the number of rows and columns (in this order)
 	 *	@return Returns true if the size specified by C2DSize is equal to t_size.
 	 */
-	static inline bool b_Equal(std::pair<size_t, size_t> t_size)
+	static __forceinline bool b_Equal(std::pair<size_t, size_t> t_size)
 	{
 		return size_t(C2DSize::n_row_num) == t_size.first && size_t(C2DSize::n_column_num) == t_size.second;
 	}
@@ -469,7 +511,7 @@ public:
 	 *	@return Returns true if the size specified by C2DSize is less than t_size.
 	 *	@note The comparison is the same as in CCompareSize2D_Less.
 	 */
-	static inline bool b_LessThan(std::pair<size_t, size_t> t_size)
+	static __forceinline bool b_LessThan(std::pair<size_t, size_t> t_size)
 	{
 		return size_t(C2DSize::n_row_num) < t_size.first || (size_t(C2DSize::n_row_num) == t_size.first &&
 			size_t(C2DSize::n_column_num) < t_size.second);
@@ -481,7 +523,7 @@ public:
 	 *	@return Returns true if the size specified by C2DSize is greater than t_size.
 	 *	@note The comparison has the same ordering on first / second as in CCompareSize2D_Less.
 	 */
-	static inline bool b_GreaterThan(std::pair<size_t, size_t> t_size)
+	static __forceinline bool b_GreaterThan(std::pair<size_t, size_t> t_size)
 	{
 		return size_t(C2DSize::n_row_num) > t_size.first || (size_t(C2DSize::n_row_num) == t_size.first &&
 			size_t(C2DSize::n_column_num) > t_size.second);
@@ -500,7 +542,7 @@ public:
 	 *	@param[in] n_size is value of the scalar
 	 *	@return Returns true if the value specified by CScalar is equal to n_size.
 	 */
-	static inline bool b_Equal(size_t n_size)
+	static __forceinline bool b_Equal(size_t n_size)
 	{
 		return size_t(CScalar::n_size) == n_size;
 	}
@@ -511,7 +553,7 @@ public:
 	 *	@return Returns true if the value specified by CScalar is less than n_size.
 	 *	@note The comparison is the same as in CCompareSize2D_Less.
 	 */
-	static inline bool b_LessThan(size_t n_size)
+	static __forceinline bool b_LessThan(size_t n_size)
 	{
 		return size_t(CScalar::n_size) < n_size;
 	}
@@ -522,7 +564,7 @@ public:
 	 *	@return Returns true if the value specified by CScalar is greater than n_size.
 	 *	@note The comparison has the same ordering on first / second as in CCompareSize2D_Less.
 	 */
-	static inline bool b_GreaterThan(size_t n_size)
+	static __forceinline bool b_GreaterThan(size_t n_size)
 	{
 		return size_t(CScalar::n_size) > n_size;
 	}
@@ -649,6 +691,189 @@ public:
 	}
 };
 
+template <const int n_pivot, class CList>
+class CCallFnOp {
+public:
+	typedef typename CTypelistItemAt<CList, n_pivot>::_TyResult _TyBlockSizes;
+	// block sizes for this specialization
+
+public:
+	template <class _Ty>
+	static __forceinline void Do(_Ty &r_fun)
+	{
+#if defined(_MSC_VER) && !defined(__MWERKS__)
+		r_fun.operator ()<_TyBlockSizes>(); // MSVC cannot parse the .template syntax correctly with overloaded operators
+#else // _MSC_VER && !__MWERKS__
+		r_fun.template operator ()<_TyBlockSizes>();
+#endif // _MSC_VER && !__MWERKS__
+		// call the function operator // note that if we used token-based scheduling here, this could be used with C++14 lambdas too
+	}
+};
+
+template <class CList>
+class CCallFnOp<-1, CList> {
+public:
+	template <class _Ty, class _Data>
+	static inline void Do(_Ty &r_fun, _Data input_not_found)
+	{
+#if defined(_MSC_VER) && !defined(__MWERKS__)
+		r_fun.operator ()(input_not_found); // MSVC cannot parse the .template syntax correctly with overloaded operators
+#else // _MSC_VER && !__MWERKS__
+		r_fun.template operator ()(input_not_found);
+#endif // _MSC_VER && !__MWERKS__
+		// call the function operator
+	}
+};
+
+/**
+ *	@brief makes a decission tree from a sorted typelist
+ *
+ *	@tparam CList is a sorted list of any type (defaults work with CCTSize)
+ *	@tparam CFunctor is a functor template that specializes for a given size and
+ *		for context which is equal to CContext2, having a global static function
+ *		Do<index, CContext2>(reference) which is called in the leafs of the decision tree,
+ *		index is either equal to the index found in the list and the reference argument is absent,
+ *		or it is equal to -1 in case the item is not found and the reference matches the reference
+ *		given to CMakeDecisionTree3::Do() (by default CCallFnOp)
+ *	@tparam CComparator is compile-time list item type to run-time reference value
+ *		comparator template (by default CRuntimeCompareScalar)
+ *	@tparam CReference is reference value type (by default size_t)
+ */
+template <class CList, template <const int, class> class CFunctor = CCallFnOp,
+	template <class> class CComparator = CRuntimeCompareScalar, class CReference = size_t>
+class CMakeDecisionTree3 {
+protected:
+	typedef typename CMakeDecisionTreeSkeleton<CList, CComparator, CReference>::_TyRoot _TySkeleton; /**< @brief decision tree skeleton */
+
+#if defined(_MSC_VER) && !defined(__MWERKS__)
+#pragma inline_recursion(on)
+#endif // _MSC_VER && !__MWERKS__
+	template <class CNode, class CContext>
+	static __forceinline typename CEnableIf<CNode::b_leaf>::T RecurseEx(CReference n_size, CContext context)
+	{
+		if(CNode::b_Equals_Pivot(n_size))
+			CFunctor<CNode::n_pivot, CList>::Do(context);
+		else
+			CFunctor<-1, CList>::Do(context, n_size);
+		// this is it; call the functor
+	}
+
+#if defined(_MSC_VER) && !defined(__MWERKS__)
+#pragma inline_recursion(on)
+#endif // _MSC_VER && !__MWERKS__
+	template <class CNode, class CContext>
+	static __forceinline typename CEnableIf<!CNode::b_leaf>::T RecurseEx(CReference n_size, CContext context)
+	{
+		if(CNode::b_Left_of_Pivot(n_size))
+			RecurseEx<typename CNode::_TyLeft>(n_size, context);
+		else
+			RecurseEx<typename CNode::_TyRight>(n_size, context);
+		// recurse left or right, based on the pivot value
+	}
+
+#if defined(_MSC_VER) && !defined(__MWERKS__)
+#pragma inline_recursion(on)
+#endif // _MSC_VER && !__MWERKS__
+	template <class CNode, class CContext>
+	static __forceinline typename CEnableIf<CNode::b_leaf>::T Recurse(CReference n_size,
+		CContext context, bool UNUSED(b_mind_inexistent))
+	{
+		_ASSERTE(!b_mind_inexistent || CNode::b_Equals_Pivot(n_size)); // either dont mind that the item isnt on the list, or it must match
+		CFunctor<CNode::n_pivot, CList>::Do(context);
+		// this is it; call the functor
+	}
+
+#if defined(_MSC_VER) && !defined(__MWERKS__)
+#pragma inline_recursion(on)
+#endif // _MSC_VER && !__MWERKS__
+	template <class CNode, class CContext>
+	static __forceinline typename CEnableIf<!CNode::b_leaf>::T Recurse(CReference n_size,
+		CContext context, bool b_mind_inexistent)
+	{
+		if(CNode::b_Left_of_Pivot(n_size))
+			Recurse<typename CNode::_TyLeft>(n_size, context, b_mind_inexistent);
+		else
+			Recurse<typename CNode::_TyRight>(n_size, context, b_mind_inexistent);
+		// recurse left or right, based on the pivot value
+	}
+
+public:
+	/**
+	 *	@brief the executive function; the size in question must exist
+	 *
+	 *	@param[in] n_size is the parameter to be decided over
+	 *	@param[in,out] context is the operation context (task specific)
+	 *	@param[in] b_mind_inexistent is inexistent tolerance flag (debug only)
+	 */
+	template <class CContext>
+	static __forceinline void DoExisting(CReference n_size, CContext context, bool b_mind_inexistent = true)
+	{
+		Recurse<_TySkeleton>(n_size, context, b_mind_inexistent);
+	}
+
+	/**
+	 *	@brief the extended executive function; the size in question may not exist
+	 *
+	 *	@param[in] n_size is the parameter to be decided over
+	 *	@param[in,out] context is the operation context (task specific)
+	 */
+	template <class CContext>
+	static __forceinline void Do(CReference n_size, CContext context)
+	{
+		RecurseEx<_TySkeleton>(n_size, context);
+	}
+
+#ifdef __UBER_BLOCK_MATRIX_FIXED_BLOCK_SIZE_DEBUGGING
+
+	/**
+	 *	@brief prints (unidented) decission tree pseudocode to stdout
+	 *	@note This is only available if
+	 *		__UBER_BLOCK_MATRIX_FIXED_BLOCK_SIZE_DEBUGGING is defined.
+	 */
+	static void Debug()
+	{
+		_TySkeleton::Debug();
+	}
+
+#endif // __UBER_BLOCK_MATRIX_FIXED_BLOCK_SIZE_DEBUGGING
+};
+
+template <template <const int> class CFunctor>
+class CDTOp_Env {
+public:
+	template <const int n_pivot, class CList>
+	class CDTOp_ExpandCTSize {
+	public:
+		typedef typename CTypelistItemAt<CList, n_pivot>::_TyResult _TyBlockSize;
+		// block sizes for this specialization
+
+	public:
+		template <class CContext>
+		static inline void Do(CContext c)
+		{
+			CFunctor<_TyBlockSize::n_size>::Do(c);
+		}
+	};
+};
+
+template <template <const int, class> class  CFunctor, class CContext2>
+class CDTOp_Env2 {
+public:
+	template <const int n_pivot, class CList>
+	class CDTOp_ExpandCTSize_Ctx {
+	public:
+		typedef typename CTypelistItemAt<CList, n_pivot>::_TyResult _TyBlockSize;
+		// block sizes for this specialization
+
+	public:
+		template <class CContext>
+		static inline void Do(CContext c)
+		{
+			CFunctor<_TyBlockSize::n_size, CContext2>::Do(c);
+		}
+	};
+};
+
 /**
  *	@brief makes a decission tree from a sorted typelist
  *
@@ -661,118 +886,32 @@ public:
 template <class CList, class CContext, template <const int> class CFunctor>
 class CMakeDecisionTree {
 protected:
-	/**
-	 *	@brief makes a branch of a decission tree from a sorted typelist
-	 *
-	 *	@tparam _CList is a sorted list of scalars (type CCTSize)
-	 *	@tparam _CContext is a type of context, required by the operation
-	 *	@tparam _CFunctor is a functor template that specializes for a given size,
-	 *		having a global static function Do(CContext) which is called in the
-	 *		leafs of the decision tree
-	 *	@tparam n_begin is a (zero based) index of the starting element of CList
-	 *		this branch decides over
-	 *	@tparam n_length is number of elements of CList this branch decides over
-	 */
-	template <class _CList, class _CContext, template <const int> class _CFunctor,
-		const int n_begin, const int n_length>
-	class CDecisionTree {
-	public:
-		/**
-		 *	@brief decision indices stored as enums
-		 */
-		enum {
-			n_half = (n_length + 1) / 2, /**< @brief half of the length (round up, comparison is less than) */
-			n_pivot = n_begin + n_half, /**< @brief zero-based index of the pivot element */
-			n_rest = n_length - n_half /**< @brief the remaining half of the length for the right child */
-		};
+#if 0
+	typedef typename CMakeDecisionTreeSkeleton<CList, CRuntimeCompareScalar, size_t>::_TyRoot _TySkeleton; /**< @brief decision tree skeleton */
 
-		typedef typename CTypelistItemAt<_CList, n_pivot>::_TyResult _TyPivot; /**< @brief pivot type */
-
-		/**
-		 *	@brief the executive function
-		 *
-		 *	@param[in] n_size is the parameter to be decided over
-		 *	@param[in,out] context is the operation context (task specific)
-		 */
 #if defined(_MSC_VER) && !defined(__MWERKS__)
 #pragma inline_recursion(on)
 #endif // _MSC_VER && !__MWERKS__
-		static __forceinline void Do(const size_t n_size, _CContext context)
-		{
-			if(n_size < _TyPivot::n_size)
-				CDecisionTree<_CList, _CContext, _CFunctor, n_begin, n_half>::Do(n_size, context);
-			else
-				CDecisionTree<_CList, _CContext, _CFunctor, n_pivot, n_rest>::Do(n_size, context);
-		}
+	template <class CNode>
+	static __forceinline typename CEnableIf<CNode::b_leaf>::T Recurse(const size_t UNUSED(n_size), CContext context)
+	{
+		_ASSERTE(CNode::b_Equals_Pivot(n_size));
+		CFunctor<CNode::_TyPivot::n_size>::Do(context);
+		// this is it; call the functor
+	}
 
-#ifdef __UBER_BLOCK_MATRIX_FIXED_BLOCK_SIZE_DEBUGGING
-
-		/**
-		 *	@brief prints (unidented) decission tree pseudocode to stdout
-		 *	@note This is only available if
-		 *		__UBER_BLOCK_MATRIX_FIXED_BLOCK_SIZE_DEBUGGING is defined.
-		 */
-		static void Debug()
-		{
-			//printf("if(n_size < i[%d]) {\n", n_pivot);
-			printf("if(n_size < %d) {\n", _TyPivot::n_size);
-			CDecisionTree<_CList, _CContext, _CFunctor, n_begin, n_half>::Debug();
-			printf("} else {\n");
-			CDecisionTree<_CList, _CContext, _CFunctor, n_pivot, n_rest>::Debug();
-			printf("}\n");
-		}
-
-#endif // __UBER_BLOCK_MATRIX_FIXED_BLOCK_SIZE_DEBUGGING
-	};
-
-	/**
-	 *	@brief makes a branch of a decission tree from a sorted typelist
-	 *		(specialization for leafs)
-	 *
-	 *	@tparam CList is a sorted list of scalars (type CCTSize)
-	 *	@tparam CContext is a type of context, required by the operation
-	 *	@tparam CFunctor is a functor template that specializes for a given size,
-	 *		having a global static function Do(CContext) which is called in the
-	 *		leafs of the decision tree
-	 *	@tparam n_begin is a (zero based) index of the starting element of CList
-	 *		this branch decides over
-	 */
-	template <class _CList, class _CContext, template <const int> class _CFunctor, const int n_begin>
-	class CDecisionTree<_CList, _CContext, _CFunctor, n_begin, 1> {
-	public:
-		typedef typename CTypelistItemAt<_CList, n_begin>::_TyResult _TyPivot; /**< @brief pivot type */
-
-		/**
-		 *	@brief the executive function
-		 *
-		 *	@param[in] n_size is the parameter to be decided over
-		 *	@param[in,out] context is the operation context (task specific)
-		 */
 #if defined(_MSC_VER) && !defined(__MWERKS__)
 #pragma inline_recursion(on)
 #endif // _MSC_VER && !__MWERKS__
-		static __forceinline void Do(const size_t UNUSED(n_size), _CContext context)
-		{
-			_ASSERTE(n_size == _TyPivot::n_size);
-			_CFunctor<_TyPivot::n_size>::Do(context);
-		}
-
-#ifdef __UBER_BLOCK_MATRIX_FIXED_BLOCK_SIZE_DEBUGGING
-
-		/**
-		 *	@brief prints (unidented) decission tree pseudocode to stdout
-		 *	@note This is only available if
-		 *		__UBER_BLOCK_MATRIX_FIXED_BLOCK_SIZE_DEBUGGING is defined.
-		 */
-		static void Debug()
-		{
-			//printf("_ASSERTE(n_size == i[%d]);\n", n_begin);
-			printf("_ASSERTE(n_size == %d);\n", _TyPivot::n_size);
-			printf("CFunctor<%d>::Do(context);\n", _TyPivot::n_size);
-		}
-
-#endif // __UBER_BLOCK_MATRIX_FIXED_BLOCK_SIZE_DEBUGGING
-	};
+	template <class CNode>
+	static __forceinline typename CEnableIf<!CNode::b_leaf>::T Recurse(const size_t n_size, CContext context)
+	{
+		if(CNode::b_Left_of_Pivot(n_size))
+			Recurse<typename CNode::_TyLeft>(n_size, context);
+		else
+			Recurse<typename CNode::_TyRight>(n_size, context);
+		// recurse left or right, based on the pivot value
+	}
 
 public:
 	/**
@@ -783,8 +922,7 @@ public:
 	 */
 	static __forceinline void Do(const size_t n_size, CContext context)
 	{
-		CDecisionTree<CList, CContext, CFunctor, 0,
-			CTypelistLength<CList>::n_result>::Do(n_size, context);
+		Recurse<_TySkeleton>(n_size, context);
 	}
 
 #ifdef __UBER_BLOCK_MATRIX_FIXED_BLOCK_SIZE_DEBUGGING
@@ -796,10 +934,40 @@ public:
 	 */
 	static void Debug()
 	{
-		CDecisionTree<CList, CContext, CFunctor, 0, CTypelistLength<CList>::n_result>::Debug();
+		_TySkeleton::Debug();
 	}
 
 #endif // __UBER_BLOCK_MATRIX_FIXED_BLOCK_SIZE_DEBUGGING
+#else // 0
+protected:
+	typedef CMakeDecisionTree3<CList, CDTOp_Env<CFunctor>::template CDTOp_ExpandCTSize> _TyImpl;
+
+public:
+	/**
+	 *	@brief the executive function
+	 *
+	 *	@param[in] n_size is the parameter to be decided over
+	 *	@param[in,out] context is the operation context (task specific)
+	 */
+	static __forceinline void Do(const size_t n_size, CContext context)
+	{
+		_TyImpl::DoExisting(n_size, context);
+	}
+
+#ifdef __UBER_BLOCK_MATRIX_FIXED_BLOCK_SIZE_DEBUGGING
+
+	/**
+	 *	@brief prints (unidented) decission tree pseudocode to stdout
+	 *	@note This is only available if
+	 *		__UBER_BLOCK_MATRIX_FIXED_BLOCK_SIZE_DEBUGGING is defined.
+	 */
+	static void Debug()
+	{
+		_TyImpl::Debug();
+	}
+
+#endif // __UBER_BLOCK_MATRIX_FIXED_BLOCK_SIZE_DEBUGGING
+#endif // 0
 };
 
 /**
@@ -816,127 +984,32 @@ template <class CList, class CContext, class CContext2,
 	template <const int, class> class CFunctor>
 class CMakeDecisionTree2 {
 protected:
-	/**
-	 *	@brief makes a branch of a decission tree from a sorted typelist
-	 *
-	 *	@tparam _CList is a sorted list of scalars (type CCTSize)
-	 *	@tparam _CContext is a type of context, required by the operation
-	 *	@tparam _CContext2 is a type of context, passed as a second
-	 *		template parameter for the operation
-	 *	@tparam _CFunctor is a functor template that specializes for a given size,
-	 *		having a global static function Do(CContext) which is called in the
-	 *		leafs of the decision tree
-	 *	@tparam n_begin is a (zero based) index of the starting element of CList
-	 *		this branch decides over
-	 *	@tparam n_length is number of elements of CList this branch decides over
-	 */
-	template <class _CList, class _CContext, class _CContext2,
-		template <const int, class> class _CFunctor,
-		const int n_begin, const int n_length>
-	class CDecisionTree {
-	public:
-		/**
-		 *	@brief decision indices stored as enums
-		 */
-		enum {
-			n_half = (n_length + 1) / 2, /**< @brief half of the length (round up, comparison is less than) */
-			n_pivot = n_begin + n_half, /**< @brief zero-based index of the pivot element */
-			n_rest = n_length - n_half /**< @brief the remaining half of the length for the right child */
-		};
+#if 0
+	typedef typename CMakeDecisionTreeSkeleton<CList, CRuntimeCompareScalar, size_t>::_TyRoot _TySkeleton; /**< @brief decision tree skeleton */
 
-		typedef typename CTypelistItemAt<_CList, n_pivot>::_TyResult _TyPivot; /**< @brief pivot type */
-
-		/**
-		 *	@brief the executive function
-		 *
-		 *	@param[in] n_size is the parameter to be decided over
-		 *	@param[in,out] context is the operation context (task specific)
-		 */
 #if defined(_MSC_VER) && !defined(__MWERKS__)
 #pragma inline_recursion(on)
 #endif // _MSC_VER && !__MWERKS__
-		static __forceinline void Do(const size_t n_size, _CContext context)
-		{
-			if(n_size < _TyPivot::n_size) {
-				CDecisionTree<_CList, _CContext, _CContext2,
-					_CFunctor, n_begin, n_half>::Do(n_size, context);
-			} else {
-				CDecisionTree<_CList, _CContext, _CContext2,
-					_CFunctor, n_pivot, n_rest>::Do(n_size, context);
-			}
-		}
+	template <class CNode>
+	static __forceinline typename CEnableIf<CNode::b_leaf>::T Recurse(const size_t UNUSED(n_size), CContext context)
+	{
+		_ASSERTE(CNode::b_Equals_Pivot(n_size));
+		CFunctor<CNode::_TyPivot::n_size, CContext2>::Do(context);
+		// this is it; call the functor
+	}
 
-#ifdef __UBER_BLOCK_MATRIX_FIXED_BLOCK_SIZE_DEBUGGING
-
-		/**
-		 *	@brief prints (unidented) decission tree pseudocode to stdout
-		 *	@note This is only available if
-		 *		__UBER_BLOCK_MATRIX_FIXED_BLOCK_SIZE_DEBUGGING is defined.
-		 */
-		static void Debug()
-		{
-			//printf("if(n_size < i[%d]) {\n", n_pivot);
-			printf("if(n_size < %d) {\n", _TyPivot::n_size);
-			CDecisionTree<_CList, _CContext, _CContext2, _CFunctor, n_begin, n_half>::Debug();
-			printf("} else {\n");
-			CDecisionTree<_CList, _CContext, _CContext2, _CFunctor, n_pivot, n_rest>::Debug();
-			printf("}\n");
-		}
-
-#endif // __UBER_BLOCK_MATRIX_FIXED_BLOCK_SIZE_DEBUGGING
-	};
-
-	/**
-	 *	@brief makes a branch of a decission tree from a sorted typelist
-	 *		(specialization for leafs)
-	 *
-	 *	@tparam CList is a sorted list of scalars (type CCTSize)
-	 *	@tparam CContext is a type of context, required by the operation
-	 *	@tparam _CContext2 is a type of context, passed as a second
-	 *		template parameter for the operation
-	 *	@tparam CFunctor is a functor template that specializes for a given size,
-	 *		having a global static function Do(CContext) which is called in the
-	 *		leafs of the decision tree
-	 *	@tparam n_begin is a (zero based) index of the starting element of CList
-	 *		this branch decides over
-	 */
-	template <class _CList, class _CContext, class _CContext2,
-		template <const int, class> class _CFunctor, const int n_begin>
-	class CDecisionTree<_CList, _CContext, _CContext2, _CFunctor, n_begin, 1> {
-	public:
-		typedef typename CTypelistItemAt<_CList, n_begin>::_TyResult _TyPivot; /**< @brief pivot type */
-
-		/**
-		 *	@brief the executive function
-		 *
-		 *	@param[in] n_size is the parameter to be decided over
-		 *	@param[in,out] context is the operation context (task specific)
-		 */
 #if defined(_MSC_VER) && !defined(__MWERKS__)
 #pragma inline_recursion(on)
 #endif // _MSC_VER && !__MWERKS__
-		static __forceinline void Do(const size_t UNUSED(n_size), _CContext context)
-		{
-			_ASSERTE(n_size == _TyPivot::n_size);
-			_CFunctor<_TyPivot::n_size, _CContext2>::Do(context);
-		}
-
-#ifdef __UBER_BLOCK_MATRIX_FIXED_BLOCK_SIZE_DEBUGGING
-
-		/**
-		 *	@brief prints (unidented) decission tree pseudocode to stdout
-		 *	@note This is only available if
-		 *		__UBER_BLOCK_MATRIX_FIXED_BLOCK_SIZE_DEBUGGING is defined.
-		 */
-		static void Debug()
-		{
-			//printf("_ASSERTE(n_size == i[%d]);\n", n_begin);
-			printf("_ASSERTE(n_size == %d);\n", _TyPivot::n_size);
-			printf("CFunctor<%d, context2>::Do(context);\n", _TyPivot::n_size);
-		}
-
-#endif // __UBER_BLOCK_MATRIX_FIXED_BLOCK_SIZE_DEBUGGING
-	};
+	template <class CNode>
+	static __forceinline typename CEnableIf<!CNode::b_leaf>::T Recurse(const size_t n_size, CContext context)
+	{
+		if(CNode::b_Left_of_Pivot(n_size))
+			Recurse<typename CNode::_TyLeft>(n_size, context);
+		else
+			Recurse<typename CNode::_TyRight>(n_size, context);
+		// recurse left or right, based on the pivot value
+	}
 
 public:
 	/**
@@ -947,8 +1020,7 @@ public:
 	 */
 	static __forceinline void Do(const size_t n_size, CContext context)
 	{
-		CDecisionTree<CList, CContext, CContext2, CFunctor, 0,
-			CTypelistLength<CList>::n_result>::Do(n_size, context);
+		Recurse<_TySkeleton>(n_size, context);
 	}
 
 #ifdef __UBER_BLOCK_MATRIX_FIXED_BLOCK_SIZE_DEBUGGING
@@ -960,11 +1032,40 @@ public:
 	 */
 	static void Debug()
 	{
-		CDecisionTree<CList, CContext, CContext2, CFunctor, 0,
-			CTypelistLength<CList>::n_result>::Debug();
+		_TySkeleton::Debug();
 	}
 
 #endif // __UBER_BLOCK_MATRIX_FIXED_BLOCK_SIZE_DEBUGGING
+#else // 0
+protected:
+	typedef CMakeDecisionTree3<CList, CDTOp_Env2<CFunctor, CContext2>::template CDTOp_ExpandCTSize_Ctx> _TyImpl;
+
+public:
+	/**
+	 *	@brief the executive function
+	 *
+	 *	@param[in] n_size is the parameter to be decided over
+	 *	@param[in,out] context is the operation context (task specific)
+	 */
+	static __forceinline void Do(const size_t n_size, CContext context)
+	{
+		_TyImpl::DoExisting(n_size, context);
+	}
+
+#ifdef __UBER_BLOCK_MATRIX_FIXED_BLOCK_SIZE_DEBUGGING
+
+	/**
+	 *	@brief prints (unidented) decission tree pseudocode to stdout
+	 *	@note This is only available if
+	 *		__UBER_BLOCK_MATRIX_FIXED_BLOCK_SIZE_DEBUGGING is defined.
+	 */
+	static void Debug()
+	{
+		_TyImpl::Debug();
+	}
+
+#endif // __UBER_BLOCK_MATRIX_FIXED_BLOCK_SIZE_DEBUGGING
+#endif // 0
 };
 
 /**
@@ -982,12 +1083,16 @@ public:
 	};
 };
 
+namespace deprecate {
+
 /**
  *	@brief makes a decission tree for possible block matrix sizes,
  *		given a list of block sizes and a maximal size
  *
  *	@tparam CBlockMatrixTypelist is a list of possible block sizes as Eigen::Matrix
  *	@tparam n_max_matrix_size is maximum matrix size, in elements
+ *
+ *	@deprecated This is now deprecated in favor of CWrap3::In_SquareMatrixSize_DecisionTree().
  */
 template <class CBlockMatrixTypelist, const int n_max_matrix_size>
 class CMakeSquareMatrixSizeDecisionTree {
@@ -1046,8 +1151,14 @@ public:
 
 /**
  *	@brief fixed block size operations template class
- *	@tparam CBlockMatrixTypelist is typelist, containing Eigen
- *		matrices with known compile-time sizes
+ *
+ *	@tparam CBlockMatrixTypelistA is typelist, containing Eigen
+ *		matrices with known compile-time sizes for the matrix on the left
+ *	@tparam CBlockMatrixTypelistB is typelist, containing Eigen
+ *		matrices with known compile-time sizes for the matrix on the right
+ *
+ *	@deprecated This is now deprecated in favor of decision tree wrapping which
+ *		does its own block size list filtering, as needed.
  */
 template <class CBlockMatrixTypelistA, class CBlockMatrixTypelistB>
 class CFixedBlockSize_BinaryBase {
@@ -1071,7 +1182,7 @@ public:
 		CTransformDimensionRowsToSize>::_TyResult>::_TyResult CRowHeightsListB; /**< @brief list of unique block row heights */
 	// create typelists to generate the decision tree for block sizes
 
-	typedef typename ubm_static_check::CStaticAssert<
+	typedef typename blockmatrix_detail::CStaticAssert<
 		!CFindTypelistItem<CColumnWidthsListA, CCTSize<Eigen::Dynamic> >::b_result &&
 		!CFindTypelistItem<CRowHeightsListA, CCTSize<Eigen::Dynamic> >::b_result &&
 		!CFindTypelistItem<CColumnWidthsListB, CCTSize<Eigen::Dynamic> >::b_result &&
@@ -1082,6 +1193,8 @@ public:
  *	@brief fixed block size operations template class
  *	@tparam CBlockMatrixTypelist is typelist, containing Eigen
  *		matrices with known compile-time sizes
+ *	@deprecated This is now deprecated in favor of decision tree wrapping which
+ *		does its own block size list filtering, as needed.
  */
 template <class CBlockMatrixTypelist>
 class CFixedBlockSize_UnaryBase {
@@ -1098,10 +1211,12 @@ public:
 		CTransformDimensionToAreaSize>::_TyResult>::_TyResult CBlockAreasList; /**< @brief list of unique block areas (for elementwise ops) */
 	// create typelists to generate the decision tree for block sizes
 
-	typedef typename ubm_static_check::CStaticAssert<
+	typedef typename blockmatrix_detail::CStaticAssert<
 		!CFindTypelistItem<CColumnWidthsList, CCTSize<Eigen::Dynamic> >::b_result &&
 		!CFindTypelistItem<CRowHeightsList, CCTSize<Eigen::Dynamic> >::b_result>::MATRIX_BLOCK_DIMENSIONS_MUST_BE_KNOWN_AT_COMPILE_TIME CAssert0; /**< @brief make sure that all the blocks have the sizes fixed and known at compile-time */
 };
+
+} // ~deprecate
 
 /**
  *	@brief simple utility class for sorting block dimensions
@@ -1116,6 +1231,8 @@ public:
 		CCompareSize2D_Less>::_TyResult _TyResult; /**< @brief unique sorted list of block matrix dimensions */
 };
 
+namespace deprecate {
+
 /**
  *	@brief simple utility for writing clean FBS loops
  *
@@ -1124,7 +1241,7 @@ public:
  *	class CMy_FBS_Loop {
  *	public:
  *		struct TContext { // call context
- *			int params; // parameters to the loop, return type
+ *			int params; // parameters to the loop, return value, ...
  *
  *			inline TContext(int _params) // provide constructor
  *				:params(_params)
@@ -1195,8 +1312,9 @@ public:
 	template <class CBlockMatrixTypelist, class _TyContext>
 	static __forceinline void In_ColumnWidth_DecisionTree(int n_column_width, _TyContext c)
 	{
-		typedef typename CTransformTypelist<typename CSortBlockDims<CBlockMatrixTypelist>::_TyResult,
-			CTransformDimensionColumnsToSize>::_TyResult _TySortedColumnWidths;
+		typedef typename CUniqueTypelist<typename CTransformTypelist<typename
+			CSortBlockDims<CBlockMatrixTypelist>::_TyResult,
+			CTransformDimensionColumnsToSize>::_TyResult>::_TyResult _TySortedColumnWidths;
 		// sorted list of unique block column widths
 
 		CMakeDecisionTree<_TySortedColumnWidths, _TyContext, CLoopType>::Do(n_column_width, c);
@@ -1219,8 +1337,8 @@ public:
 	static __forceinline void In_RowHeight_DecisionTree_Given_ColumnWidth(int n_row_height, _TyContext c)
 	{
 		typedef typename CSortBlockDims<CBlockMatrixTypelist>::_TyResult _TyDimsList;
-		typedef typename CTransformTypelist<_TyDimsList,
-			CTransformDimensionRowsToSize>::_TyResult _TySortedRowHeights;
+		typedef typename CUniqueTypelist<typename CTransformTypelist<_TyDimsList,
+			CTransformDimensionRowsToSize>::_TyResult>::_TyResult _TySortedRowHeights;
 		// sorted list of unique block row heights
 
 		typedef typename CFilterTypelist2<_TySortedRowHeights, fbs_ut::CCTSize<n_column_width>,
@@ -1235,6 +1353,8 @@ public:
 	// todo - conditional (ColumnWidth_Given_RowHeight and RowHeight_Given_ColumnWidth)
 };
 
+} // ~deprecate
+
 /**
  *	@brief simple utility for writing clean FBS loops
  *
@@ -1243,7 +1363,7 @@ public:
  *	class CMy_FBS_Loop {
  *	public:
  *		struct TContext { // call context
- *			int params; // parameters to the loop, return type
+ *			int params; // parameters to the loop, return value, ...
  *
  *			inline TContext(int _params) // provide constructor
  *				:params(_params)
@@ -1315,8 +1435,9 @@ public:
 	template <class CBlockMatrixTypelist, class _TyContext>
 	static __forceinline void In_ColumnWidth_DecisionTree(int n_column_width, _TyContext c)
 	{
-		typedef typename CTransformTypelist<typename CSortBlockDims<CBlockMatrixTypelist>::_TyResult,
-			CTransformDimensionColumnsToSize>::_TyResult _TySortedColumnWidths;
+		typedef typename CUniqueTypelist<typename CTransformTypelist<typename
+			CSortBlockDims<CBlockMatrixTypelist>::_TyResult,
+			CTransformDimensionColumnsToSize>::_TyResult>::_TyResult _TySortedColumnWidths;
 		// sorted list of unique block column widths
 
 		CMakeDecisionTree2<_TySortedColumnWidths, _TyContext, CContext2, CLoopType>::Do(n_column_width, c);
@@ -1339,8 +1460,8 @@ public:
 	static __forceinline void In_RowHeight_DecisionTree_Given_ColumnWidth(int n_row_height, _TyContext c)
 	{
 		typedef typename CSortBlockDims<CBlockMatrixTypelist>::_TyResult _TyDimsList;
-		typedef typename CTransformTypelist<_TyDimsList,
-			CTransformDimensionRowsToSize>::_TyResult _TySortedRowHeights;
+		typedef typename CUniqueTypelist<typename CTransformTypelist<_TyDimsList,
+			CTransformDimensionRowsToSize>::_TyResult>::_TyResult _TySortedRowHeights;
 		// sorted list of unique block row heights
 
 		typedef typename CFilterTypelist2<_TySortedRowHeights, fbs_ut::CCTSize<n_column_width>,
@@ -1348,6 +1469,137 @@ public:
 		// t_odo - apply column width filter here
 
 		CMakeDecisionTree2<_TySelectedRowHeights, _TyContext, CContext2, CLoopType>::Do(n_row_height, c);
+		// enter the decision tree
+	}
+
+	// todo - RowHeight
+	// todo - conditional (ColumnWidth_Given_RowHeight and RowHeight_Given_ColumnWidth)
+};
+
+/**
+ *	@brief simple utility for writing clean FBS loops
+ *
+ *	This would be used as follows:
+ *	@code
+ *	class CMy_FBS_Loop {
+ *		int params; // parameters to the loop, return value, ...
+ *
+ *	public:
+ *		inline CMy_FBS_Loop(int _params) // provide constructor
+ *			:params(_params)
+ *		{}
+ *
+ *		template <class CBlockSize> // CBlockSize filled from the CScalarSizeTypelist argument
+ *		static inline void operator ()() // loop implementation
+ *		{
+ *			// implement the loop here
+ *		}
+ *
+ *	private:
+ *		static inline void operator ()(size_t n_dynamic_size); // loop implementation if want to support dynamic sizes
+ *	};
+ *
+ *	fbs_ut::CWrap3<>::template In_ColumnWidth_DecisionTree<CBlockMatrixTypelist>(n_size, CMy_FBS_Loop(params));
+ *	@endcode
+ *
+ *	@tparam CLoopType is a loop type; must be parametrizable by block size and
+ *		static context and must implement a <tt>Do<index, list>(context)</tt> function,
+ *		by default CCallFnOp
+ *
+ *	@note In case the loop body does not require the static context, use CWrap instead.
+ */
+template <template <const int, class> class CLoopType = CCallFnOp>
+class CWrap3 {
+public:
+	/**
+	 *	@brief wraps a function in scalar size decision tree
+	 *
+	 *	@tparam CScalarSizeTypelist is list of all possible sizes (as CCTSize)
+	 *	@tparam _TyContext is type of context that the wrapped function requires
+	 *
+	 *	@param[in] n_scalar_size is size at invokation (must be one of sizes in CScalarSizeTypelist)
+	 *	@param[in] c is value of the context to be passed to the wrapped function
+	 *
+	 *	@note This executes operations at run time.
+	 */
+	template <class CScalarSizeTypelist, class _TyContext>
+	static __forceinline void In_ScalarSize_DecisionTree(size_t n_scalar_size,
+		_TyContext c, bool b_mind_nonexistent = true)
+	{
+		typedef typename CSortTypelist<typename CUniqueTypelist<CScalarSizeTypelist>::_TyResult,
+			fbs_ut::CCompareScalar_Less>::_TyResult _TySortedSizes;
+		// sorted list of unique sizes
+
+		CMakeDecisionTree3<_TySortedSizes, CLoopType>::DoExisting(n_scalar_size, c, b_mind_nonexistent);
+		// enter the decision tree
+	}
+
+	/**
+	 *	@brief wraps a function in block width decision tree
+	 *
+	 *	@tparam CBlockMatrixTypelist is list of all possible matrix block sizes (as Eigen::Matrix with compile-time sizes)
+	 *	@tparam _TyContext is type of context that the wrapped function requires
+	 *
+	 *	@param[in] n_column_width is size at invokation (must be one of column widths in CBlockMatrixTypelist)
+	 *	@param[in] c is value of the context to be passed to the wrapped function
+	 *
+	 *	@note This executes operations at run time.
+	 */
+	template <class CBlockMatrixTypelist, class _TyContext>
+	static __forceinline void In_ColumnWidth_DecisionTree(int n_column_width,
+		_TyContext c, bool b_mind_nonexistent = true)
+	{
+		typedef typename CUniqueTypelist<typename CTransformTypelist<typename
+			CSortBlockDims<CBlockMatrixTypelist>::_TyResult,
+			CTransformDimensionColumnsToSize>::_TyResult>::_TyResult _TySortedColumnWidths;
+		// sorted list of unique block column widths
+
+		CMakeDecisionTree3<_TySortedColumnWidths, CLoopType>::DoExisting(n_column_width, c, b_mind_nonexistent);
+		// enter the decision tree
+	}
+
+	/**
+	 *	@brief wraps a function in block height decision tree, given column width
+	 *
+	 *	@tparam CBlockMatrixTypelist is list of all possible matrix block sizes (as Eigen::Matrix with compile-time sizes)
+	 *	@tparam n_column_width is column width, in elements (must equal one of column widths in CBlockMatrixTypelist)
+	 *	@tparam _TyContext is type of context that the wrapped function requires
+	 *
+	 *	@param[in] n_row_height is size at invokation (must be one of row heights in CBlockMatrixTypelist)
+	 *	@param[in] c is value of the context to be passed to the wrapped function
+	 *
+	 *	@note This executes operations at run time.
+	 */
+	template <class CBlockMatrixTypelist, const int n_column_width, class _TyContext>
+	static __forceinline void In_RowHeight_DecisionTree_Given_ColumnWidth(int n_row_height,
+		_TyContext c, bool b_mind_nonexistent = true)
+	{
+		typedef typename CSortBlockDims<CBlockMatrixTypelist>::_TyResult _TyDimsList;
+		typedef typename CUniqueTypelist<typename CTransformTypelist<_TyDimsList,
+			CTransformDimensionRowsToSize>::_TyResult>::_TyResult _TySortedRowHeights;
+		// sorted list of unique block row heights
+
+		typedef typename CFilterTypelist2<_TySortedRowHeights, fbs_ut::CCTSize<n_column_width>,
+			fbs_ut::CHaveRowHeightForColumnWidth, _TyDimsList>::_TyResult _TySelectedRowHeights;
+		// t_odo - apply column width filter here
+
+		CMakeDecisionTree3<_TySelectedRowHeights, CLoopType>::DoExisting(n_row_height, c, b_mind_nonexistent);
+		// enter the decision tree
+	}
+
+	template <class CBlockMatrixTypelist, const int n_max_matrix_size, class _TyContext>
+	static __forceinline void In_SquareMatrixSize_DecisionTree(int n_matrix_size,
+		_TyContext c, bool b_mind_nonexistent = true)
+	{
+		typedef typename CTransformTypelist<CBlockMatrixTypelist,
+			CEigenToDimension>::_TyResult CDimsList; /**< @brief list of block sizes as CCTSize2D */
+		typedef typename CUniqueTypelist<typename CFilterTypelist1<CDimsList, CIsSize2DSquare>::_TyResult>::_TyResult CSquareDimsList; /**< @brief list of square block sizes as CCTSize2D */
+		typedef typename CTransformTypelist<CSquareDimsList, CTransformDimensionColumnsToSize>::_TyResult CWidthList; /**< @brief list of square block widths as CCTSize */
+		typedef typename CBinaryCombinationTypelist<CWidthList, CBinaryScalarAdd,
+			CCompareScalar_LEqual, CCTSize<n_max_matrix_size> >::_TyResult _TyPossibleWidthList; /**< @brief list of all possible matrix sizes */
+		typedef typename CSortTypelist<_TyPossibleWidthList, CCompareScalar_Less>::_TyResult _TySortedList; /**< @brief sorted list of all possible matrix sizes */
+
+		CMakeDecisionTree3<_TySortedList, CLoopType>::DoExisting(n_matrix_size, c, b_mind_nonexistent);
 		// enter the decision tree
 	}
 
@@ -1381,6 +1633,45 @@ public:
 	void operator ()()
 	{
 		*m_p_dest = CDimension::n_size;
+		++ m_p_dest;
+	}
+
+	/**
+	 *	@brief cast to pointer
+	 *	@return Returns pointer to the next output element.
+	 */
+	operator const T *() const
+	{
+		return m_p_dest;
+	}
+};
+
+/**
+ *	@brief helper object for copying typelist data to an array
+ *	@tparam T is data type of the output array elements
+ */
+template <class T = std::pair<int, int> >
+class CCopyCTSizes2DToArray {
+protected:
+	T *m_p_dest; /**< @brief pointer to the next output element */
+
+public:
+	/**
+	 *	@brief default constructor; initializes the output pointer
+	 *	@param[in] p_dest is pointer to the destination array (must be allocated to sufficient number of elements)
+	 */
+	CCopyCTSizes2DToArray(T *p_dest)
+		:m_p_dest(p_dest)
+	{}
+
+	/**
+	 *	@brief function operator; writes a single size in the output array
+	 *	@tparam CDimension2D is a specialization of CCTSize2D (specifies the value to be written)
+	 */
+	template <class CDimension2D>
+	void operator ()()
+	{
+		*m_p_dest = T(CDimension2D::n_row_num, CDimension2D::n_column_num);
 		++ m_p_dest;
 	}
 
@@ -1430,9 +1721,407 @@ void Copy_CTSizes_to_Array(T *p_dest, const size_t UNUSED(n_size))
 	_ASSERTE(p_end == p_dest + n_size); // make sure the size was correct
 }
 
+/**
+ *	@brief copies typelist of CCTSize to an array
+ *
+ *	@tparam CSizeList is typelist of CCTSize specializations
+ *	@tparam T is data type of the output array elements
+ *	@tparam n_size is size of the output array (must match the length of the list)
+ *
+ *	@param[out] p_dest is array of integers, filled with the data from the input typelist
+ *
+ *	@note This executes operations at run time.
+ */
+template <class CSizeList, class T, const size_t n_size>
+void Copy_CTSizes2D_to_Array(T (&p_dest)[n_size])
+{
+	const T *p_end = CTypelistForEach<CSizeList, CCopyCTSizes2DToArray<T> >::Run(CCopyCTSizes2DToArray<T>(p_dest));
+	_ASSERTE(p_end == p_dest + n_size); // make sure the size was correct
+}
+
+/**
+ *	@brief copies typelist of CCTSize to an array
+ *
+ *	@tparam CSizeList is typelist of CCTSize specializations
+ *	@tparam T is data type of the output array elements
+ *
+ *	@param[out] p_dest is array of integers, filled with the data from the input typelist
+ *	@param[in] n_size is size of the output array (must match the length of the list; used only in debug)
+ *
+ *	@note This executes operations at run time.
+ */
+template <class CSizeList, class T>
+void Copy_CTSizes2D_to_Array(T *p_dest, const size_t UNUSED(n_size))
+{
+	const T *p_end = CTypelistForEach<CSizeList, CCopyCTSizes2DToArray<T> >::Run(CCopyCTSizes2DToArray<T>(p_dest));
+	_ASSERTE(p_end == p_dest + n_size); // make sure the size was correct
+}
+
+template <class T = std::pair<int, int> >
+class CCopyCTSizes2DForest {
+protected:
+	std::vector<std::vector<T> > &m_r_dest;
+
+public:
+	CCopyCTSizes2DForest(std::vector<std::vector<T> > &r_dest)
+		:m_r_dest(r_dest)
+	{
+		r_dest.clear(); // !!
+	}
+
+	/**
+	 *	@brief function operator; writes a single list in the output array
+	 *	@tparam CSize2DList is a list of CCTSize2D specializations
+	 */
+	template <class CSize2DList>
+	void operator ()() // throw(std::bad_alloc)
+	{
+		enum {
+			n_len = CTypelistLength<CSize2DList>::n_result
+		};
+		m_r_dest.resize(m_r_dest.size() + 1);
+		std::vector<T> &r_list = m_r_dest.back();
+		r_list.resize(n_len);
+		Copy_CTSizes2D_to_Array<CSize2DList, T>((n_len)? &r_list.front() : 0, r_list.size());
+	}
+};
+
+template <class CSizeList, class T>
+void Copy_CTSizes2DForest_to_Vector(std::vector<std::vector<T> > &r_dest) // throw(std::bad_alloc)
+{
+	CTypelistForEach<CSizeList, CCopyCTSizes2DForest<T> >::Run(CCopyCTSizes2DForest<T>(r_dest));
+}
+
+/**
+ *	@brief constructor template
+ *	@tparam n_size is value of the type being constructed
+ *	@note This is useful e.g. with \ref ::CTypelistIOTA.
+ */
+template <const int n_size>
+struct CCTSize_Constructor {
+	typedef CCTSize<n_size> _TyResult; /**< @brief result type */
+};
+
+/**
+ *	@brief sequence construction template
+ *
+ *	This constructs a sequence of integer stored as CCTSize with a given
+ *	number of elements. The value of the first element can be adjusted
+ *	(zero by default), the step by which the next elements increase can
+ *	also be specified.
+ *
+ *	@tparam n_size is number of elements of the sequence (must be zero or greater)
+ *	@tparam n_first is value associated with the first element
+ *	@tparam n_step is value of the increment
+ */
+template <const int n_size, const int n_first = 0, const int n_step = 1>
+class CTypelistIOTA {
+/*protected:
+	typedef CCTSize<n_first> _TyHead;
+	typedef typename CTypelistIOTA<n_size - 1, n_first + n_step, n_step>::_TyResult _TyTail;*/
+
+public:
+	typedef /*CTypelist<_TyHead, _TyTail>*/ typename ::CTypelistIOTA<CCTSize_Constructor,
+		n_size, n_first, n_step>::_TyResult _TyResult; /**< @brief resulting typelist */
+	// reuse existing
+};
+
+/*template <const int n_first, const int n_step>
+class CTypelistIOTA<0, n_first, n_step> {
+public:
+	typedef CTypelistEnd _TyResult;
+};*/
+
+/**
+ *	@brief a very simple algorithm specializer which gets a list of lists
+ *		of block sizes and allows choosing a suitable match based on matrix contents
+ *
+ *	Assume we have some block sizes that are expected in different scenarios.
+ *	Those are represented as typelists:
+ *
+ *	@code
+ *	typedef MakeTypelist_Safe((fbs_ut::CCTSize2D<3, 3>)) PoseSLAM_2D;
+ *	typedef MakeTypelist_Safe((fbs_ut::CCTSize2D<3, 3>, fbs_ut::CCTSize2D<2, 3>,
+ *		fbs_ut::CCTSize2D<3, 2>, fbs_ut::CCTSize2D<2, 2>)) SLAM_2D;
+ *	typedef MakeTypelist_Safe((fbs_ut::CCTSize2D<6, 6>)) PoseSLAM_3D;
+ *	typedef MakeTypelist_Safe((fbs_ut::CCTSize2D<6, 6>, fbs_ut::CCTSize2D<3, 6>,
+ *		fbs_ut::CCTSize2D<6, 3>, fbs_ut::CCTSize2D<3, 3>)) SLAM_3D_or_BA;
+ *	@endcode
+ *
+ *	It is possible to make another list of those scenarios and to use this class
+ *	to make a object that can select the appropriate specialization, at runtime:
+ *
+ *	@code
+ *	typedef MakeTypelist(PoseSLAM_2D, PoseSLAM_3D, SLAM_2D, SLAM_3D_or_BA) Specializations;
+ *	// note that short lists go first because the list will be searched in this order
+ *
+ *	fbs_ut::CDummyAlgSpecializer::CData<Specializations> specializer; // not a typedef!
+ *	@endcode
+ *
+ *	Now assume there is a block matrix (e.g. loaded from a file) and it is neccessary
+ *	to see if it is possible to select a specialization for it, from the list above:
+ *
+ *	@code
+ *	CUberBlockMatrix lambda = ...;
+ *
+ *	fbs_ut::CDummyAlgSpecializer::TBSMix t_block_sizes =
+ *		fbs_ut::CDummyAlgSpecializer::t_BlockSize_Mixture(lambda_perm, false);
+ *	// get block sizes that can occur in lambda (can also filter that by the blocks
+ *	// actually occurring in the matrix, by specifying true in the second argument)
+ *
+ *	size_t n_specialization_id = specializer.n_Find_SuitableSpecialization(t_block_sizes);
+ *	if(n_specialization_id == size_t(-1))
+ *		throw std::runtime_error("failed to find FBS algorithm specialization");
+ *	// select which specialization can handle those (n_specialization is an index
+ *	// in the Specializations list declared above)
+ *	@endcode
+ *
+ *	Now that the specialization id is known, the algorithms can be selected based on its
+ *	value. Assume a simple case of block Cholesky factorization:
+ *
+ *	@code
+ *	CUberBlockMatrix R;
+ *	R.CholeskyOf_FBS<BlockSizes>(lambda);
+ *	@endcode
+ *
+ *	We need to determine what BlockSizes should be, based on the specialization id. For
+ *	that, we need to wrap the above fragment:
+ *
+ *	@code
+ *	template <const int n_specialization_id, class Specializations> // n_specialization_id is now constant
+ *	class CCholeskyTest {
+ *	public:
+ *		static inline void Do(std::pair<CUberBlockMatrix*, const CUberBlockMatrix*> context)
+ *		{
+ *			typedef typename CTypelistItemAt<Specializations, n_specialization_id>::_TyResult BlockSizes;
+ *			// block sizes for this specialization
+ *
+ *			const CUberBlockMatrix &lambda = *context.second; // input
+ *			CUberBlockMatrix &R = *context.first; // output
+ *
+ *			R.CholeskyOf_FBS<BlockSizes>(lambda);
+ *		}
+ *	};
+ *	@endcode
+ *
+ *	To call this fragment, one could use \ref CWrap2::In_ScalarSize_DecisionTree(). For convenience,
+ *	this function is wrapped in \ref CDummyAlgSpecializer::CData::Run() or \ref CDummyAlgSpecializer::CData::Run2()
+ *	in case additional types need to be passed. The use is simple:
+ *
+ *	@code
+ *	CUberBlockMatrix R;
+ *	specializer.Run<CCholeskyTest>(n_specialization_id, // what to run and which specialization
+ *		std::make_pair(&R, (const CUberBlockMatrix*)&lambda_perm)); // the context (data out and in)
+ *	@endcode
+ *
+ *	This selects the correct specialization and calls \ref CTestCholesky::Do() for the given data.
+ *	The result will be left in R. Also note that both \ref CDummyAlgSpecializer::CData::Run() and
+ *	\ref CDummyAlgSpecializer::CData::Run2() are static so they in fact do not need the value of
+ *	<tt>specializer</tt>, they only need its type.
+ *
+ */
+class CDummyAlgSpecializer {
+public:
+	typedef std::vector<std::pair<size_t, size_t> > TBSMix; /**< @brief block size mixture */
+
+	/**
+	 *	@brief runtime-generated decision data
+	 *	@tparam CSize2DForest is typelist of typelists of CCTSize2D
+	 */
+	template <class CSize2DForest>
+	class CData {
+	public:
+		typedef CSize2DForest _TySize2DForest; /**< @brief list of lists of supported block sizes */
+
+		/**
+		 *	@brief constants, stored as enum
+		 */
+		enum {
+			n_specialization_num = CTypelistLength<_TySize2DForest>::n_result /**< @brief number of specializations */
+		};
+
+		typedef typename CTypelistIOTA<n_specialization_num>::_TyResult
+			_TySelectorType; /**< @brief a dummy list of zero-based indices that can be used along with CWrap2::In_ScalarSize_DecisionTree() */
+
+	protected:
+		const std::vector<TBSMix> m_2D_sizes_forest; /**< @brief list of lists of supported block sizes */
+
+	public:
+		/**
+		 *	@brief default constructor; unpacks the compile-time stored data to memory
+		 *	@note This function throws std::bad_alloc.
+		 */
+		CData() // throw(std::bad_alloc)
+			:m_2D_sizes_forest(t_Vec_Initializer())
+		{
+			//for(size_t i = 0, n = m_2D_sizes_forest.size(); i < n; ++ i)
+			//	std::sort(m_2D_sizes_forest[i].begin(), m_2D_sizes_forest[i].end()); // make sure it is sorted
+			// build the forest
+		}
+
+		/**
+		 *	@brief finds a suitable specialization (such that it supports all the block sizes)
+		 *	@param[in] r_matrix_blocks is a set of block sizes occurring in a matrix to be processed
+		 *	@return Returns zero-based index of the corresponding entry in \ref _TySize2DForest
+		 *		or <tt>size_t(-1)</tt> in case no specialization exists to handle this matrix.
+		 *	@note The list of candidates is searched in order, shorter block lists should thus be at the beginning.
+		 */
+		size_t n_Find_SuitableSpecialization(const TBSMix &r_matrix_blocks) const
+		{
+			if(r_matrix_blocks.empty())
+				return (m_2D_sizes_forest.empty())? size_t(-1) : 0;
+			// no blocks in the matrix? does not matter then
+
+			for(size_t i = 0, n = m_2D_sizes_forest.size(); i < n; ++ i) {
+				const TBSMix &r_candidate = m_2D_sizes_forest[i];
+				if(r_candidate.size() < r_matrix_blocks.size())
+					continue;
+				for(size_t j = 0, m = r_matrix_blocks.size();;) {
+					//if(std::lower_bound(r_candidate.begin(), r_candidate.end(), // it is sorted, can use binary search
+					if(std::find(r_candidate.begin(), r_candidate.end(), // it is usually small, this is likely faster
+					   r_matrix_blocks[j]) == r_candidate.end())
+						break;
+					if(++ j == m)
+						return i; // can use this one
+				}
+			}
+			return size_t(-1);
+		}
+
+		template <template <const int, class> class CLoopType, class CContext>
+		static void Run(size_t n_specialization_id, CContext t_context)
+		{
+			_ASSERTE(n_specialization_id < n_specialization_num);
+			CWrap2<CLoopType, _TySize2DForest>::template 
+				In_ScalarSize_DecisionTree<_TySelectorType>(int(n_specialization_id), t_context);
+		}
+
+		template <template <const int, class> class CLoopType, class CStaticContext, class CContext>
+		static void Run2(size_t n_specialization_id, CContext t_context)
+		{
+			_ASSERTE(n_specialization_id < n_specialization_num);
+			typedef typename MakeTypelist(_TySize2DForest, CStaticContext) _TyStaticContext2;
+			CWrap2<CLoopType, _TyStaticContext2>::template
+				In_ScalarSize_DecisionTree<_TySelectorType>(int(n_specialization_id), t_context);
+		}
+
+	protected:
+		/**
+		 *	@brief a dummy initializer so that \ref m_2D_sizes_forest can be const
+		 *	@return Returns values of \ref _TySize2DForest unpacked to memory.
+		 */
+		static inline std::vector<TBSMix> t_Vec_Initializer() // throw(std::bad_alloc)
+		{
+			std::vector<TBSMix> v;
+			Copy_CTSizes2DForest_to_Vector<_TySize2DForest>(v);
+			return v;
+		}
+	};
+
+	/**
+	 *	@brief prints all the block sizes
+	 *
+	 */
+	static void Print_BlockSizes(const TBSMix &r_sizes)
+	{
+		for(size_t i = 0, n = r_sizes.size(); i < n; ++ i)
+			printf(", (" PRIsize " x " PRIsize ")" + ((i)? 0 : 2), r_sizes[i].first, r_sizes[i].second);
+	}
+
+	/**
+	 *	@brief produces a lexicorgaphically sorted set of block sizes occurring in a given matrix
+	 *
+	 *	@param[in] r_matrix is sparse block matrix
+	 *	@param[in] b_look_at_blocks is flag determining whether only the block sizes of blocks
+	 *		actually in the matrix should be returned (default false; requires iterating over all blocks)
+	 *	@param[in] n_many_sizes_threshold is threshold where enumerating all possible sizes from
+	 *		block row and block column dimensions becomes more expensive than iterating over all the blocks
+	 *		(only applies if b_look_at_blocks is set; default is 20)
+	 *
+	 *	@return Returns a lexicorgaphically sorted set of block sizes occurring in the given matrix.
+	 */
+	static TBSMix t_BlockSize_Mixture(const CUberBlockMatrix &r_matrix,
+		bool b_look_at_blocks = false, size_t n_many_sizes_threshold = 20)
+	{
+		std::set<size_t> col_widths, row_heights;
+		for(size_t i = 0, n = r_matrix.n_BlockRow_Num(); i < n; ++ i)
+			row_heights.insert(r_matrix.n_BlockRow_Row_Num(i));
+		if(b_look_at_blocks) {
+			for(size_t i = 0, n = r_matrix.n_BlockColumn_Num(); i < n; ++ i) {
+				if(r_matrix.n_BlockColumn_Block_Num(i))
+					col_widths.insert(r_matrix.n_BlockColumn_Column_Num(i)); // only non-empty columns
+			}
+		} else {
+			for(size_t i = 0, n = r_matrix.n_BlockColumn_Num(); i < n; ++ i)
+				col_widths.insert(r_matrix.n_BlockColumn_Column_Num(i));
+		}
+
+		_ASSERTE(row_heights.empty() || col_widths.size() < SIZE_MAX / row_heights.size()); // make sure the line below does not overflow
+		size_t n_size_num = col_widths.size() * row_heights.size();
+
+		if(n_size_num > n_many_sizes_threshold && b_look_at_blocks) {
+			std::set<std::pair<size_t, size_t> > blocks;
+			for(size_t i = 0, n = r_matrix.n_BlockColumn_Num(); i < n; ++ i) {
+				size_t n_width = r_matrix.n_BlockColumn_Column_Num(i);
+				for(size_t j = 0, m = r_matrix.n_BlockColumn_Block_Num(i); j < m; ++ j) {
+					size_t n_height = r_matrix.n_BlockRow_Row_Num(r_matrix.n_Block_Row(i, j));
+					blocks.insert(std::make_pair(n_height, n_width));
+				}
+			}
+			// make a set of block sizes that appear
+
+			TBSMix blocks_linear(blocks.begin(), blocks.end());
+			return blocks_linear;
+			// convert to a linear vector and we're done
+		}
+		// seems like it is going to be faster to look at all the blocks, there are many possible mixtures, maybe not all are present
+
+		TBSMix blocks_linear;
+		blocks_linear.reserve(n_size_num);
+		std::vector<size_t> col_widths_linear(col_widths.begin(), col_widths.end());
+		for(std::set<size_t>::const_iterator p_it = row_heights.begin(),
+		   p_end_it = row_heights.end(); p_it != p_end_it; ++ p_it) {
+			size_t n_height = *p_it;
+			for(size_t i = 0, n = col_widths_linear.size(); i < n; ++ i)
+				blocks_linear.push_back(std::make_pair(n_height, col_widths_linear[i]));
+		}
+		_ASSERTE(blocks_linear.size() == n_size_num);
+		_ASSERTE(CDebug::b_IsStrictlySortedSet(blocks_linear.begin(), blocks_linear.end()));
+		// generate (lexicographically sorted) set product or row sizes x col sizes
+
+		if(b_look_at_blocks) {
+			std::set<std::pair<size_t, size_t> > blocks;
+			for(size_t i = 0, n = r_matrix.n_BlockColumn_Num(); i < n; ++ i) {
+				size_t n_width = r_matrix.n_BlockColumn_Column_Num(i);
+				for(size_t j = 0, m = r_matrix.n_BlockColumn_Block_Num(i); j < m; ++ j) {
+					size_t n_height = r_matrix.n_BlockRow_Row_Num(r_matrix.n_Block_Row(i, j));
+					blocks.insert(std::make_pair(n_height, n_width));
+					if(blocks.size() == n_size_num) {
+#ifdef _DEBUG
+						TBSMix blocks_linear2(blocks.begin(), blocks.end());
+						_ASSERTE(blocks_linear == blocks_linear2); // those must be the same blocks
+#endif // _DEBUG
+						return blocks_linear;
+					}
+				}
+			}
+			// make a set of block sizes that appear
+
+			TBSMix blocks_linear2(blocks.begin(), blocks.end());
+			return blocks_linear2;
+			// convert to a linear vector and we're done
+		}
+		// in case there is a suspicion that not all the sizes might actually be present ...
+
+		return blocks_linear;
+	}
+};
+
 } // ~fbs_ut
 
 #include "slam/Self.h"
 // it is recommended to use DECLARE_SELF and _TySelf in conjunction with fbs_ut::CWrap
+
+/** @} */ // end of group
 
 #endif // !__UBER_BLOCK_MATRIX_FIXED_BLOCK_SIZE_OPS_UTILITIES_INCLUDED

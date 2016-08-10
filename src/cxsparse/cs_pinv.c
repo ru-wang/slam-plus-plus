@@ -1,4 +1,4 @@
-#include "cs.h"
+#include "cxsparse/cs.h"
 /* pinv = p', or p = pinv' */
 CS_INT *cs_pinv (CS_INT const *p, CS_INT n)
 {

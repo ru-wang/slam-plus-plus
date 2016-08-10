@@ -1,4 +1,4 @@
-#include "cs.h"
+#include "cxsparse/cs.h"
 
 /* convert from complex to real (int version) */
 /* C = real(A) if real is true, imag(A) otherwise */

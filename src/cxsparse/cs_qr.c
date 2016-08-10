@@ -1,4 +1,4 @@
-#include "cs.h"
+#include "cxsparse/cs.h"
 /* sparse QR factorization [V,beta,pinv,R] = qr (A) */
 csn *cs_qr (const cs *A, const css *S)
 {
@@ -11,7 +11,7 @@ csn *cs_qr (const cs *A, const css *S)
     if (!CS_CSC (A) || !S) return (NULL) ;
     m = A->m ; n = A->n ; Ap = A->p ; Ai = A->i ; Ax = A->x ;
     q = S->q ; parent = S->parent ; pinv = S->pinv ; m2 = S->m2 ;
-    vnz = S->lnz ; rnz = S->unz ; leftmost = S->leftmost ;
+    vnz = (CS_INT)S->lnz ; rnz = (CS_INT)S->unz ; leftmost = S->leftmost ; // swine - fixed a compile-time warning
     w = cs_malloc (m2+n, sizeof (CS_INT)) ;            /* get CS_INT workspace */
     x = cs_malloc (m2, sizeof (CS_ENTRY)) ;           /* get CS_ENTRY workspace */
     N = cs_calloc (1, sizeof (csn)) ;               /* allocate result */

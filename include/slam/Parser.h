@@ -63,8 +63,12 @@
 #include <map>
 #include <set>
 #include "slam/TypeList.h"
-#include "slam/Integer.h"
-#include "eigen/Eigen/Dense"
+//#include "slam/Integer.h" // included from slam/TypeList.h
+#include "eigen/Eigen/Core"
+
+/** \addtogroup parser
+ *	@{
+ */
 
 /**
  *	@brief a simple .graph file parser
@@ -743,6 +747,61 @@ public:
 	};
 
 	/**
+	 *	@brief Camera-to-Camera Epipolar constraint edge (C2CE)
+	 *
+	 *	This edge represents epipolar constraint
+	 *	between two 2D images \f$p0,p1\f$ of a 3D point:
+	 *	\f{equation}{ p1^T * F * p0 = 0 \f}
+	 *	where F is a fundamental matrix: \f$F = K2 * E * K1 \f$, \f$E = [t]_x * R \f$,
+	 *	\f$K\f$ is as calibration matrix, and \f$[R|t]\f$
+	 *	is a relative translation between cameras.
+	 */
+	struct TEdgeC2CE : public CParseEntity {
+		size_t m_n_node_0; /**< @brief (zero-based) index of the camera 0 */
+		size_t m_n_node_1; /**< @brief (zero-based) index of the camera 1 */
+		Eigen::Matrix<double, 4, 1> m_v_delta; /**< @brief delta measurement (also called "z") - 2d corresponding points */
+		Eigen::Matrix<double, 4, 4> m_t_inv_sigma; /**< @brief inverse sigma matrix, elements are not square roots */
+
+		/**
+		 *	@brief default constructor
+		 *
+		 *	@param[in] n_node_0 is (zero-based) index of the camera 0
+		 *	@param[in] n_node_1 is (zero-based) index of the camera 1
+		 *	@param[in] f_delta_x0 is delta x position of a corresponding point in camera 0
+		 *	@param[in] f_delta_y0 is delta y position of a corresponding point in camera 0
+		 *	@param[in] f_delta_x1 is delta x position of a corresponding point in camera 1
+		 *	@param[in] f_delta_y1 is delta y position of a corresponding point in camera 1
+		 *	@param[in] p_upper_matrix_4x4 is row-major upper triangular and diagonal 4x4 matrix,
+		 *		elements are not square roots
+		 *
+		 *	The matrix is stored row by row from top to bottom,
+		 *	with left to right column order. Example:
+		 *	@code
+		 *	|0 1 2 3|
+		 *	|  4 5 6|
+		 *	|    7 8|
+		 *	|      9|
+		 *	@endcode
+		 */
+		inline TEdgeC2CE(size_t n_node_0, size_t n_node_1,
+			double f_delta_x0, double f_delta_y0, double f_delta_x1, double f_delta_y1, const double *p_upper_matrix_4x4)
+			:m_n_node_0(n_node_0), m_n_node_1(n_node_1)
+		{
+			m_v_delta << f_delta_x0, f_delta_y0, f_delta_x1, f_delta_y1;
+			// no constructor for 2-valued vector
+
+			m_t_inv_sigma <<
+					p_upper_matrix_4x4[0], p_upper_matrix_4x4[1], p_upper_matrix_4x4[2], p_upper_matrix_4x4[3],
+					p_upper_matrix_4x4[1], p_upper_matrix_4x4[4], p_upper_matrix_4x4[5], p_upper_matrix_4x4[6],
+					p_upper_matrix_4x4[2], p_upper_matrix_4x4[3], p_upper_matrix_4x4[7], p_upper_matrix_4x4[8],
+					p_upper_matrix_4x4[3], p_upper_matrix_4x4[6], p_upper_matrix_4x4[8], p_upper_matrix_4x4[9];
+			// fill the matrix
+		}
+
+		EIGEN_MAKE_ALIGNED_OPERATOR_NEW
+	};
+
+	/**
 	 *	@brief ground truth vertex measurement class ("ROCV:RECEIVER_GT" in the datafile)
 	 */
 	struct TVertex3D_Reference : public CParserBase::TVertex3D {
@@ -928,6 +987,12 @@ public:
 		virtual void AppendSystem(const TEdgeP2CI3D &r_t_edge) = 0;
 
 		/**
+		 *	@brief appends the system with an camera+intrinsics measurement
+		 *	@param[in] r_t_edge is the measurement to be appended
+		 */
+		virtual void AppendSystem(const TEdgeC2CE &r_t_edge) = 0;
+
+		/**
 		 *	@brief appends the system with an camera measurement
 		 *	@param[in] r_t_edge is the measurement to be appended
 		 */
@@ -1022,6 +1087,21 @@ public:
 	 *		included.
 	 */
 	static bool ReadLine(std::string &r_s_line, FILE *p_fr);
+
+	/**
+	 *	@brief reads line form a file
+	 *
+	 *	@param[out] r_s_line is output string, containing one line read from a file
+	 *	@param[in] p_fr is pointer to a file
+	 *
+	 *	@return Returns true on success, false on failure (not enough memory / input error).
+	 *
+	 *	@note In case file is at it's end, output lines are empty, but the function still succeeds.
+	 *	@note Output lines may contain carriage-return character(s), for example if the file
+	 *		is opened for binary reading. Line-feed character marks end of line and is never
+	 *		included.
+	 */
+	static bool ReadField(std::string &r_s_line, FILE *p_fr);
 
 	/**
 	 *	@brief splits a string by a separator
@@ -1210,5 +1290,7 @@ public:
 		return true;
 	}
 };
+
+/** @} */ // end of group
 
 #endif // !__GRAPH_PARSER_INCLUDED

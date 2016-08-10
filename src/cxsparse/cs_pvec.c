@@ -1,4 +1,4 @@
-#include "cs.h"
+#include "cxsparse/cs.h"
 /* x = b(p), for dense vectors x and b; p=NULL denotes identity */
 CS_INT cs_pvec (const CS_INT *p, const CS_ENTRY *b, CS_ENTRY *x, CS_INT n)
 {

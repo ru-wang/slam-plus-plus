@@ -29,6 +29,10 @@
  *
  */
 
+/** \addtogroup linsolve
+ *	@{
+ */
+
 /**
  *	@def __LINEAR_SOLVER_CHOLMOD_CSPARSE_INPLACE_SOLVE
  *	@brief uses CSparse for linear solve after the cholesky factor is calculated using CHOLMOD
@@ -55,7 +59,7 @@
 #include "slam/LinearSolverTags.h"
 #include "csparse/cs.hpp"
 #include "cholmod/cholmod.h"
-#include "slam/BlockMatrix.h" // includes Eigen as well
+//#include "slam/BlockMatrix.h" // included from slam/LinearSolverTags.h
 
 #if defined(_M_X64) || defined(_M_AMD64) || defined(_M_IA64) || defined(__x86_64) || defined(__amd64) || defined(__ia64)
 #ifndef __CHOLMOD_SHORT
@@ -89,18 +93,22 @@ public:
 	typedef CBasicLinearSolverTag _Tag; /**< @brief solver type tag */
 #endif // __CHOLMOD_BLOCKY_LINEAR_SOLVER
 
-protected:
-	cs *m_p_lambda; /**< @brief memory for lambda matrix, in order to avoid reallocation */
-	cholmod_common m_t_cholmod_common; /**< @brief cholmod library handle */
-	cholmod_sparse m_t_lambda; /**< @brief lambda matrix in cholmod format */
-
 	/**
 	 *	@brief configuration, stored as enum
 	 */
 	enum {
-		ordering_Method = CHOLMOD_AMD, /**< @brief symbolic ordering method (one of CHOLMOD_METIS, CHOLMOD_NESDIS, CHOLMOD_AMD or CHOLMOD_COLAMD) */
-		analysis_Type = CHOLMOD_AUTO /**< @brief symbolic analysis type (one of CHOLMOD_AUTO, CHOLMOD_SIMPLICIAL or CHOLMOD_SUPERNODAL) */
+		default_ordering_Method = CHOLMOD_AMD, /**< @brief default symbolic ordering method (one of CHOLMOD_METIS, CHOLMOD_NESDIS, CHOLMOD_AMD or CHOLMOD_COLAMD) */
+#ifdef GPU_BLAS
+		default_analysis_Type = CHOLMOD_SUPERNODAL /**< @brief default symbolic analysis type (only CHOLMOD_SUPERNODAL is accelerated by the GPU Cholmod) */
+#else // GPU_BLAS
+		default_analysis_Type = CHOLMOD_AUTO /**< @brief default symbolic analysis type (one of CHOLMOD_AUTO, CHOLMOD_SIMPLICIAL or CHOLMOD_SUPERNODAL) */
+#endif // GPU_BLAS
 	};
+
+protected:
+	cs *m_p_lambda; /**< @brief memory for lambda matrix, in order to avoid reallocation */
+	cholmod_common m_t_cholmod_common; /**< @brief cholmod library handle */
+	cholmod_sparse m_t_lambda; /**< @brief lambda matrix in cholmod format (only points to m_p_lambda) */
 
 #ifdef __CHOLMOD_x64_BUT_SHORT
 	typedef int _TyCSIntType; /**< @brief integer type to be used by CSparse data structures */
@@ -140,10 +148,21 @@ public:
 	CLinearSolver_CholMod();
 
 	/**
-	 *	@brief copy constructor (has no effect; memory for lambda not copied)
-	 *	@param[in] r_other is the solver to copy from (unused)
+	 *	@brief constructor; sets Cholmod analysis type and ordering
+	 *
+	 *	@param[in] n_analysis_type is Cholmod analysis type (one of \ref CHOLMOD_AUTO,
+	 *		\ref CHOLMOD_SIMPLICIAL or \ref CHOLMOD_SUPERNODAL)
+	 *	@param[in] n_ordering_method is Cholmod ordering method (one of \ref CHOLMOD_METIS,
+	 *		\ref CHOLMOD_NESDIS, \ref CHOLMOD_AMD or \ref CHOLMOD_COLAMD)
 	 */
-	CLinearSolver_CholMod(const CLinearSolver_CholMod &UNUSED(r_other));
+	CLinearSolver_CholMod(int n_analysis_type /*= default_analysis_Type*/,
+		int n_ordering_method /*= default_ordering_Method*/);
+
+	/**
+	 *	@brief copy constructor (has no effect; memory for lambda not copied)
+	 *	@param[in] r_other is the solver to copy from (Cholmod analysis and ordering settings are copied from it)
+	 */
+	CLinearSolver_CholMod(const CLinearSolver_CholMod &r_other);
 
 	/**
 	 *	@brief destructor (deletes memory for lambda, if allocated)
@@ -157,10 +176,10 @@ public:
 
 	/**
 	 *	@brief copy operator (has no effect; memory for lambda not copied)
-	 *	@param[in] r_other is the solver to copy from (unused)
+	 *	@param[in] r_other is the solver to copy from (Cholmod analysis and ordering settings are copied from it)
 	 *	@return Returns reference to this.
 	 */
-	CLinearSolver_CholMod &operator =(const CLinearSolver_CholMod &UNUSED(r_other));
+	CLinearSolver_CholMod &operator =(const CLinearSolver_CholMod &r_other);
 
 	/**
 	 *	@brief solves linear system given by positive-definite matrix
@@ -192,6 +211,25 @@ public:
 	 */
 	bool Factorize_PosDef_Blocky(CUberBlockMatrix &r_factor, const CUberBlockMatrix &r_lambda,
 		std::vector<size_t> &r_workspace, size_t n_dest_row_id = 0,
+		size_t n_dest_column_id = 0, bool b_upper_factor = true); // throw(std::bad_alloc)
+
+	/**
+	 *	@brief factorizes a pre-ordered block matrix, puts result in another block matrix
+	 *
+	 *	@param[out] r_f_time is time of the factorization only (ommits block conversion)
+	 *	@param[out] r_factor is destination for the factor (must contain structure but not any nonzero blocks)
+	 *	@param[in] r_lambda is a pre-ordered block matrix to be factorized
+	 *	@param[in] r_workspace is reverse row lookup of r_factor for CUberBlockMatrix::From_Sparse()
+	 *	@param[in] n_dest_row_id is id of block row where the factor should be put in L
+	 *	@param[in] n_dest_column_id is id of block column where the factor should be put in L
+	 *	@param[in] b_upper_factor is the factor flag (if set, factor is U (R), if not se, factor is L)
+	 *
+	 *	@return Returns true on success, false on failure (not pos def or incorrect structure of r_factor).
+	 *
+	 *	@note This function throws std::bad_alloc.
+	 */
+	bool Factorize_PosDef_Blocky_Benchmark(double &r_f_time, CUberBlockMatrix &r_factor,
+		const CUberBlockMatrix &r_lambda, std::vector<size_t> &r_workspace, size_t n_dest_row_id = 0,
 		size_t n_dest_column_id = 0, bool b_upper_factor = true); // throw(std::bad_alloc)
 
 	/**
@@ -273,5 +311,7 @@ protected:
 	 */
 	static cs *fast_transpose(const cs *A, _TyCSIntType *p_workspace);
 };
+
+/** @} */ // end of group
 
 #endif // !__LINEAR_SOLVER_CHOLMOD_INCLUDED

@@ -66,18 +66,27 @@
  *	@def _SCL_SECURE_NO_WARNINGS
  *	@brief a define for MSVC, to avoid warnings about unsecure STL functions and iteratiors
  */
+#ifndef _SCL_SECURE_NO_WARNINGS // might be declared via commandline
 #define _SCL_SECURE_NO_WARNINGS
+#endif // _SCL_SECURE_NO_WARNINGS
 #endif // __SEGREGATED_MAKE_CHECKED_ITERATORS
 
 #include "Unused.h"
-#include "slam/Debug.h" // _ASSERTE
+#ifndef _ASSERTE
+#include <assert.h>
+/**
+ *	@brief basic debug assertion macro
+ *	@param[in] x is the condition that is supposed to hold
+ */
+#define _ASSERTE(x) assert(x)
+#endif // !_ASSERTE
 #include <vector>
 #include <stdlib.h> // posix_memalign()
 
 /**
- *	@brief contains static assertion template for page size check (g++ compatible, unused)
+ *	@brief internal implementation of forward allocated pool
  */
-namespace fap_static_check {
+namespace fap_detail {
 
 /**
  *	@brief compile-time assertion helper
@@ -94,8 +103,6 @@ public:
  */
 template <>
 class CStaticAssert<false> {};
-
-} // ~fap_static_check
 
 /**
  *	@brief simple segregated storage class
@@ -935,7 +942,7 @@ public:
 	void swap(fap_base<_Ty, n_ctpse> &r_t_other) // throw(std::runtime_error)
 	{
 		{
-			typedef typename fap_static_check::CStaticAssert<!n_ctpse || !n_compile_time_page_size_elems ||
+			typedef typename fap_detail::CStaticAssert<!n_ctpse || !n_compile_time_page_size_elems ||
 				n_ctpse == n_compile_time_page_size_elems>::PAGE_SIZE_MISMATCH CAssert0;
 		}
 		// compile-time check on page size (if available; note it will fail on static page size
@@ -1155,17 +1162,17 @@ public:
 	 *	@param[in] p_where_it is the position before which to insert the elements
 	 *		(must point to the end of the pool)
 	 *	@param[in] n_count is number of copies to be inserted
-	 *	@param[in] t_value is the value of the element(s) to be inserted
+	 *	@param[in] r_t_value is the value of the element(s) to be inserted
 	 *
 	 *	@note This is provided just for compatibility, the elements must always
 	 *		be inserted at the end of the storage (meaning p_where_it must equal end()).
 	 *	@note Where possible, insert_back_n() should be used instead.
 	 *	@note This function throws std::bad_alloc.
 	 */
-	inline void insert_n(const_iterator UNUSED(p_where_it), size_t n_count, _Ty t_value) // throw(std::bad_alloc)
+	inline void insert_n(const_iterator UNUSED(p_where_it), size_t n_count, const _Ty &r_t_value) // throw(std::bad_alloc)
 	{
 		_ASSERTE(p_where_it == end());
-		insert_back_n(n_count, t_value);
+		insert_back_n(n_count, r_t_value);
 	}
 
 	/**
@@ -1196,31 +1203,31 @@ public:
 	 *	@brief inserts a number of copies of a single element at the end of the storage
 	 *
 	 *	@param[in] n_count is number of copies to be inserted
-	 *	@param[in] t_value is the value of the element(s) to be inserted
+	 *	@param[in] r_t_value is the value of the element(s) to be inserted
 	 *
 	 *	@note This function throws std::bad_alloc.
 	 */
-	void insert_back_n(size_t n_count, _Ty t_value) // throw(std::bad_alloc)
+	void insert_back_n(size_t n_count, const _Ty &r_t_value) // throw(std::bad_alloc)
 	{
 		size_t n_old_size;
 		grow_to((n_old_size = size()) + n_count);
-		std::fill(begin() + n_old_size, end(), t_value); // todo - might not be optimal due to iterator arithmetic
+		std::fill(begin() + n_old_size, end(), r_t_value); // todo - might not be optimal due to iterator arithmetic
 
 		_ASSERTE(size() - n_old_size == n_count);
 	}
 
 	/**
 	 *	@brief inserts a single element at the end of the storage
-	 *	@param[in] t_value is the value of the element to be inserted
+	 *	@param[in] r_t_value is the value of the element to be inserted
 	 *	@note This function throws std::bad_alloc.
 	 */
-	inline void push_back(_Ty t_value) // throw(std::bad_alloc)
+	inline void push_back(const _Ty &r_t_value) // throw(std::bad_alloc)
 	{
 		if(!empty() && m_n_last_page_used != m_t_page_size) {
-			m_page_list.back()[m_n_last_page_used] = t_value;
+			m_page_list.back()[m_n_last_page_used] = r_t_value;
 			++ m_n_last_page_used;
 		} else {
-			insert_back_n(1, t_value);
+			insert_back_n(1, r_t_value);
 		}
 	}
 
@@ -1228,17 +1235,17 @@ public:
 	 *	@brief resizes the pool to a desired number of elements
 	 *
 	 *	@param[in] n_new_size is the new size, in elements
-	 *	@param[in] t_initializer is the value for the new elements,
+	 *	@param[in] r_t_initializer is the value for the new elements,
 	 *		in case n_new_size is greater than the current size
 	 *
 	 *	@note This function throws std::bad_alloc.
 	 */
-	void resize(size_t n_new_size, _Ty t_initializer) // throw(std::bad_alloc)
+	void resize(size_t n_new_size, const _Ty &r_t_initializer) // throw(std::bad_alloc)
 	{
 		size_t n_old_size;
 		if((n_old_size = size()) < n_new_size) {
 			grow_to(n_new_size);
-			std::fill(begin() + n_old_size, end(), t_initializer); // todo - might not be optimal due to iterator arithmetic
+			std::fill(begin() + n_old_size, end(), r_t_initializer); // todo - might not be optimal due to iterator arithmetic
 		} else
 			shrink_to(n_new_size);
 
@@ -1356,6 +1363,8 @@ protected:
 	}
 };
 
+} // ~fap_detail
+
 /**
  *	@brief simple segregated storage class (a specialization for page size set at compile-time)
  *
@@ -1383,13 +1392,13 @@ protected:
  *		and deallocation at the end of storage (hence "forward allocated").
  */
 template <class T, const int _n_page_size_elems = 0, const int _n_memory_alignment = 0> // todo - add the retain pages parameter to compensate for the aggressive deallocation policy
-class forward_allocated_pool : public fap_base<T, _n_page_size_elems, _n_memory_alignment> {
+class forward_allocated_pool : public fap_detail::fap_base<T, _n_page_size_elems, _n_memory_alignment> {
 public:
 	/**
 	 *	@brief default constructor; does nothing (page size was set at compile-time)
 	 */
 	inline forward_allocated_pool()
-		:fap_base<T, _n_page_size_elems, _n_memory_alignment>(_n_page_size_elems)
+		:fap_detail::fap_base<T, _n_page_size_elems, _n_memory_alignment>(_n_page_size_elems)
 	{}
 };
 
@@ -1420,13 +1429,13 @@ public:
  *		and deallocation at the end of storage (hence "forward allocated").
  */
 template <class T, const int _n_memory_alignment> // todo - add the retain pages parameter to compensate for the aggressive deallocation policy
-class forward_allocated_pool<T, 0, _n_memory_alignment> : public fap_base<T, 0, _n_memory_alignment> {
+class forward_allocated_pool<T, 0, _n_memory_alignment> : public fap_detail::fap_base<T, 0, _n_memory_alignment> {
 public:
 	/**
 	 *	@copydoc fap_base::fap_base()
 	 */
 	inline forward_allocated_pool(size_t n_page_size_elems)
-		:fap_base<T, 0, _n_memory_alignment>(n_page_size_elems)
+		:fap_detail::fap_base<T, 0, _n_memory_alignment>(n_page_size_elems)
 	{}
 };
 

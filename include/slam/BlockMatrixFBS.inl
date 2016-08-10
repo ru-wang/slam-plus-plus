@@ -40,7 +40,7 @@ void CUberBlockMatrix::PostMultiply_Add_FBS(double *p_dest_vector, size_t UNUSED
 	for(_TyColumnConstIter p_col_it = m_block_cols_list.begin(),
 	   p_col_end_it = m_block_cols_list.end(); p_col_it != p_col_end_it; ++ p_col_it) {
 		const TColumn &r_t_col = *p_col_it;
-		CUberBlockMatrix_FBS::CFBS_PostMAD<CBlockMatrixTypelist>::PostMAD_OuterLoop(
+		blockmatrix_detail::CUberBlockMatrix_FBS::CFBS_PostMAD<CBlockMatrixTypelist>::PostMAD_OuterLoop(
 			r_t_col, p_dest_vector, p_src_vector, m_block_rows_list);
 		// execute templated middle loop selector
 	}
@@ -73,7 +73,7 @@ void CUberBlockMatrix::PostMultiply_Add_FBS_Parallel(double *p_dest_vector, size
 		const TColumn &r_t_col = *p_col_it;
 #endif // _OPENMP
 
-		CUberBlockMatrix_FBS::CFBS_PostMAD<CBlockMatrixTypelist>::PostMAD_OuterLoop(
+		blockmatrix_detail::CUberBlockMatrix_FBS::CFBS_PostMAD<CBlockMatrixTypelist>::PostMAD_OuterLoop(
 			r_t_col, p_dest_vector, p_src_vector, m_block_rows_list);
 		// execute templated middle loop selector
 	}
@@ -97,7 +97,7 @@ void CUberBlockMatrix::PreMultiply_Add_FBS(double *p_dest_vector, size_t UNUSED(
 	   p_col_end_it = m_block_cols_list.end(); p_col_it != p_col_end_it; ++ p_col_it) {
 		const TColumn &r_t_col = *p_col_it;
 
-		CUberBlockMatrix_FBS::CFBS_PreMAD<CBlockMatrixTypelist>::PreMAD_OuterLoop(
+		blockmatrix_detail::CUberBlockMatrix_FBS::CFBS_PreMAD<CBlockMatrixTypelist>::PreMAD_OuterLoop(
 			r_t_col, p_dest_vector, p_src_vector, m_block_rows_list);
 		// execute templated middle loop selector
 	}
@@ -136,7 +136,7 @@ void CUberBlockMatrix::ElementwiseUnaryOp_ZeroInvariant_FBS(COp op)
 			size_t n_block_height = m_block_rows_list[r_t_block.first].n_height;
 			// get block position, size and data
 
-			CUberBlockMatrix_FBS::CFBS_ElementwiseUnaryOp<CBlockMatrixTypelist>::ElementwiseUnary_Loop(
+			blockmatrix_detail::CUberBlockMatrix_FBS::CFBS_ElementwiseUnaryOp<CBlockMatrixTypelist>::ElementwiseUnary_Loop(
 				r_t_block.second, n_block_width * n_block_height, op);
 			// perform an operation on the block, with fixed block size
 		}
@@ -168,7 +168,7 @@ void CUberBlockMatrix::ElementwiseUnaryOp_ZeroInvariant_FBS_Parallel(COp op)
 			size_t n_block_height = m_block_rows_list[r_t_block.first].n_height;
 			// get block position, size and data
 
-			CUberBlockMatrix_FBS::CFBS_ElementwiseUnaryOp<CBlockMatrixTypelist>::ElementwiseUnary_Loop(
+			blockmatrix_detail::CUberBlockMatrix_FBS::CFBS_ElementwiseUnaryOp<CBlockMatrixTypelist>::ElementwiseUnary_Loop(
 				r_t_block.second, n_block_width * n_block_height, op);
 			// perform an operation on the block, with fixed block size
 		}
@@ -285,7 +285,7 @@ bool CUberBlockMatrix::ElementwiseBinaryOp_ZeroInvariant_FBS(CUberBlockMatrix &r
 					// a new block
 
 					double *p_value = r_dest.p_Get_DenseStorage(n_block_size);
-					CUberBlockMatrix_FBS::CFBS_ElementwiseBinaryOp<CBlockMatrixTypelist>::ElementwiseBinary_Loop_UninitializedCopy(
+					blockmatrix_detail::CUberBlockMatrix_FBS::CFBS_ElementwiseBinaryOp<CBlockMatrixTypelist>::ElementwiseBinary_Loop_UninitializedCopy(
 						p_value, p_value_src, n_block_size, op);
 					// create a new block, initialize with values
 
@@ -306,7 +306,7 @@ bool CUberBlockMatrix::ElementwiseBinaryOp_ZeroInvariant_FBS(CUberBlockMatrix &r
 					double *p_value_dest = (*p_block_it).second;
 					// get existing block data
 
-					CUberBlockMatrix_FBS::CFBS_ElementwiseBinaryOp<CBlockMatrixTypelist>::ElementwiseBinary_Loop(p_value_dest,
+					blockmatrix_detail::CUberBlockMatrix_FBS::CFBS_ElementwiseBinaryOp<CBlockMatrixTypelist>::ElementwiseBinary_Loop(p_value_dest,
 						p_value_src, n_block_size, op);
 					// add values to an existing block
 
@@ -329,7 +329,7 @@ bool CUberBlockMatrix::ElementwiseBinaryOp_ZeroInvariant_FBS(CUberBlockMatrix &r
 			// make sure the new block comes at the end of the row
 
 			double *p_value = r_dest.p_Get_DenseStorage(n_block_size);
-			CUberBlockMatrix_FBS::CFBS_ElementwiseBinaryOp<CBlockMatrixTypelist>::ElementwiseBinary_Loop_UninitializedCopy(
+			blockmatrix_detail::CUberBlockMatrix_FBS::CFBS_ElementwiseBinaryOp<CBlockMatrixTypelist>::ElementwiseBinary_Loop_UninitializedCopy(
 				p_value, p_value_src, n_block_size, op);
 			// create a new block, initialize with values
 
@@ -417,7 +417,7 @@ bool CUberBlockMatrix::ElementwiseBinaryOp_RightSideZeroInvariant_FBS(CUberBlock
 					// a new block
 
 					double *p_value = r_dest.p_Get_DenseStorage(n_block_size);
-					CUberBlockMatrix_FBS::CFBS_ElementwiseBinaryOp<CBlockMatrixTypelist>::ElementwiseBinary_Loop_UninitLeftSide(p_value,
+					blockmatrix_detail::CUberBlockMatrix_FBS::CFBS_ElementwiseBinaryOp<CBlockMatrixTypelist>::ElementwiseBinary_Loop_UninitLeftSide(p_value,
 						p_value_src, n_block_size, op);
 					// create a new block, initialize with values
 
@@ -437,7 +437,7 @@ bool CUberBlockMatrix::ElementwiseBinaryOp_RightSideZeroInvariant_FBS(CUberBlock
 					double *p_value_dest = (*p_block_it).second;
 					// get existing block data
 
-					CUberBlockMatrix_FBS::CFBS_ElementwiseBinaryOp<CBlockMatrixTypelist>::ElementwiseBinary_Loop(p_value_dest,
+					blockmatrix_detail::CUberBlockMatrix_FBS::CFBS_ElementwiseBinaryOp<CBlockMatrixTypelist>::ElementwiseBinary_Loop(p_value_dest,
 						p_value_src, n_block_size, op);
 					// add values to an existing block
 
@@ -460,7 +460,7 @@ bool CUberBlockMatrix::ElementwiseBinaryOp_RightSideZeroInvariant_FBS(CUberBlock
 			// make sure the new block comes at the end of the row
 
 			double *p_value = r_dest.p_Get_DenseStorage(n_block_size);
-			CUberBlockMatrix_FBS::CFBS_ElementwiseBinaryOp<CBlockMatrixTypelist>::ElementwiseBinary_Loop_UninitLeftSide(
+			blockmatrix_detail::CUberBlockMatrix_FBS::CFBS_ElementwiseBinaryOp<CBlockMatrixTypelist>::ElementwiseBinary_Loop_UninitLeftSide(
 				p_value, p_value_src, n_block_size, op);
 			// create a new block, initialize with values
 
@@ -528,7 +528,7 @@ bool CUberBlockMatrix::ElementwiseBinaryOp_FBS(CUberBlockMatrix &r_dest, CBinary
 				size_t n_block_size_dest = r_t_dest_col.n_width * r_row_list_second[r_t_block.first].n_height;
 				// get block data
 
-				CUberBlockMatrix_FBS::CFBS_ElementwiseBinaryOp<CBlockMatrixTypelist>::ElementwiseBinary_Loop_NullRightSide(
+				blockmatrix_detail::CUberBlockMatrix_FBS::CFBS_ElementwiseBinaryOp<CBlockMatrixTypelist>::ElementwiseBinary_Loop_NullRightSide(
 					p_value_dest, n_block_size_dest, op);
 			}
 		}
@@ -567,7 +567,7 @@ bool CUberBlockMatrix::ElementwiseBinaryOp_FBS(CUberBlockMatrix &r_dest, CBinary
 					size_t n_block_size_dest = r_t_col.n_width * r_row_list_second[n_dest_row].n_height;
 					double *p_value_dest = (*p_first_it).second;
 
-					CUberBlockMatrix_FBS::CFBS_ElementwiseBinaryOp<CBlockMatrixTypelist>::ElementwiseBinary_Loop_NullRightSide(
+					blockmatrix_detail::CUberBlockMatrix_FBS::CFBS_ElementwiseBinaryOp<CBlockMatrixTypelist>::ElementwiseBinary_Loop_NullRightSide(
 						p_value_dest, n_block_size_dest, op);
 				}
 				// don't forget to modify all the blocks in dest between last one and the one being added to
@@ -579,7 +579,7 @@ bool CUberBlockMatrix::ElementwiseBinaryOp_FBS(CUberBlockMatrix &r_dest, CBinary
 
 					double *p_value = r_dest.p_Get_DenseStorage(n_block_size);
 					double *p_value_dest = p_value;
-					CUberBlockMatrix_FBS::CFBS_ElementwiseBinaryOp<CBlockMatrixTypelist>::ElementwiseBinary_Loop_UninitLeftSide(
+					blockmatrix_detail::CUberBlockMatrix_FBS::CFBS_ElementwiseBinaryOp<CBlockMatrixTypelist>::ElementwiseBinary_Loop_UninitLeftSide(
 						p_value_dest, p_value_src, n_block_size, op);
 					// create a new block, initialize with values
 
@@ -599,7 +599,7 @@ bool CUberBlockMatrix::ElementwiseBinaryOp_FBS(CUberBlockMatrix &r_dest, CBinary
 					double *p_value_dest = (*p_block_it).second;
 					// get existing block data
 
-					CUberBlockMatrix_FBS::CFBS_ElementwiseBinaryOp<CBlockMatrixTypelist>::ElementwiseBinary_Loop(p_value_dest,
+					blockmatrix_detail::CUberBlockMatrix_FBS::CFBS_ElementwiseBinaryOp<CBlockMatrixTypelist>::ElementwiseBinary_Loop(p_value_dest,
 						p_value_src, n_block_size, op);
 					// add values to an existing block
 
@@ -614,7 +614,7 @@ bool CUberBlockMatrix::ElementwiseBinaryOp_FBS(CUberBlockMatrix &r_dest, CBinary
 				size_t n_dest_row = (*p_first_it).first;
 				size_t n_block_size_dest = r_t_col.n_width * r_row_list_second[n_dest_row].n_height;
 				double *p_value_dest = (*p_first_it).second;
-				CUberBlockMatrix_FBS::CFBS_ElementwiseBinaryOp<CBlockMatrixTypelist>::ElementwiseBinary_Loop_NullRightSide(
+				blockmatrix_detail::CUberBlockMatrix_FBS::CFBS_ElementwiseBinaryOp<CBlockMatrixTypelist>::ElementwiseBinary_Loop_NullRightSide(
 					p_value_dest, n_block_size_dest, op);
 			}
 			// don't forget to modify all the blocks in dest between last added and the end of the list
@@ -634,7 +634,7 @@ bool CUberBlockMatrix::ElementwiseBinaryOp_FBS(CUberBlockMatrix &r_dest, CBinary
 
 			double *p_value = r_dest.p_Get_DenseStorage(n_block_size);
 			double *p_value_dest = p_value;
-			CUberBlockMatrix_FBS::CFBS_ElementwiseBinaryOp<CBlockMatrixTypelist>::ElementwiseBinary_Loop_UninitLeftSide(
+			blockmatrix_detail::CUberBlockMatrix_FBS::CFBS_ElementwiseBinaryOp<CBlockMatrixTypelist>::ElementwiseBinary_Loop_UninitLeftSide(
 				p_value_dest, p_value_src, n_block_size, op);
 			// create a new block, initialize with values
 
@@ -653,7 +653,7 @@ bool CUberBlockMatrix::ElementwiseBinaryOp_FBS(CUberBlockMatrix &r_dest, CBinary
 			size_t n_block_size_dest = r_t_dest_col.n_width * r_row_list_second[r_t_block.first].n_height;
 			// get block data
 
-			CUberBlockMatrix_FBS::CFBS_ElementwiseBinaryOp<CBlockMatrixTypelist>::ElementwiseBinary_Loop_NullRightSide(
+			blockmatrix_detail::CUberBlockMatrix_FBS::CFBS_ElementwiseBinaryOp<CBlockMatrixTypelist>::ElementwiseBinary_Loop_NullRightSide(
 				p_value_dest, n_block_size_dest, op);
 		}
 	}
@@ -673,6 +673,16 @@ inline bool CUberBlockMatrix::ProductOf_FBS(const CUberBlockMatrix &r_A, const C
 	return r_A.MultiplyToWith(*this, r_B);
 #else // __UBER_BLOCK_MATRIX_SUPRESS_FBS
 	return r_A.MultiplyToWith_FBS<CBlockMatrixTypelistA, CBlockMatrixTypelistB>(*this, r_B);
+#endif // __UBER_BLOCK_MATRIX_SUPRESS_FBS
+}
+
+template <class CBlockMatrixTypelistA, class CBlockMatrixTypelistB>
+inline bool CUberBlockMatrix::ProductOf_FBS(const CUberBlockMatrix &r_A, const CUberBlockMatrix &r_B, bool b_upper_diag_only) // throw(std::bad_alloc)
+{
+#ifdef __UBER_BLOCK_MATRIX_SUPRESS_FBS
+	return r_A.MultiplyToWith(*this, r_B, b_upper_diag_only);
+#else // __UBER_BLOCK_MATRIX_SUPRESS_FBS
+	return r_A.MultiplyToWith_FBS<CBlockMatrixTypelistA, CBlockMatrixTypelistB>(*this, r_B, b_upper_diag_only);
 #endif // __UBER_BLOCK_MATRIX_SUPRESS_FBS
 }
 
@@ -775,7 +785,7 @@ bool CUberBlockMatrix::MultiplyToWith_FBS(CUberBlockMatrix &r_dest, const CUberB
 		//	continue;
 		// otherwise width mismatch occurs
 
-		if(!CUberBlockMatrix_FBS::CFBS_MatrixMultiply<tlA, tlB>::MatrixMultiply_OuterLoop(
+		if(!blockmatrix_detail::CUberBlockMatrix_FBS::CFBS_MatrixMultiply<tlA, tlB>::MatrixMultiply_OuterLoop(
 		   r_t_column_B, n_column_id_B, r_row_list_B, r_col_list_A, r_row_list_A,
 		   transpose_cols_list, reindex_rows_B_to_cols_A, alloc))
 			return false;
@@ -1002,7 +1012,7 @@ bool CUberBlockMatrix::MultiplyToWith_FBS(CUberBlockMatrix &r_dest,
 			//	continue;
 			// otherwise width mismatch occurs
 
-			if(!CUberBlockMatrix_FBS::CFBS_MatrixMultiply<tlA, tlB>::MatrixMultiply_OuterLoop_UpperTriag(
+			if(!blockmatrix_detail::CUberBlockMatrix_FBS::CFBS_MatrixMultiply<tlA, tlB>::MatrixMultiply_OuterLoop_UpperTriag(
 			   r_t_column_B, n_column_id_B, r_row_list_B, r_col_list_A, r_row_list_A,
 			   transpose_cols_list, reindex_rows_B_to_cols_A, alloc))
 				return false;
@@ -1019,7 +1029,7 @@ bool CUberBlockMatrix::MultiplyToWith_FBS(CUberBlockMatrix &r_dest,
 			//	continue;
 			// otherwise width mismatch occurs
 
-			if(!CUberBlockMatrix_FBS::CFBS_MatrixMultiply<tlA, tlB>::MatrixMultiply_OuterLoop(
+			if(!blockmatrix_detail::CUberBlockMatrix_FBS::CFBS_MatrixMultiply<tlA, tlB>::MatrixMultiply_OuterLoop(
 			   r_t_column_B, n_column_id_B, r_row_list_B, r_col_list_A, r_row_list_A,
 			   transpose_cols_list, reindex_rows_B_to_cols_A, alloc))
 				return false;
@@ -1118,7 +1128,7 @@ void CUberBlockMatrix::PreMultiplyWithSelfTransposeTo_FBS(CUberBlockMatrix &r_de
 			const TColumn &r_t_column_A = *p_col_A_it;
 			// for each column in A
 
-			CUberBlockMatrix_FBS::CFBS_PreATA<CBlockMatrixTypelist>::PreATA_UpperTriangle_OuterLoop(
+			blockmatrix_detail::CUberBlockMatrix_FBS::CFBS_PreATA<CBlockMatrixTypelist>::PreATA_UpperTriangle_OuterLoop(
 				r_t_column_A, r_row_list_A, r_col_list_dest, alloc);
 			// wrap the outer loop in a column size decission tree
 		}
@@ -1141,7 +1151,7 @@ void CUberBlockMatrix::PreMultiplyWithSelfTransposeTo_FBS(CUberBlockMatrix &r_de
 			// only process non-empty columns
 
 			double *p_block_data =
-				CUberBlockMatrix_FBS::CFBS_PreATA<CBlockMatrixTypelist>::p_PreATA_Diagonal_OuterLoop(
+				blockmatrix_detail::CUberBlockMatrix_FBS::CFBS_PreATA<CBlockMatrixTypelist>::p_PreATA_Diagonal_OuterLoop(
 				r_t_column_B, alloc, r_row_list_B);
 			// produce the column dot product, each block with itself
 
@@ -1278,7 +1288,7 @@ void CUberBlockMatrix::PreMultiplyWithSelfTransposeTo_FBS_Parallel(CUberBlockMat
 			const TColumn &r_t_column_A = *p_col_A_it;
 			// for each column in A
 
-			CUberBlockMatrix_FBS::CFBS_PreATA<CBlockMatrixTypelist>::PreATA_UpperTriangle_OuterLoop(
+			blockmatrix_detail::CUberBlockMatrix_FBS::CFBS_PreATA<CBlockMatrixTypelist>::PreATA_UpperTriangle_OuterLoop(
 				r_t_column_A, r_row_list_A, r_col_list_dest, alloc);
 			// wrap the outer loop in a column size decission tree
 		}
@@ -1348,7 +1358,7 @@ void CUberBlockMatrix::PreMultiplyWithSelfTransposeTo_FBS_Parallel(CUberBlockMat
 				continue;
 			// only columns with > 1 blocks can produce results
 
-			CUberBlockMatrix_FBS::CFBS_PreATA<CBlockMatrixTypelist>::PreATA_UpperTriangle_Parallel_OuterLoop(
+			blockmatrix_detail::CUberBlockMatrix_FBS::CFBS_PreATA<CBlockMatrixTypelist>::PreATA_UpperTriangle_Parallel_OuterLoop(
 				r_t_column_A, r_row_list_A, r_col_list_dest, t_mutex, alloc);
 			// wrap the outer loop in a column size decission tree
 		}}
@@ -1363,7 +1373,7 @@ void CUberBlockMatrix::PreMultiplyWithSelfTransposeTo_FBS_Parallel(CUberBlockMat
 			if(r_t_column_A.block_list.size() < 2 || !conflicting_column_list[n_column_id_A])
 				continue;
 
-			CUberBlockMatrix_FBS::CFBS_PreATA<CBlockMatrixTypelist>::PreATA_UpperTriangle_OuterLoop(
+			blockmatrix_detail::CUberBlockMatrix_FBS::CFBS_PreATA<CBlockMatrixTypelist>::PreATA_UpperTriangle_OuterLoop(
 				r_t_column_A, r_row_list_A, r_col_list_dest, alloc);
 			// wrap the outer loop in a column size decission tree
 		}
@@ -1418,7 +1428,7 @@ void CUberBlockMatrix::PreMultiplyWithSelfTransposeTo_FBS_Parallel(CUberBlockMat
 				omp_unset_lock(&t_mutex); // note this can be moved in front of the loop
 #endif // 1
 			}
-			CUberBlockMatrix_FBS::CFBS_PreATA<CBlockMatrixTypelist>::PreATA_Parallel_Diagonal_OuterLoop(
+			blockmatrix_detail::CUberBlockMatrix_FBS::CFBS_PreATA<CBlockMatrixTypelist>::PreATA_Parallel_Diagonal_OuterLoop(
 				r_t_column_B, p_block_data, r_row_list_B);
 			// produce the column dot product, each block with itself
 
@@ -1497,7 +1507,7 @@ void CUberBlockMatrix::PreMultiplyWithSelfTransposeTo_FBS_Parallel(CUberBlockMat
 template <class CBlockMatrixTypelist>
 void CUberBlockMatrix::InverseOf_BlockDiag_FBS_Parallel(const CUberBlockMatrix &r_A) // throw(std::bad_alloc)
 {
-	_ASSERTE(b_SymmetricLayout());
+	_ASSERTE(r_A.b_SymmetricLayout());
 	// inverse only defined for square matrices, this also requires symmetric layout
 
 #ifdef __UBER_BLOCK_MATRIX_SUPRESS_FBS
@@ -1508,7 +1518,7 @@ void CUberBlockMatrix::InverseOf_BlockDiag_FBS_Parallel(const CUberBlockMatrix &
 	} else
 		InverseOf_Symmteric(r_A); // use the regular version
 #else // __UBER_BLOCK_MATRIX_SUPRESS_FBS
-	const size_t n = m_block_cols_list.size();
+	const size_t n = r_A.m_block_cols_list.size();
 	// number of block columns (and rows) in both src and dest matrix
 
 	if(&r_A != this) {
@@ -1516,20 +1526,15 @@ void CUberBlockMatrix::InverseOf_BlockDiag_FBS_Parallel(const CUberBlockMatrix &
 		r_A.CopyLayoutTo(*this);
 		// assume the inverse will have the same layout
 
-		_ASSERTE(n <= INT_MAX);
-		int _n = int(n);
-		#pragma omp parallel for if(_n > 50)
-		for(int i = 0; i < _n; ++ i) {
+		bool b_run_in_parallel = (n <= INT_MAX && n > 50);
+		// decide whether to run in parallel
+
+		for(size_t i = 0; i < n; ++ i) {
 			const TColumn &r_t_col = r_A.m_block_cols_list[i];
 			if(r_t_col.block_list.empty())
 				continue; // structural rank deficient (allowed)
 			_ASSERTE(r_t_col.block_list.size() == 1);
 			// contains just a single block (independent from the rest of the matrix)
-
-			const TColumn::TBlockEntry &r_src_block = r_t_col.block_list.front();
-			_ASSERTE(r_src_block.first == i); // block at the diagonal
-			const double *p_data = r_src_block.second;
-			// make a map of the source block
 
 			TColumn &r_t_dest_col = m_block_cols_list[i];
 			_ASSERTE(r_t_dest_col.block_list.empty()); // should be initially empty
@@ -1539,13 +1544,50 @@ void CUberBlockMatrix::InverseOf_BlockDiag_FBS_Parallel(const CUberBlockMatrix &
 			r_t_dest_col.block_list.push_back(t_block);
 			// alloc a new (destination) block in this matrix
 
-			CUberBlockMatrix_FBS::CFBS_BlockwiseUnaryOp<CBlockMatrixTypelist>::template
-				BlockwiseUnary_Static_Op_Square<CInvertBlock>(t_block.second,
-				p_data, r_t_col.n_width);
-			// calculate inverse of a single block
-			// note that in case that there is a rectangular independent (off-diagonal) block,
-			// the inverse will fail (inverse is only defined for square matrices)-
+			if(!b_run_in_parallel) {
+				const TColumn::TBlockEntry &r_src_block = r_t_col.block_list.front();
+				_ASSERTE(r_src_block.first == i); // block at the diagonal
+				const double *p_data = r_src_block.second;
+				// make a map of the source block
+
+				blockmatrix_detail::CUberBlockMatrix_FBS::CFBS_BlockwiseUnaryOp<CBlockMatrixTypelist>::template
+					BlockwiseUnary_Static_Op_Square<CInvertBlock>(t_block.second, p_data, r_t_col.n_width);
+				// calculate inverse of a single block
+				// note that in case that there is a rectangular independent (off-diagonal) block,
+				// the inverse will fail (inverse is only defined for square matrices)-
+			}
 		}
+		// perform the allocation in series
+
+		if(b_run_in_parallel) {
+			_ASSERTE(n <= INT_MAX);
+			int _n = int(n);
+			#pragma omp parallel for /*if(_n > 50)*/
+			for(int i = 0; i < _n; ++ i) {
+				const TColumn &r_t_col = r_A.m_block_cols_list[i];
+				if(r_t_col.block_list.empty())
+					continue; // structural rank deficient (allowed)
+				_ASSERTE(r_t_col.block_list.size() == 1);
+				// contains just a single block (independent from the rest of the matrix)
+
+				const TColumn::TBlockEntry &r_src_block = r_t_col.block_list.front();
+				_ASSERTE(r_src_block.first == i); // block at the diagonal
+				const double *p_data = r_src_block.second;
+				// make a map of the source block
+
+				TColumn &r_t_dest_col = m_block_cols_list[i];
+				_ASSERTE(r_t_dest_col.block_list.size() == 1); // the one we allocated above
+				double *p_dest = r_t_dest_col.block_list.front().second;
+				// get the destination block in this matrix
+
+				blockmatrix_detail::CUberBlockMatrix_FBS::CFBS_BlockwiseUnaryOp<CBlockMatrixTypelist>::template
+					BlockwiseUnary_Static_Op_Square<CInvertBlock>(p_dest, p_data, r_t_col.n_width);
+				// calculate inverse of a single block
+				// note that in case that there is a rectangular independent (off-diagonal) block,
+				// the inverse will fail (inverse is only defined for square matrices)-
+			}
+		}
+		// perform the inverses in parallel unless we chose to do it in series
 	} else {
 		// working inplace
 
@@ -1572,7 +1614,7 @@ void CUberBlockMatrix::InverseOf_BlockDiag_FBS_Parallel(const CUberBlockMatrix &
 			r_t_dest_col.block_list.push_back(t_block);*/ // working inplace
 			// alloc a new (destination) block in this matrix
 
-			CUberBlockMatrix_FBS::CFBS_BlockwiseUnaryOp<CBlockMatrixTypelist>::template
+			blockmatrix_detail::CUberBlockMatrix_FBS::CFBS_BlockwiseUnaryOp<CBlockMatrixTypelist>::template
 				BlockwiseUnary_Static_Op_Square<CInvertBlock>((double*)p_data/*t_block.second*/, // working inplace
 				p_data, r_t_col.n_width);
 			// calculate inverse of a single block
@@ -1584,7 +1626,7 @@ void CUberBlockMatrix::InverseOf_BlockDiag_FBS_Parallel(const CUberBlockMatrix &
 }
 
 template <class CBlockMatrixTypelist>
-void CUberBlockMatrix::InverseOf_Symmteric_FBS(const CUberBlockMatrix &r_A) // throw(std::bad_alloc)
+void CUberBlockMatrix::InverseOf_Symmteric_FBS(const CUberBlockMatrix &r_A, bool b_upper_triangular_source) // throw(std::bad_alloc)
 {
 #ifdef __UBER_BLOCK_MATRIX_SUPRESS_FBS
 	InverseOf_Symmteric(r_A); // use the regular version
@@ -1734,6 +1776,10 @@ void CUberBlockMatrix::InverseOf_Symmteric_FBS(const CUberBlockMatrix &r_A) // t
 			size_t n_row_height = r_A.m_block_cols_list[n_row_id].n_width;
 			// make a map of the source block
 
+			_ASSERTE(!b_upper_triangular_source || n_row_id == n_begin);
+			// if b_upper_triangular_source is set, make sure that the block is at the diagonal,
+			// otherwise this wouldnt work - the inverted block would be bigger by the transposed block
+
 			TColumn &r_t_dest_col = m_block_cols_list[n_begin];
 			_ASSERTE(r_t_dest_col.block_list.empty()); // should be initially empty
 			r_t_dest_col.block_list.reserve(1);
@@ -1744,7 +1790,7 @@ void CUberBlockMatrix::InverseOf_Symmteric_FBS(const CUberBlockMatrix &r_A) // t
 
 			_ASSERTE(n_row_height == r_t_col.n_width);
 			if(n_row_height == r_t_col.n_width) {
-				CUberBlockMatrix_FBS::CFBS_BlockwiseUnaryOp<CBlockMatrixTypelist>::template
+				blockmatrix_detail::CUberBlockMatrix_FBS::CFBS_BlockwiseUnaryOp<CBlockMatrixTypelist>::template
 					BlockwiseUnary_Static_Op_Square<CInvertBlock>(t_block.second,
 					p_data, n_row_height);
 			}
@@ -1788,8 +1834,14 @@ void CUberBlockMatrix::InverseOf_Symmteric_FBS(const CUberBlockMatrix &r_A) // t
 				}
 				// go through all the columns in A and put them in the dense matrix
 
+				if(b_upper_triangular_source)
+					dense.triangularView<Eigen::StrictlyLower>() = dense.triangularView<Eigen::StrictlyUpper>().transpose();
+				// in case mirroring is needed, do it
+
 				dense = dense.inverse();
 				// invert the matrix, making it most likely rather dense
+				// todo - now that we are doing this, it would be better to use the template for block combination sizes
+				// and calculate the inverse using a fixed size matrix?
 			}
 			// todo - it would be better to slice the matrix and make a blockwise sparse LU factorization,
 			// and use that to calculate the inverse (now we are calculating a rather expensive inverse
@@ -1859,7 +1911,43 @@ bool CUberBlockMatrix::UpperTriangularTranspose_Solve_FBS(double *p_x, size_t UN
 		if(r_t_col.block_list.empty())
 			return false; // a 0 on the diagonal - no solution (is it? csparse would divide by zero and produce a NaN)
 
-		if(!CUberBlockMatrix_FBS::CFBS_TriangularSolve<CBlockMatrixTypelist>::TriangularSolve_Forward_OuterLoop(r_t_col,
+		if(!blockmatrix_detail::CUberBlockMatrix_FBS::CFBS_TriangularSolve<CBlockMatrixTypelist>::TriangularSolve_Forward_OuterLoop(r_t_col,
+		   p_x, m_block_rows_list))
+			return false;
+	}
+
+	return true;
+#endif // __UBER_BLOCK_MATRIX_SUPRESS_FBS
+}
+
+template <class CBlockMatrixTypelist>
+bool CUberBlockMatrix::UpperTriangularTranspose_Solve_FBS(double *p_x, size_t UNUSED(n_vector_size),
+	const size_t *p_dependent_column, size_t n_dependent_column_num) const
+{
+#ifdef __UBER_BLOCK_MATRIX_SUPRESS_FBS
+	return UpperTriangularTranspose_Solve(p_x, n_vector_size, p_dependent_column, n_dependent_column_num);
+#else // __UBER_BLOCK_MATRIX_SUPRESS_FBS
+
+	CheckIntegrity(true);
+
+	_ASSERTE(b_Square());
+	// triangular is a special case of square
+
+	_ASSERTE(n_vector_size == m_n_col_num);
+	// make sure that the vector's got correct size
+
+	_ASSERTE(n_dependent_column_num <= m_block_cols_list.size());
+
+	for(size_t i = 0; i < n_dependent_column_num; ++ i) { // forward substitution
+		_ASSERTE(!i || p_dependent_column[i] > p_dependent_column[i - 1]); // must be ordered
+		const TColumn &r_t_col = m_block_cols_list[p_dependent_column[i]];
+
+		// the rest of the loop is identical to the full forward-substitution
+
+		if(r_t_col.block_list.empty())
+			return false; // a 0 on the diagonal - no solution (is it? csparse would divide by zero and produce a NaN)
+
+		if(!blockmatrix_detail::CUberBlockMatrix_FBS::CFBS_TriangularSolve<CBlockMatrixTypelist>::TriangularSolve_Forward_OuterLoop(r_t_col,
 		   p_x, m_block_rows_list))
 			return false;
 	}
@@ -1890,7 +1978,7 @@ bool CUberBlockMatrix::UpperTriangularTranspose_Solve_FBS(double *p_x, size_t UN
 		if(r_t_col.block_list.empty())
 			return false; // a 0 on the diagonal - no solution (is it? csparse would divide by zero and produce a NaN)
 
-		if(!CUberBlockMatrix_FBS::CFBS_TriangularSolve<CBlockMatrixTypelist>::TriangularSolve_Forward_OuterLoop(r_t_col,
+		if(!blockmatrix_detail::CUberBlockMatrix_FBS::CFBS_TriangularSolve<CBlockMatrixTypelist>::TriangularSolve_Forward_OuterLoop(r_t_col,
 		   p_x, m_block_rows_list))
 			return false;
 	}
@@ -1934,7 +2022,7 @@ bool CUberBlockMatrix::UpperTriangular_Solve_FBS(double *p_x,
 			return false; // a 0 on the diagonal - no solution (is it? csparse would divide by zero and produce a NaN)
 		//_ASSERTE(r_t_col.block_list.back().first == n_col); // makes sure that the matrix really is upper diagonal
 
-		if(!CUberBlockMatrix_FBS::CFBS_TriangularSolve<CBlockMatrixTypelist>::TriangularSolve_Back_OuterLoop(r_t_col,
+		if(!blockmatrix_detail::CUberBlockMatrix_FBS::CFBS_TriangularSolve<CBlockMatrixTypelist>::TriangularSolve_Back_OuterLoop(r_t_col,
 		   p_x, m_block_rows_list))
 			return false;
 	}
@@ -1955,12 +2043,10 @@ bool CUberBlockMatrix::Cholesky_Dense_FBS() // throw(std::bad_alloc)
 	// makes sure it has symmetric layout
 
 	if(m_n_col_num <= n_max_matrix_size) {
-		typedef CUberBlockMatrix_FBS::ref_pair<CUberBlockMatrix&, bool&> _TyContext;
 		bool b_result;
-		_TyContext context(*this, b_result);
-		fbs_ut::CMakeSquareMatrixSizeDecisionTree<CMatrixBlockSizeList,
-			n_max_matrix_size>::template Do<CUberBlockMatrix_FBS::CCallDenseCholesky>(m_n_col_num, context); // oh, it's the weird syntax again
-		return context.second;
+		fbs_ut::CWrap3<>::In_SquareMatrixSize_DecisionTree<CMatrixBlockSizeList, n_max_matrix_size>(m_n_col_num,
+			blockmatrix_detail::CUberBlockMatrix_FBS::CCallDenseCholesky(*this, b_result));
+		return b_result;
 	} else
 		return Cholesky_Dense<Eigen::Dynamic>(); // use dynamic-sized matrices (slow)
 #endif // __UBER_BLOCK_MATRIX_SUPRESS_FBS
@@ -2041,7 +2127,7 @@ bool CUberBlockMatrix::CholeskyOf_FBS(const CUberBlockMatrix &r_lambda, const st
 	for(size_t j = 0; j < n; ++ j) { // for every column (no sparsity here, L should be full-rank)
 #if 1
 		const TColumn &r_col_A_j = r_lambda.m_block_cols_list[j];
-		if(!CUberBlockMatrix_FBS::CFBS_Cholesky<CBlockMatrixTypelist>::b_Column_Loop(r_col_A_j.n_width, j, n,
+		if(!blockmatrix_detail::CUberBlockMatrix_FBS::CFBS_Cholesky<CBlockMatrixTypelist>::b_Column_Loop(r_col_A_j.n_width, j, n,
 		   m_block_cols_list, r_col_A_j, r_lambda, r_elim_tree, ereach_stack, bitfield, alloc)) {
 			//printf("error: not pos def\n"); // not pos def
 			Clear(); // otherwise leaving uninit columns behind, CheckIntegrity() will yell
@@ -2145,7 +2231,7 @@ bool CUberBlockMatrix::CholeskyOf_FBS(const CUberBlockMatrix &r_lambda, const st
 				p_k_block_end_it = r_col_L_k.block_list.end();
 			// have to loop through both lists and merge the blocks to find the ones, referencing the same rows
 
-			CUberBlockMatrix_FBS::CFBS_Cholesky<CBlockMatrixTypelist>::OffDiagonal_Loop(p_k_block_data,
+			blockmatrix_detail::CUberBlockMatrix_FBS::CFBS_Cholesky<CBlockMatrixTypelist>::OffDiagonal_Loop(p_k_block_data,
 				n_col_j_width, n_col_k_width, p_j_block_it, p_j_block_end_it,
 				p_k_block_it, p_k_block_end_it, *p_A_block_it, k, m_block_cols_list);
 			// execute cmod and solve by diagonals using FBS
@@ -2178,7 +2264,7 @@ bool CUberBlockMatrix::CholeskyOf_FBS(const CUberBlockMatrix &r_lambda, const st
 			r_col_L_j.block_list.push_back(TColumn::TBlockEntry(j, p_diag_data));
 			// allocates a new block in this column
 
-			if(!CUberBlockMatrix_FBS::CFBS_Cholesky<CBlockMatrixTypelist>::b_Diagonal_Loop(p_diag_data,
+			if(!blockmatrix_detail::CUberBlockMatrix_FBS::CFBS_Cholesky<CBlockMatrixTypelist>::b_Diagonal_Loop(p_diag_data,
 			   n_col_j_width, r_col_L_j.block_list.begin(), r_col_L_j.block_list.end() - 1,
 			   (*p_A_block_it).second, m_block_cols_list)) {
 				//printf("error: not pos def\n"); // not pos def
@@ -2249,7 +2335,7 @@ bool CUberBlockMatrix::CholeskyOf_FBS(const CUberBlockMatrix &r_lambda, const st
 	for(size_t j = n_start_on_column; j < n; ++ j) { // for every column (no sparsity here, L should be full-rank)
 #if 1
 		const TColumn &r_col_A_j = r_lambda.m_block_cols_list[j];
-		if(!CUberBlockMatrix_FBS::CFBS_Cholesky<CBlockMatrixTypelist>::b_Column_Loop(r_col_A_j.n_width, j, n,
+		if(!blockmatrix_detail::CUberBlockMatrix_FBS::CFBS_Cholesky<CBlockMatrixTypelist>::b_Column_Loop(r_col_A_j.n_width, j, n,
 		   m_block_cols_list, r_col_A_j, r_lambda, r_elim_tree, ereach_stack, bitfield, alloc)) {
 			//printf("error: not pos def\n"); // not pos def
 			Clear(); // otherwise leaving uninit columns behind, CheckIntegrity() will yell
@@ -2353,7 +2439,7 @@ bool CUberBlockMatrix::CholeskyOf_FBS(const CUberBlockMatrix &r_lambda, const st
 				p_k_block_end_it = r_col_L_k.block_list.end();
 			// have to loop through both lists and merge the blocks to find the ones, referencing the same rows
 
-			CUberBlockMatrix_FBS::CFBS_Cholesky<CBlockMatrixTypelist>::OffDiagonal_Loop(p_k_block_data,
+			blockmatrix_detail::CUberBlockMatrix_FBS::CFBS_Cholesky<CBlockMatrixTypelist>::OffDiagonal_Loop(p_k_block_data,
 				n_col_j_width, n_col_k_width, p_j_block_it, p_j_block_end_it,
 				p_k_block_it, p_k_block_end_it, *p_A_block_it, k, m_block_cols_list);
 			// execute cmod and solve by diagonals using FBS
@@ -2386,7 +2472,7 @@ bool CUberBlockMatrix::CholeskyOf_FBS(const CUberBlockMatrix &r_lambda, const st
 			r_col_L_j.block_list.push_back(TColumn::TBlockEntry(j, p_diag_data));
 			// allocates a new block in this column
 
-			if(!CUberBlockMatrix_FBS::CFBS_Cholesky<CBlockMatrixTypelist>::b_Diagonal_Loop(p_diag_data,
+			if(!blockmatrix_detail::CUberBlockMatrix_FBS::CFBS_Cholesky<CBlockMatrixTypelist>::b_Diagonal_Loop(p_diag_data,
 			   n_col_j_width, r_col_L_j.block_list.begin(), r_col_L_j.block_list.end() - 1,
 			   (*p_A_block_it).second, m_block_cols_list)) {
 				//printf("error: not pos def\n"); // not pos def

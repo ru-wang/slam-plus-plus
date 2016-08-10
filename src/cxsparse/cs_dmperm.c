@@ -1,4 +1,4 @@
-#include "cs.h"
+#include "cxsparse/cs.h"
 /* breadth-first search for coarse decomposition (C0,C1,R1 or R0,R3,C3) */
 static CS_INT cs_bfs (const cs *A, CS_INT n, CS_INT *wi, CS_INT *wj, CS_INT *queue,
     const CS_INT *imatch, const CS_INT *jmatch, CS_INT mark)

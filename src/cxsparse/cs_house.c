@@ -1,4 +1,4 @@
-#include "cs.h"
+#include "cxsparse/cs.h"
 /* create a Householder reflection [v,beta,s]=house(x), overwrite x with v,
  * where (I-beta*v*v')*x = s*e1 and e1 = [1 0 ... 0]'.
  * Note that this CXSparse version is different than CSparse.  See Higham,

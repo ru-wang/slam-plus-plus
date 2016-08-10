@@ -1,4 +1,4 @@
-#include "cs.h"
+#include "cxsparse/cs.h"
 /* remove duplicate entries from A */
 CS_INT cs_dupl (cs *A)
 {

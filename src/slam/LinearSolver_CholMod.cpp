@@ -26,6 +26,7 @@
  */
 
 #include "slam/LinearSolver_CholMod.h"
+#include "slam/Timer.h"
 
 /*
  *								=== CLinearSolver_CholMod ===
@@ -45,14 +46,11 @@ CLinearSolver_CholMod::CLinearSolver_CholMod()
 	// initialize cholmod!
 
 	m_t_cholmod_common.nmethods = 1;
-	m_t_cholmod_common.method[0].ordering = ordering_Method;
+	m_t_cholmod_common.method[0].ordering = default_ordering_Method;
+	m_t_cholmod_common.method[1].ordering = m_t_cholmod_common.method[0].ordering;
 	m_t_cholmod_common.postorder = 1;
 	//m_t_cholmod_common.postorder = 0;
-#ifdef GPU_BLAS
-	m_t_cholmod_common.supernodal = CHOLMOD_SUPERNODAL; // GPU BLAS only optimizes supernodal ordering
-#else // GPU_BLAS
-	m_t_cholmod_common.supernodal = analysis_Type;
-#endif // GPU_BLAS
+	m_t_cholmod_common.supernodal = default_analysis_Type;
 	// setup ordering strategy
 
 	memset(&m_t_lambda, 0, sizeof(cholmod_sparse));
@@ -84,7 +82,8 @@ CLinearSolver_CholMod::CLinearSolver_CholMod()
 	m_f_solve_time = 0;*/
 }
 
-CLinearSolver_CholMod::CLinearSolver_CholMod(const CLinearSolver_CholMod &UNUSED(r_other))
+CLinearSolver_CholMod::CLinearSolver_CholMod(int n_analysis_type /*= default_analysis_Type*/,
+	int n_ordering_method /*= default_ordering_Method*/)
 	:m_p_lambda(0), m_p_factor(0), m_p_block_structure(0)
 #ifdef __LINEAR_SOLVER_CHOLMOD_CSPARSE_INPLACE_SOLVE
 	, m_n_workspace_size(0), m_p_workspace_double(0)
@@ -98,15 +97,61 @@ CLinearSolver_CholMod::CLinearSolver_CholMod(const CLinearSolver_CholMod &UNUSED
 	// initialize cholmod!
 
 	m_t_cholmod_common.nmethods = 1;
-	m_t_cholmod_common.method[0].ordering = ordering_Method;
+	m_t_cholmod_common.method[0].ordering = n_ordering_method;
+	m_t_cholmod_common.method[1].ordering = m_t_cholmod_common.method[0].ordering;
 	m_t_cholmod_common.postorder = 1;
 	//m_t_cholmod_common.postorder = 0;
-#ifdef GPU_BLAS
-	m_t_cholmod_common.supernodal = CHOLMOD_SUPERNODAL; // GPU BLAS only optimizes supernodal ordering
-#else // GPU_BLAS
-	m_t_cholmod_common.supernodal = analysis_Type;
-#endif // GPU_BLAS
+	m_t_cholmod_common.supernodal = n_analysis_type;
 	// setup ordering strategy
+
+	memset(&m_t_lambda, 0, sizeof(cholmod_sparse));
+	m_t_lambda.stype = 1; // upper triangular block only (values in lower part are ignore, may ommit their calculation)
+	m_t_lambda.itype = CHOLMOD_INT;
+	m_t_lambda.xtype = CHOLMOD_REAL;
+	m_t_lambda.dtype = CHOLMOD_DOUBLE;
+	m_t_lambda.sorted = 1;
+	m_t_lambda.packed = 1;
+	// sets cholmod structure
+
+#ifdef __CHOLMOD_BLOCKY_LINEAR_SOLVER
+	memset(&m_t_block_structure, 0, sizeof(cholmod_sparse));
+	m_t_block_structure.nz = 0;
+	m_t_block_structure.x = 0;
+	m_t_block_structure.z = 0;
+	m_t_block_structure.stype = 1;
+	m_t_block_structure.xtype = CHOLMOD_PATTERN;
+	m_t_block_structure.itype = CHOLMOD_INT;
+	m_t_block_structure.dtype = CHOLMOD_DOUBLE;
+	m_t_block_structure.sorted = 1;
+	m_t_block_structure.packed = 1;
+	// sets cholmod structure
+#endif // __CHOLMOD_BLOCKY_LINEAR_SOLVER
+
+	/*m_f_tosparse_time = 0;
+	m_f_analysis_time = 0;
+	m_f_factor_time = 0;
+	m_f_solve_time = 0;*/
+}
+
+CLinearSolver_CholMod::CLinearSolver_CholMod(const CLinearSolver_CholMod &r_other)
+	:m_p_lambda(0), m_p_factor(0), m_p_block_structure(0)
+#ifdef __LINEAR_SOLVER_CHOLMOD_CSPARSE_INPLACE_SOLVE
+	, m_n_workspace_size(0), m_p_workspace_double(0)
+#endif // __LINEAR_SOLVER_CHOLMOD_CSPARSE_INPLACE_SOLVE
+{
+#ifdef __CHOLMOD_x64
+	cholmod_l_start(&m_t_cholmod_common);
+#else // __CHOLMOD_x64
+	cholmod_start(&m_t_cholmod_common);
+#endif // __CHOLMOD_x64
+	// initialize cholmod!
+
+	m_t_cholmod_common.nmethods = 1;
+	m_t_cholmod_common.method[0].ordering = r_other.m_t_cholmod_common.method[0].ordering;
+	m_t_cholmod_common.method[1].ordering = m_t_cholmod_common.method[0].ordering; // backup
+	m_t_cholmod_common.postorder = 1;
+	m_t_cholmod_common.supernodal = m_t_cholmod_common.supernodal;
+	// setup ordering strategy (copy config from r_other)
 
 	memset(&m_t_lambda, 0, sizeof(cholmod_sparse));
 	m_t_lambda.stype = 1; // upper triangular block only (values in lower part are ignore, may ommit their calculation)
@@ -206,8 +251,13 @@ CLinearSolver_CholMod::~CLinearSolver_CholMod()
 	// dump timing stats
 }
 
-CLinearSolver_CholMod &CLinearSolver_CholMod::operator =(const CLinearSolver_CholMod &UNUSED(r_other))
+CLinearSolver_CholMod &CLinearSolver_CholMod::operator =(const CLinearSolver_CholMod &r_other)
 {
+	m_t_cholmod_common.method[0].ordering = r_other.m_t_cholmod_common.method[0].ordering;
+	m_t_cholmod_common.method[1].ordering = m_t_cholmod_common.method[0].ordering; // backup
+	m_t_cholmod_common.supernodal = m_t_cholmod_common.supernodal;
+	// copy settings
+
 	return *this;
 }
 
@@ -235,7 +285,7 @@ bool CLinearSolver_CholMod::Solve_PosDef(const CUberBlockMatrix &r_lambda,
 	// fills cholsol matrix (just reref arrays)
 
 	m_t_cholmod_common.nmethods = 1;
-	m_t_cholmod_common.method[0].ordering = ordering_Method;
+	m_t_cholmod_common.method[0].ordering = m_t_cholmod_common.method[1].ordering; // get from backup
 	m_t_cholmod_common.postorder = 1;
 	// set ordering up (blocky solver rewrites it)
 
@@ -393,13 +443,13 @@ bool CLinearSolver_CholMod::Factorize_PosDef_Blocky(CUberBlockMatrix &r_factor,
 	// factorize
 
 #ifdef __CHOLMOD_x64
-	if(!cholmod_l_change_factor(CHOLMOD_REAL, 1, p_cholmod_factor->is_super, 0, p_cholmod_factor->is_monotonic, p_cholmod_factor, &m_t_cholmod_common))
+	if(!cholmod_l_change_factor(CHOLMOD_REAL, 1, 0/*p_cholmod_factor->is_super*/, 1/*0*/, 1/*p_cholmod_factor->is_monotonic*/, p_cholmod_factor, &m_t_cholmod_common))
 #else // __CHOLMOD_x64
-	if(!cholmod_change_factor(CHOLMOD_REAL, 1, p_cholmod_factor->is_super, 0, p_cholmod_factor->is_monotonic, p_cholmod_factor, &m_t_cholmod_common))
+	if(!cholmod_change_factor(CHOLMOD_REAL, 1, 0/*p_cholmod_factor->is_super*/, 1/*0*/, 1/*p_cholmod_factor->is_monotonic*/, p_cholmod_factor, &m_t_cholmod_common))
 #endif // __CHOLMOD_x64
 		return false;
 	_ASSERTE(p_cholmod_factor->is_ll && !p_cholmod_factor->is_super && p_cholmod_factor->is_monotonic); // makes sure it comes in correct format
-	// convert the factorization to LL, simplical, /*packed,*/ monotonic
+	// convert the factorization to LL, simplical, packed/*or not*/, monotonic
 
 	cs L;
 	L.nzmax = p_cholmod_factor->nzmax;
@@ -410,6 +460,198 @@ bool CLinearSolver_CholMod::Factorize_PosDef_Blocky(CUberBlockMatrix &r_factor,
 	L.m = p_cholmod_factor->n;
 	L.n = p_cholmod_factor->n;
 	// get L matrix from the factor
+
+#if 0
+	_ASSERTE(p_cholmod_factor->ordering == CHOLMOD_NATURAL ||
+		p_cholmod_factor->ordering == CHOLMOD_GIVEN);
+	cs *p_L;
+	{
+		const cs *A = m_p_lambda;
+		css *S;
+		if(!(S = cs_schol(0, A))) // do use symbolic something! (keeps L sparse)
+			return false;
+		// ordering and symbolic analysis for a Cholesky factorization
+
+		csn *N;
+		if(!(N = cs_chol(A, S))) {// @todo - use CLinearSolver_CSparse to do that, it caches workspace and stuff ...
+			cs_sfree(S);
+			return false;
+		}
+
+		p_L = N->L;//cs_symperm(N->L, N->pinv, 1);
+
+		cs_sfree(S);
+
+		cs_spfree(N->U); // t_odo - remove if possible
+		cs_free(N->pinv);
+		cs_free(N->B);
+		//cs_free(N->L);
+		// note that the above pointers are most likely null (not used for Cholesky, only by QR or LU)
+	}
+
+	cs *p_diff = cs_add(p_L, &L, -1, 1);
+	double f_diff = cs_norm(p_diff);
+	if(f_diff > 1e-5) {
+		CDebug::Dump_SparseMatrix("L_csparse.tga", p_L);
+		CDebug::Dump_SparseMatrix("L_cholmod.tga", &L);
+		CDebug::Dump_SparseMatrix("L_diff.tga", p_diff);
+	}
+	cs_spfree(p_L);
+	cs_spfree(p_diff);
+#endif // 0
+	// debug code to make sure no ordering is used
+
+	_ASSERTE(sizeof(_TyCSIntType) == sizeof(_TyPerm));
+	bool b_result;
+	if(b_upper_factor) {
+		_ASSERTE(L.n >= 0 && L.n <= SIZE_MAX);
+		if(m_p_scalar_permutation.size() < size_t(L.m)) {
+			m_p_scalar_permutation.clear();
+			m_p_scalar_permutation.resize(std::max(size_t(L.m), 2 * m_p_scalar_permutation.capacity()));
+		}
+		// reuse storage
+
+		cs *p_transpose = fast_transpose(&L, (_TyCSIntType*)&m_p_scalar_permutation[0]);
+		// this calculates transpose with 32 or 64bit integers, based on target machine and __CHOLMOD_x64_BUT_SHORT
+
+#ifdef __CHOLMOD_x64_BUT_SHORT
+		b_result = r_factor.From_Sparse32(n_dest_row_id, n_dest_column_id,
+			p_transpose, false, r_workspace);
+#else // __CHOLMOD_x64_BUT_SHORT
+		b_result = r_factor.From_Sparse(n_dest_row_id, n_dest_column_id,
+			p_transpose, false, r_workspace);
+#endif // __CHOLMOD_x64_BUT_SHORT
+
+		cs_spfree(p_transpose);
+	} else {
+#ifdef __CHOLMOD_x64_BUT_SHORT
+		b_result = r_factor.From_Sparse32(n_dest_row_id, n_dest_column_id,
+			&L, false, r_workspace);
+#else // __CHOLMOD_x64_BUT_SHORT
+		b_result = r_factor.From_Sparse(n_dest_row_id, n_dest_column_id,
+			&L, false, r_workspace);
+#endif // __CHOLMOD_x64_BUT_SHORT
+	}
+
+#ifdef __CHOLMOD_x64
+	cholmod_l_free_factor(&p_cholmod_factor, &m_t_cholmod_common);
+#else // __CHOLMOD_x64
+	cholmod_free_factor(&p_cholmod_factor, &m_t_cholmod_common);
+#endif // __CHOLMOD_x64
+	// cleanup
+
+	return b_result;
+}
+
+bool CLinearSolver_CholMod::Factorize_PosDef_Blocky_Benchmark(double &r_f_time, CUberBlockMatrix &r_factor,
+	const CUberBlockMatrix &r_lambda, std::vector<size_t> &r_workspace, size_t n_dest_row_id /*= 0*/,
+	size_t n_dest_column_id /*= 0*/, bool b_upper_factor /*= true*/) // throw(std::bad_alloc)
+{
+	/*return CLinearSolver_CSparse().Factorize_PosDef_Blocky(r_factor, r_lambda, r_workspace,
+		n_dest_row_id, n_dest_column_id, b_upper_factor);*/
+	// debug - reference solution
+
+	CDeltaTimer dt;
+
+	_ASSERTE(r_lambda.b_SymmetricLayout()); // pos-def is supposed to be symmetric
+#ifdef __CHOLMOD_x64_BUT_SHORT
+	if(!(m_p_lambda = r_lambda.p_Convert_to_Sparse32(m_p_lambda)))
+#else // __CHOLMOD_x64_BUT_SHORT
+	if(!(m_p_lambda = r_lambda.p_Convert_to_Sparse(m_p_lambda)))
+#endif // __CHOLMOD_x64_BUT_SHORT
+		throw std::bad_alloc();
+	// convert to csparse matrix
+
+	m_t_lambda.p = m_p_lambda->p;
+	m_t_lambda.nzmax = m_p_lambda->nzmax;
+	m_t_lambda.nrow = m_p_lambda->m;
+	m_t_lambda.ncol = m_p_lambda->n;
+	m_t_lambda.i = m_p_lambda->i;
+	m_t_lambda.x = m_p_lambda->x;
+	// fills cholsol matrix (just reref arrays)
+
+	dt.Reset();
+	// reset the timer
+
+	m_t_cholmod_common.prefer_upper = b_upper_factor;
+#if 1
+	m_t_cholmod_common.nmethods = 1;
+	m_t_cholmod_common.method[0].ordering = CHOLMOD_NATURAL; // no ordering
+	m_t_cholmod_common.postorder = 0; // !!
+	// set ordering up (blocky solver rewrites it)
+
+	cholmod_factor *p_cholmod_factor;
+#ifdef __CHOLMOD_x64
+	if(!(p_cholmod_factor = cholmod_l_analyze(&m_t_lambda, &m_t_cholmod_common)))
+#else // __CHOLMOD_x64
+	if(!(p_cholmod_factor = cholmod_analyze(&m_t_lambda, &m_t_cholmod_common)))
+#endif // __CHOLMOD_x64
+		return false;
+#else // 1
+	m_t_cholmod_common.nmethods = 1;
+	m_t_cholmod_common.method[0].ordering = CHOLMOD_GIVEN;//CHOLMOD_NATURAL; // no ordering
+	m_t_cholmod_common.postorder = 0;
+	// set ordering up (blocky solver rewrites it)
+
+	{
+		const size_t n = r_lambda.n_Column_Num();
+		if(m_p_scalar_permutation.size() < n) {
+			m_p_scalar_permutation.clear();
+			m_p_scalar_permutation.resize(std::max(n, 2 * m_p_scalar_permutation.capacity()));
+		}
+		for(size_t i = 0; i < n; ++ i)
+			m_p_scalar_permutation[i] = i;
+	}
+	// make identity permutation
+
+	cholmod_factor *p_cholmod_factor;
+#ifdef __CHOLMOD_x64
+	if(!(p_cholmod_factor = cholmod_l_analyze_p(&m_t_lambda,
+	   &m_p_scalar_permutation[0], NULL, 0, &m_t_cholmod_common)))
+#else // __CHOLMOD_x64
+	if(!(p_cholmod_factor = cholmod_analyze_p(&m_t_lambda,
+	   &m_p_scalar_permutation[0], NULL, 0, &m_t_cholmod_common)))
+#endif // __CHOLMOD_x64
+		return false;
+#endif // 1
+	// symbolic factorization
+
+#ifdef __CHOLMOD_x64
+	cholmod_l_factorize(&m_t_lambda, p_cholmod_factor, &m_t_cholmod_common);
+#else // __CHOLMOD_x64
+	cholmod_factorize(&m_t_lambda, p_cholmod_factor, &m_t_cholmod_common);
+#endif // __CHOLMOD_x64
+	if(m_t_cholmod_common.status == CHOLMOD_NOT_POSDEF) {
+#ifdef __CHOLMOD_x64
+		cholmod_l_free_factor(&p_cholmod_factor, &m_t_cholmod_common);
+#else // __CHOLMOD_x64
+		cholmod_free_factor(&p_cholmod_factor, &m_t_cholmod_common);
+#endif // __CHOLMOD_x64
+		return false; // not positive definite
+	}
+	// factorize
+
+#ifdef __CHOLMOD_x64
+	if(!cholmod_l_change_factor(CHOLMOD_REAL, 1, 0/*p_cholmod_factor->is_super*/, 1/*0*/, 1/*p_cholmod_factor->is_monotonic*/, p_cholmod_factor, &m_t_cholmod_common))
+#else // __CHOLMOD_x64
+	if(!cholmod_change_factor(CHOLMOD_REAL, 1, 0/*p_cholmod_factor->is_super*/, 1/*0*/, 1/*p_cholmod_factor->is_monotonic*/, p_cholmod_factor, &m_t_cholmod_common))
+#endif // __CHOLMOD_x64
+		return false;
+	_ASSERTE(p_cholmod_factor->is_ll && !p_cholmod_factor->is_super && p_cholmod_factor->is_monotonic); // makes sure it comes in correct format
+	// convert the factorization to LL, simplical, packed/*or not*/, monotonic
+
+	cs L;
+	L.nzmax = p_cholmod_factor->nzmax;
+	L.nz = -1;
+	L.p = (csi*)p_cholmod_factor->p;
+	L.i = (csi*)p_cholmod_factor->i;
+	L.x = (double*)p_cholmod_factor->x;
+	L.m = p_cholmod_factor->n;
+	L.n = p_cholmod_factor->n;
+	// get L matrix from the factor
+
+	r_f_time = dt.f_Time();
+	// sample the timer
 
 #if 0
 	_ASSERTE(p_cholmod_factor->ordering == CHOLMOD_NATURAL ||

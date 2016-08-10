@@ -18,7 +18,9 @@
  */
 
 #include "slam_app/Config.h"
-//#include "slam_app/Main.h"
+#ifdef __UBER_BLOCK_MATRIX_BENCHMARK_INCLUDED
+#include "slam_app/Main.h"
+#endif // __UBER_BLOCK_MATRIX_BENCHMARK_INCLUDED
 
 /**
  *	@def BBPARAM

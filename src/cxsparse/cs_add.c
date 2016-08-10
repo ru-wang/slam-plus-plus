@@ -1,4 +1,4 @@
-#include "cs.h"
+#include "cxsparse/cs.h"
 /* C = alpha*A + beta*B */
 cs *cs_add (const cs *A, const cs *B, CS_ENTRY alpha, CS_ENTRY beta)
 {
@@ -11,7 +11,7 @@ cs *cs_add (const cs *A, const cs *B, CS_ENTRY alpha, CS_ENTRY beta)
     n = B->n ; Bp = B->p ; Bx = B->x ; bnz = Bp [n] ;
     w = cs_calloc (m, sizeof (CS_INT)) ;                       /* get workspace */
     values = (A->x != NULL) && (Bx != NULL) ;
-    x = values ? cs_malloc (m, sizeof (CS_ENTRY)) : NULL ;    /* get workspace */
+    x = values ? (CS_ENTRY*)cs_malloc (m, sizeof (CS_ENTRY)) : (CS_ENTRY*)NULL ;    /* get workspace */
     C = cs_spalloc (m, n, anz + bnz, values, 0) ;           /* allocate result*/
     if (!C || !w || (values && !x)) return (cs_done (C, w, x, 0)) ;
     Cp = C->p ; Ci = C->i ; Cx = C->x ;

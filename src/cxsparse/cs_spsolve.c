@@ -1,4 +1,4 @@
-#include "cs.h"
+#include "cxsparse/cs.h"
 /* solve Gx=b(:,k), where G is either upper (lo=0) or lower (lo=1) triangular */
 CS_INT cs_spsolve (cs *G, const cs *B, CS_INT k, CS_INT *xi, CS_ENTRY *x, const CS_INT *pinv,
     CS_INT lo)

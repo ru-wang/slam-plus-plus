@@ -296,10 +296,10 @@ void dtlmain()
 	CPrintTypelist<epsilon_2>::Print();
 
 	typedef MakeTypelist_Safe((Eigen::Matrix3d, Eigen::Matrix2d)) orig;
-	typedef __fbs_ut::CBlockSizesAfterPreMultiplyWithSelfTranspose<orig>::_TyResult ata;
+	typedef fbs_ut::CBlockSizesAfterPreMultiplyWithSelfTranspose<orig>::_TyResult ata;
 
-	__fbs_ut::CDumpBlockMatrixTypelist<orig>::Print();
-	__fbs_ut::CDumpBlockMatrixTypelist<ata>::Print();*/
+	fbs_ut::CDumpBlockMatrixTypelist<orig>::Print();
+	fbs_ut::CDumpBlockMatrixTypelist<ata>::Print();*/
 
 	/*typedef CBinaryCombinationTypelist<one, 50>::_TyResult matrixSizeList;
 	CPrintTypelist<matrixSizeList>::Print();*/
@@ -317,8 +317,8 @@ void dtlmain()
 	CMakeDecissionTree<three>::Debug();*/
 
 	typedef MakeTypelist_Safe((Eigen::Matrix3d, Eigen::Matrix2d)) orig;
-	typedef __fbs_ut::CBlockSizesAfterPreMultiplyWithSelfTranspose<orig>::_TyResult ata;
-	__fbs_ut::CMakeSquareMatrixSizeDecisionTree<ata, 10>::Debug();
+	typedef fbs_ut::CBlockSizesAfterPreMultiplyWithSelfTranspose<orig>::_TyResult ata;
+	fbs_ut::CMakeSquareMatrixSizeDecisionTree<ata, 10>::Debug();
 }
 
 class CTypelistDebugger {

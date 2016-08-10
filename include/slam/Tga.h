@@ -242,7 +242,7 @@ public:
 	 *	@note The t_bmp.n_former_bpp field is ignored, images are always saved as 8bpp.
 	 */
 	static bool Save_TGA(const char *p_s_filename, const TBmp &r_t_bmp,
-		bool b_BGRA, bool b_RGB_RLE = false);
+		bool b_BGRA, bool b_RGB_RLE = true);
 
 protected:
 	/**

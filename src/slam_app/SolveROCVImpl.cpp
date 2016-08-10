@@ -23,13 +23,15 @@
  */
 #define __ROCV_ENABLED
 
-#include "slam_app/Main.h"
+#include <stdio.h>
+struct TCommandLineArgs; // forward declaration
 #ifdef __ROCV_ENABLED
-#include "slam/ConfigSolvers.h"
+#include "slam_app/Main.h"
+//#include "slam/ConfigSolvers.h" // included via slam_app/Main.h
 #include "slam/ROCV_Types.h"
 #endif // __ROCV_ENABLED
 
-int n_Run_ROCV_Solver(TCommandLineArgs t_args) // throw(std::runtime_error, std::bad_alloc)
+int n_Run_ROCV_Solver(const TCommandLineArgs &t_args) // throw(std::runtime_error, std::bad_alloc)
 {
 #ifdef __ROCV_ENABLED
 	typedef MakeTypelist_Safe((CVertexPositionVelocity3D, CVertexLandmark3D)) TVertexTypelist_ROCV;

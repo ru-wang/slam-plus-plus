@@ -63,6 +63,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
+#include <limits.h> // LONG_MAX
 #include "slam/Debug.h"
 #include "slam/Tga.h"
 

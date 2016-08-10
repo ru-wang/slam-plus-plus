@@ -22,17 +22,21 @@
  *	@note This file is not supposed to be included by itself, it is included from include/slam/BaseTypes.h.
  */
 
+#ifdef DOXYGEN
 #include "slam/BaseTypes.h" // for doxygen
+#endif // DOXYGEN
+
+/** \addtogroup graph
+ *	@{
+ */
 
 /**
- *	@brief SE base edge implementation (specialization for unary edges)
+ *	@brief implementation of solver required functions for a generic edge type (specialization for unary edges)
  *
  *	@tparam CDerivedEdge is the name of derived edge class
  *	@tparam CVertexTypeList is list of types of the vertices
  *	@tparam _n_residual_dimension is residual vector dimension
  *	@tparam _n_storage_dimension is state vector storage dimension (or -1 if the same as _n_residual_dimension)
- *
- *	@todo Write a generic code, permitting any number of edges and remove this.
  */
 template <class CDerivedEdge, class CVertexType, int _n_residual_dimension, int _n_storage_dimension /*= -1*/>
 class CBaseEdgeImpl<CDerivedEdge, CTypelist<CVertexType, CTypelistEnd>,
@@ -49,11 +53,11 @@ public:
 		n_measurement_dimension = _n_residual_dimension, /**< @brief measurement vector dimension (edge dimension) @deprecated This is slightly unclear, use n_residual_dimension and n_storage_dimension instead. */
 		n_residual_dimension = _n_residual_dimension, /**< @brief residual vector dimension */
 		n_storage_dimension = (_n_storage_dimension == -1)? _n_residual_dimension : _n_storage_dimension, /**< @brief edge state storage dimension */
-#ifdef __SE2_TYPES_USE_ALIGNED_VECTORS
+#ifdef __BASE_TYPES_USE_ALIGNED_MATRICES
 		n_matrix_alignment = Eigen::AutoAlign | Eigen::ColMajor
-#else // __SE2_TYPES_USE_ALIGNED_VECTORS
+#else // __BASE_TYPES_USE_ALIGNED_MATRICES
 		n_matrix_alignment = Eigen::DontAlign | Eigen::ColMajor
-#endif // __SE2_TYPES_USE_ALIGNED_VECTORS
+#endif // __BASE_TYPES_USE_ALIGNED_MATRICES
 	};
 
 	/**
@@ -81,25 +85,18 @@ public:
 	};
 
 	/**
-	 *	@brief vertex initialization functor
-	 *	Just clears the vertex to null.
+	 *	@copydoc base_edge_detail::CInitializeNullVertex
 	 */
 	template <class CVertex = _TyVertex>
-	class CInitializeNullVertex {
-	public:
-		/**
-		 *	@brief function operator
-		 *	@return Returns the value of the vertex being initialized.
-		 */
-		inline operator CVertex() const
-		{
-			typename CVertex::_TyVector v_null;
-			v_null.setZero();
-			return CVertex(v_null);
-		}
-	};
+	class CInitializeNullVertex : public base_edge_detail::CInitializeNullVertex<CVertex> {};
 
-private:
+	/**
+	 *	@copydoc base_edge_detail::CInitializeVertex_Disallow
+	 */
+	template <class CVertex = _TyVertex>
+	class CInitializeVertex_Disallow : public base_edge_detail::CInitializeVertex_Disallow<CVertex> {};
+
+public:
 	typedef Eigen::Matrix<double, n_residual_dimension, 1> _TyVector; /**< @brief edge dimension vector type */
 	typedef Eigen::Matrix<double, n_storage_dimension, 1> _TyStorageVector; /**< @brief storage dimension vector type */
 	typedef Eigen::Matrix<double, n_residual_dimension, n_residual_dimension> _TyMatrix; /**< @brief edge dimension matrix type */
@@ -143,7 +140,7 @@ private:
 #endif // __SE_TYPES_SUPPORT_LAMBDA_SOLVERS // --- ~lambda-SLAM specific members ---
 
 public:
-	__SE2_TYPES_ALIGN_OPERATOR_NEW
+	__GRAPH_TYPES_ALIGN_OPERATOR_NEW
 
 	/**
 	 *	@brief default constructor; has no effect
@@ -152,15 +149,15 @@ public:
 	{}
 
 	/**
-	 *	@brief constructor
+	 *	@brief unary edge constructor
 	 *
 	 *	@param[in] n_vertex_id is id of the vertex
-	 *	@param[in] r_v_measurement is the measurement vecot
+	 *	@param[in] r_v_measurement is the measurement vector
 	 *	@param[in] r_t_sigma_inv is inverse sigma matrix
 	 *
-	 *	@note This fills the structure, except for the vertex pointers.
-	 *	@note Any derived class should check for vertex dimensions
-	 *		being really what it expects (not checked elsewhere).
+	 *	@note This fills the structure, except for the vertex pointer.
+	 *	@note With thunk tables, the derived classes don't need to check for vertex dimensions
+	 *		being really what they expect (type checking performed by the vertex pool).
 	 */
 	inline CBaseEdgeImpl(size_t n_vertex_id, const _TyStorageVector &r_v_measurement,
 		const _TyMatrix &r_t_sigma_inv)
@@ -171,6 +168,94 @@ public:
 	{
 		m_p_vertex_id[0] = n_vertex_id;
 		// get references to the vertices, initialize the vertices, if neccessary
+
+		// note that errors, expectations and jacobian matrices are not cleared
+	}
+
+	/**
+	 *	@brief unary edge constructor with implicit vertex initialization (to null)
+	 *
+	 *	@tparam CSystem is type of system where this edge is being stored
+	 *
+	 *	@param[in] n_vertex0_id is id of the first vertex
+	 *	@param[in] r_v_measurement is the measurement vector
+	 *	@param[in] r_t_sigma_inv is inverse sigma matrix
+	 *	@param[in] t_tag is used for tag scheduling, specifies this constructor (value unused)
+	 *	@param[in,out] r_system is reference to system (used to query or insert edge vertices)
+	 *	@param[in] n_list_skip is bitfield of vertices for which the initialization should
+	 *		be disabled so that the derived edge can perform it (LSB corresponds to vertex 0,
+	 *		the second least significant bit to vertex 1)
+	 *	@param[in] n_list_disallow is bitfield of vertices for which the initialization is not
+	 *		allowed - an exception is thrown if the vertex is not explicitly inizialized prior
+	 *		to calling this function (value unused)
+	 *
+	 *	@note This fills the structure, including the vertex pointers, except those indicated
+	 *		in CSkipInitIndexList.
+	 *	@note With thunk tables, the derived classes don't need to check for vertex dimensions
+	 *		being really what they expect (type checking performed by the vertex pool).
+	 *	@note The r_t_sigma_inv is inverse sigma matrix, which is *not* square-rooted.
+	 *		This hasn't changed since the previous releases, but the documentation
+	 *		in parser was misleading back then.
+	 *	@note This function throws std::bad_alloc if there is not enough memory for the vertices,
+	 *		and throws std::runtime_error if b_disallow_implicit_init is set and the vertex
+	 *		n_vertex0_id was not explicitly initialized before calling this function.
+	 */
+	template <class CSystem>
+	inline CBaseEdgeImpl(size_t n_vertex0_id,
+		const _TyStorageVector &r_v_measurement, const _TyMatrix &r_t_sigma_inv,
+		null_initialize_vertices_tag UNUSED(t_tag), CSystem &r_system,
+		bool b_disallow_implicit_init = false) // throw(std::bad_alloc, std::runtime_error)
+		:m_v_measurement(r_v_measurement), m_t_sigma_inv(r_t_sigma_inv)
+#ifdef __SE_TYPES_SUPPORT_A_SOLVERS
+		, m_t_square_root_sigma_inv_upper(r_t_sigma_inv.llt().matrixU()) // calculate R
+#endif // __SE_TYPES_SUPPORT_A_SOLVERS
+	{
+		m_p_vertex_id[0] = n_vertex0_id;
+		// get references to the vertices, initialize the vertices, if neccessary
+
+		if(!b_disallow_implicit_init)
+			m_p_vertex0 = &r_system.template r_Get_Vertex<_TyVertex>(n_vertex0_id, CInitializeNullVertex<>());
+		else
+			m_p_vertex0 = &r_system.template r_Get_Vertex<_TyVertex>(n_vertex0_id, CInitializeVertex_Disallow<>());
+		// initialize the vertices
+
+		// note that errors, expectations and jacobian matrices are not cleared
+	}
+
+	/**
+	 *	@brief unary edge constructor with exmplicit vertex initialization
+	 *
+	 *	@tparam CSystem is type of system where this edge is being stored
+	 *
+	 *	@param[in] n_vertex0_id is id of the first vertex
+	 *	@param[in] r_v_measurement is the measurement vector
+	 *	@param[in] r_t_sigma_inv is inverse sigma matrix
+	 *	@param[in] t_tag is used for tag scheduling, specifies this constructor (value unused)
+	 *	@param[in] r_system is reference to system (used to query edge vertices)
+	 *
+	 *	@note This fills the structure, including the vertex pointer.
+	 *	@note With thunk tables, the derived classes don't need to check for vertex dimensions
+	 *		being really what they expect (type checking performed by the vertex pool).
+	 *	@note The r_t_sigma_inv is inverse sigma matrix, which is *not* square-rooted.
+	 *		This hasn't changed since the previous releases, but the documentation
+	 *		in parser was misleading back then.
+	 *	@note This function throws std::runtime_error if the vertex n_vertex0_id was not
+	 *		explicitly initialized before calling this function.
+	 */
+	template <class CSystem>
+	inline CBaseEdgeImpl(size_t n_vertex0_id,
+		const _TyStorageVector &r_v_measurement, const _TyMatrix &r_t_sigma_inv,
+		explicitly_initialized_vertices_tag UNUSED(t_tag), CSystem &r_system) // throw(std::runtime_error)
+		:m_v_measurement(r_v_measurement), m_t_sigma_inv(r_t_sigma_inv)
+#ifdef __SE_TYPES_SUPPORT_A_SOLVERS
+		, m_t_square_root_sigma_inv_upper(r_t_sigma_inv.llt().matrixU()) // calculate R
+#endif // __SE_TYPES_SUPPORT_A_SOLVERS
+	{
+		m_p_vertex_id[0] = n_vertex0_id;
+		// get references to the vertices, initialize the vertices, if neccessary
+
+		m_p_vertex0 = &r_system.template r_Get_Vertex<_TyVertex>(n_vertex0_id, CInitializeVertex_Disallow<>());
+		// initialize the vertex pointer, throw an exception if not initialized already
 
 		// note that errors, expectations and jacobian matrices are not cleared
 	}
@@ -270,6 +355,10 @@ public:
 	 */
 	inline void Alloc_JacobianBlocks(CUberBlockMatrix &r_A)
 	{
+		_ASSERTE(!m_p_vertex0->b_IsConstant()); // make sure the vertex is not const (if it is, do not put this edge in the system in the first place!)
+		if(m_p_vertex0->b_IsConstant())
+			throw std::runtime_error("unary edge created with a constant vertex"); // make this a release check as well, it depends on the data
+
 		// easily implemented using a loop
 #ifdef __BASE_TYPES_USE_ID_ADDRESSING
 		m_p_RH[0] = r_A.p_GetBlock_Log(m_n_id + 1, m_p_vertex_id[0],
@@ -299,7 +388,7 @@ public:
 		// calculates the expectation, error and the jacobians (implemented by the edge)
 
 		Eigen::Map<typename CVertexTraits<0>::_TyJacobianMatrix, CUberBlockMatrix::map_Alignment> t_RH0(m_p_RH[0]);
-		// map hessian matrices
+		// map Jacobian matrices
 
 		t_RH0 = m_t_square_root_sigma_inv_upper * t_jacobian0;
 		// recalculate RH (transpose cholesky of sigma times the jacobian)
@@ -328,7 +417,7 @@ public:
 #ifdef __LAMBDA_USE_V2_REDUCTION_PLAN
 
 	/**
-	 *	@brief allocates hessian block matrices
+	 *	@brief allocates Hessian blocks
 	 *
 	 *	@tparam CReductionPlan is lambda reduction plan ?nstantiation
 	 *
@@ -340,6 +429,10 @@ public:
 	template <class CReductionPlan>
 	inline void Alloc_HessianBlocks_v2(CUberBlockMatrix &r_lambda, CReductionPlan &r_rp)
 	{
+		_ASSERTE(!m_p_vertex0->b_IsConstant()); // make sure the vertex is not const (if it is, do not put this edge in the system in the first place!)
+		if(m_p_vertex0->b_IsConstant())
+			throw std::runtime_error("unary edge created with a constant vertex"); // make this a release check as well, it depends on the data
+
 #ifdef __BASE_TYPES_USE_ID_ADDRESSING
 		size_t n_id_0 = m_p_vertex_id[0];
 		m_p_HtSiH_vert[0] = r_lambda.p_GetBlock_Log(n_id_0, n_id_0,
@@ -349,8 +442,8 @@ public:
 		m_p_HtSiH_vert[0] = r_lambda.p_FindBlock(n_order_0, n_order_0,
 			CVertexTraits<0>::n_dimension, CVertexTraits<0>::n_dimension, true, false);
 #endif // __BASE_TYPES_USE_ID_ADDRESSING
-		// find a block for vertices' hessian on the diagonal (do not use the potentially swapped id / order)
-		// note that if this is added after the edge hessian, it will be likely
+		// find a block for vertices' Hessian on the diagonal (do not use the potentially swapped id / order)
+		// note that if this is added after the off-diagonal Hessian, it will be likely
 		// added at the end of the block list in the matrix
 
 		{
@@ -375,7 +468,7 @@ public:
 	}
 
 	/**
-	 *	@brief sums up edge hessian block contributions to get values of the blocks in lambda
+	 *	@brief sums up Hessian block contributions to get values of the blocks in lambda
 	 *
 	 *	@tparam CReductionPlan is lambda reduction plan ?nstantiation
 	 *
@@ -383,7 +476,7 @@ public:
 	 *	@param[in,out] r_rp is lambda reduction plan
 	 *
 	 *	@note This function is required for CNonlinearSolver_Lambda.
-	 *	@note This only reduces the hessians, Calculate_Hessians_v2() must be called
+	 *	@note This only reduces the Hessians, Calculate_Hessians_v2() must be called
 	 *		before to have stuff to calculate.
 	 */
 	template <class CReductionPlan>
@@ -405,13 +498,13 @@ public:
 			p_key_vert[0] = CReductionPlan::CLambdaReductor::t_MakeKey(n_id_0, n_id_0, p_HtSiH_vert[0]);
 		}
 		rp.template ReduceSingle<typename CVertexTraits<0>::_TyMatrixSize>(p_key_vert[0]);
-		// reduce edge hessian and both vertex hessians
+		// reduce off-diagonal Hessian and both diagonal Hessians
 	}
 
 	/**
-	 *	@brief calculates hessian contributions
+	 *	@brief calculates Hessian contributions
 	 *
-	 *	@note This only calculates the hessians, either Reduce_Hessians_v2() or the
+	 *	@note This only calculates the Hessians, either Reduce_Hessians_v2() or the
 	 *		reduction plan needs to be used to fill lambda with values.
 	 */
 	inline void Calculate_Hessians_v2()
@@ -424,12 +517,12 @@ public:
 		Eigen::Map<typename CVertexTraits<0>::_TyMatrixAlign, CUberBlockMatrix::map_Alignment>
 			m_t_HtSiH_vertex0(m_p_HtSiH_vert[0]);
 		m_t_HtSiH_vertex0.noalias() = t_jacobian0.transpose() * m_t_sigma_inv * t_jacobian0;
-		// calculate vertex hessian contributions
+		// calculate diagonal Hessian contribution
 
 		Eigen::Map<typename CVertexTraits<0>::_TyVectorAlign, CUberBlockMatrix::map_Alignment>
 			m_t_right_hand_vertex0(m_p_RHS_vert[0]);
 		m_t_right_hand_vertex0.noalias() = t_jacobian0.transpose() * (m_t_sigma_inv * v_error);
-		// calculate right hand side vector contributions
+		// calculate right hand side vector contribution
 	}
 
 #else // __LAMBDA_USE_V2_REDUCTION_PLAN
@@ -443,7 +536,7 @@ public:
 	inline void Alloc_HessianBlocks(CUberBlockMatrix &r_lambda)
 	{
 		m_p_vertex0->Add_ReferencingEdge(this);
-		// the vertices need to know this edge in order to calculate sum of jacobians on the diagonal of lambda // t_odo - should the lambda solver call this instead? might avoid duplicate records in the future // lambda solver is calling this only once in it's lifetime, no duplicates will occur
+		// the vertices need to know this edge in order to calculate sum of Hessians on the diagonal of lambda // t_odo - should the lambda solver call this instead? might avoid duplicate records in the future // lambda solver is calling this only once in it's lifetime, no duplicates will occur
 
 		// alloc nothing, the vertex will allocate the diagonal block
 	}
@@ -459,10 +552,10 @@ public:
 		// calculates the expectation and the jacobian
 
 		m_t_HtSiH_vertex0.noalias() = t_jacobian0.transpose() * m_t_sigma_inv * t_jacobian0;
-		// calculate vertex hessian contributions
+		// calculate diagonal Hessian contribution
 
 		m_t_right_hand_vertex0.noalias() = t_jacobian0.transpose() * (m_t_sigma_inv * v_error);
-		// calculate right hand side vector contributions
+		// calculate right hand side vector contribution
 	}
 
 	inline std::pair<const double*, const double*> t_Get_LambdaEta_Contribution(const CBaseVertex *p_which)
@@ -471,7 +564,7 @@ public:
 
 		_ASSERTE(p_which == m_p_vertex0);
 		return std::make_pair(m_t_HtSiH_vertex0.data(), m_t_right_hand_vertex0.data());
-		// return pointer to the matrix data with hessian contribution
+		// return pointer to the matrix data with Hessian contribution
 	}
 
 #endif // __LAMBDA_USE_V2_REDUCTION_PLAN
@@ -518,10 +611,12 @@ public:
 	 *
 	 *	@param[out] r_omega is the omega matrix to be filled (must be initially empty)
 	 *	@param[in] n_min_vertex_order is order offset, in elements, used to position
-	 *		the hessian blocks in the upper-left corner of omega
+	 *		the Hessian blocks in the upper-left corner of omega
 	 */
 	inline void Calculate_Omega(CUberBlockMatrix &r_omega, size_t n_min_vertex_order) const
 	{
+		_ASSERTE(!m_p_vertex0->b_IsConstant()); // make sure the vertex is not const (if it is, do not put this edge in the system in the first place!)
+
 		const size_t n_dimension0 = CVertexTraits<0>::n_dimension;
 		const size_t n_order_0 = m_p_vertex0->n_Order();
 		// make sure the order is sorted (if swapping, will have to transpose the result,
@@ -530,7 +625,7 @@ public:
 		_ASSERTE(n_order_0 >= n_min_vertex_order);
 		double *p_v0 = r_omega.p_FindBlock(n_order_0 - n_min_vertex_order,
 			n_order_0 - n_min_vertex_order, n_dimension0, n_dimension0, true, true);
-		// alloc and initialize / find existing blocks for all the hessians, above the diagonal only
+		// alloc and initialize / find existing blocks for all the Hessians, above the diagonal only
 
 		bool b_recalculate = false;
 		// recalculate from scratch, or use values already calculated by the lambda solver?
@@ -560,8 +655,250 @@ public:
 			t_HtSiH_v0 += m_t_HtSiH_vertex0;
 #endif // __LAMBDA_USE_V2_REDUCTION_PLAN
 		}
-		// calculate vertex hessian contributions (note the increments)
+		// calculate diagonal Hessian contribution (note the increment)
 	}
 };
+
+/**
+ *	@brief unary factor template
+ *
+ *	This lets one set a unary factor on an arbitrary vertex, in addition
+ *	to the first vertex in the system which receives one automatically (unless
+ *	the system is specialized with \ref CNullUnaryFactorFactory).
+ *	This version assumes that the unary error is zero but it would be quite
+ *	easy to modify.
+ *
+ *	The rules for automatic unary factor placement depend on
+ *	\ref __AUTO_UNARY_FACTOR_ON_VERTEX_ZERO being defined. If defined,
+ *	vertex with id 0 is chosen, otherwise the first vertex of the first
+ *	edge is chosen. By default, the unary factor is an identity matrix
+ *	of the same dimension as the vertex (see \ref CBasicUnaryFactorFactory).
+ *
+ *	@tparam CVertexType is vertex type to build the factor around
+ */
+template <class CVertexType>
+class CUnaryFactor : public CBaseEdgeImpl<CUnaryFactor<CVertexType>,
+	typename MakeTypelist(CVertexType), CVertexType::n_dimension, 0> {
+public:
+	typedef CBaseEdgeImpl<CUnaryFactor<CVertexType>, typename
+		MakeTypelist(CVertexType), CVertexType::n_dimension, 0> _TyBase; /**< @brief base edge type */
+
+	typedef CVertexType _TyVertex; /**< @brief vertex type */
+	typedef typename _TyBase::_TyMatrix _TyFactor; /**< @brief unary factor type */
+	typedef typename _TyBase::_TyVector _TyError; /**< @brief unary error type */
+	typedef Eigen::Matrix<double, 0, 1> NullVector; /**< @brief null vector type */
+	typedef std::pair<size_t, _TyFactor> TParsed; /**< @brief parsed representation of this edge */
+
+public:
+	__GRAPH_TYPES_ALIGN_OPERATOR_NEW
+
+	/**
+	 *	@brief default constructor; has no effect
+	 */
+	inline CUnaryFactor()
+	{}
+
+	/**
+	 *	@brief constructor; converts parsed edge to edge representation
+	 *
+	 *	@tparam CSystem is type of system where this edge is being stored
+	 *
+	 *	@param[in] r_t_edge is parsed edge
+	 *	@param[in,out] r_system is reference to system (used to query edge vertices)
+	 */
+	template <class CSystem>
+	CUnaryFactor(const TParsed &r_t_edge, CSystem &r_system)
+		:_TyBase(r_t_edge.first, NullVector(), r_t_edge.second)
+	{
+		this->m_p_vertex0 = &r_system.template r_Get_Vertex<_TyVertex>(r_t_edge.first,
+			typename _TyBase::template CInitializeNullVertex<>());
+		// get vertices
+
+		_ASSERTE(!hyperedge_detail::no_ConstVertices ||
+			r_system.r_Vertex_Pool()[r_t_edge.first].n_Dimension() == CVertexType::n_dimension);
+		// make sure the dimensionality is correct (might not be)
+		// this fails with const vertices, for obvious reasons. with the thunk tables this can be safely removed.
+	}
+
+	/**
+	 *	@brief constructor; converts edge data to edge representation
+	 *
+	 *	@tparam CSystem is type of system where this edge is being stored
+	 *
+	 *	@param[in] n_node0 is (zero-based) index of the first (origin) node
+	 *	@param[in] r_t_inv_sigma is the information matrix
+	 *	@param[in,out] r_system is reference to system (used to query edge vertices)
+	 */
+	template <class CSystem>
+	CUnaryFactor(int n_node0, const _TyFactor &r_t_inv_sigma, CSystem &r_system)
+		:_TyBase(n_node0, NullVector(), r_t_inv_sigma)
+	{
+		this->m_p_vertex0 = &r_system.template r_Get_Vertex<_TyVertex>(n_node0,
+			typename _TyBase::template CInitializeNullVertex<>());
+		// get vertices
+
+		_ASSERTE(!hyperedge_detail::no_ConstVertices ||
+			r_system.r_Vertex_Pool()[n_node0].n_Dimension() == CVertexType::n_dimension);
+		// make sure the dimensionality is correct (might not be)
+		// this fails with const vertices, for obvious reasons. with the thunk tables this can be safely removed.
+	}
+
+	/**
+	 *	@brief updates the edge with a new measurement
+	 *
+	 *	@param[in] r_t_edge is parsed edge
+	 */
+	inline void Update(const TParsed &r_t_edge)
+	{
+		_TyBase::Update(NullVector(), r_t_edge.second);
+	}
+
+	/**
+	 *	@brief calculates Jacobians, expectation and error
+	 *
+	 *	@param[out] r_t_jacobian0 is jacobian, associated with the first vertex
+	 *	@param[out] r_v_expectation is expecation vector
+	 *	@param[out] r_v_error is error vector
+	 */
+	inline void Calculate_Jacobian_Expectation_Error(_TyFactor &r_t_jacobian0,
+		_TyError &r_v_expectation, _TyError &r_v_error) const
+	{
+		r_t_jacobian0 = this->m_t_sigma_inv; // !!
+		r_v_expectation.setZero();
+		r_v_error.setZero();
+	}
+
+	/**
+	 *	@brief calculates \f$\chi^2\f$ error
+	 *	@return Returns (unweighted) \f$\chi^2\f$ error for this edge.
+	 */
+	inline double f_Chi_Squared_Error() const
+	{
+		return 0;
+	}
+};
+
+/**
+ *	@brief implementation of solver required functions for a generic edge type (specialization for unary edges)
+ *
+ *	@tparam CDerivedEdge is the name of derived edge class
+ *	@tparam CVertexTypeList is list of types of the vertices
+ *	@tparam _n_residual_dimension is residual vector dimension
+ *	@tparam _n_storage_dimension is state vector storage dimension (or -1 if the same as _n_residual_dimension)
+ *
+ *	@deprecated This name is deprecated; use CBaseEdgeImpl instead.
+ */
+template <class CDerivedEdge, class CVertexType, int _n_residual_dimension, int _n_storage_dimension /*= -1*/>
+class CSEBaseEdgeImpl<CDerivedEdge, CTypelist<CVertexType, CTypelistEnd>,
+	_n_residual_dimension, _n_storage_dimension> : public CBaseEdgeImpl<CDerivedEdge,
+	CTypelist<CVertexType, CTypelistEnd>, _n_residual_dimension, _n_storage_dimension> {
+private:
+	typedef CBaseEdgeImpl<CDerivedEdge, CTypelist<CVertexType, CTypelistEnd>,
+		_n_residual_dimension, _n_storage_dimension> _TyNotDeprecated; /**< @brief name of the parent type that is not deprecated */
+	// this is not intended to be used by the derived classes because CBaseEdgeImpl does not have such type
+
+public:
+	__GRAPH_TYPES_ALIGN_OPERATOR_NEW
+
+	/**
+	 *	@brief default constructor; has no effect
+	 */
+	inline CSEBaseEdgeImpl()
+		:_TyNotDeprecated()
+	{}
+
+	/**
+	 *	@brief unary edge constructor
+	 *
+	 *	@param[in] n_vertex_id is id of the vertex
+	 *	@param[in] r_v_measurement is the measurement vector
+	 *	@param[in] r_t_sigma_inv is inverse sigma matrix
+	 *
+	 *	@note This fills the structure, except for the vertex pointer.
+	 *	@note With thunk tables, the derived classes don't need to check for vertex dimensions
+	 *		being really what they expect (type checking performed by the vertex pool).
+	 */
+	inline CSEBaseEdgeImpl(size_t n_vertex_id,
+		const typename _TyNotDeprecated::_TyStorageVector &r_v_measurement,
+		const typename _TyNotDeprecated::_TyMatrix &r_t_sigma_inv)
+		:_TyNotDeprecated(n_vertex_id, r_v_measurement, r_t_sigma_inv)
+	{}
+};
+
+/** @} */ // end of group
+
+/**
+ *	@page unaryfactors Using Unary Factors
+ *
+ *	Unary factor is a simple factor, much like other measurements, which anchors the
+ *	graph in order for the problem to be well defined (to reduce so called gauge freedom,
+ *	and as a side effect also for the system matrix to be positive definite).
+ *
+ *	In some optimizers, the user is required to add unary factor explicitly. In SLAM++
+ *	this happens automatically and the unary factor is placed on vertex 0. Usually, one
+ *	does not need to worry about it too much, but when needed, this can be changed.
+ *
+ *	The default implicit unary factor is given by the fifth template argument
+ *	to the \ref CFlatSystem and by default this is \ref CBasicUnaryFactorFactory.
+ *	It is possible to also initialize it via the \ref CFlatSystem constructor.
+ *	Setting the unary factor this way has the advantage that although unary factor
+ *	is formally an edge, it does not need to be in the list of edges, and for systems
+ *	with only a single edge type in them, this brings some simplifications and possible
+ *	compiler optimizations. If needed, it is quite simple to implement a custom unary
+ *	factor factory.
+ *
+ *	If the unary factor is supposed to be on a different vertex than vertex 0,
+ *	one can disable the implicit unary factor factory and to use an explicit unary
+ *	factor. If we for example had:
+ *
+ *	@code
+ *	typedef MakeTypelist(CVertexPose2D, CVertexLandmark2D) TVertexTypelist;
+ *	typedef MakeTypelist(CEdgePose2D, CEdgePoseLandmark2D) TEdgeTypelist;
+ *	@endcode
+ *
+ *	and:
+ *
+ *	@code
+ *	typedef CFlatSystem<CBaseVertex, TVertexTypelist,
+ *		CBaseEdge, TEdgeTypelist> CSystemType;
+ *	@endcode
+ *
+ *	which is equivalent to:
+ *
+ *	@code
+ *	typedef CFlatSystem<CBaseVertex, TVertexTypelist,
+ *		CBaseEdge, TEdgeTypelist, CBasicUnaryFactorFactory> CSystemType;
+ *	@endcode
+ *
+ *	We can easily disable the implicit unary factor by changing this to:
+ *
+ *	@code
+ *	typedef CFlatSystem<CBaseVertex, TVertexTypelist,
+ *		CBaseEdge, TEdgeTypelist, CNullUnaryFactorFactory> CSystemType;
+ *	@endcode
+ *
+ *	As the name suggests, \ref CNullUnaryFactorFactory sets the implicit unary
+ *	factor to a null matrix (although most solvers specialize for that and do not
+ *	actually involve it in the calculations in any way). Now we have a system with
+ *	no unary factor, which cannot be optimized. To add an explicit unary factor,
+ *	we use the \ref CUnaryFactor template:
+ *
+ *	@code
+ *	typedef MakeTypelist(CEdgePose2D, CEdgePoseLandmark2D,
+ *		CUnaryFactor<CEdgePose2D>) TEdgeTypelist; // add it here
+ *
+ *	typedef CFlatSystem<CBaseVertex, TVertexTypelist,
+ *		CBaseEdge, TEdgeTypelist, CNullUnaryFactorFactory> CSystemType;
+ *	@endcode
+ *
+ *	and then explicitly specify this factor:
+ *
+ *	@code
+ *	CSystemType system; // instance of the optimized system
+ *
+ *	system.r_Add_Edge(CUnaryFactor<CEdgePose2D>(0, Eigen::Matrix3d::Identity() * 100, system));
+ *	// adds unary factor of eye(3) * 100 on vertex 0, which is a pose
+ *	@endcode
+ */
 
 #endif // !__BASE_SE_PRIMITIVE_TYPES_UNARY_EDGE_IMPL_SPECIALIZATION_INCLUDED

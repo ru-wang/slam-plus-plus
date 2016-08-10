@@ -21,6 +21,10 @@
  *	@date 2012-09-03
  */
 
+/** \addtogroup linsolve
+ *	@{
+ */
+
 /**
  *	@def __CXSPARSE_LINEAR_SOLVER_REUSE_WORKSPACE
  *	@brief if defined, CLinearSolver_CXSparse::Solve_PosDef() will reuse
@@ -36,7 +40,7 @@
 
 #include "slam/LinearSolverTags.h"
 #include "cxsparse/cxs.hpp"
-#include "slam/BlockMatrix.h" // includes Eigen as well
+//#include "slam/BlockMatrix.h" // included from slam/LinearSolverTags.h
 
 #if defined(_M_X64) || defined(_M_AMD64) || defined(_M_IA64) || defined(__x86_64) || defined(__amd64) || defined(__ia64)
 #ifndef __CXSPARSE_SHORT
@@ -270,5 +274,7 @@ protected:
 	static cx::cxsn *cxs_chol_workspace (const cx::cxs *A, const cx::cxss *S,
 		_TyPerm *cin, double *xin);
 };
+
+/** @} */ // end of group
 
 #endif // !__LINEAR_SOLVER_CXS_INCLUDED

@@ -1,4 +1,4 @@
-#include "cs.h"
+#include "cxsparse/cs.h"
 /* compute nnz(V) = S->lnz, S->pinv, S->leftmost, S->m2 from A and S->parent */
 static CS_INT cs_vcount (const cs *A, css *S)
 {
@@ -81,7 +81,7 @@ css *cs_sqr (CS_INT order, const cs *A, CS_INT qr)
     }
     else
     {
-        S->unz = 4*(A->p [n]) + n ;         /* for LU factorization only, */
+        S->unz = (double)(4*(A->p [n]) + n) ;         /* for LU factorization only, */ // swine - fixed a watning in x64
         S->lnz = S->unz ;                   /* guess nnz(L) and nnz(U) */
     }
     return (ok ? S : cs_sfree (S)) ;        /* return result S */

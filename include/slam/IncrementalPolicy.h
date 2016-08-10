@@ -21,7 +21,7 @@
  *	@date 2013-12-12
  */
 
-#include "slam/Unused.h"
+//#include "slam/Unused.h" // included from slam/Integer.h
 #include "slam/Integer.h"
 
 /**
@@ -176,7 +176,7 @@ struct TIncrementalSolveSetting {
 	enum {
 		default_NonlinearIteration_Num = 5, /**< @brief default maximum number of nonlinear solver iterations */
 		default_NonlinearErrorThresh = 20, /**< @brief default error threshold for nonlinear solver update */
-		default_ErrorThresh_Denom = 1 /**< @brief error threshold denominator (shared by both thresholds) */
+		default_ErrorThresh_Denom = 1 /**< @brief error threshold denominator (for the error threshold) */
 	};
 
 	TIncrementalFreqSetting t_linear_freq; /**< @brief linear solving frequency */
@@ -189,7 +189,7 @@ struct TIncrementalSolveSetting {
 	 */
 	inline TIncrementalSolveSetting()
 		:n_max_nonlinear_iteration_num(default_NonlinearIteration_Num),
-		f_nonlinear_error_thresh(default_NonlinearErrorThresh)
+		f_nonlinear_error_thresh(double(default_NonlinearErrorThresh) / default_ErrorThresh_Denom)
 	{}
 
 	/**
@@ -200,7 +200,7 @@ struct TIncrementalSolveSetting {
 	 */
 	inline TIncrementalSolveSetting(solve::linear_tag UNUSED(t_tag), TIncrementalFreqSetting t_freq)
 		:t_linear_freq(t_freq), n_max_nonlinear_iteration_num(default_NonlinearIteration_Num),
-		f_nonlinear_error_thresh(default_NonlinearErrorThresh)
+		f_nonlinear_error_thresh(double(default_NonlinearErrorThresh) / default_ErrorThresh_Denom)
 	{}
 
 	/**
@@ -213,7 +213,7 @@ struct TIncrementalSolveSetting {
 	 */
 	inline TIncrementalSolveSetting(solve::nonlinear_tag UNUSED(t_tag), TIncrementalFreqSetting t_freq,
 		size_t _n_max_nonlinear_iteration_num = default_NonlinearIteration_Num,
-		double _f_nonlinear_error_thresh = default_NonlinearErrorThresh)
+		double _f_nonlinear_error_thresh = double(default_NonlinearErrorThresh) / default_ErrorThresh_Denom)
 		:t_nonlinear_freq(t_freq), n_max_nonlinear_iteration_num(_n_max_nonlinear_iteration_num),
 		f_nonlinear_error_thresh(_f_nonlinear_error_thresh)
 	{}
@@ -234,11 +234,31 @@ struct TIncrementalSolveSetting {
 		TIncrementalFreqSetting t_linear_freq, solve::nonlinear_tag UNUSED(t_tag1),
 		TIncrementalFreqSetting t_nonlinear_freq,
 		size_t _n_max_nonlinear_iteration_num = default_NonlinearIteration_Num,
-		double _f_nonlinear_error_thresh = default_NonlinearErrorThresh)
+		double _f_nonlinear_error_thresh = double(default_NonlinearErrorThresh) / default_ErrorThresh_Denom)
 		:t_linear_freq(t_linear_freq), t_nonlinear_freq(t_nonlinear_freq),
 		n_max_nonlinear_iteration_num(_n_max_nonlinear_iteration_num),
 		f_nonlinear_error_thresh(_f_nonlinear_error_thresh)
 	{}
+
+	/**
+	 *	@brief determines whether this configuration describes incremental solving
+	 *	@return Returns true if this configuration describes incremental solving,
+	 *		otherwise returns false.
+	 */
+	inline bool b_IsIncremental() const
+	{
+		return t_linear_freq.n_period != 0 || t_nonlinear_freq.n_period != 0;
+	}
+
+	/**
+	 *	@brief determines whether this configuration describes batch solving
+	 *	@return Returns true if this configuration describes batch solving,
+	 *		otherwise returns false.
+	 */
+	inline bool b_IsBatch() const
+	{
+		return !b_IsIncremental();
+	}
 };
 
 /*
@@ -301,7 +321,8 @@ inline TIncrementalSolveSetting Linear(TIncrementalFreqSetting t_freq)
  */
 inline TIncrementalSolveSetting Nonlinear(TIncrementalFreqSetting t_freq,
 	size_t n_max_nonlinear_iteration_num = TIncrementalSolveSetting::default_NonlinearIteration_Num,
-	double f_nonlinear_error_thresh = TIncrementalSolveSetting::default_NonlinearErrorThresh)
+	double f_nonlinear_error_thresh = double(TIncrementalSolveSetting::default_NonlinearErrorThresh) /
+	TIncrementalSolveSetting::default_ErrorThresh_Denom)
 {
 	return TIncrementalSolveSetting(nonlinear, t_freq,
 		n_max_nonlinear_iteration_num, f_nonlinear_error_thresh);

@@ -1,0 +1,10 @@
+.directory td.entry {
+	white-space: normal;
+	/*width: 50%;*/
+	min-width: 512px;
+}
+
+.code-span {
+	background-color: #FBFCFD;
+	border: 1px solid #C4CFE5;
+}

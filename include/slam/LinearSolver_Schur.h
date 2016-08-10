@@ -25,7 +25,12 @@
 //#include "slam/LinearSolver_CSparse.h" // needed for debugging/profiling only
 //#include "slam/LinearSolver_CholMod.h" // needed for debugging/profiling only
 #include "csparse/cs.hpp"
-#include "slam/BlockMatrix.h" // includes Eigen as well
+//#include "slam/BlockMatrix.h" // included from slam/LinearSolverTags.h
+#include "slam/LinearSolver_UberBlock.h" // fallback for small/diagonal matrices
+
+/** \addtogroup linsolve
+ *	@{
+ */
 
 /**
  *	@def __SCHUR_PROFILING
@@ -121,7 +126,7 @@ public:
 		 *
 		 *	@return Returns true if the first vertex has lower degree than the second vertex.
 		 */
-		inline bool operator ()(size_t n_vertex_a, size_t n_vertex_b)
+		inline bool operator ()(size_t n_vertex_a, size_t n_vertex_b) const
 		{
 			_ASSERTE(n_vertex_a < size_t(m_p_graph->n) && n_vertex_b < size_t(m_p_graph->n));
 			return m_p_graph->p[n_vertex_a + 1] - m_p_graph->p[n_vertex_a] <
@@ -129,10 +134,119 @@ public:
 		}
 	};
 
+	/**
+	 *	@brief a simple function object for weighted vertex degree comparison
+	 */
+	class CCompareVertexDegree_Weights {
+	protected:
+		const cs *m_p_graph; /**< @brief pointer to the graph */
+		const std::vector<size_t> &m_r_weights; /**< @brief vector of weights for each vertex of the graph */
+
+	public:
+		/**
+		 *	@brief default constructor
+		 *
+		 *	@param[in] p_graph is const pointer to the graph
+		 *	@param[in] r_weights is const reference to a vector of weights for each vertex of the graph
+		 */
+		inline CCompareVertexDegree_Weights(const cs *p_graph, const std::vector<size_t> &r_weights)
+			:m_p_graph(p_graph), m_r_weights(r_weights)
+		{
+			_ASSERTE(m_r_weights.size() == m_p_graph->n);
+		}
+
+		/**
+		 *	@brief vertex degree comparison operator
+		 *
+		 *	@param[in] n_vertex_a is zero-based index of the first vertex, in the given graph
+		 *	@param[in] n_vertex_b is zero-based index of the second vertex, in the given graph
+		 *
+		 *	@return Returns true if the first vertex has lower degree than the second vertex.
+		 */
+		inline bool operator ()(size_t n_vertex_a, size_t n_vertex_b) const
+		{
+			_ASSERTE(n_vertex_a < size_t(m_p_graph->n) && n_vertex_b < size_t(m_p_graph->n));
+			return n_Weighted_IncidenceSum(n_vertex_a) < n_Weighted_IncidenceSum(n_vertex_b);
+			// could optimize for one of them having zero incident vertices but that does not happen in SLAM / BA
+		}
+
+		/**
+		 *	@brief calculates weighted sum of incident vertices
+		 *	@param[in] n_vertex_a is zero-based index of a vertex in the given graph
+		 *	@return Returns the weighted sum of vertices incident to the given vertex.
+		 */
+		inline size_t n_Weighted_IncidenceSum(size_t n_vertex_a) const
+		{
+			_ASSERTE(n_vertex_a < size_t(m_p_graph->n));
+			size_t n_incidences_a = 0;
+			for(size_t i = m_p_graph->p[n_vertex_a], n = m_p_graph->p[n_vertex_a + 1]; i < n; ++ i) {
+				if(m_p_graph->i[i] != n_vertex_a)
+					n_incidences_a += m_r_weights[m_p_graph->i[i]];
+			}
+			return n_incidences_a;// + m_r_weights[n_vertex_a]; // make sure the diagonal term is always coutned
+		}
+	};
+
+	/**
+	 *	@brief a simple function object for weighted vertex degree comparison
+	 */
+	class CCompareVertexDegree_WeightsContribution {
+	protected:
+		const cs *m_p_graph; /**< @brief pointer to the graph */
+		const std::vector<size_t> &m_r_weights; /**< @brief vector of weights for each vertex of the graph */
+
+	public:
+		/**
+		 *	@brief default constructor
+		 *
+		 *	@param[in] p_graph is const pointer to the graph
+		 *	@param[in] r_weights is const reference to a vector of weights for each vertex of the graph
+		 */
+		inline CCompareVertexDegree_WeightsContribution(const cs *p_graph, const std::vector<size_t> &r_weights)
+			:m_p_graph(p_graph), m_r_weights(r_weights)
+		{
+			_ASSERTE(m_r_weights.size() == m_p_graph->n);
+		}
+
+		/**
+		 *	@brief vertex degree comparison operator
+		 *
+		 *	@param[in] n_vertex_a is zero-based index of the first vertex, in the given graph
+		 *	@param[in] n_vertex_b is zero-based index of the second vertex, in the given graph
+		 *
+		 *	@return Returns true if the first vertex has lower degree than the second vertex.
+		 */
+		inline bool operator ()(size_t n_vertex_a, size_t n_vertex_b) const
+		{
+			_ASSERTE(n_vertex_a < size_t(m_p_graph->n) && n_vertex_b < size_t(m_p_graph->n));
+			return n_Weighted_IncidenceContribution(n_vertex_a) < n_Weighted_IncidenceContribution(n_vertex_b);
+			// could optimize for one of them having zero incident vertices but that does not happen in SLAM / BA
+		}
+
+		/**
+		 *	@brief calculates weight of a vertex minus the weighted sum of incident vertices
+		 *	@param[in] n_vertex_a is zero-based index of a vertex in the given graph
+		 *	@return Returns the weighted of the given vertex minus zjr weighted sum of its incident vertices.
+		 */
+		inline ptrdiff_t n_Weighted_IncidenceContribution(size_t n_vertex_a) const
+		{
+			_ASSERTE(n_vertex_a < size_t(m_p_graph->n));
+			size_t n_incidences_a = 0;
+			for(size_t i = m_p_graph->p[n_vertex_a], n = m_p_graph->p[n_vertex_a + 1]; i < n; ++ i) {
+				if(m_p_graph->i[i] != n_vertex_a)
+					n_incidences_a += m_r_weights[m_p_graph->i[i]];
+			}
+			return ptrdiff_t(m_r_weights[n_vertex_a]) - ptrdiff_t(n_incidences_a); // what n_vertex_a brings and what it precludes
+		}
+	};
+
+	/**
+	 *	@brief configuration, stored as enum
+	 */
 	enum {
-		max_Recurse_Size = 128,
-		thread_Num = 1 << 8, // make a bit more to allow for better scheduling (at each other step, the graph is only cut a little, need to have enough steps to make all cores busy with the big graphs)
-		thread_Num_Log2 = n_Log2_Static(thread_Num)
+		max_Recurse_Size = 128, /**< @brief maximum MIS recursion */
+		thread_Num = 1 << 8, /**< @brief the number of threads */ // make a bit more to allow for better scheduling (at each other step, the graph is only cut a little, need to have enough steps to make all cores busy with the big graphs)
+		thread_Num_Log2 = n_Log2_Static(thread_Num) /**< @brief base 2 logarithm of the number of threads */
 	};
 
 	/**
@@ -159,55 +273,7 @@ public:
 	 *	@note There is some workspace, which could be reused.
 	 */
 	static size_t n_Calculate_Ordering(std::vector<size_t> &r_ordering,
-		const CUberBlockMatrix &r_lambda) // throw(std::bad_alloc)
-	{
-		const size_t n = r_lambda.n_BlockColumn_Num();
-		if(r_ordering.capacity() < n) {
-			r_ordering.clear();
-			r_ordering.reserve(std::max(2 * r_ordering.capacity(), n));
-		}
-		r_ordering.resize(n);
-		// allocate space
-
-		cs *p_lambda, *p_lambda_t, *p_lambda_ata;
-		if(!(p_lambda = r_lambda.p_BlockStructure_to_Sparse()))
-			throw std::bad_alloc(); // rethrow
-		// get block structure as a sparse CSC
-
-		if(!(p_lambda_t = cs_transpose(p_lambda, false))) {
-			cs_spfree(p_lambda);
-			throw std::bad_alloc(); // rethrow
-		}
-		if(!(p_lambda_ata = cs_add(p_lambda, p_lambda_t, 1, 1))) {
-			cs_spfree(p_lambda);
-			cs_spfree(p_lambda_t);
-			throw std::bad_alloc(); // rethrow
-		}
-		cs_spfree(p_lambda);
-		cs_spfree(p_lambda_t);
-		p_lambda = p_lambda_ata;
-		// modify it to have symmetric structure // todo - implement this directly in CUberBlockMatrix
-
-		try {
-			std::vector<size_t> mis = CSchurOrdering::t_MIS_FirstFit(p_lambda);
-			// calculate MIS
-
-			CSchurOrdering::Complement_VertexSet(r_ordering, mis, n);
-			// collect the rest of the vertices not in MIS
-
-			r_ordering.insert(r_ordering.end(), mis.begin(), mis.end());
-			// append with MIS to gain the final ordering
-
-			cs_spfree(p_lambda);
-			// cleanup
-
-			return n - mis.size();
-			// return number of connected vertices
-		} catch(std::bad_alloc &r_exc) {
-			cs_spfree(p_lambda);
-			throw r_exc; // rethrow
-		}
-	}
+		const CUberBlockMatrix &r_lambda); // throw(std::bad_alloc)
 
 	/**
 	 *	@brief calculates guided ordering for Schur
@@ -217,7 +283,7 @@ public:
 	 *	@param[in] n_landmark_vertex_dimension is dimension of landmark (e.g. 2 for 2D SLAM)
 	 *	@param[in] r_lambda is the matrix to be ordered on
 	 *
-	 *	@return Returns number of poses (the size of the Schur factor).
+	 *	@return Returns number of poses (the size of the Schur complement).
 	 *
 	 *	@note In case this is used, simpler linear solver can be used
 	 *		as the block sizes are known beforehand, and are constant
@@ -225,77 +291,36 @@ public:
 	 */
 	static size_t n_Calculate_GuidedOrdering(std::vector<size_t> &r_ordering,
 		size_t n_pose_vertex_dimension, size_t n_landmark_vertex_dimension,
-		const CUberBlockMatrix &r_lambda) // throw(std::bad_alloc)
-	{
-		const size_t n = r_lambda.n_BlockColumn_Num();
-		if(r_ordering.capacity() < n) {
-			r_ordering.clear();
-			r_ordering.reserve(std::max(2 * r_ordering.capacity(), n));
-		}
-		r_ordering.resize(n);
-		// allocate space
+		const CUberBlockMatrix &r_lambda); // throw(std::bad_alloc)
 
-		size_t n_pose_num = 0, n_landmark_num = 0;
-		{
-			size_t i = 0;
+#ifdef HAVE_IGRAPH
 
-			for(; i < n; ++ i) {
-				if(r_lambda.n_BlockColumn_Column_Num(i) == n_pose_vertex_dimension) {
-					r_ordering[n_pose_num] = i;
-					++ n_pose_num;
-				} else
-					break;
-			}
-			// look for all the poses
+	static std::vector<std::vector<size_t> > t_Find_Cliques_igraph(const cs *p_graph,
+		int n_min_clique_size = 2, int n_max_clique_size = INT_MAX); // throw(std::bad_alloc,std::runtime_error)
 
-			n_landmark_num = n_pose_num; // offset the destination index
-			for(; i < n; ++ i) {
-				if(r_lambda.n_BlockColumn_Column_Num(i) == n_landmark_vertex_dimension) {
-					r_ordering[n_landmark_num] = i;
-					++ n_landmark_num;
-				} else
-					break;
-			}
-			n_landmark_num -= n_pose_num; // offset back
-			// look for all the landmarks (assume landmarks are smaller than poses)
+	static std::vector<size_t> t_MIS_igraph(const cs *p_graph,
+		const std::vector<size_t> &r_weights); // throw(std::bad_alloc,std::runtime_error)
 
-			if(i < n) {
-				std::vector<size_t> &r_poses = r_ordering; // keep only poses in the destination ordering
-				std::vector<size_t> landmarks(n - n_pose_num); // allocate space for the remaining landmarks
-				// get memory
+	static std::vector<size_t> t_MIS_igraph(const cs *p_graph); // throw(std::bad_alloc,std::runtime_error)
 
-				std::copy(r_ordering.begin() + n_pose_num, r_ordering.begin() +
-					(n_pose_num + n_landmark_num), landmarks.begin());
-				// copy the landmarks away to a second array
+#endif // HAVE_IGRAPH
 
-				for(; i < n; ++ i) {
-					if(r_lambda.n_BlockColumn_Column_Num(i) == n_pose_vertex_dimension) {
-						r_poses[n_pose_num] = i;
-						++ n_pose_num;
-					} else {
-						_ASSERTE(r_lambda.n_BlockColumn_Column_Num(i) == n_landmark_vertex_dimension);
-						landmarks[n_landmark_num] = i;
-						++ n_landmark_num;
-					}
-				}
-				// loop through the rest of the vertices
+	static void Suppress_NonmaximalCliques(std::vector<std::vector<size_t> > &linear_clique_list);
 
-				std::copy(landmarks.begin(), landmarks.begin() + n_landmark_num,
-					r_ordering.begin() + n_pose_num);
-				// copy the landmarks back
-			}
-		}
-		_ASSERTE(n_pose_num + n_landmark_num == r_lambda.n_BlockColumn_Num());
-		// calculate the simple guided ordering (assumes that landmarks have smaller
-		// dimension than poses, and that landmarks are not connected among each other)
+	static void PruneCliques_MaxVertexOrder(std::vector<std::vector<size_t> > &r_clique_list,
+		size_t n_vertex_num); // throw(std::bad_alloc)
 
-		return n_pose_num;
-	}
+	static std::vector<std::vector<size_t> > t_Find_Cliques(const cs *p_graph,
+		bool b_final_nonmaximal_clique_removal = true, size_t n_min_clique_size = 2,
+		size_t n_max_clique_size = SIZE_MAX/*16*/); // throw(std::bad_alloc)
 
 	/**
 	 *	@brief calculates MIS using sorted first-fit, followed by vertex swap improvement
 	 *
-	 *	@param[in] p_graph is A^T+A graph (the diagonal may or may not be present)
+	 *	@param[in] p_graph is A^T+A graph (the diagonal must be present)
+	 *	@param[in] b_allow_improvement is iterative improvement flag (swap out vertices; default enabled)
+	 *	@param[in] n_chain_improvement_size_limit is maximum graph size to run vertex
+	 *		chain improvement on (runs in quadratic time, default 64)
 	 *
 	 *	@return Returns (sorted) maximum independent set of vertices.
 	 *
@@ -304,288 +329,27 @@ public:
 	 *		it comes within 10% of the perfect solution (at least on graph SLAM problems).
 	 *		To calculate perfect MIS, use t_MIS_Parallel() or t_MIS_ExStack().
 	 */
-	static std::vector<size_t> t_MIS_FirstFit(const cs *p_graph) // throw(std::bad_alloc)
-	{
-		const size_t n = p_graph->n;
+	static std::vector<size_t> t_MIS_FirstFit(const cs *p_graph,
+		bool b_allow_improvement = true, size_t n_chain_improvement_size_limit = 64); // throw(std::bad_alloc)
 
-		std::vector<size_t> perm(n);
-		std::generate(perm.begin(), perm.end(), CIOTA());
-		// generate an identity permutation
-
-		std::sort(perm.begin(), perm.end(), CCompareVertexDegree(p_graph));
-		// make ordering, starting with smallest degree (turns out to be better
-		// than starting with the greatest degree)
-		// note that ordering with vertex folding could yield even better results
-
-		std::vector<size_t> mis;
-		mis.reserve(n / 2);
-		// for most of the pose graphs, MIS of under half of the graph is resonable
-
-		std::vector<bool> vertex_coverage(n, false); // need small auxiliary space
-		for(size_t j = 0; j < n; ++ j) {
-			size_t i = perm[j];
-			// pick a vertex from permutation
-
-			if(vertex_coverage[i])
-				continue;
-			// skip neighbours of vertices that are already in MIS
-
-			mis.push_back(i);
-			// add uncovered vertex to MIS
-
-			for(size_t p0 = p_graph->p[i], p1 = p_graph->p[i + 1]; p0 < p1; ++ p0)
-				vertex_coverage[p_graph->i[p0]] = true;
-			// set all neighbours (including self) to covered
-		}
-		// a simple greedy approach to MIS
-
-		std::vector<bool> &mis_membership = vertex_coverage;
-		// note that vertex_coverage is not needed below, could reuse as mis_membership
-
-		std::fill(mis_membership.begin(), mis_membership.end(), false);
-		for(size_t j = 0, m = mis.size(); j < m; ++ j)
-			mis_membership[mis[j]] = true;
-		// need a fast lookup of what is in MIS
-
-		bool b_swap;
-		do {
-			b_swap = false;
-
-			for(size_t j = 0, m = mis.size(); j < m; ++ j) {
-				size_t i = mis[j];
-				// get a vertex that belongs to MIS
-
-				mis_membership[i] = false;
-				// assume we remove it
-
-				std::vector<size_t> mis_add;
-				for(size_t p0 = p_graph->p[i], p1 = p_graph->p[i + 1]; p0 < p1; ++ p0) {
-					size_t v = p_graph->i[p0];
-					if(v == i)
-						continue;
-					// get a vertex, that is a neighbor of i ...
-
-					_ASSERTE(!mis_membership[v]);
-					// for sure is not a member of MIS (as it is a neighbor of i), and it should be covered
-
-					bool b_covered = false;
-					for(size_t r0 = p_graph->p[v], r1 = p_graph->p[v + 1]; r0 < r1; ++ r0) {
-						if(mis_membership[p_graph->i[r0]]) {
-							b_covered = true;
-							break;
-						}
-					}
-					// see if this vertex is covered
-
-					if(!b_covered) {
-						mis_membership[v] = true; // assume temporary membership
-						mis_add.push_back(v);
-					}
-					// this vertex could be traded for i
-				}
-				// go through neighbors of i
-
-				if(mis_add.size() > 1) {
-					size_t n_v0 = mis_add.front();
-					mis[j] = n_v0;
-					mis_membership[n_v0] = true;
-					// add the first vertex in place of the old vertex
-
-					mis.reserve(m = mis.size() + mis_add.size() - 1); // also update m
-					for(size_t k = 1, o = mis_add.size(); k < o; ++ k) {
-						size_t n_vk = mis_add[k];
-						mis.push_back(n_vk);
-						mis_membership[n_vk] = true;
-					}
-					// add the next vertices at the end
-
-					-- j; // can try again on the first one (after all, the adding is greedy)
-					b_swap = true;
-					// we just traded some vertices
-				} else if(!mis_add.empty() && CCompareVertexDegree(p_graph)(i, mis_add.front())) {
-					_ASSERTE(mis_add.size() == 1); // not empty and less than 2
-					size_t n_v0 = mis_add.front();
-					mis[j] = n_v0;
-					mis_membership[n_v0] = true;
-					// put the vertex in place of the old vertex
-
-					-- j; // can try again on this one (will not swap back, degree won't allow it)
-					b_swap = true;
-					// we just traded i for a vertex with smaller degree
-					// (MIS can theoretically contain more vertices of smaller degree)
-				} else {
-					for(size_t k = 0, o = mis_add.size(); k < o; ++ k)
-						mis_membership[mis_add[k]] = false; // remove the temporary memberships
-					mis_membership[i] = true; // in the end, we do not remove it
-				}
-				// trade the vertices
-
-#if 0
-				_ASSERTE(m == mis.size());
-				for(size_t k = 0; k < m; ++ k) {
-					size_t i = mis[k];
-					_ASSERTE(mis_membership[i]);
-					for(size_t p0 = p_graph->p[i], p1 = p_graph->p[i + 1]; p0 < p1; ++ p0)
-						_ASSERTE(p_graph->i[p0] == i || !mis_membership[p_graph->i[p0]]);
-				}
-				// debug checking - makes it really slow
-#endif // 0
-			}
-		} while(b_swap);
-		// improve MIS by trading membership of single vertices for more than one vertices
-
-		if(n < 64) {
-			// below algorithm is O(n^2), does not improve the solution much (maybe disable completely)
-			// but sometimes it helps to find the perfect solution in small graphs
-
-			bool b_swap_outer;
-			do {
-				b_swap_outer = false;
-
-				for(size_t l = 0, m = mis.size(); l < m; ++ l) {
-					const size_t v0 = mis[l];
-					// get a vertex that belongs to MIS
-
-					mis_membership[v0] = false;
-					// assume we remove it
-
-					std::vector<size_t> mis_add;
-					for(size_t p0 = p_graph->p[v0], p1 = p_graph->p[v0 + 1]; p0 < p1; ++ p0) {
-						size_t v = p_graph->i[p0];
-						if(v == v0)
-							continue;
-						// get a vertex, that is a neighbor of v0 ...
-
-						_ASSERTE(!mis_membership[v]);
-						// for sure is not a member of MIS (as it is a neighbor of i), and it should be covered
-
-						bool b_covered = false;
-						for(size_t r0 = p_graph->p[v], r1 = p_graph->p[v + 1]; r0 < r1; ++ r0) {
-							if(mis_membership[p_graph->i[r0]]) {
-								b_covered = true;
-								break;
-							}
-						}
-						// see if this vertex is covered
-
-						if(!b_covered) {
-							mis_membership[v] = true; // assume temporary membership
-							mis_add.push_back(v);
-						}
-						// this vertex could be traded for v0
-					}
-					// go through the neighbors of v0
-
-					if(mis_add.empty()) {
-						mis_membership[v0] = true; // !!
-						continue;
-					}
-					_ASSERTE(mis_add.size() == 1); // the others already eliminated above or in the inner loop
-
-					const size_t v1 = mis_add.front();
-					_ASSERTE(mis_membership[v1] == true); // already set
-					mis[l] = v1;
-					// assume the swap helps something
-
-					_ASSERTE(m == mis.size());
-					size_t n_before_add = m;
-
-					do {
-						b_swap = false;
-
-						for(size_t j = 0; j < m; ++ j) {
-							size_t i = mis[j];
-							// get a vertex that belongs to MIS
-
-							mis_membership[i] = false;
-							// assume we remove it
-
-							std::vector<size_t> mis_add;
-							for(size_t p0 = p_graph->p[i], p1 = p_graph->p[i + 1]; p0 < p1; ++ p0) {
-								size_t v = p_graph->i[p0];
-								if(v == i)
-									continue;
-								// get a vertex, that is a neighbor of i ...
-
-								_ASSERTE(!mis_membership[v]);
-								// for sure is not a member of MIS (as it is a neighbor of i), and it should be covered
-
-								bool b_covered = false;
-								for(size_t r0 = p_graph->p[v], r1 = p_graph->p[v + 1]; r0 < r1; ++ r0) {
-									if(mis_membership[p_graph->i[r0]]) {
-										b_covered = true;
-										break;
-									}
-								}
-								// see if this vertex is covered
-
-								if(!b_covered) {
-									mis_membership[v] = true; // assume temporary membership
-									mis_add.push_back(v);
-								}
-								// this vertex could be traded for i
-							}
-							// go through the neighbors of i
-
-							if(mis_add.size() > 1) {
-								size_t n_v0 = mis_add.front();
-								mis[j] = n_v0;
-								mis_membership[n_v0] = true;
-								// add the first vertex in place of the old vertex
-
-								mis.reserve(m = mis.size() + mis_add.size() - 1); // also update m
-								for(size_t k = 1, o = mis_add.size(); k < o; ++ k) {
-									size_t n_vk = mis_add[k];
-									mis.push_back(n_vk);
-									mis_membership[n_vk] = true;
-								}
-								// add the next vertices at the end
-
-								-- j; // can try again on the first one (after all, the adding is greedy)
-								b_swap = true;
-								// we just traded some vertices
-							} else {
-								for(size_t k = 0, o = mis_add.size(); k < o; ++ k)
-									mis_membership[mis_add[k]] = false; // remove the temporary memberships
-								mis_membership[i] = true; // in the end, we do not remove it
-							}
-							// trade the vertices
-						}
-					} while(b_swap);
-
-					_ASSERTE(m >= n_before_add); // certainly not smaller
-					if(m == n_before_add) { // no change
-						mis[l] = v0;
-						mis_membership[v0] = true;
-						mis_membership[v1] = false;
-						// the swap does not help anything, put it back
-					} else
-						b_swap_outer = true; // we did it, we managed a chain swap
-					// see if the swap was proficient
-
-#if 0
-					_ASSERTE(m == mis.size());
-					for(size_t k = 0; k < m; ++ k) {
-						size_t i = mis[k];
-						_ASSERTE(mis_membership[i]);
-						for(size_t p0 = p_graph->p[i], p1 = p_graph->p[i + 1]; p0 < p1; ++ p0)
-							_ASSERTE(p_graph->i[p0] == i || !mis_membership[p_graph->i[p0]]);
-					}
-					// debug checking - makes it really slow
-#endif // 0
-				}
-			} while(b_swap_outer);
-		}
-		// try to swap chains of two vertices
-
-		std::sort(mis.begin(), mis.end()); // "postorder" .. ?
-		// note that mis is implicitly sorted, if there is no permutation
-
-		// t_odo - approaches with sorting of the vertices based on the degree,
-		// and swapping of vertices
-
-		return mis;
-	}
+	/**
+	 *	@brief calculates MIS using sorted first-fit, followed by vertex swap improvement
+	 *
+	 *	@param[in] p_graph is A^T+A graph (the diagonal must be present)
+	 *	@param[in] r_weights is reference to a list of weights for each vertex of the graph
+	 *	@param[in] b_allow_improvement is iterative improvement flag (swap out vertices; default enabled)
+	 *	@param[in] n_chain_improvement_size_limit is maximum graph size to run vertex
+	 *		chain improvement on (runs in quadratic time, default 64)
+	 *
+	 *	@return Returns (sorted) maximum independent set of vertices.
+	 *
+	 *	@note This function throws std::bad_alloc.
+	 *	@note This function is only approximate, and therefore, it is fast. Usually,
+	 *		it comes within 10% of the perfect solution (at least on graph SLAM problems).
+	 *		To calculate perfect MIS, use t_MIS_Parallel() or t_MIS_ExStack().
+	 */
+	static std::vector<size_t> t_MIS_FirstFit(const cs *p_graph, const std::vector<size_t> &r_weights,
+		bool b_allow_improvement = true, size_t n_chain_improvement_size_limit = 64); // throw(std::bad_alloc)
 
 	/**
 	 *	@brief calculates maximum independent set
@@ -598,63 +362,7 @@ public:
 	 *	@note This function has exponential time complexity,
 	 *		and is unfeasible to call it on sizable graphs.
 	 */
-	static size_t n_MIS(const cs *p_graph) // throw(std::bad_alloc)
-	{
-		if(!b_IsConnected(p_graph)) {
-			std::vector<size_t> C;
-			Get_MinConnectedSet(p_graph, C);
-			// get minimal connected set
-
-			cs *p_GC = p_Subgraph(p_graph, C.begin(), C.end());
-			size_t n_result = n_MIS(p_GC);
-			// recurse with the rest of the graph
-
-			cs_spfree(p_GC);
-			if(C.size() <= 2)
-				n_result += 1; // one of vertices in C used (no matter which one)
-			else {
-				std::vector<size_t> inv_C;
-				Complement_VertexSet(inv_C, C, p_graph->n);
-				cs *p_C = p_Subgraph(p_graph, inv_C.begin(), inv_C.end());
-				n_result += n_MIS(p_C);
-				cs_spfree(p_C);
-				// biggest subset; need to recurse
-			}
-
-			return n_result;
-		}
-		// handle disconnected graphs
-
-		if(p_graph->n <= 1)
-			return p_graph->n;
-		// handle trivial graphs
-
-		size_t n_greatest = 0;
-		size_t n_degree = p_graph->p[1] - p_graph->p[0];
-		const size_t n = p_graph->n;
-		for(size_t i = 1; i < n; ++ i) {
-			size_t n_deg = p_graph->p[i + 1] - p_graph->p[i];
-			if(n_deg > n_degree) {
-				n_degree = n_deg;
-				n_greatest = i;
-			}
-		}
-		// find a vertex with maximum degree (note that this is approximate as there is only the upper triangular, some vertices may have bigger degrees; would need n workspace to calculate degrees in O(nnz))
-
-		cs *p_GB = p_Subgraph(p_graph, &n_greatest, &n_greatest + 1);
-		size_t n_not_used = n_MIS(p_GB);
-		cs_spfree(p_GB);
-		// case when the vertex (B) is not used
-
-		_ASSERTE(sizeof(csi) == sizeof(size_t));
-		cs *p_GNB = p_Subgraph(p_graph, (size_t*)p_graph->i + p_graph->p[n_greatest],
-			(size_t*)p_graph->i + p_graph->p[n_greatest + 1]);
-		size_t n_used = n_MIS(p_GNB);
-		cs_spfree(p_GNB);
-		// case when the vertex (B) is used
-
-		return std::max(n_used, n_not_used);
-	}
+	static size_t n_MIS(const cs *p_graph); // throw(std::bad_alloc)
 
 	/**
 	 *	@brief calculates maximum independent set
@@ -667,93 +375,7 @@ public:
 	 *	@note This function has exponential time complexity,
 	 *		and is unfeasible to call it on sizable graphs.
 	 */
-	static std::vector<size_t> t_MIS(const cs *p_graph) // throw(std::bad_alloc)
-	{
-		if(p_graph->n <= 1) {
-			std::vector<size_t> result;
-			if(p_graph->n)
-				result.push_back(0);
-			return result;
-		}
-		// handle trivial graphs
-
-		if(!b_IsConnected(p_graph)) {
-			std::vector<size_t> C;
-			Get_MinConnectedSet(p_graph, C);
-			// get minimal connected set
-
-			cs *p_GC = p_Subgraph(p_graph, C.begin(), C.end());
-			std::vector<size_t> result = t_MIS(p_GC); // t_odo - transform
-
-			// recursion unroll save point 0
-
-			Transform_Indices_Complement(result, C);
-			// recurse with the rest of the graph
-
-			cs_spfree(p_GC);
-			if(C.size() <= 2) {
-				size_t n_vertex = C.front(); // one of vertices in C used (no matter which one)
-				result.insert(std::lower_bound(result.begin(), result.end(), n_vertex), n_vertex);
-			} else {
-				std::vector<size_t> inv_C;
-				Complement_VertexSet(inv_C, C, p_graph->n);
-				cs *p_C = p_Subgraph(p_graph, inv_C.begin(), inv_C.end());
-				std::vector<size_t> result_C = t_MIS(p_C); // t_odo - transform
-
-				// recursion unroll save point 1
-
-				Transform_Indices_Complement(result_C, inv_C);
-				result.insert(result.end(), result_C.begin(), result_C.end());
-				cs_spfree(p_C);
-				// biggest subset; need to recurse
-
-				std::sort(result.begin(), result.end());
-				// !!
-			}
-
-			return result;
-		}
-		// handle disconnected graphs
-
-		size_t n_greatest = 0;
-		size_t n_degree = p_graph->p[1] - p_graph->p[0];
-		const size_t n = p_graph->n;
-		for(size_t i = 1; i < n; ++ i) {
-			size_t n_deg = p_graph->p[i + 1] - p_graph->p[i];
-			if(n_deg > n_degree) {
-				n_degree = n_deg;
-				n_greatest = i;
-			}
-		}
-		// find a vertex with maximum degree
-
-		cs *p_GB = p_Subgraph(p_graph, &n_greatest, &n_greatest + 1);
-		std::vector<size_t> not_used = t_MIS(p_GB); // t_odo - transform
-		cs_spfree(p_GB);
-		// case when the vertex (B) is not used
-
-		// recursion unroll save point 2
-
-		_ASSERTE(sizeof(csi) == sizeof(size_t));
-		cs *p_GNB = p_Subgraph(p_graph, (size_t*)p_graph->i + p_graph->p[n_greatest],
-			(size_t*)p_graph->i + p_graph->p[n_greatest + 1]);
-		std::vector<size_t> used = t_MIS(p_GNB); // t_odo - transform
-		cs_spfree(p_GNB);
-		// case when the vertex (B) is used
-
-		// recursion unroll save point 3
-
-		if(not_used.size() > used.size() + 1) {
-			Transform_Indices_Complement(not_used, &n_greatest, &n_greatest + 1);
-			return not_used;
-		} else {
-			Transform_Indices_Complement(used, p_graph->i + p_graph->p[n_greatest],
-				p_graph->i + p_graph->p[n_greatest + 1]);
-			used.insert(std::lower_bound(used.begin(), used.end(), n_greatest), n_greatest);
-			return used;
-		}
-		// transform indices and return
-	}
+	static std::vector<size_t> t_MIS(const cs *p_graph); // throw(std::bad_alloc)
 
 	/**
 	 *	@brief calculates maximum independent set, using explicit stack
@@ -768,248 +390,7 @@ public:
 	 *	@note This function uses explicit stack, so it can work on graphs of
 	 *		arbitrary size (unline t_MIS()), but it is slightly slower.
 	 */
-	static std::vector<size_t> t_MIS_ExStack(const cs *p_graph) // throw(std::bad_alloc)
-	{
-		std::vector<size_t> recursion_result;
-
-		TMIS_StackFrame t_base;
-		t_base.p_graph = p_graph;
-		t_base.p_subgraph = 0;
-		t_base.n_phase = 0;
-		std::vector<TMIS_StackFrame> stack;
-		stack.push_back(t_base);
-		while(!stack.empty()) {
-			TMIS_StackFrame &t_fr = stack.back();
-
-			p_graph = t_fr.p_graph;
-			// assume current stack frame graph
-
-			if(t_fr.n_phase == 0) {
-				recursion_result.clear();
-				// always begin with empty result
-
-				if(p_graph->n <= 1) {
-					//recursion_result.clear(); // no need, done just above
-					if(p_graph->n)
-						recursion_result.push_back(0);
-					// leave result in recursion_result
-
-					stack.erase(stack.end() - 1); // note that the reference to t_fr is invalidated
-					continue;
-					// pop stack frame, return to the one above
-				}
-				// handle trivial graphs
-
-				if(!b_IsConnected(p_graph)) {
-					std::vector<size_t> &C = t_fr.complement_set; // store in this frame
-					Get_MinConnectedSet(p_graph, C);
-					// get minimal connected set
-
-					cs *p_GC = p_Subgraph(p_graph, C.begin(), C.end());
-					t_fr.p_subgraph = p_GC; // save to delete later
-					++ t_fr.n_phase; // jump to the next phase
-
-					if(p_GC->n < max_Recurse_Size)
-						recursion_result = t_MIS(p_GC); // the graph is small, can use implicit stack (faster)
-					else {
-						TMIS_StackFrame t_recurse;
-						t_recurse.n_phase = 0;
-						t_recurse.p_graph = p_GC;
-						t_recurse.p_subgraph = 0;
-						stack.push_back(t_recurse); // note that the reference to t_fr is invalidated
-						continue;
-						// push stack frame, recurse
-					}
-				} else
-					t_fr.n_phase = 4; // jump to phase 4 (skip phase 1 - 3)
-			}
-			// handle the first phase of the algorithm
-
-			if(t_fr.n_phase == 1) {
-				_ASSERTE(p_graph->n > 1 && !b_IsConnected(p_graph));
-				// we were inside the disconnected graph branch
-
-				{
-					std::vector<size_t> &C = t_fr.complement_set;
-					cs *p_GC = t_fr.p_subgraph; // stored in this frame
-					t_fr.p_subgraph = 0; // ...
-					std::vector<size_t> &result = recursion_result; // got result from the recursion
-
-					Transform_Indices_Complement(result, C);
-					cs_spfree(p_GC);
-					if(C.size() <= 2) {
-						result.push_back(C.front()); // one of vertices in C used (no matter which one)
-						t_fr.int_result.swap(result); // save result
-						t_fr.n_phase = 3; // go to phase 3
-					} else {
-						{
-							std::vector<size_t> inv_C;
-							Complement_VertexSet(inv_C, C, p_graph->n);
-							t_fr.complement_set.swap(inv_C);
-						}
-						std::vector<size_t> &inv_C = t_fr.complement_set;
-						cs *p_C = p_Subgraph(p_graph, inv_C.begin(), inv_C.end());
-
-						t_fr.p_subgraph = p_C; // save to delete later
-						t_fr.int_result.swap(result); // save result
-						++ t_fr.n_phase; // jump to the next phase
-
-						if(p_C->n < max_Recurse_Size)
-							recursion_result = t_MIS(p_C); // the graph is small, can use implicit stack (faster)
-						else {
-							TMIS_StackFrame t_recurse;
-							t_recurse.n_phase = 0;
-							t_recurse.p_graph = p_C;
-							t_recurse.p_subgraph = 0;
-							stack.push_back(t_recurse); // note that the reference to t_fr is invalidated
-							continue;
-							// push stack frame, recurse
-						}
-					}
-				}
-			}
-
-			if(t_fr.n_phase == 2) {
-				_ASSERTE(p_graph->n > 1 && !b_IsConnected(p_graph));
-				// we were inside the disconnected graph branch, C was bigger than 2
-
-				std::vector<size_t> &inv_C = t_fr.complement_set; // size smaller than or equal to n - 2
-				cs *p_C = t_fr.p_subgraph;
-				t_fr.p_subgraph = 0; // ...
-				std::vector<size_t> &result = t_fr.int_result, &result_C = recursion_result;
-				// resture locals
-
-				{
-					Transform_Indices_Complement(result_C, inv_C);
-					result.insert(result.end(), result_C.begin(), result_C.end());
-					cs_spfree(p_C);
-					// biggest subset; need to recurse
-
-					++ t_fr.n_phase; // move to the next phase
-				}
-			}
-
-			if(t_fr.n_phase == 3) {
-				_ASSERTE(p_graph->n > 1 && !b_IsConnected(p_graph));
-				// we were inside the disconnected graph branch, C was bigger than 2
-
-				std::vector<size_t> &result = t_fr.int_result;
-				// resture locals
-
-				std::sort(result.begin(), result.end()); // note that in the upper branch, sorting could be replaced by insertion at lower_bound
-				// !!
-
-				recursion_result.swap(result); // leave result in recursion_result
-				stack.erase(stack.end() - 1); // note that the reference to t_fr is invalidated
-				continue;
-				// pop stack frame, return to the one above
-			}
-
-			if(t_fr.n_phase == 4) {
-				_ASSERTE(p_graph->n > 1 && b_IsConnected(p_graph));
-				// we are below the disconnected graph branch
-
-				size_t n_greatest = 0;
-				size_t n_degree = p_graph->p[1] - p_graph->p[0];
-				const size_t n = p_graph->n;
-				for(size_t i = 1; i < n; ++ i) {
-					size_t n_deg = p_graph->p[i + 1] - p_graph->p[i];
-					if(n_deg > n_degree) {
-						n_degree = n_deg;
-						n_greatest = i;
-					}
-				}
-				// find a vertex with maximum degree
-
-				cs *p_GB = p_Subgraph(p_graph, &n_greatest, &n_greatest + 1);
-
-				t_fr.n_intermediate = n_greatest;
-				t_fr.p_subgraph = p_GB;
-				++ t_fr.n_phase;
-
-				if(p_GB->n < max_Recurse_Size)
-					recursion_result = t_MIS(p_GB); // the graph is small, can use implicit stack (faster)
-				else {
-					TMIS_StackFrame t_recurse;
-					t_recurse.n_phase = 0;
-					t_recurse.p_graph = p_GB;
-					t_recurse.p_subgraph = 0;
-					stack.push_back(t_recurse); // note that the reference to t_fr is invalidated
-					continue;
-					// push stack frame, recurse
-				}
-			}
-
-			if(t_fr.n_phase == 5) {
-				_ASSERTE(p_graph->n > 1 && b_IsConnected(p_graph));
-				// we are below the disconnected graph branch
-
-				cs *p_GB = t_fr.p_subgraph;
-				t_fr.p_subgraph = 0; // ...
-				size_t n_greatest = t_fr.n_intermediate;
-				// restore locals
-
-				cs_spfree(p_GB);
-				// case when the vertex (B) is not used
-
-				_ASSERTE(sizeof(csi) == sizeof(size_t));
-				cs *p_GNB = p_Subgraph(p_graph, (size_t*)p_graph->i + p_graph->p[n_greatest],
-					(size_t*)p_graph->i + p_graph->p[n_greatest + 1]);
-
-				t_fr.int_result.swap(recursion_result); // save this
-				t_fr.p_subgraph = p_GNB;
-				++ t_fr.n_phase;
-
-				if(p_GNB->n < max_Recurse_Size)
-					recursion_result = t_MIS(p_GNB); // the graph is small, can use implicit stack (faster)
-				else {
-					TMIS_StackFrame t_recurse;
-					t_recurse.n_phase = 0;
-					t_recurse.p_graph = p_GNB;
-					t_recurse.p_subgraph = 0;
-					stack.push_back(t_recurse); // note that the reference to t_fr is invalidated
-					continue;
-					// push stack frame, recurse
-				}
-			}
-
-			if(t_fr.n_phase == 6) {
-				_ASSERTE(p_graph->n > 1 && b_IsConnected(p_graph));
-				// we are below the disconnected graph branch
-
-				cs *p_GNB = t_fr.p_subgraph;
-				t_fr.p_subgraph = 0; // ...
-				size_t n_greatest = t_fr.n_intermediate;
-				std::vector<size_t> &not_used = t_fr.int_result;
-				std::vector<size_t> &used = recursion_result;
-				// restore locals
-
-				cs_spfree(p_GNB);
-				// case when the vertex (B) is used
-
-				if(not_used.size() > used.size() + 1) {
-					Transform_Indices_Complement(not_used, &n_greatest, &n_greatest + 1);
-
-					recursion_result.swap(not_used); // leave result in recursion_result
-					stack.erase(stack.end() - 1); // note that the reference to t_fr is invalidated
-					continue;
-					// pop stack frame, return to the one above
-				} else {
-					Transform_Indices_Complement(used, p_graph->i + p_graph->p[n_greatest],
-						p_graph->i + p_graph->p[n_greatest + 1]);
-					used.insert(std::lower_bound(used.begin(), used.end(), n_greatest), n_greatest);
-
-					//recursion_result.swap(used); // already there
-					stack.erase(stack.end() - 1); // note that the reference to t_fr is invalidated
-					continue;
-					// pop stack frame, return to the one above
-				}
-				// transform indices and return
-			}
-		}
-
-		return recursion_result;
-	}
+	static std::vector<size_t> t_MIS_ExStack(const cs *p_graph); // throw(std::bad_alloc)
 
 	/**
 	 *	@brief calculates maximum independent set, in parallel
@@ -1026,119 +407,7 @@ public:
 	 *	@note This function uses OpenMP to run the calculation in parallel;
 	 *		the scheduling is, however, only static - and thus imperfect.
 	 */
-	static std::vector<size_t> t_MIS_Parallel(const cs *p_graph) // throw(std::bad_alloc)
-	{
-		if(p_graph->n <= thread_Num_Log2)
-			return t_MIS_ExStack(p_graph);
-		// don't parallelize vary small graphs
-
-		const int n_max_level = std::min(int(thread_Num_Log2), int(n_Log2(p_graph->n) - 1));
-		const int n_thread_num = 1 << n_max_level;
-		//printf("max_level: %d\n", n_max_level); // verbose
-		// decide maxmium generator recursion
-
-#ifdef _OPENMP
-		int n_CPU_num;
-		#pragma omp parallel
-		{
-			#pragma omp master
-			{
-				n_CPU_num = omp_get_num_threads();
-			}
-		}
-		omp_set_num_threads(std::max(1, n_CPU_num - 2));
-#endif // _OPENMP
-		// don't use all the threads
-
-		TMIS_StackFrame search_tree[thread_Num_Log2 + 1][thread_Num];
-		search_tree[0][0].p_graph = p_graph;
-		for(int i = 0; i < n_max_level; ++ i) {
-			int n_stage_size = 1 << i;
-
-			#pragma omp parallel for schedule(static, 1)
-			for(int j = 0; j < n_stage_size; ++ j) {
-				const cs *p_subgraph = search_tree[i][j].p_graph;
-				// get the graph
-
-				size_t n_greatest = 0;
-				size_t n_degree = -1;
-				const size_t n = p_subgraph->n;
-				for(size_t k = 0; k < n; ++ k) {
-					size_t n_deg = p_subgraph->p[k + 1] - p_subgraph->p[k];
-					if(n_deg > n_degree) {
-						n_degree = n_deg;
-						n_greatest = k;
-					}
-				}
-				// find a vertex with maximum degree
-
-				search_tree[i][j].n_intermediate = n_greatest;
-
-				_ASSERTE(sizeof(csi) == sizeof(size_t));
-				cs *p_GB = p_Subgraph(p_subgraph, &n_greatest, &n_greatest + 1);
-				cs *p_GNB = p_Subgraph(p_subgraph, (size_t*)p_subgraph->i + p_subgraph->p[n_greatest],
-					(size_t*)p_subgraph->i + p_subgraph->p[n_greatest + 1]);
-				// generate subgraphs
-
-				search_tree[i + 1][j * 2 + 0].p_graph = p_GB;
-				search_tree[i + 1][j * 2 + 1].p_graph = p_GNB;
-				// generate two branches of the recursion tree
-			}
-
-			//printf(".");
-		}
-		//printf("\n");
-		// generate a set of subgraphs to be solved in parallel
-
-		#pragma omp parallel for schedule(dynamic, 1)
-		for(int i = 0; i < n_thread_num; ++ i) {
-			search_tree[n_max_level][i].int_result =
-				t_MIS_ExStack(search_tree[n_max_level][i].p_graph);
-			//printf("%d\n", int(search_tree[n_max_level][i].int_result.size()));
-			//printf("*");
-		}
-		//printf("\n");
-		// calculate the intermediate result for each subgraph (can be done in parallel)
-
-		for(int i = n_max_level; i > 0;) {
-			-- i;
-			int n_stage_size = 1 << i;
-
-			#pragma omp parallel for schedule(static, 1)
-			for(int j = 0; j < n_stage_size; ++ j) {
-				p_graph = search_tree[i][j].p_graph;
-				// get the graph
-
-				std::vector<size_t> &not_used = search_tree[i + 1][j * 2 + 0].int_result;
-				std::vector<size_t> &used = search_tree[i + 1][j * 2 + 1].int_result;
-				// get the results of the two subgraphs
-
-				size_t n_greatest = search_tree[i][j].n_intermediate;
-
-				if(not_used.size() > used.size() + 1) {
-					Transform_Indices_Complement(not_used, &n_greatest, &n_greatest + 1);
-					search_tree[i][j].int_result.swap(not_used);
-				} else {
-					Transform_Indices_Complement(used, p_graph->i + p_graph->p[n_greatest],
-						p_graph->i + p_graph->p[n_greatest + 1]);
-					used.insert(std::lower_bound(used.begin(), used.end(), n_greatest), n_greatest);
-					search_tree[i][j].int_result.swap(used);
-				}
-				// choose the bigger MIS
-
-				cs_spfree((cs*)search_tree[i + 1][j * 2 + 0].p_graph);
-				cs_spfree((cs*)search_tree[i + 1][j * 2 + 1].p_graph);
-				// delete the graphs
-			}
-
-			//printf(".");
-		}
-		//printf("\n");
-		// reduce the search tree results
-
-		return search_tree[0][0].int_result;
-		// the result is in the root
-	}
+	static std::vector<size_t> t_MIS_Parallel(const cs *p_graph); // throw(std::bad_alloc)
 
 	/**
 	 *	@brief determines whether a graph is connected
@@ -1146,97 +415,9 @@ public:
 	 *	@return Returns true if the given graph is connected, otherwise returns false.
 	 *	@note This function throws std::bad_alloc.
 	 */
-	static bool b_IsConnected(const cs *p_graph) // throw(std::bad_alloc)
-	{
-		const size_t n = p_graph->n;
-		if(!n)
-			return true;
+	static bool b_IsConnected(const cs *p_graph); // throw(std::bad_alloc)
 
-		size_t n_connected_num = 0;
-		// calculates the number of connected vertices with vertex 0
-
-		std::vector<bool> close(n, false);
-		std::vector<size_t> open;
-		open.push_back(0);
-		while(!open.empty()) {
-			size_t v = open.back();
-			open.erase(open.end() - 1);
-			if(close[v])
-				continue; // already closed
-			close[v] = true;
-			++ n_connected_num;
-			// get a vertex
-
-			for(size_t p0 = p_graph->p[v], p1 = p_graph->p[v + 1]; p0 < p1; ++ p0) {
-				size_t v1 = p_graph->i[p0];
-				if(!close[v1] && std::find(open.begin(), open.end(), v1) == open.end())
-					open.push_back(v1);
-			}
-			// add all the neighbours to open
-		}
-		// recurse the graph in DFS fashion; maybe unnecessarily complicated
-
-		return n_connected_num == n;
-	}
-
-	/*void Get_MaxConnectedSet(const cs *p_graph, std::vector<size_t> &r_max_conn) // not required
-	{
-		const size_t n = p_graph->n;
-
-		r_max_conn.clear();
-
-		size_t n_connected_so_far = 0;
-		size_t n_max_connected_size = 0;
-
-		std::vector<size_t> open;
-		std::vector<bool> close(n, false);
-		std::vector<size_t> connected_set;
-		for(;;) {
-			size_t n_not_closed = 0;
-			for(; n_not_closed < n; ++ n_not_closed) {
-				if(!close[n_not_closed])
-					break;
-			}
-			if(n_not_closed == n)
-				break; // all vertices closed
-			// find a vertex that is not closed
-
-			connected_set.clear();
-			open.push_back(n_not_closed);
-			while(!open.empty()) {
-				size_t v = open.back();
-				open.erase(open.end() - 1);
-				if(close[v])
-					continue; // already closed
-				close[v] = true;
-				connected_set.push_back(v);
-				// get a vertex
-
-				for(size_t p0 = p_graph->p[v], p1 = p_graph->p[v + 1]; p0 < p1; ++ p0) {
-					size_t v1 = p_graph->i[p0];
-					if(!close[v1] && std::find(open.begin(), open.end(), v1) == open.end())
-						open.push_back(v1);
-				}
-				// add all the neighbours to open
-			}
-			// get connected set with n_not_closed
-
-			n_connected_so_far += connected_set.size();
-			if(connected_set.size() > n_max_connected_size) {
-				n_max_connected_size = connected_set.size();
-				r_max_conn.swap(connected_set);
-			}
-			// look for the greatest connected set
-
-			if(n - n_connected_so_far < n_max_connected_size)
-				break; // early termination
-			// even if all the remaining vertices were connected, it wouldn't be enough
-		}
-
-		_ASSERTE(!n || !r_max_conn.empty());
-		// there should be at least one vertex in the maximum
-		// connected set, in case the graph is not empty
-	}*/
+	//void Get_MaxConnectedSet(const cs *p_graph, std::vector<size_t> &r_max_conn); // not required
 
 	/**
 	 *	@brief gets minimum connected set
@@ -1246,67 +427,7 @@ public:
 	 *
 	 *	@note This function throws std::bad_alloc.
 	 */
-	static void Get_MinConnectedSet(const cs *p_graph, std::vector<size_t> &r_min_conn)
-	{
-		const size_t n = p_graph->n;
-
-		r_min_conn.clear();
-		if(!n)
-			return;
-
-		size_t n_min_connected_size = n + 1;
-
-		std::vector<size_t> open;
-		std::vector<bool> close(n, false);
-		std::vector<size_t> connected_set;
-		for(;;) {
-			size_t n_not_closed = 0;
-			for(; n_not_closed < n; ++ n_not_closed) {
-				if(!close[n_not_closed])
-					break;
-			}
-			if(n_not_closed == n)
-				break; // all vertices closed
-			// find a vertex that is not closed
-
-			connected_set.clear();
-			open.push_back(n_not_closed);
-			while(!open.empty()) {
-				size_t v = open.back();
-				open.erase(open.end() - 1);
-				if(close[v])
-					continue; // already closed
-				close[v] = true;
-				connected_set.push_back(v);
-				// get a vertex
-
-				for(size_t p0 = p_graph->p[v], p1 = p_graph->p[v + 1]; p0 < p1; ++ p0) {
-					size_t v1 = p_graph->i[p0];
-					if(!close[v1] && std::find(open.begin(), open.end(), v1) == open.end())
-						open.push_back(v1);
-				}
-				// add all the neighbours to open
-			}
-			// get connected set with n_not_closed
-
-			if(connected_set.size() < n_min_connected_size) {
-				n_min_connected_size = connected_set.size();
-				r_min_conn.swap(connected_set);
-
-				if(n_min_connected_size == 1)
-					break;
-				// won't get any smaller now
-			}
-			// look for the smallest connected set
-		}
-
-		_ASSERTE(!n || !r_min_conn.empty());
-		// there should be at least one vertex in the maximum
-		// connected set, in case the graph is not empty
-
-		std::sort(r_min_conn.begin(), r_min_conn.end());
-		// p_Subgraph() needs a sorted set
-	}
+	static void Get_MinConnectedSet(const cs *p_graph, std::vector<size_t> &r_min_conn); // throw(std::bad_alloc)
 
 	/**
 	 *	@brief determines whether a set of vertex indices is sorted
@@ -1426,39 +547,7 @@ public:
 	 *	@note This function throws std::bad_alloc.
 	 */
 	static void Complement_VertexSet(std::vector<size_t> &r_complement,
-		const std::vector<size_t> &r_set, size_t n_graph_size) // throw(std::bad_alloc)
-	{
-		_ASSERTE(b_IsSortedSet(r_set));
-
-		const size_t n = n_graph_size; // rename
-		r_complement.clear();
-		if(!r_set.empty()) {
-			if(r_set.size() == n)
-				return;
-			// complement of everything is nothing
-
-			for(size_t i = 0, m = r_set.size(); i < m; ++ i) {
-				if(!i) {
-					for(size_t j = 0, e = r_set[i]; j < e; ++ j)
-						r_complement.push_back(j);
-					// include all the vertices before the first one in the set
-				} else {
-					for(size_t j = r_set[i - 1] + 1, e = r_set[i]; j < e; ++ j)
-						r_complement.push_back(j);
-					// include all the vertices between two set elements
-				}
-			}
-			for(size_t j = r_set.back() + 1; j < n; ++ j)
-				r_complement.push_back(j);
-			// include all the vertices after the last one in the set
-		} else {
-			for(size_t i = 0; i < n; ++ i)
-				r_complement.push_back(i);
-			// complement of nothing is everything
-		}
-
-		_ASSERTE(b_IsSortedSet(r_complement));
-	}
+		const std::vector<size_t> &r_set, size_t n_graph_size); // throw(std::bad_alloc)
 
 	/**
 	 *	@brief transforms vertex indices of a subgraph to vertex indices of the original graph,
@@ -1473,7 +562,7 @@ public:
 		std::vector<size_t> &r_generating_set_complement)
 	{
 		Transform_Indices_Complement(r_indices, r_generating_set_complement.begin(),
-			r_generating_set_complement.end()); 
+			r_generating_set_complement.end());
 	}
 
 	/**
@@ -1507,6 +596,11 @@ public:
 };
 
 /**
+ *	@brief template helpers for the Schur linear solver
+ */
+namespace schur_detail {
+
+/**
  *	@brief partiteness violating edge predicate
  *
  *	An edge violates partiteness for a given vertex if it can connect two (or more) such vertices together.
@@ -1519,6 +613,33 @@ class CIsPartitenessViolatingEdge {
 protected:
 	typedef typename CEdgeType::_TyVertices _TyEdgeVertices; /**< @brief types of vertices the current edge connects */
 	typedef typename CFilterTypelist<_TyEdgeVertices, CVertexType, CEqualType>::_TyResult _TyVertexTypeOccurences; /**< @brief only vertices that are the same as the vertex in question, and that the current edge connects */
+
+public:
+	/**
+	 *	@brief result, stored as enum
+	 */
+	enum {
+		n_vertex_occurence_num = CTypelistLength<_TyVertexTypeOccurences>::n_result, /**< @brief the number of occurences of the current vertex in the current edge vertices; it can be zero or more (the current edge may be unrelated to the current vertex type) */
+		b_result = n_vertex_occurence_num > 1 /**< @brief the result; true if the edge connects more than one vertex of the current vertex type, otherwise false */
+	};
+};
+
+/**
+ *	@brief partiteness violating edge predicate (uses detection by vertex dimension rather than type name)
+ *
+ *	An edge violates partiteness for a given vertex if it can connect two (or more) such vertices together.
+ *
+ *	@tparam CEdgeType is edge type
+ *	@tparam CVertexType is vertex type
+ */
+template <class CEdgeType, class CVertexType>
+class CIsPartitenessViolatingEdge_ByDim {
+protected:
+	typedef typename CEdgeType::_TyVertices _TyEdgeVertices; /**< @brief types of vertices the current edge connects */
+	typedef typename CTransformTypelist<_TyEdgeVertices, fbs_ut::CGetVertexDimension>::_TyResult CEdgeVertexDims; /**< @brief list of all vertex dimensions */
+	typedef typename CFilterTypelist<CEdgeVertexDims, typename
+		fbs_ut::CGetVertexDimension<CVertexType>::_TyResult,
+		CEqualType>::_TyResult _TyVertexTypeOccurences; /**< @brief only vertices that have the same dimension as the vertex in question, and that the current edge connects */
 
 public:
 	/**
@@ -1548,7 +669,31 @@ public:
 	 *	@brief result, stored as enum
 	 */
 	enum {
-		b_result = !CFindTypelistItem_If<CEdgeTypeList, CVertexType, CIsPartitenessViolatingEdge>::b_result
+		b_result = !CFindTypelistItem_If<CEdgeTypeList, CVertexType,
+			schur_detail::CIsPartitenessViolatingEdge>::b_result /**< @brief result (true if the vertex is partite, false otherwise) */
+	};
+};
+
+/**
+ *	@brief partite vertex predicate (uses detection by vertex dimension rather than type name)
+ *
+ *	A vertex type is partite, if there is no edge that would connect two different vertices of this type together.
+ *	Note that edges which connect them transitively through different vertices do not matter (vertex type A is
+ *	partite for edges of type A-B, B-C and C-A, as no two A vertices can directly be connected, in contrary
+ *	if there is edge A-A or possibly a hyperedge *-A-*-A-* (such as A-A-B), the vertex is not partite).
+ *
+ *	@tparam CVertexType is vertex type
+ *	@tparam CEdgeTypeList is type list of edge types
+ */
+template <class CVertexType, class CEdgeTypeList>
+class CIsPartiteVertex_ByDim {
+public:
+	/**
+	 *	@brief result, stored as enum
+	 */
+	enum {
+		b_result = !CFindTypelistItem_If<CEdgeTypeList, CVertexType,
+			schur_detail::CIsPartitenessViolatingEdge_ByDim>::b_result /**< @brief result (true if the vertex is partite, false otherwise) */
 	};
 };
 
@@ -1569,6 +714,331 @@ struct CNonEmptySizeList<CTypelistEnd> {
 public:
 	typedef CTypelist<fbs_ut::CCTSize<-1>, CTypelistEnd> _TyResult; /**< @brief the resulting non-empty list */
 };
+
+/**
+ *	@brief guided Schur ordering reasoning helper
+ *
+ *	@tparam CVertexList is list of vertex types
+ *	@tparam CEdgeList is list of edge types
+ */
+template <class CVertexList, class CEdgeList>
+class CGuidedOrdering_Helper {
+public:
+	typedef CVertexList _TyVertexTypelist; /**< @brief list of vertex types */
+	typedef CEdgeList _TyEdgeTypelist; /**< @brief list of edge types */
+
+	typedef typename CFilterTypelist<_TyVertexTypelist, _TyEdgeTypelist, CIsPartiteVertex_ByDim>::_TyResult CPartiteVertexList; /**< @brief list of partite vertices */
+	typedef typename CTypelistDifference<_TyVertexTypelist, CPartiteVertexList>::_TyResult CNonPartiteVertexList; /**< @brief list of non-partite vertices */
+
+	typedef typename CTransformTypelist<_TyVertexTypelist, fbs_ut::CGetVertexDimension>::_TyResult CAllVertexDimsList; /**< @brief list of all vertex dimensions */
+	typedef typename CUniqueTypelist<CAllVertexDimsList>::_TyResult CAllUniqueVertexDims; /**< @brief list of unique vertex dimensions */
+	typedef typename CSortTypelist<CAllUniqueVertexDims, fbs_ut::CCompareScalar_Less>::_TyResult CAllUniqueSortedVertexDims; /**< @brief list of sorted unique vertex dimensions */
+
+	typedef typename CTransformTypelist<CPartiteVertexList, fbs_ut::CGetVertexDimension>::_TyResult CPartiteVertexDimsList; /**< @brief list of partite vertex dimensions (with possible repetitions) */
+	typedef typename CTransformTypelist<CNonPartiteVertexList, fbs_ut::CGetVertexDimension>::_TyResult CNonPartiteVertexDimsList; /**< @brief list of non-partite vertex dimensions (with possible repetitions) */
+
+	typedef typename CUniqueTypelist<CPartiteVertexDimsList>::_TyResult CPartiteUniqueVertexDims; /**< @brief list of partite unique vertex dimensions */
+	typedef typename CSortTypelist<CPartiteUniqueVertexDims, fbs_ut::CCompareScalar_Less>::_TyResult CPartiteUniqueSortedVertexDims; /**< @brief list of sorted unique partite vertex dimensions */
+	typedef typename CUniqueTypelist<CNonPartiteVertexDimsList>::_TyResult CNonPartiteUniqueVertexDims; /**< @brief list of unique non-partite vertex dimensions */
+
+	typedef typename CTypelistDifference<CPartiteUniqueSortedVertexDims, CNonPartiteUniqueVertexDims>::_TyResult CRecognizablePartiteVertexDims; /**< @brief list of partite vertex dimensions that can be recognized from non-partite */ // only used to count them
+
+	// todo - figure out if the choice of grouping compatible partite vertex types is an easy one and if it is,
+	//		  see about modifying the code to be able to order multiple different vertex groups in the diagonal
+
+	/**
+	 *	@brief bitwise mask creation
+	 *
+	 *	@tparam _T1 is the first operand (specialization of CCTSize template), containing position of a bit to set
+	 *	@tparam _T2 is the second operand (specialization of CCTSize template), containing running value of the mask
+	 */
+	template <class _T1, class _T2>
+	class CAccumulateBitwiseMask {
+		/**
+		 *	@brief intermediates stored as an enum
+		 */
+		enum {
+			n_mask_value = _T2::n_size | (1 << _T1::n_size) /**< @brief the result (in here to avoid template problems when using the shift left operator) */
+			// note that we could save one bit by assuming that there will be no vertices of dimension zero
+			// but this is not a pressing problem right now
+		};
+
+	public:
+		typedef fbs_ut::CCTSize<n_mask_value> _TyResult; /**< @brief result of the addition */
+	};
+
+	/**
+	 *	@brief intermediates stored as an enum
+	 */
+	enum {
+		n_nonpartite_vertex_type_num = CTypelistLength<CNonPartiteVertexList>::n_result, /**< @brief number of non-partite vertices */
+		b_have_nonpartite_vertex_types = (n_nonpartite_vertex_type_num != 0)? 1 : 0, /**< @brief non-partite vertices presence flag */
+		n_partite_vertex_type_num = CTypelistLength<CPartiteVertexList>::n_result, /**< @brief number of partite vertices */
+		n_partite_vertex_dimension_num = CTypelistLength<CPartiteUniqueVertexDims>::n_result, /**< @brief number of partite vertices recoginzable by their dimension */
+		n_partite_unambiguous_vertex_dimension_num = CTypelistLength<CRecognizablePartiteVertexDims>::n_result, /**< @brief number of partite vertices recoginzable by their dimension, which can't be confused for non-partite */
+
+		n_vertex_group_num = n_partite_unambiguous_vertex_dimension_num + b_have_nonpartite_vertex_types, /**< @brief the number of vertex groups (one for non-partite vertices if there are any and then one for each recognizable dimension of partite vertices) */
+
+		b_can_use_guided_ordering = n_partite_unambiguous_vertex_dimension_num > 0, // cannot differentiate between partite and non-pertite vertices, based on their dimension (or maybe there are no partite vertices whatsoever)
+		b_can_use_simple_ordering = !b_have_nonpartite_vertex_types && n_partite_vertex_dimension_num == 2, // in case there are only two types of vertices and they are both partite (such as in basic BA)
+		b_efficient_guided_ordering = size_t(n_partite_unambiguous_vertex_dimension_num) == size_t(n_partite_vertex_dimension_num), // can differentiate all of the partite vertices (if not, we can still try, but we can get a poor ordering in the sense that the size of the diagonal part will be low, compared to the rest of the system)
+		b_perfect_guided_ordering = b_efficient_guided_ordering && size_t(n_partite_vertex_type_num) == size_t(n_partite_vertex_dimension_num), // have perfect ordering (if not, we can potentially run into trouble by ordering "eiffel tower" vertices in the diagonal part, making the Schur complement completely dense)
+		// different levels of usability of the guided ordering
+		// g++ requires cast to size_t here, to avoid the enum comparison warning
+
+		n_unique_vertex_dim_num = CTypelistLength<CAllUniqueVertexDims>::n_result, /**< @brief number of unique vertex dimensions */
+
+		n_smallest_vertex_dim = CTypelistItemAt<CAllUniqueSortedVertexDims, 0>::_TyResult::n_size,
+		n_greatest_vertex_dim = CTypelistItemAt<CAllUniqueSortedVertexDims, n_unique_vertex_dim_num - 1>::_TyResult::n_size,
+
+		n_max_partite_vertex_dimension = CTypelistReduce2<CPartiteUniqueVertexDims,
+			fbs_ut::CBinaryScalarMax, fbs_ut::CCTSize<0> >::_TyResult::n_size, /**< @brief maximum dimension of a partite vertex */
+		b_can_use_binary_mask_to_detect_partitedness = n_max_partite_vertex_dimension < 32, /**< @brief if set, the partite vertex dimensions can be stored in a bitmask */
+		n_partite_vertex_mask = CTypelistReduce2<typename CChooseType<CPartiteUniqueVertexDims,
+			CTypelistEnd, b_can_use_binary_mask_to_detect_partitedness>::_TyResult, // use empty list in case the maximum dimension is too large to avoid a bunch of integer overflow warnings
+			CAccumulateBitwiseMask, fbs_ut::CCTSize<0> >::_TyResult::n_size /**< @brief bit mask, encoding ones at shifts corresponding to partite vertex dimensions @note This is only valid if b_can_use_binary_mask_to_detect_partitedness is set. */ // value of the partite vertex mask
+		// partite vertex detection using a bit mask
+	};
+
+	/**
+	 *	@brief a simple utility class that calculates block sizes
+	 *		in Schur complement ordered using simple guided ordering
+	 *	@tparam CLambdaMatrixBlockSizes is list of matrix block sizes in the information matrix (\f$\Lambda\f$)
+	 *	@note Use this if \ref b_can_use_simple_ordering is true.
+	 */
+	template <class CLambdaMatrixBlockSizes>
+	class CSimpleOrderingBlockSizes {
+	public:
+		typedef typename MakeTypelist(fbs_ut::CCTSize2D<n_smallest_vertex_dim,
+			n_smallest_vertex_dim>) _TyDBlockSizes; /**< @brief diagonal (landmark) matrix block sizes */
+		typedef typename MakeTypelist(fbs_ut::CCTSize2D<n_greatest_vertex_dim,
+			n_greatest_vertex_dim>) _TySchurBlockSizes; /**< @brief Schur complement (RCS) matrix block sizes */
+		typedef typename MakeTypelist(fbs_ut::CCTSize2D<n_greatest_vertex_dim,
+			n_smallest_vertex_dim>) _TyUBlockSizes; /**< @brief upper off-diagonal submatrix block sizes */
+		typedef typename MakeTypelist(fbs_ut::CCTSize2D<n_smallest_vertex_dim,
+			n_greatest_vertex_dim>) _TyVBlockSizes; /**< @brief lower off-diagonal submatrix block sizes */
+		typedef typename CConcatTypelist<_TyUBlockSizes,
+			_TyVBlockSizes>::_TyResult _TyOffDiagBlockSizes; /**< @brief off-diagonal submatrix block sizes */
+	};
+
+	/**
+	 *	@brief utility class that calculates block sizes in Schur
+	 *		complement ordered using group-based guided ordering
+	 *
+	 *	@tparam CLambdaMatrixBlockSizes is list of matrix block sizes in the information matrix (\f$\Lambda\f$)
+	 *	@tparam n_D_group_id is index of vertex group that is used for the diagonal (landmark) part,
+	 *		must be in <tt>[(\ref b_have_nonpartite_vertex_types)? 1 : 0, \ref n_vertex_group_num)</tt> interval
+	 *
+	 *	@note Use this if \ref b_can_use_guided_ordering is true but \ref b_can_use_simple_ordering is false.
+	 */
+	template <class CLambdaMatrixBlockSizes, const int n_D_group_id>
+	class CGuidedOrderingBlockSizes {
+	public:
+		/**
+		 *	@brief intermediates, stored as enum
+		 */
+		enum {
+			n_D_group_dim = CTypelistItemAt<CRecognizablePartiteVertexDims,
+				n_D_group_id - b_have_nonpartite_vertex_types>::_TyResult::n_size /**< @brief dimension of vertices in the selected group */
+		};
+
+		typedef typename MakeTypelist(fbs_ut::CCTSize2D<n_D_group_dim, n_D_group_dim>) _TyDBlockSizes; /**< @brief diagonal (landmark) matrix block sizes */
+
+	protected:
+		typedef typename MakeTypelist(fbs_ut::CCTSize<n_D_group_dim>) _TyDBlockSizes_1D; /**< @brief diagonal (landmark) matrix block sizes as 1D CCTSize */
+		typedef typename CTypelistDifference<CAllUniqueVertexDims,
+			_TyDBlockSizes_1D>::_TyResult _TyOtherDiagBlockSizes; /**< @brief diagonal block sizes in the RCS part */
+		typedef typename CCarthesianProductTypelist<_TyOtherDiagBlockSizes,
+			_TyDBlockSizes_1D, fbs_ut::CMakeCTSize2DType>::_TyResult _TyAllPossibleUBlockSizes; /**< @brief possible upper off-diagonal block sizes, possibly with some sizes that there are no edges for */
+		typedef typename CUniqueTypelist<typename CCarthesianProductTypelist<_TyOtherDiagBlockSizes,
+			_TyOtherDiagBlockSizes, fbs_ut::CMakeCTSize2DType>::_TyResult>::_TyResult
+			_TyAllPossibleSchurBlockSizes; /**< @brief possible Schur block sizes, possibly with some sizes that there are no edges for */
+
+	public:
+		typedef typename CTypelistIntersection<CLambdaMatrixBlockSizes,
+			_TyAllPossibleSchurBlockSizes>::_TyResult _TySchurBlockSizes; /**< @brief Schur complement (RCS) matrix block sizes */
+		typedef typename CTypelistIntersection<CLambdaMatrixBlockSizes,
+			_TyAllPossibleUBlockSizes>::_TyResult _TyUBlockSizes; /**< @brief upper off-diagonal submatrix block sizes */
+		typedef typename CTransformTypelist<_TyUBlockSizes,
+			fbs_ut::CSize2DToTransposeSize2D>::_TyResult _TyVBlockSizes; /**< @brief lower off-diagonal submatrix block sizes */
+		typedef typename CUniqueTypelist<typename CConcatTypelist<_TyUBlockSizes,
+			_TyVBlockSizes>::_TyResult>::_TyResult _TyOffDiagBlockSizes; /**< @brief off-diagonal submatrix block sizes */
+	};
+
+	/**
+	 *	@brief utility class that calculates block sizes in Schur
+	 *		complement ordered using group-based guided ordering,
+	 *		regardless of which (combination of) group was chosen
+	 *	@tparam CLambdaMatrixBlockSizes is list of matrix block sizes in the information matrix (\f$\Lambda\f$)
+	 *	@note Use this if \ref b_can_use_guided_ordering is true but \ref b_can_use_simple_ordering is false.
+	 */
+	template <class CLambdaMatrixBlockSizes>
+	class CGuidedOrderingAnyBlockSizes {
+	public:
+		typedef typename CTransformTypelist<CRecognizablePartiteVertexDims,
+			fbs_ut::CMakeCTSize2DSquareType>::_TyResult _TyDBlockSizes; /**< @brief diagonal (landmark) matrix block sizes */
+
+	protected:
+		typedef typename CCarthesianProductTypelist<CAllUniqueVertexDims,
+			CRecognizablePartiteVertexDims, fbs_ut::CMakeCTSize2DType>::_TyResult _TyAllPossibleUBlockSizes; /**< @brief possible upper off-diagonal block sizes, possibly with some sizes that there are no edges for */
+
+	public:
+		typedef CLambdaMatrixBlockSizes _TySchurBlockSizes; /**< @brief Schur complement (RCS) matrix block sizes */
+		typedef typename CTypelistIntersection<CLambdaMatrixBlockSizes,
+			_TyAllPossibleUBlockSizes>::_TyResult _TyUBlockSizes; /**< @brief upper off-diagonal submatrix block sizes */
+		typedef typename CTransformTypelist<_TyUBlockSizes,
+			fbs_ut::CSize2DToTransposeSize2D>::_TyResult _TyVBlockSizes; /**< @brief lower off-diagonal submatrix block sizes */
+		typedef typename CUniqueTypelist<typename CConcatTypelist<_TyUBlockSizes,
+			_TyVBlockSizes>::_TyResult>::_TyResult _TyOffDiagBlockSizes; /**< @brief off-diagonal submatrix block sizes */
+	};
+
+	/**
+	 *	@brief utility class that calculates block sizes in Schur
+	 *		complement ordered using group-based guided ordering,
+	 *		regardless of which (combination of) group was chosen
+	 *	@tparam CLambdaMatrixBlockSizes is list of matrix block sizes in the information matrix (\f$\Lambda\f$)
+	 *	@note Use this if \ref b_can_use_guided_ordering is false.
+	 */
+	template <class CLambdaMatrixBlockSizes>
+	class CGenericOrderingBlockSizes {
+	public:
+		typedef typename CTransformTypelist<CAllUniqueVertexDims,
+			fbs_ut::CMakeCTSize2DSquareType>::_TyResult _TyDBlockSizes; /**< @brief diagonal (landmark) matrix block sizes */
+		typedef CLambdaMatrixBlockSizes _TySchurBlockSizes; /**< @brief Schur complement (RCS) matrix block sizes */
+		typedef CLambdaMatrixBlockSizes _TyUBlockSizes; /**< @brief upper off-diagonal submatrix block sizes */
+		typedef CLambdaMatrixBlockSizes _TyVBlockSizes; /**< @brief lower off-diagonal submatrix block sizes */
+		typedef CLambdaMatrixBlockSizes _TyOffDiagBlockSizes; /**< @brief off-diagonal submatrix block sizes */
+	};
+
+	template <class CLambdaMatrixBlockSizes, const bool b_can_use_simple_ordering, const bool b_can_use_guided_ordering>
+	class CChooseBlockSizeAlgorithm;
+
+	template <class CLambdaMatrixBlockSizes>
+	class CChooseBlockSizeAlgorithm<CLambdaMatrixBlockSizes, true, true> :
+		public CSimpleOrderingBlockSizes<CLambdaMatrixBlockSizes> {};
+
+	template <class CLambdaMatrixBlockSizes>
+	class CChooseBlockSizeAlgorithm<CLambdaMatrixBlockSizes, false, true> :
+		public CGuidedOrderingAnyBlockSizes<CLambdaMatrixBlockSizes> {};
+
+	template <class CLambdaMatrixBlockSizes>
+	class CChooseBlockSizeAlgorithm<CLambdaMatrixBlockSizes, false, false> :
+		public CGenericOrderingBlockSizes<CLambdaMatrixBlockSizes> {};
+
+	template <class CLambdaMatrixBlockSizes>
+	class CBlockSizes : public CChooseBlockSizeAlgorithm<CLambdaMatrixBlockSizes,
+		b_can_use_simple_ordering, b_can_use_guided_ordering> {};
+
+	/*class CFillDimensions { // moved to fbs_ut
+	protected:
+		size_t *m_p_dest;
+
+	public:
+		CFillDimensions(size_t *p_dest)
+			:m_p_dest(p_dest)
+		{}
+
+		template <class CDimension>
+		void operator ()()
+		{
+			*m_p_dest = CDimension::n_size;
+			++ m_p_dest;
+		}
+
+		operator const size_t *() const
+		{
+			return m_p_dest;
+		}
+	};*/
+
+public:
+	static inline void Get_VertexDimensions(size_t *p_vertex_dimensions, const size_t UNUSED(n_vertex_dimension_num))
+	{
+		_ASSERTE(n_vertex_dimension_num == n_vertex_group_num);
+		// make sure the array is allocated correctly
+
+		if(b_have_nonpartite_vertex_types)
+			*p_vertex_dimensions = 0;
+		// somehow fill the non-partite group
+
+		//const int *p_end = CTypelistForEach<CPartiteUniqueSortedVertexDims/*CPartiteUniqueVertexDims*/, CFillDimensions>::Run( // todo - is CPartiteUniqueSortedVertexDims correct here?
+		//	CFillDimensions(&p_vertex_dimensions[b_have_nonpartite_vertex_types]));
+		//_ASSERTE(p_end == &p_vertex_dimensions[0] + sizeof(p_vertex_dimensions) / sizeof(p_vertex_dimensions[0])); // make sure we filled all
+		fbs_ut::Copy_CTSizes_to_Array<CRecognizablePartiteVertexDims
+			/*CPartiteUniqueSortedVertexDims*/>(p_vertex_dimensions + b_have_nonpartite_vertex_types,
+			n_partite_unambiguous_vertex_dimension_num/*n_partite_vertex_dimension_num*/); // use a fancy function
+		// gather dimensions of unambiguous partite vertex types
+	}
+
+	/**
+	 *	@brief determines whether a vertex is partite, based on its dimension
+	 *	@param[in] n_vertex_dimension is dimension of the vertex
+	 *	@return Returns true if the vertex with the given dimension is partite,
+	 *		returns false otherwise.
+	 */
+	static inline bool b_IsPartite_Vertex(size_t n_vertex_dimension)
+	{
+		bool b_is_partite_vertex;
+		if(!b_have_nonpartite_vertex_types)
+			b_is_partite_vertex = true; // there are no nonpartite vertices in this system
+		else if(b_can_use_binary_mask_to_detect_partitedness) {
+			b_is_partite_vertex = ((1 << n_vertex_dimension) & n_partite_vertex_mask) != 0;
+			// find out whether the vertex is partite using a mask - very fast, should be
+			// sufficient in most cases (vertex dimensions less than 32 (32 not permitted
+			// for compatibility reasons, as the mask is stored as an enum))
+		} else {
+			b_is_partite_vertex = !CTypelistItemBFind<typename schur_detail::CNonEmptySizeList<CNonPartiteUniqueVertexDims>::_TyResult,
+				fbs_ut::CRuntimeCompareScalar, size_t, CBinarySearchResult>::Find(n_vertex_dimension, CBinarySearchResult());
+			// find the partite vertex at runtime
+		}
+		// determine whether the vertex is partite, based on its dimension
+
+		return b_is_partite_vertex;
+	}
+
+	/**
+	 *	@brief determines which group the vertex should be sorted in, based on its dimension
+	 *	@param[in] n_vertex_dimension is dimension of the vertex
+	 *	@return Returns vertex group index; the vertices in group 0 are non-partite
+	 *		(if there are any such vertices), otherwise the groups of partite vertices
+	 *		are ordered by descending dimensionality. There are \ref n_vertex_group_num
+	 *		groups.
+	 */
+	static inline size_t n_Vertex_GroupIndex(size_t n_vertex_dimension)
+	{
+		bool b_is_partite_vertex = b_IsPartite_Vertex(n_vertex_dimension);
+		// determine whether the vertex is partite, based on its dimension
+
+		if(!b_is_partite_vertex)
+			return 0; // non-partite vertices all go to the first group
+		else {
+			// the vertex is partite, need to find out which type of a vertex it is
+
+			typedef CBinarySearchResultWithIndex<CRecognizablePartiteVertexDims/*CPartiteUniqueSortedVertexDims*/> TFindResult;
+			size_t n_vertex_type_index = CTypelistItemBFind<typename
+				CNonEmptySizeList<CRecognizablePartiteVertexDims/*CPartiteUniqueSortedVertexDims*/>::_TyResult,
+				fbs_ut::CRuntimeCompareScalar, size_t,
+				TFindResult>::FindExisting(n_vertex_dimension, TFindResult()).n_Index();
+			_ASSERTE(n_vertex_type_index < n_partite_unambiguous_vertex_dimension_num/*n_partite_vertex_dimension_num*/);
+			// finds the current dimentsion in the list of partite vertex dimension
+
+			//n_vertex_type_index = n_partite_unambiguous_vertex_dimension_num
+			//	/*n_partite_vertex_dimension_num*/ - n_vertex_type_index - 1;
+			_ASSERTE(n_vertex_type_index < n_partite_unambiguous_vertex_dimension_num
+				/*n_partite_vertex_dimension_num*/); // make sure it did not somehow over/underflow
+			// do NOT reverse the index so that vertices with higher dimensions are stored in lower index lists
+			// the vertices with higher dimension will now be at the end of the list
+
+			if(b_have_nonpartite_vertex_types)
+				++ n_vertex_type_index;
+			// if there are nonpartite vertices, they are occupying index 0
+
+			return n_vertex_type_index;
+		}
+	}
+};
+
+} // ~schur_detail
 
 /**
  *	@brief dense linear solver model based on Eigen
@@ -1619,17 +1089,7 @@ public:
 	/**
 	 *	@brief deletes memory for all the auxiliary buffers and matrices, if allocated
 	 */
-	void Free_Memory()
-	{
-		{
-			Eigen::MatrixXd empty;
-			std::swap(empty, m_t_lambda);
-		}
-		{
-			_TyDecomposition empty;
-			std::swap(empty, m_t_factorization);
-		}
-	}
+	void Free_Memory();
 
 	/**
 	 *	@brief solves linear system given by positive-definite matrix
@@ -1641,23 +1101,116 @@ public:
 	 *
 	 *	@note This function throws std::bad_alloc.
 	 */
-	bool Solve_PosDef(const CUberBlockMatrix &r_lambda, Eigen::VectorXd &r_eta) // throw(std::bad_alloc)
-	{
-		r_lambda.Convert_to_Dense(m_t_lambda);
+	bool Solve_PosDef(const CUberBlockMatrix &r_lambda, Eigen::VectorXd &r_eta); // throw(std::bad_alloc)
 
-		//m_t_factorization.compute(m_t_lambda.selfadjointView<Eigen::Upper>());
+	/**
+	 *	@brief calculates inverse of a dense positive-definite matrix using partially pivoted LU
+	 *
+	 *	@tparam Derived0 is Eigen derived matrix type for the first matrix argument
+	 *	@tparam Derived1 is Eigen derived matrix type for the second matrix argument
+	 *
+	 *	@param[out] r_dest is place to store the inverse (can be the same as the source matrix)
+	 *	@param[in] r_src is the matrix to be inverted
+	 *	@param[in] b_upper_storage is upper-triangular storage flag (if set, the lower triangle of the matrix is ignored)
+	 *
+	 *	@return Returns true on success, false on failure.
+	 *
+	 *	@note This function throws std::bad_alloc or std::runtime_error.
+	 */
+	template <class CDerived0, class CDerived1>
+	static bool Dense_Inverse(Eigen::MatrixBase<CDerived0> &r_dest,
+		const Eigen::MatrixBase<CDerived1> &r_src, bool b_upper_storage) // throw(std::bad_alloc, std::runtime_error)
+	{
+		typedef Eigen::PartialPivLU<Eigen::MatrixXd> LUDecomposition;
+
+		LUDecomposition factorization;
+		if(b_upper_storage)
+			factorization.compute(r_src.template selfadjointView<Eigen::Upper>());
+		else
+			factorization.compute(r_src);
+		//if(factorization.info() != Eigen::Success) // it always does
+		//	return false;
 		// LU
 
-		m_t_factorization.compute(m_t_lambda);
-		if(m_t_factorization.info() != Eigen::Success)
-			return false;
-		// Cholesky
-
-		r_eta = m_t_factorization.solve(r_eta);
-		// solve
+		r_dest = factorization.inverse();
+		// invert
 
 		return true;
 	}
+
+	/**
+	 *	@brief calculates inverse of a dense positive-definite
+	 *		matrix using partially pivoted LU, in parallel
+	 *
+	 *	@tparam Derived0 is Eigen derived matrix type for the first matrix argument
+	 *	@tparam Derived1 is Eigen derived matrix type for the second matrix argument
+	 *
+	 *	@param[out] r_dest is place to store the inverse (can be the same as the source matrix)
+	 *	@param[in] r_src is the matrix to be inverted
+	 *	@param[in] b_upper_storage is upper-triangular storage flag (if set, the lower triangle of the matrix is ignored)
+	 *
+	 *	@return Returns true on success, false on failure.
+	 *
+	 *	@note This function throws std::bad_alloc or std::runtime_error.
+	 */
+	template <class CDerived0, class CDerived1>
+	static bool Dense_Inverse_Parallel(Eigen::MatrixBase<CDerived0> &r_dest,
+		const Eigen::MatrixBase<CDerived1> &r_src, bool b_upper_storage) // throw(std::bad_alloc, std::runtime_error)
+	{
+		Start_ParallelEigenSection(); // ...
+
+		bool b_result;
+		try {
+			b_result = Dense_Inverse(r_dest, r_src, b_upper_storage);
+		} catch(std::exception &r_exc) {
+			End_ParallelEigenSection();
+			throw(r_exc);
+		}
+
+		End_ParallelEigenSection();
+
+		return b_result;
+	}
+
+protected:
+	static void Start_ParallelEigenSection(); // could have used RAII
+	static void End_ParallelEigenSection();
+};
+
+/**
+ *	@brief OpenMP CUDA context guard; pushes CUDA context on construction
+ *		and pops it when leaving the scope automatically
+ *	@note This needs to be used by user code calling GPU functionality from
+ *		multiple threads. Memory allocated in one context cannot be used
+ *		by a different thread so some care needs to be taken.
+ */
+class COMPCUDAContextGuard {
+protected:
+	bool m_b_pushed; /**< @brief active flag (if set, the destructor will pop the current CUDA context) */
+
+public:
+	/**
+	 *	@brief default constructor; associates a CUDA context with the current OpenMP thread
+	 *	@note This function throws std::runtime_error.
+	 */
+	COMPCUDAContextGuard(); // throw(std::runtime_error)
+
+	/**
+	 *	@brief constructor; associates a CUDA context with the current OpenMP thread
+	 *	@param[in] b_activate is context activate flag (if not set, this has no effect)
+	 *	@note This function throws std::runtime_error.
+	 */
+	COMPCUDAContextGuard(bool b_activate); // throw(std::runtime_error)
+
+	/**
+	 *	@brief destructor; pops the current CUDA context
+	 *	@note This function throws std::runtime_error.
+	 */
+	~COMPCUDAContextGuard(); // throw(std::runtime_error)
+
+protected:
+	COMPCUDAContextGuard(const COMPCUDAContextGuard &r_other); // no-copy
+	COMPCUDAContextGuard &operator =(const COMPCUDAContextGuard &r_other); // no-copy
 };
 
 /**
@@ -1679,6 +1232,7 @@ protected:
 		double *p_lambda_storage; /**< @brief array for storing the dense lambda matrix */
 		double *p_rhs_storage; /**< @brief array for storing the right hand side vector */
 		size_t n_lambda_size; /**< @brief number of rows / columns in p_lambda_storage and number of rows in p_rhs_storage */
+		//int *p_LU_perm; /**< @brief LU permutation */
 	};
 
 	TGPUData m_gpu; /**< @brief GPU data */
@@ -1694,11 +1248,7 @@ public:
 	 *	@brief copy constructor (has no effect; memory for lambda not copied)
 	 *	@param[in] r_other is the solver to copy from (unused)
 	 */
-	inline CLinearSolver_DenseGPU(const CLinearSolver_DenseGPU &UNUSED(r_other))
-	{
-		_ASSERTE(n_instance_num); // r_other exists, and already tried to initialize at this point
-		++ n_instance_num;
-	}
+	CLinearSolver_DenseGPU(const CLinearSolver_DenseGPU &UNUSED(r_other));
 
 	/**
 	 *	@brief destructor; uninitializes CULA
@@ -1728,9 +1278,57 @@ public:
 	 *
 	 *	@return Returns true on success, false on failure.
 	 *
-	 *	@note This function throws std::bad_alloc.
+	 *	@note This function throws std::bad_alloc or std::runtime_error.
 	 */
-	bool Solve_PosDef(const CUberBlockMatrix &r_lambda, Eigen::VectorXd &r_eta); // throw(std::bad_alloc)
+	bool Solve_PosDef(const CUberBlockMatrix &r_lambda, Eigen::VectorXd &r_eta); // throw(std::bad_alloc, std::runtime_error)
+
+	/**
+	 *	@brief calculates inverse of a dense positive-definite matrix
+	 *
+	 *	@tparam Derived0 is Eigen derived matrix type for the first matrix argument
+	 *	@tparam Derived1 is Eigen derived matrix type for the second matrix argument
+	 *
+	 *	@param[out] r_dest is place to store the inverse (can be the same as the source matrix)
+	 *	@param[in] r_src is the matrix to be inverted
+	 *	@param[in] b_upper_storage is upper-triangular storage flag (if set, the lower triangle of the matrix is ignored)
+	 *	@param[in] b_try_Cholesky is Cholesky inverse flag (if set, the matrix will be inverted using Cholesky,
+	 *		otherwise using LU)
+	 *
+	 *	@return Returns true on success, false on failure.
+	 *
+	 *	@note This function throws std::bad_alloc or std::runtime_error.
+	 */
+	template <class CDerived0, class CDerived1>
+	bool Dense_Inverse(/*Eigen::MatrixBase<*/CDerived0/*>*/ &r_dest,
+		const /*Eigen::MatrixBase<*/CDerived1/*>*/ &r_src,
+		bool b_upper_storage, bool b_try_Cholesky = false) // throw(std::bad_alloc, std::runtime_error)
+	{
+		_ASSERTE(r_src.rows() == r_src.cols()); // make sure it is square
+		if(&r_dest != &r_src)
+			r_dest.resize(r_src.rows(), r_src.cols());
+		// make sure src and dest are the same size
+
+		return Dense_Inverse(r_dest.data(), r_src.data(),//&r_dest(0, 0), &r_src(0, 0),
+			r_src.cols(), b_upper_storage, b_try_Cholesky);
+		// call the version with pointers
+	}
+
+	/**
+	 *	@brief calculates inverse of a dense positive-definite matrix
+	 *
+	 *	@param[out] p_dest is pointer to the output matrix elements (can be the same as the source matrix)
+	 *	@param[in] p_src is pointer to the input matrix elements
+	 *	@param[in] n is size of the source matrix (must be square)
+	 *	@param[in] b_upper_storage is upper-triangular storage flag (if set, the lower triangle of the matrix is ignored)
+	 *	@param[in] b_try_Cholesky is Cholesky inverse flag (if set, the matrix will be inverted using Cholesky,
+	 *		otherwise using LU)
+	 *
+	 *	@return Returns true on success, false on failure.
+	 *
+	 *	@note This function throws std::bad_alloc or std::runtime_error.
+	 */
+	bool Dense_Inverse(double *p_dest, const double *p_src, const size_t n,
+		bool b_upper_storage, bool b_try_Cholesky = false); // throw(std::bad_alloc, std::runtime_error)
 };
 
 /**
@@ -1810,7 +1408,7 @@ public:
  *	@tparam CBaseSolver is a type of basic linear solver,
  *		to be used to solve the Schur complement subproblem
  *	@tparam CAMatrixBlockSizes is typelist, containing Eigen
- *		matrices with known compile-time sizes
+ *		matrices with known compile-time sizes (unused, kept only for backward compatibility)
  *	@tparam CSystem is optimized system type
  */
 template <class CBaseSolver, class CAMatrixBlockSizes, class CSystem>
@@ -1839,91 +1437,7 @@ public:
 
 	typedef typename _TyBaseSolver::_Tag _TyBaseSolverTag; /**< @brief linear solver tag */
 
-protected:
-	typedef typename CFilterTypelist<_TyVertexTypelist, _TyEdgeTypelist, CIsPartiteVertex>::_TyResult CPartiteVertexList; /**< @brief list of partite vertices */
-	typedef typename CTypelistDifference<_TyVertexTypelist, CPartiteVertexList>::_TyResult CNonPartiteVertexList; /**< @brief list of non-partite vertices */
-
-	typedef typename CTransformTypelist<_TyVertexTypelist, fbs_ut::CGetVertexDimension>::_TyResult CAllVertexDimsList; /**< @brief list of all vertex dimensions */
-	typedef typename CUniqueTypelist<CAllVertexDimsList>::_TyResult CAllUniqueVertexDims; /**< @brief list of unique vertex dimensions */
-	typedef typename CSortTypelist<CAllUniqueVertexDims, fbs_ut::CCompareScalar_Less>::_TyResult CAllUniqueSortedVertexDims; /**< @brief list of sorted unique vertex dimensions */
-
-	typedef typename CTransformTypelist<CPartiteVertexList, fbs_ut::CGetVertexDimension>::_TyResult CPartiteVertexDimsList; /**< @brief list of partite vertex dimensions (with possible repetitions) */
-	typedef typename CTransformTypelist<CNonPartiteVertexList, fbs_ut::CGetVertexDimension>::_TyResult CNonPartiteVertexDimsList; /**< @brief list of non-partite vertex dimensions (with possible repetitions) */
-
-	typedef typename CUniqueTypelist<CPartiteVertexDimsList>::_TyResult CPartiteUniqueVertexDims; /**< @brief list of partite unique vertex dimensions */
-	typedef typename CSortTypelist<CPartiteUniqueVertexDims, fbs_ut::CCompareScalar_Less>::_TyResult CPartiteUniqueSortedVertexDims; /**< @brief list of sorted unique partite vertex dimensions */
-	typedef typename CUniqueTypelist<CNonPartiteVertexDimsList>::_TyResult CNonPartiteUniqueVertexDims; /**< @brief list of unique non-partite vertex dimensions */
-
-	typedef typename CTypelistDifference<CPartiteUniqueVertexDims, CNonPartiteUniqueVertexDims>::_TyResult CRecognizablePartiteVertexDims; /**< @brief list of partite vertex dimensions that can be recognized from non-partite */ // only used to count them
-
-	/**
-	 *	@brief bitwise mask creation
-	 *
-	 *	@tparam _T1 is the first operand (specialization of CCTSize template), containing position of a bit to set
-	 *	@tparam _T2 is the second operand (specialization of CCTSize template), containing running value of the mask
-	 */
-	template <class _T1, class _T2>
-	class CAccumulateBitwiseMask {
-		/**
-		 *	@brief intermediates stored as an enum
-		 */
-		enum {
-			n_mask_value = _T2::n_size | (1 << _T1::n_size) /**< @brief the result (in here to avoid template problems when using the shift left operator) */
-			// note that we could save one bit by assuming that there will be no vertices of dimension zero
-			// but this is not a pressing problem right now
-		};
-
-	public:
-		typedef fbs_ut::CCTSize<n_mask_value> _TyResult; /**< @brief result of the addition */
-	};
-
-	/**
-	 *	@brief intermediates stored as an enum
-	 */
-	enum {
-		n_nonpartite_vertex_type_num = CTypelistLength<CNonPartiteVertexList>::n_result, /**< @brief number of non-partite vertices */
-		b_have_nonpartite_vertex_types = (n_nonpartite_vertex_type_num != 0)? 1 : 0, /**< @brief non-partite vertices presence flag */
-		n_partite_vertex_type_num = CTypelistLength<CPartiteVertexList>::n_result, /**< @brief number of partite vertices */
-		n_partite_vertex_dimension_num = CTypelistLength<CPartiteUniqueVertexDims>::n_result, /**< @brief number of partite vertices recoginzable by their dimension */
-		n_partite_unambiguous_vertex_dimension_num = CTypelistLength<CRecognizablePartiteVertexDims>::n_result, /**< @brief number of partite vertices recoginzable by their dimension, which can't be confused for non-partite */
-
-		b_can_use_guided_ordering = n_partite_unambiguous_vertex_dimension_num > 0, // cannot differentiate between partite and non-pertite vertices, based on their dimension (or maybe there are no partite vertices whatsoever)
-		b_efficient_guided_ordering = n_partite_unambiguous_vertex_dimension_num == n_partite_vertex_dimension_num, // can differentiate all of the partite vertices (if not, we can still try, but we can get a poor ordering in the sense that the size of the diagonal part will be low, compared to the rest of the system)
-		b_perfect_guided_ordering = b_efficient_guided_ordering && n_partite_vertex_type_num == n_partite_vertex_dimension_num, // have perfect ordering (if not, we can potentially run into trouble by ordering "eiffel tower" vertices in the diagonal part, making the Schur complement completely dense)
-		// different levels of usability of the guided ordering
-
-		n_max_partite_vertex_dimension = CTypelistReduce2<CPartiteUniqueVertexDims,
-			fbs_ut::CBinaryScalarMax, fbs_ut::CCTSize<0> >::_TyResult::n_size, /**< @brief maximum dimension of a partite vertex */
-		b_can_use_binary_mask_to_detect_partitedness = n_max_partite_vertex_dimension < 32, /**< @brief if set, the partite vertex dimensions can be stored in a bitmask */
-		n_partite_vertex_mask = CTypelistReduce2<typename
-			CChooseType<CPartiteUniqueVertexDims, CTypelistEnd, b_can_use_binary_mask_to_detect_partitedness>::_TyResult, // use empty list in case the maximum dimension is too large to avoid a bunch of integer overflow warnings
-			CAccumulateBitwiseMask, fbs_ut::CCTSize<0> >::_TyResult::n_size, /**< @brief bit mask, encoding ones at shifts corresponding to partite vertex dimensions @note This is only valid if b_can_use_binary_mask_to_detect_partitedness is set. */ // value of the partite vertex mask
-		// partite vertex detection using a bit mask
-
-		n_unique_vertex_dim_num = CTypelistLength<CAllUniqueVertexDims>::n_result /**< @brief number of unique vertex dimensions */
-	};
-
-	/*class CFillDimensions { // moved to fbs_ut
-	protected:
-		size_t *m_p_dest;
-
-	public:
-		CFillDimensions(size_t *p_dest)
-			:m_p_dest(p_dest)
-		{}
-
-		template <class CDimension>
-		void operator ()()
-		{
-			*m_p_dest = CDimension::n_size;
-			++ m_p_dest;
-		}
-
-		operator const size_t *() const
-		{
-			return m_p_dest;
-		}
-	};*/
+	typedef schur_detail::CGuidedOrdering_Helper<_TyVertexTypelist, _TyEdgeTypelist> _TyGOH; /**< @brief guided ordering helper */
 
 protected:
 	_TyBaseSolver m_linear_solver; /**< @brief linear solver */
@@ -2052,7 +1566,7 @@ public:
 		m_order.resize(r_lambda.n_BlockColumn_Num());
 		// allocate the ordering array
 
-		if(b_can_use_guided_ordering) { // count of 2 also implies that the sizes are different
+		if(_TyGOH::b_can_use_guided_ordering) { // count of 2 also implies that the sizes are different
 			m_n_matrix_cut = n_Calculate_GuidedOrdering(m_order_workspace, r_lambda); // it is a member function now, requires different lists we'd made
 			/*m_n_matrix_cut = CSchurOrdering::n_Calculate_GuidedOrdering(m_order_workspace,
 				vertex_Size_Big, vertex_Size_Small, r_lambda);*/
@@ -2060,12 +1574,12 @@ public:
 			// note this may give inferior results, i.e. on landmark datasets like Victoria park
 		} else if(b_force_guided_ordering)
 			throw std::runtime_error("guided ordering forced but unable to distinguish landmarks"); // todo - handle this better
-		if(!b_force_guided_ordering && (!b_can_use_guided_ordering || m_n_matrix_cut >= r_lambda.n_BlockColumn_Num() / 2)) { // pose-only without -po also tries to use guided ordering (but there are no landmarks - wasted time)
+		if(!b_force_guided_ordering && (!_TyGOH::b_can_use_guided_ordering || m_n_matrix_cut >= r_lambda.n_BlockColumn_Num() / 2)) { // pose-only without -po also tries to use guided ordering (but there are no landmarks - wasted time)
 			m_n_matrix_cut = CSchurOrdering::n_Calculate_Ordering(m_order_workspace, r_lambda);
-			// this is full ordering, using the graph structure, always gives best results
+			// this is full ordering, using the graph structure, always gives the best results
 
-			m_b_single_landmark_size = (n_unique_vertex_dim_num == 1);
-			m_n_landmark_size = CTypelistItemAt<CAllUniqueVertexDims, 0>::_TyResult::n_size;
+			m_b_single_landmark_size = (_TyGOH::n_unique_vertex_dim_num == 1);
+			m_n_landmark_size = _TyGOH::n_smallest_vertex_dim;//CTypelistItemAt<typename _TyGOH::CAllUniqueVertexDims, 0>::_TyResult::n_size;
 			// can still have a single landmark size if all the vertices have the same dimension
 			// otherwise can't guarantee it: the vertices can be ordered arbitrarily
 		}
@@ -2099,9 +1613,22 @@ public:
 	 */
 	bool Solve_PosDef_Blocky(const CUberBlockMatrix &r_lambda, Eigen::VectorXd &r_v_eta) // throw(std::bad_alloc)
 	{
+		//typename CDebug::CMatrixDeltaTracker track(r_lambda);
+
 		if(r_lambda.n_BlockColumn_Num() != m_order.size())
 			SymbolicDecomposition_Blocky(r_lambda);
 		// in case the ordering is nonconforming, calculate a new one
+
+		if(m_order.size() == 1)
+			return m_linear_solver.Solve_PosDef(r_lambda, r_v_eta);
+		// in case there is only a single variable, pass it to the simple linear solver
+
+		if(m_n_matrix_cut == 0 || m_n_matrix_cut == m_order.size()) {
+			CLinearSolver_UberBlock<_TyLambdaMatrixBlockSizes> solver;
+			return solver.Solve_PosDef_Blocky(r_lambda, r_v_eta);
+		}
+		// in case the matrix is diagonal (and thus the partitioning is ambiguous),
+		// solve it efficiently with a sparse solver
 
 		bool b_keep_ordering = !m_b_base_solver_reorder;
 		m_b_base_solver_reorder = false; // only once, or until the ordering changes
@@ -2146,9 +1673,13 @@ public:
 		CDeltaTimer dt;
 #endif // __SCHUR_PROFILING
 
+		//track(r_lambda);
+
 		CUberBlockMatrix lambda_perm;
 		r_lambda.Permute_UpperTriangular_To(lambda_perm, &m_order[0], m_order.size(), true);
 		// reorder the matrix
+
+		//track(r_lambda);
 
 #ifdef __SCHUR_PROFILING
 		double f_reperm_time = dt.f_Time();
@@ -2175,14 +1706,18 @@ public:
 		double f_transpose_time = dt.f_Time();
 #endif // __SCHUR_PROFILING
 
+		//track(r_lambda);
+
 		CUberBlockMatrix C_inv_storage; // only used if C is not diagonal
 		bool b_is_diagonal = C.b_BlockDiagonal();
-		CUberBlockMatrix &C_inv = (b_is_diagonal)? C : C_inv_storage; // can do diagonal
+		CUberBlockMatrix &C_inv = /*(b_is_diagonal)? C :*/ C_inv_storage; // can do diagonal // do *not* reuse storage, will modify lambda!
 		if(b_is_diagonal)
 			C_inv.InverseOf_BlockDiag_FBS_Parallel<_TyLambdaMatrixBlockSizes>(C); // faster version, slightly less general
 		else
-			C_inv.InverseOf_Symmteric_FBS<_TyLambdaMatrixBlockSizes>(C); // C is block diagonal (should also be symmetric)
+			C_inv.InverseOf_Symmteric_FBS<_TyLambdaMatrixBlockSizes>(C, true); // C is block diagonal (should also be symmetric)
 		// inverse of C
+
+		//track(r_lambda);
 
 #ifdef __SCHUR_PROFILING
 		double f_inverse_time = dt.f_Time();
@@ -2193,6 +1728,8 @@ public:
 #ifdef __SCHUR_PROFILING
 		double f_scale_time = dt.f_Time();
 #endif // __SCHUR_PROFILING
+
+		//track(r_lambda);
 
 		CUberBlockMatrix minus_U_Cinv;
 		U.MultiplyToWith_FBS<_TyLambdaMatrixBlockSizes,
@@ -2206,6 +1743,8 @@ public:
 
 		double f_scale_time = dt.f_Time();*/
 
+		//track(r_lambda);
+
 		CUberBlockMatrix schur_compl; // not needed afterwards
 		minus_U_Cinv.MultiplyToWith_FBS<_TyLambdaMatrixBlockSizes,
 			_TyLambdaMatrixBlockSizes>(schur_compl, V, true); // -U*(C^-1)V // UV is symmetric, the whole product should be symmetric, calculate only the upper triangular part
@@ -2213,6 +1752,8 @@ public:
 #ifdef __SCHUR_PROFILING
 		double f_mul1_time = dt.f_Time();
 #endif // __SCHUR_PROFILING
+
+		//track(r_lambda);
 
 		A.AddTo_FBS<_TyLambdaMatrixBlockSizes>(schur_compl); // -U*(C^-1)V + A // A is symmetric, if schur_compl is symmetric, the difference also is
 		// compute left-hand side A - U(C^-1)V
@@ -2246,6 +1787,8 @@ public:
 		size_t n_landmark_vector_size = U.n_Column_Num(); // 3 * (n - m_n_matrix_cut);
 		// not block columns! element ones
 
+		//track(r_lambda);
+
 		if(m_double_workspace.capacity() < n_rhs_vector_size) {
 			m_double_workspace.clear(); // avoid data copying
 			m_double_workspace.reserve(std::max(2 * m_double_workspace.capacity(), n_rhs_vector_size));
@@ -2254,9 +1797,13 @@ public:
 		double *p_double_workspace = &m_double_workspace[0];
 		// alloc workspace
 
+		//track(r_lambda);
+
 		lambda_perm.InversePermute_RightHandSide_Vector(p_double_workspace,
 			&r_v_eta(0), n_rhs_vector_size, &m_order[0], m_order.size());
 		// need to permute the vector !!
+
+		//track(r_lambda);
 
 		Eigen::VectorXd v_x = Eigen::Map<Eigen::VectorXd>(p_double_workspace, n_pose_vector_size); // don't really need a copy, but need Eigen::VectorXd for _TyLinearSolverWrapper::Solve()
 		Eigen::VectorXd v_l = Eigen::Map<Eigen::VectorXd>(p_double_workspace +
@@ -2278,9 +1825,23 @@ public:
 		double f_RHS_time = dt.f_Time();
 #endif // __SCHUR_PROFILING
 
+		//track(r_lambda);
+
 		if(!b_keep_ordering)
 			_TyLinearSolverWrapper::FinalBlockStructure(m_linear_solver, schur_compl); // the ordering on schur_compl will not change, can calculate it only in the first pass and then reuse
-		bool b_result = _TyLinearSolverWrapper::Solve(m_linear_solver, schur_compl, v_x);
+		bool b_result;
+		try {
+			b_result = _TyLinearSolverWrapper::Solve(m_linear_solver, schur_compl, v_x);
+		} catch(std::bad_alloc &r_exc) {
+#if defined(__SCHUR_USE_DENSE_SOLVER) || defined(__SCHUR_DENSE_SOLVER_USE_GPU)
+			fprintf(stderr, "error: dense linear solver threw "
+				"std::bad_alloc (%s): fallback to sparse\n", r_exc.what());
+			CLinearSolver_UberBlock<_TyLambdaMatrixBlockSizes> solver;
+			b_result = solver.Solve_PosDef_Blocky(schur_compl, v_x);
+#else // __SCHUR_USE_DENSE_SOLVER || __SCHUR_DENSE_SOLVER_USE_GPU
+			throw r_exc; // in case it was thrown by a sparse solver, just rethrow
+#endif // __SCHUR_USE_DENSE_SOLVER || __SCHUR_DENSE_SOLVER_USE_GPU
+		}
 		Eigen::VectorXd &v_dx = v_x; // rename, solves inplace
 		// solve for dx = A - U(C^-1)V / x
 
@@ -2292,7 +1853,7 @@ public:
 		// also note that schur_compl is not completely dense if it is not many times smaller than C
 
 		Eigen::Map<Eigen::VectorXd>(p_double_workspace, n_pose_vector_size) = v_dx; // an unnecessary copy, maybe could work around
-		// obtained a first part of the solution
+		// obtained the first part of the solution
 
 		Eigen::Map<Eigen::VectorXd> v_dl(p_double_workspace +
 			n_pose_vector_size, n_landmark_vector_size); // calculated inplace
@@ -2358,6 +1919,8 @@ public:
 			schur_compl.Save_MatrixMarket((s_name + "schur.mtx").c_str(), (s_name + "schur.bla").c_str());
 		}*/
 		// debug - dump the matrices
+
+		//track(r_lambda);
 
 		return b_result;
 	}
@@ -2428,7 +1991,7 @@ public:
 
 #if 1
 		CUberBlockMatrix C_inv;
-		C_inv.InverseOf_Symmteric_FBS<_TyLambdaMatrixBlockSizes>(C); // C is block diagonal (should also be symmetric)
+		C_inv.InverseOf_Symmteric_FBS<_TyLambdaMatrixBlockSizes>(C, true); // C is block diagonal (should also be symmetric)
 #else // 1
 		CUberBlockMatrix &C_inv = C;
 		C_inv.InverseOf_BlockDiag_FBS_Parallel<_TyLambdaMatrixBlockSizes>(C); // faster version, slightly less general
@@ -2517,7 +2080,7 @@ public:
 		// also note that schur_compl is not completely dense if it is not many times smaller than C
 
 		Eigen::Map<Eigen::VectorXd>(p_double_workspace, n_pose_vector_size) = v_dx; // an unnecessary copy, maybe could work around
-		// obtained a first part of the solution
+		// obtained the first part of the solution
 
 		Eigen::Map<Eigen::VectorXd> v_dl(p_double_workspace +
 			n_pose_vector_size, n_landmark_vector_size); // calculated inplace
@@ -2590,49 +2153,48 @@ protected:
 		r_ordering.resize(n);
 		// allocate space
 
-		_ASSERTE(b_can_use_guided_ordering);
+		_ASSERTE(_TyGOH::b_can_use_guided_ordering);
 		static bool b_warned_about_ordering = false;
 		if(!b_warned_about_ordering) {
 			b_warned_about_ordering = true;
-			if(!b_efficient_guided_ordering) {
+			if(!_TyGOH::b_efficient_guided_ordering) {
 				fprintf(stderr, "warning: guided Schur ordering with ambiguous vertex dimensions:"
 					" may result in low speedups\n");
 				// if this happens, make sure that the size of the schur complement is what it should be.
 				// if it is not, consider disabling the guided ordering and using MIS always to save time.
-			} else if(!b_perfect_guided_ordering) {
+			} /*else if(!_TyGOH::b_perfect_guided_ordering) {
 				fprintf(stderr, "warning: guided Schur ordering with ambiguous vertex dimensions:"
 					" the Schur complement may be dense\n");
 				// if this happens, make sure that the sparsity of the schur complement is reasonable.
 				// if it is completely dense, try using dense Cholesky factorization instead of sparse.
-			}
+			}*/ // does not happen anymore since CIsPartiteVertex_ByDim is used
+			_ASSERTE(_TyGOH::b_perfect_guided_ordering ==
+				_TyGOH::b_efficient_guided_ordering); // make sure that it indeed does not happen
 		}
 		// warn about less-than-perfect orderings in order to help solving performance issues
 
-		size_t p_vertex_dimensions[n_partite_vertex_dimension_num + b_have_nonpartite_vertex_types] = {0};
-		//const int *p_end = CTypelistForEach<CPartiteUniqueSortedVertexDims/*CPartiteUniqueVertexDims*/, CFillDimensions>::Run( // todo - is CPartiteUniqueSortedVertexDims correct here?
-		//	CFillDimensions(&p_vertex_dimensions[b_have_nonpartite_vertex_types]));
-		//_ASSERTE(p_end == &p_vertex_dimensions[0] + sizeof(p_vertex_dimensions) / sizeof(p_vertex_dimensions[0])); // make sure we filled all
-		fbs_ut::Copy_CTSizes_to_Array<CPartiteUniqueSortedVertexDims>(p_vertex_dimensions,
-			n_partite_vertex_dimension_num); // use a fancy function
-		// gether dimensions of partite vertex types
+		size_t p_vertex_dimensions[_TyGOH::n_vertex_group_num];
+		_TyGOH::Get_VertexDimensions(p_vertex_dimensions, sizeof(p_vertex_dimensions) / sizeof(p_vertex_dimensions[0]));
+		// gather dimensions of partite vertex types
 
 		size_t n_nonpartite_dimension_sum = 0;
 		// sum of dimensions of all the nonpartite vertices
 
-		std::vector<size_t> p_vertex_type_indices[n_partite_vertex_dimension_num +
-			b_have_nonpartite_vertex_types]; // the first list is for the non-partite vertices, if there are any
+		std::vector<size_t> p_vertex_type_indices[_TyGOH::n_vertex_group_num]; // the first list is for the non-partite vertices, if there are any
+		// the same size as p_vertex_dimensions, except that they are ordered in the opposite direction
 
-		if(!b_have_nonpartite_vertex_types && n_partite_vertex_dimension_num == 2) {
-			m_b_single_landmark_size = true;
-			m_n_landmark_size = p_vertex_dimensions[0];
-
+		if(_TyGOH::b_can_use_simple_ordering) {
 			enum {
-				n_landmark_dim = CTypelistItemAt<CAllUniqueSortedVertexDims, 0>::_TyResult::n_size,
-				n_pose_dim = CTypelistItemAt<CAllUniqueSortedVertexDims, n_unique_vertex_dim_num - 1>::_TyResult::n_size
+				n_landmark_dim = _TyGOH::n_smallest_vertex_dim,
+				n_pose_dim = _TyGOH::n_greatest_vertex_dim
 			};
+			_ASSERTE(n_landmark_dim == p_vertex_dimensions[0] && n_pose_dim == p_vertex_dimensions[1]);
+
+			m_b_single_landmark_size = true;
+			m_n_landmark_size = n_landmark_dim/*p_vertex_dimensions[0]*/;
 
 			return CSchurOrdering::n_Calculate_GuidedOrdering(r_ordering,
-				p_vertex_dimensions[1], p_vertex_dimensions[0], r_lambda);
+				n_pose_dim/*p_vertex_dimensions[1]*/, n_landmark_dim/*p_vertex_dimensions[0]*/, r_lambda);
 		}
 		// t_odo - write a specialized implementation for ideal simple bundle adjustment
 		// (all cameras at the beginning, all points at the end)
@@ -2640,49 +2202,24 @@ protected:
 
 		for(size_t i = 0; i < n; ++ i) {
 			size_t n_vertex_i_dimension = r_lambda.n_BlockColumn_Column_Num(i);
+			// get vertex dimension
 
-			bool b_is_partite_vertex;
-			if(!b_have_nonpartite_vertex_types)
-				b_is_partite_vertex = true; // there are no nonpartite vertices in this system
-			else if(b_can_use_binary_mask_to_detect_partitedness) {
-				b_is_partite_vertex = ((1 << n_vertex_i_dimension) & n_partite_vertex_mask) != 0;
-				// find out whether the vertex is partite using a mask - very fast, should be
-				// sufficient in most cases (vertex dimensions less than 32 (32 not permitted
-				// for compatibility reasons, as the mask is stored as an enum))
-			} else {
-				b_is_partite_vertex = !CTypelistItemBFind<typename CNonEmptySizeList<CNonPartiteUniqueVertexDims>::_TyResult,
-					fbs_ut::CRuntimeCompareScalar, size_t, CBinarySearchResult>::Find(n_vertex_i_dimension, CBinarySearchResult());
-				// find the partite vertex at runtime
-			}
-			// determine whether the vertex is partite, based on its dimension
+			size_t n_vertex_i_group = _TyGOH::n_Vertex_GroupIndex(n_vertex_i_dimension);
+			// calculate which group the vertex belongs to
 
-			if(!b_is_partite_vertex) {
+			if(!n_vertex_i_group && _TyGOH::b_have_nonpartite_vertex_types) { // in case it is a non-partite vertex
+				_ASSERTE(!_TyGOH::b_IsPartite_Vertex(n_vertex_i_dimension));
 				n_nonpartite_dimension_sum += n_vertex_i_dimension; // not sure if this is useful for anything
 				p_vertex_type_indices[0].push_back(i); // add it to the list of non-partite vertices
 			} else {
-				// the vertex is partite, need to find out which type of a vertex it is
-
-				typedef CBinarySearchResultWithIndex<CPartiteUniqueSortedVertexDims/*CPartiteUniqueVertexDims*/> TFindResult;
-				size_t n_vertex_type_index = CTypelistItemBFind<typename CNonEmptySizeList<CPartiteUniqueSortedVertexDims/*CPartiteUniqueVertexDims*/>::_TyResult,
-					fbs_ut::CRuntimeCompareScalar, size_t, TFindResult>::FindExisting(n_vertex_i_dimension, TFindResult()).n_Index();
-				_ASSERTE(n_vertex_type_index < n_partite_vertex_dimension_num);
-				// finds the current dimentsion in the list of partite vertex dimension
-
-				n_vertex_type_index = n_partite_vertex_dimension_num - n_vertex_type_index - 1;
-				_ASSERTE(n_vertex_type_index < n_partite_vertex_dimension_num); // make sure it did not somehow over/underflow
-				// reverse the index so that vertices with higher dimensions are stored in lower index lists
-
-				if(b_have_nonpartite_vertex_types)
-					++ n_vertex_type_index;
-				// if there are nonpartite vertices, they are occupying index 0
-
-				p_vertex_type_indices[n_vertex_type_index].push_back(i);
+				_ASSERTE(_TyGOH::b_IsPartite_Vertex(n_vertex_i_dimension));
+				p_vertex_type_indices[n_vertex_i_group].push_back(i);
 				// add it to the list of partite vertices of the given type
 			}
 		}
 		// sort all the vertex types in the matrix to a list
 
-		if(b_have_nonpartite_vertex_types)
+		if(_TyGOH::b_have_nonpartite_vertex_types)
 			r_ordering.swap(p_vertex_type_indices[0]);
 		else
 			r_ordering.clear();
@@ -2737,12 +2274,12 @@ protected:
 		m_b_single_landmark_size = false;
 		// not sure how this branch works. better be safe.
 #else // 0
-		std::vector<size_t> *p_VT_indices = &p_vertex_type_indices[0] + b_have_nonpartite_vertex_types;
-		const size_t *p_VT_dimensions = &p_vertex_dimensions[0] + b_have_nonpartite_vertex_types;
+		std::vector<size_t> *p_VT_indices = &p_vertex_type_indices[0] + _TyGOH::b_have_nonpartite_vertex_types;
+		const size_t *p_VT_dimensions = &p_vertex_dimensions[0] + _TyGOH::b_have_nonpartite_vertex_types;
 		int n_largest_partite_vertices = 0;
-		size_t n_largest_partite_vertices_size = p_VT_indices[0].size() * p_VT_dimensions[n_partite_vertex_dimension_num - 0 - 1]; // the dimensions are reversed in the loop above!
-		for(int i = 1; i < (int)n_partite_vertex_dimension_num; ++ i) {
-			size_t n_ith_partite_vertices_size = p_VT_indices[i].size() * p_VT_dimensions[n_partite_vertex_dimension_num - i - 1]; // the dimensions are reversed in the loop above!
+		size_t n_largest_partite_vertices_size = p_VT_indices[0].size() * p_VT_dimensions[0/*_TyGOH::n_partite_unambiguous_vertex_dimension_num/ *n_partite_vertex_dimension_num* / - 0 - 1*/]; // the dimensions are NOT reversed in the loops above anyore!
+		for(int i = 1; i < (int)_TyGOH::n_partite_unambiguous_vertex_dimension_num/*n_partite_vertex_dimension_num*/; ++ i) {
+			size_t n_ith_partite_vertices_size = p_VT_indices[i].size() * p_VT_dimensions[i/*_TyGOH::n_partite_unambiguous_vertex_dimension_num/ *n_partite_vertex_dimension_num* / - i - 1*/]; // the dimensions are NOT reversed in the loops above anyore!
 			if(n_ith_partite_vertices_size > n_largest_partite_vertices_size) {
 				n_largest_partite_vertices = i;
 				n_largest_partite_vertices_size = n_ith_partite_vertices_size;
@@ -2750,7 +2287,7 @@ protected:
 		}
 		// find the index of the largest partite vertices
 
-		for(int i = 0; i < (int)n_partite_vertex_dimension_num; ++ i) {
+		for(int i = 0; i < (int)_TyGOH::n_partite_unambiguous_vertex_dimension_num/*n_partite_vertex_dimension_num*/; ++ i) {
 			if(i == n_largest_partite_vertices)
 				continue;
 			// skip the largest ones
@@ -2758,7 +2295,7 @@ protected:
 			std::vector<size_t> &r_vertex_type_i_indices = p_VT_indices[i];
 			// indices of vertex of this type
 
-			if(!b_have_nonpartite_vertex_types && r_ordering.empty()) // if we have nonpartite verts, then the ordering wont be empty anymore
+			if(!_TyGOH::b_have_nonpartite_vertex_types && r_ordering.empty()) // if we have nonpartite verts, then the ordering wont be empty anymore
 				r_ordering.swap(r_vertex_type_i_indices);
 			else {
 				r_ordering.insert(r_ordering.end(), r_vertex_type_i_indices.begin(),
@@ -2782,8 +2319,8 @@ protected:
 		// add the largest partite at the end to form the diagonal
 
 		m_b_single_landmark_size = true;
-		m_n_landmark_size = p_VT_dimensions[n_partite_vertex_dimension_num -
-			n_largest_partite_vertices - 1]; // the dimensions are reversed in the loops above!
+		m_n_landmark_size = p_VT_dimensions[/*_TyGOH::n_partite_unambiguous_vertex_dimension_num*//*n_partite_vertex_dimension_num*//* -*/
+			n_largest_partite_vertices /*- 1*/]; // the dimensions are NOT reversed in the loops above anyore!
 		// have a single landmark size
 #endif // 0
 
@@ -2844,5 +2381,7 @@ protected:
 		return n_pose_num;
 	}
 };
+
+/** @} */ // end of group
 
 #endif // !__LINEAR_SOLVER_SCHUR_INCLUDED

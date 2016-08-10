@@ -1,4 +1,4 @@
-#include "cs.h"
+#include "cxsparse/cs.h"
 /* y = A*x+y */
 CS_INT cs_gaxpy (const cs *A, const CS_ENTRY *x, CS_ENTRY *y)
 {

@@ -1,4 +1,4 @@
-#include "cs.h"
+#include "cxsparse/cs.h"
 static CS_INT cs_nonzero (CS_INT i, CS_INT j, CS_ENTRY aij, void *other)
 {
     return (aij != 0) ;

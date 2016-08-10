@@ -30,7 +30,7 @@
  */
 class CVertexPositionVelocity3D : public CSEBaseVertexImpl<CVertexPositionVelocity3D, 6> {
 public:
-	__SE2_TYPES_ALIGN_OPERATOR_NEW
+	__GRAPH_TYPES_ALIGN_OPERATOR_NEW
 
 	/**
 	 *	@brief default constructor; has no effect
@@ -82,7 +82,7 @@ public:
 		MakeTypelist(CVertexPositionVelocity3D, CVertexLandmark3D), 1> _TyBase; /**< @brief base edge type */
 
 public:
-	__SE3_TYPES_ALIGN_OPERATOR_NEW
+	__GRAPH_TYPES_ALIGN_OPERATOR_NEW
 
 	/**
 	 *	@brief default constructor; has no effect
@@ -108,9 +108,10 @@ public:
 			r_t_edge.m_n_node_1, typename _TyBase::template CInitializeNullVertex<CVertexLandmark3D>()); // unable to initialize reasonably
 		// get vertices
 
-		_ASSERTE(r_system.r_Vertex_Pool()[r_t_edge.m_n_node_0].n_Dimension() == 6);
-		_ASSERTE(r_system.r_Vertex_Pool()[r_t_edge.m_n_node_1].n_Dimension() == 3);
+		//_ASSERTE(r_system.r_Vertex_Pool()[r_t_edge.m_n_node_0].n_Dimension() == 6);
+		//_ASSERTE(r_system.r_Vertex_Pool()[r_t_edge.m_n_node_1].n_Dimension() == 3);
 		// make sure the dimensionality is correct (might not be)
+		// this fails with const vertices, for obvious reasons. with the thunk tables this can be safely removed.
 	}
 
 	/**
@@ -135,9 +136,10 @@ public:
 			n_node1, typename _TyBase::template CInitializeNullVertex<CVertexLandmark3D>()); // unable to initialize reasonably
 		// get vertices
 
-		_ASSERTE(r_system.r_Vertex_Pool()[n_node0].n_Dimension() == 6);
-		_ASSERTE(r_system.r_Vertex_Pool()[n_node1].n_Dimension() == 3);
+		//_ASSERTE(r_system.r_Vertex_Pool()[n_node0].n_Dimension() == 6);
+		//_ASSERTE(r_system.r_Vertex_Pool()[n_node1].n_Dimension() == 3);
 		// make sure the dimensionality is correct (might not be)
+		// this fails with const vertices, for obvious reasons. with the thunk tables this can be safely removed.
 	}
 
 	/**
@@ -203,10 +205,10 @@ public:
 	}
 
 	/**
-	 *	@brief calculates chi-square error
-	 *	@return Returns (unweighted) chi-square error for this edge.
+	 *	@brief calculates \f$\chi^2\f$ error
+	 *	@return Returns (unweighted) \f$\chi^2\f$ error for this edge.
 	 */
-	inline double f_Chi_Squared_Error() const // this function should mostly work as is, you just need to change dimensions of the vectors and matrices
+	inline double f_Chi_Squared_Error() const
 	{
 		Eigen::Matrix<double, 1, 1> v_expectation, v_error;
 		v_expectation(0) = (_TyBase::m_p_vertex0->r_v_State().template head<3>() -
@@ -229,7 +231,7 @@ public:
 	typedef CBaseEdgeImpl<CEdgeLandmark3DPrior, MakeTypelist(CVertexLandmark3D), 3, 0> _TyBase; /**< @brief base edge type */
 
 public:
-	__SE3_TYPES_ALIGN_OPERATOR_NEW
+	__GRAPH_TYPES_ALIGN_OPERATOR_NEW
 
 	/**
 	 *	@brief default constructor; has no effect
@@ -253,8 +255,9 @@ public:
 			CInitializeNullVertex<>());
 		// get vertices
 
-		_ASSERTE(r_system.r_Vertex_Pool()[r_t_edge.m_n_node_0].n_Dimension() == 3);
+		//_ASSERTE(r_system.r_Vertex_Pool()[r_t_edge.m_n_node_0].n_Dimension() == 3);
 		// make sure the dimensionality is correct (might not be)
+		// this fails with const vertices, for obvious reasons. with the thunk tables this can be safely removed.
 	}
 
 	/**
@@ -274,8 +277,9 @@ public:
 			CInitializeNullVertex<>());
 		// get vertices
 
-		_ASSERTE(r_system.r_Vertex_Pool()[n_node0].n_Dimension() == 3);
+		//_ASSERTE(r_system.r_Vertex_Pool()[n_node0].n_Dimension() == 3);
 		// make sure the dimensionality is correct (might not be)
+		// this fails with const vertices, for obvious reasons. with the thunk tables this can be safely removed.
 	}
 
 	/**
@@ -306,8 +310,8 @@ public:
 	}
 
 	/**
-	 *	@brief calculates chi-square error
-	 *	@return Returns (unweighted) chi-square error for this edge.
+	 *	@brief calculates \f$\chi^2\f$ error
+	 *	@return Returns (unweighted) \f$\chi^2\f$ error for this edge.
 	 */
 	inline double f_Chi_Squared_Error() const
 	{
@@ -368,7 +372,7 @@ public:
 	};
 
 public:
-	__SE3_TYPES_ALIGN_OPERATOR_NEW
+	__GRAPH_TYPES_ALIGN_OPERATOR_NEW
 
 	/**
 	 *	@brief default constructor; has no effect
@@ -395,9 +399,10 @@ public:
 			CConstVelocity_Initializer(_TyBase::m_p_vertex0->r_v_State(), r_t_edge.m_v_delta));
 		// get vertices
 
-		_ASSERTE(r_system.r_Vertex_Pool()[r_t_edge.m_n_node_0].n_Dimension() == 6);
-		_ASSERTE(r_system.r_Vertex_Pool()[r_t_edge.m_n_node_1].n_Dimension() == 6);
+		//_ASSERTE(r_system.r_Vertex_Pool()[r_t_edge.m_n_node_0].n_Dimension() == 6);
+		//_ASSERTE(r_system.r_Vertex_Pool()[r_t_edge.m_n_node_1].n_Dimension() == 6);
 		// make sure the dimensionality is correct (might not be)
+		// this fails with const vertices, for obvious reasons. with the thunk tables this can be safely removed.
 	}
 
 	/**
@@ -422,9 +427,10 @@ public:
 			CConstVelocity_Initializer(_TyBase::m_p_vertex0->r_v_State(), r_v_delta));
 		// get vertices
 
-		_ASSERTE(r_system.r_Vertex_Pool()[n_node0].n_Dimension() == 6);
-		_ASSERTE(r_system.r_Vertex_Pool()[n_node1].n_Dimension() == 6);
+		//_ASSERTE(r_system.r_Vertex_Pool()[n_node0].n_Dimension() == 6);
+		//_ASSERTE(r_system.r_Vertex_Pool()[n_node1].n_Dimension() == 6);
 		// make sure the dimensionality is correct (might not be)
+		// this fails with const vertices, for obvious reasons. with the thunk tables this can be safely removed.
 	}
 
 	/**
@@ -609,8 +615,8 @@ public:
 	}
 
 	/**
-	 *	@brief calculates chi-square error
-	 *	@return Returns (unweighted) chi-square error for this edge.
+	 *	@brief calculates \f$\chi^2\f$ error
+	 *	@return Returns (unweighted) \f$\chi^2\f$ error for this edge.
 	 */
 	inline double f_Chi_Squared_Error() const
 	{
@@ -630,6 +636,10 @@ public:
 	}
 };
 
+/** \addtogroup parser
+ *	@{
+ */
+
 /**
  *	@brief vertex traits for BA solver
  */
@@ -645,7 +655,7 @@ public:
 	 */
 	static const char *p_s_Reason()
 	{
-		return "unknown vertex type occured";
+		return "unknown vertex type occurred";
 	}
 };
 
@@ -691,7 +701,7 @@ public:
 	 */
 	static const char *p_s_Reason()
 	{
-		return "unknown edge type occured 2";
+		return "unknown edge type occurred 2";
 	}
 };
 
@@ -721,5 +731,7 @@ class CROCVEdgeTraits<CParserBase::TUnaryFactor3D> {
 public:
 	typedef CEdgeLandmark3DPrior _TyEdge; /**< @brief initialize the range measurement edge */
 };
+
+/** @} */ // end of group
 
 #endif // __ROCV_TYPES_INCLUDED

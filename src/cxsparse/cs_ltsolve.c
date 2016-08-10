@@ -1,4 +1,4 @@
-#include "cs.h"
+#include "cxsparse/cs.h"
 /* solve L'x=b where x and b are dense.  x=b on input, solution on output. */
 CS_INT cs_ltsolve (const cs *L, CS_ENTRY *x)
 {

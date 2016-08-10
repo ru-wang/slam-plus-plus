@@ -18,6 +18,7 @@
  */
 
 #include "slam/LinearSolver_CSparse.h"
+#include "slam/Timer.h"
 
 /*
  *								=== CLinearSolver_CSparse ===
@@ -155,6 +156,74 @@ bool CLinearSolver_CSparse::Factorize_PosDef_Blocky(CUberBlockMatrix &r_factor,
 	   m_p_workspace_int, m_p_workspace_double)))
 		return false;
 	// calculate numeric Cholesky factorization
+
+	/*double f_cholesky_end = m_timer.f_Time();
+	double f_transpose_end;*/
+
+	//const csi n_col_num = m_p_lambda->n; // unused
+	bool b_result;
+	cs *p_L = p_cholesky->L;
+	if(b_upper_factor) {
+		cs *p_transpose = fast_transpose(m_p_lambda, p_L, m_p_workspace_int); // t_odo - cache memory for transpose as well
+		//f_transpose_end = m_timer.f_Time();
+		b_result = r_factor.From_Sparse(n_dest_row_id, n_dest_column_id,
+			p_transpose, false, r_workspace);
+		//cs_spfree(p_transpose); // do *not* free! it is cached
+	} else {
+		//f_transpose_end = f_cholesky_end;
+		b_result = r_factor.From_Sparse(n_dest_row_id, n_dest_column_id,
+			p_L, false, r_workspace);
+	}
+	// fill L from the calculated factor
+
+	cs_nfree(p_cholesky);
+	cs_sfree(p_symbolic_decomposition);
+	// cleanup
+
+	/*double f_fill_end = m_timer.f_Time();
+	m_f_chol += f_cholesky_end - f_start_time;
+	m_f_tran += f_transpose_end - f_cholesky_end;
+	m_f_fill += f_fill_end - f_transpose_end;*/
+
+	return b_result;
+}
+
+bool CLinearSolver_CSparse::Factorize_PosDef_Blocky_Benchmark(double &r_f_time,
+	CUberBlockMatrix &r_factor, const CUberBlockMatrix &r_lambda, std::vector<size_t> &r_workspace,
+	size_t n_dest_row_id /*= 0*/, size_t n_dest_column_id /*= 0*/, bool b_upper_factor /*= true*/) // throw(std::bad_alloc)
+{
+	//double f_start_time = m_timer.f_Time();
+
+	CDeltaTimer dt;
+
+	_ASSERTE(r_lambda.b_SymmetricLayout()); // pos-def is supposed to be symmetric
+	if(!(m_p_lambda = r_lambda.p_Convert_to_Sparse(m_p_lambda)))
+		throw std::bad_alloc();
+
+	dt.Reset();
+	// reset timer
+
+	css *p_symbolic_decomposition = cs_schol(0, m_p_lambda); // use natural ordering!
+
+	if(m_n_workspace_size < size_t(m_p_lambda->n)) {
+		m_n_workspace_size = std::max(2 * m_n_workspace_size, size_t(m_p_lambda->n));
+		if(m_p_workspace_double)
+			delete[] m_p_workspace_double;
+		m_p_workspace_double = new double[m_n_workspace_size];
+		if(m_p_workspace_int)
+			delete[] m_p_workspace_int;
+		m_p_workspace_int = new csi[2 * m_n_workspace_size];
+	}
+	// re-allocate the temporary workspace for cholesky
+
+	csn *p_cholesky;
+	if(!(p_cholesky = cs_chol_workspace(m_p_lambda, p_symbolic_decomposition,
+	   m_p_workspace_int, m_p_workspace_double)))
+		return false;
+	// calculate numeric Cholesky factorization
+
+	r_f_time = dt.f_Time();
+	// sample the timer
 
 	/*double f_cholesky_end = m_timer.f_Time();
 	double f_transpose_end;*/

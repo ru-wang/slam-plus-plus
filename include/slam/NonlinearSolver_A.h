@@ -21,9 +21,12 @@
  *	@date 2012-09-03
  */
 
-#include "slam/FlatSystem.h"
 #include "slam/LinearSolver_Schur.h"
-#include "slam/IncrementalPolicy.h"
+#include "slam/NonlinearSolver_Base.h"
+
+/** \addtogroup nlsolve
+ *	@{
+ */
 
 /**
  *	@brief utilities for A solvers
@@ -35,7 +38,7 @@ namespace A_utils {
  */
 // *	@tparam CBlockSizes is list of A matrix block sizes, as fbs_ut::CCTSize2D
 //template <class CBlockSizes>
-class CJacobianOps : public base_iface::CSolverOps_Base {
+class CJacobianOps : public nonlinear_detail::CSolverOps_Base {
 //public:
 	//typedef CBlockSizes _TyAMatrixBlockSizes; /**< @brief possible block matrices, that can be found in A */
 
@@ -94,7 +97,7 @@ public:
 		inline void operator ()(const _TyEdge &r_t_edge)
 		{
 			size_t n_order = r_t_edge.n_Order();
-			_ASSERTE(n_order > 0); // don't want 0, but that is assigned to the unary factor
+			//_ASSERTE(n_order > 0); // don't want 0, that is assigned to the unary factor // except if using explicit unary factor. can't check for it from here unfortunately
 			*m_p_cumsum_it = n_order;
 			++ m_p_cumsum_it;
 		}
@@ -228,10 +231,10 @@ protected:
 	 *	@param[in,out] r_system is reference to the system
 	 *	@param[out] r_A is reference to the A matrix
 	 *
-	 *	@note This function throws std::bad_alloc.
+	 *	@note This function throws std::bad_alloc and std::runtime_error.
 	 */
 	template <class CSystem>
-	static inline void AddEntriesInSparseSystem(CSystem &r_system, CUberBlockMatrix &r_A) // throw(std::bad_alloc)
+	static inline void AddEntriesInSparseSystem(CSystem &r_system, CUberBlockMatrix &r_A) // throw(std::bad_alloc, std::runtime_error)
 	{
 		if(r_system.r_Edge_Pool().n_Size() > 1000) { // wins 2.42237 - 2.48938 = .06701 seconds on 10k.graph, likely more on larger graphs
 			//printf("building large matrix from scratch ...\n"); // debug
@@ -255,11 +258,19 @@ protected:
 		}
 
 		if(!CSystem::null_UnaryFactor) {
+			size_t n_UF_order = r_system.n_Unary_Factor_Order();
 			const Eigen::MatrixXd &r_t_uf = r_system.r_t_Unary_Factor();
+			if(!r_t_uf.cols())
+				throw std::runtime_error("system matrix assembled but unary factor not initialized yet"); // if this triggers, consider sorting your dataset or using an explicit CUnaryFactor
+#ifdef __AUTO_UNARY_FACTOR_ON_VERTEX_ZERO
+			size_t n_gauge_vertex = 0; // simple
+#else // __AUTO_UNARY_FACTOR_ON_VERTEX_ZERO
 			_ASSERTE(!r_system.r_Edge_Pool().b_Empty());
 			size_t n_gauge_vertex = r_system.r_Edge_Pool()[0].n_Vertex_Id(0);
+#endif // __AUTO_UNARY_FACTOR_ON_VERTEX_ZERO
+			_ASSERTE(!r_system.r_Vertex_Pool()[n_gauge_vertex].b_IsConstant()); // this one must not be
 			size_t n_gauge_order = r_system.r_Vertex_Pool()[n_gauge_vertex].n_Order();
-			if(!r_A.Append_Block(r_t_uf, 0, n_gauge_order)) // put the UF at the right spot
+			if(!r_A.Append_Block(r_t_uf, n_UF_order, n_gauge_order)) // put the UF at the right spot
 				throw std::bad_alloc();
 			// add unary factor
 		}
@@ -300,7 +311,7 @@ protected:
  *	@tparam CAMatrixBlockSizes is list of block sizes in the Jacobian matrix
  */
 template <class CSystem, class CLinearSolver, class CAMatrixBlockSizes = typename CSystem::_TyJacobianMatrixBlockList>
-class CNonlinearSolver_A {
+class CNonlinearSolver_A : public nonlinear_detail::CNonlinearSolver_Base<CSystem, CLinearSolver, CAMatrixBlockSizes, true, false> {
 public:
 	typedef CSystem _TySystem; /**< @brief sy	stem type */
 	typedef CLinearSolver _TyLinearSolver; /**< @brief linear solver type */
@@ -340,27 +351,29 @@ public:
 	};
 
 protected:
-	CSystem &m_r_system; /**< @brief reference to the system */
-	CLinearSolver m_linear_solver; /**< @brief linear solver */
-	CLinearSolver_Schur<CLinearSolver, _TyAMatrixBlockSizes, CSystem> m_schur_solver; /**< @brief linear solver with Schur trick */
+	typedef nonlinear_detail::CNonlinearSolver_Base<CSystem, CLinearSolver, CAMatrixBlockSizes, true, false> _TyBase; /**< @brief base solver utils type */
+
+//	CSystem &this->m_r_system; /**< @brief reference to the system */
+//	CLinearSolver this->m_linear_solver; /**< @brief linear solver */
+//	CLinearSolver_Schur<CLinearSolver, _TyAMatrixBlockSizes, CSystem> this->m_schur_solver; /**< @brief linear solver with Schur trick */
 
 	CUberBlockMatrix m_A; /**< @brief the A matrix (built incrementally) */
 	Eigen::VectorXd m_v_error; /**< @brief error vector */
 	Eigen::VectorXd m_v_dx; /**< @brief dx vector */
 	size_t m_n_edges_in_A; /**< @brief number of edges already in A */
-#ifdef __SLAM_COUNT_ITERATIONS_AS_VERTICES
-	size_t m_n_last_optimized_vertex_num;
-#else // __SLAM_COUNT_ITERATIONS_AS_VERTICES
-	size_t m_n_step; /**< @brief counter of incremental steps modulo m_n_nonlinear_solve_threshold */
-#endif // __SLAM_COUNT_ITERATIONS_AS_VERTICES
-	size_t m_n_linear_solve_threshold; /**< @brief step threshold for linear solve */
-	size_t m_n_nonlinear_solve_threshold; /**< @brief step threshold for nonlinear solve */
-	size_t m_n_nonlinear_solve_max_iteration_num; /**< @brief maximal number of iterations in incremental nonlinear solve */
-	double m_f_nonlinear_solve_error_threshold; /**< @brief error threshold in incremental nonlinear solve */ // t_odo - document these in elementwise A and L
-	bool m_b_verbose; /**< @brief verbosity flag */
-	bool m_b_use_schur; /**< @brief use schur complement flag */
 
-	size_t m_n_real_step; /**< @brief counter of incremental steps (no modulo) */
+//#ifdef __SLAM_COUNT_ITERATIONS_AS_VERTICES
+//	size_t m_n_last_optimized_vertex_num;
+//#else // __SLAM_COUNT_ITERATIONS_AS_VERTICES
+//	size_t m_n_step; /**< @brief counter of incremental steps modulo m_n_nonlinear_solve_threshold */
+//#endif // __SLAM_COUNT_ITERATIONS_AS_VERTICES
+//	size_t m_n_linear_solve_threshold; /**< @brief step threshold for linear solve */
+//	size_t m_n_nonlinear_solve_threshold; /**< @brief step threshold for nonlinear solve */
+//	size_t m_n_nonlinear_solve_max_iteration_num; /**< @brief maximal number of iterations in incremental nonlinear solve */
+//	double m_f_nonlinear_solve_error_threshold; /**< @brief error threshold in incremental nonlinear solve */ // t_odo - document these in elementwise A and L
+//	bool this->m_b_verbose; /**< @brief verbosity flag */
+//	bool this->m_b_use_schur; /**< @brief use schur complement flag */
+//	size_t m_n_real_step; /**< @brief counter of incremental steps (no modulo) */
 
 	bool m_b_system_dirty; /**< @brief system updated without relinearization flag */
 
@@ -371,9 +384,9 @@ protected:
 	double m_f_chol_time; /**< @brief time spent in Choleski() section */
 	double m_f_norm_time; /**< @brief time spent in norm calculation section */
 
-	CTimer m_timer; /**< @brief timer object */
-
-	bool m_b_had_loop_closure; /**< @brief (probable) loop closure flag */
+//	CTimer this->m_timer; /**< @brief timer object */
+//
+//	bool m_b_had_loop_closure; /**< @brief (probable) loop closure flag */
 
 public:
 	/**
@@ -400,9 +413,12 @@ public:
 		size_t n_nonlinear_solve_threshold, size_t n_nonlinear_solve_max_iteration_num = 5,
 		double f_nonlinear_solve_error_threshold = .01, bool b_verbose = false,
 		CLinearSolver linear_solver = CLinearSolver(), bool b_use_schur = true)
-		:m_r_system(r_system), m_linear_solver(linear_solver),
-		m_schur_solver(linear_solver), m_n_edges_in_A(0),
-#ifdef __SLAM_COUNT_ITERATIONS_AS_VERTICES
+		:_TyBase(r_system, n_linear_solve_threshold,
+		n_nonlinear_solve_threshold, n_nonlinear_solve_max_iteration_num,
+		f_nonlinear_solve_error_threshold, b_verbose, linear_solver, b_use_schur),
+		/*this->m_r_system(r_system), this->m_linear_solver(linear_solver),
+		this->m_schur_solver(linear_solver),*/ m_n_edges_in_A(0),
+/*#ifdef __SLAM_COUNT_ITERATIONS_AS_VERTICES
 		m_n_last_optimized_vertex_num(0),
 #else // __SLAM_COUNT_ITERATIONS_AS_VERTICES
 		m_n_step(0),
@@ -411,11 +427,11 @@ public:
 		m_n_nonlinear_solve_threshold(n_nonlinear_solve_threshold),
 		m_n_nonlinear_solve_max_iteration_num(n_nonlinear_solve_max_iteration_num),
 		m_f_nonlinear_solve_error_threshold(f_nonlinear_solve_error_threshold),
-		m_b_verbose(b_verbose), m_b_use_schur(b_use_schur), m_n_real_step(0),
+		this->m_b_verbose(b_verbose), this->m_b_use_schur(b_use_schur), m_n_real_step(0),*/
 		m_b_system_dirty(false), m_n_iteration_num(0), m_f_serial_time(0), m_f_ata_time(0),
-		m_f_premul_time(0), m_f_chol_time(0), m_f_norm_time(0), m_b_had_loop_closure(false)
+		m_f_premul_time(0), m_f_chol_time(0), m_f_norm_time(0)//, m_b_had_loop_closure(false)
 	{
-		_ASSERTE(!m_n_nonlinear_solve_threshold || !m_n_linear_solve_threshold); // only one of those
+		//_ASSERTE(!m_n_nonlinear_solve_threshold || !m_n_linear_solve_threshold); // only one of those
 	}
 
 	/**
@@ -434,9 +450,11 @@ public:
 		TMarginalsComputationPolicy t_marginals_config = TMarginalsComputationPolicy(),
 		bool b_verbose = false,
 		CLinearSolver linear_solver = CLinearSolver(), bool b_use_schur = true)
-		:m_r_system(r_system), m_linear_solver(linear_solver),
-		m_schur_solver(linear_solver), m_n_edges_in_A(0),
-#ifdef __SLAM_COUNT_ITERATIONS_AS_VERTICES
+		:_TyBase(r_system, t_incremental_config,
+		TMarginalsComputationPolicy(), b_verbose, linear_solver, b_use_schur),
+		/*this->m_r_system(r_system), this->m_linear_solver(linear_solver),
+		this->m_schur_solver(linear_solver),*/ m_n_edges_in_A(0),
+/*#ifdef __SLAM_COUNT_ITERATIONS_AS_VERTICES
 		m_n_last_optimized_vertex_num(0),
 #else // __SLAM_COUNT_ITERATIONS_AS_VERTICES
 		m_n_step(0),
@@ -445,11 +463,11 @@ public:
 		m_n_nonlinear_solve_threshold(t_incremental_config.t_nonlinear_freq.n_period),
 		m_n_nonlinear_solve_max_iteration_num(t_incremental_config.n_max_nonlinear_iteration_num),
 		m_f_nonlinear_solve_error_threshold(t_incremental_config.f_nonlinear_error_thresh),
-		m_b_verbose(b_verbose), m_b_use_schur(b_use_schur), m_n_real_step(0),
+		this->m_b_verbose(b_verbose), this->m_b_use_schur(b_use_schur), m_n_real_step(0),*/
 		m_b_system_dirty(false), m_n_iteration_num(0), m_f_serial_time(0), m_f_ata_time(0),
-		m_f_premul_time(0), m_f_chol_time(0), m_f_norm_time(0), m_b_had_loop_closure(false)
+		m_f_premul_time(0), m_f_chol_time(0), m_f_norm_time(0)//, m_b_had_loop_closure(false)
 	{
-		_ASSERTE(!m_n_nonlinear_solve_threshold || !m_n_linear_solve_threshold); // only one of those
+		//_ASSERTE(!m_n_nonlinear_solve_threshold || !m_n_linear_solve_threshold); // only one of those
 		if(t_marginals_config.b_calculate) // not supported at the moment
 			throw std::runtime_error("CNonlinearSolver_A does not support marginals calculation");
 	}
@@ -473,24 +491,12 @@ public:
 	}
 
 	/**
-	 *	@brief calculates chi-squared error
-	 *	@return Returns chi-squared error.
-	 *	@note This only works with systems with edges of one degree of freedom
-	 *		(won't work for e.g. systems with both poses and landmarks).
+	 *	@brief gets the current system matrix (not necessarily up-to-date)
+	 *	@return Returns const reference to the current system matrix.
 	 */
-	double f_Chi_Squared_Error() const
+	const CUberBlockMatrix &r_A() const
 	{
-		return _TyJacOps::f_Chi_Squared_Error(m_r_system);
-	}
-
-	/**
-	 *	@brief calculates denormalized chi-squared error
-	 *	@return Returns denormalized chi-squared error.
-	 *	@note This doesn't perform the final division by (number of edges - degree of freedoms).
-	 */
-	double f_Chi_Squared_Error_Denorm() const
-	{
-		return _TyJacOps::f_Chi_Squared_Error_Denorm(m_r_system);
+		return m_A;
 	}
 
 	/**
@@ -504,13 +510,13 @@ public:
 	bool Dump_SystemMatrix(const char *p_s_filename, int n_scalar_size = 5)
 	{
 		try {
-			_TyJacOps::Extend_A(m_r_system, m_A, m_n_edges_in_A); // recalculated all the jacobians inside Extend_A()
+			_TyJacOps::Extend_A(this->m_r_system, m_A, m_n_edges_in_A); // recalculated all the jacobians inside Extend_A()
 			if(!m_b_system_dirty)
-				_TyJacOps::Refresh_A(m_r_system, m_n_edges_in_A); // calculate only for new edges
+				_TyJacOps::Refresh_A(this->m_r_system, m_n_edges_in_A); // calculate only for new edges
 			else
-				_TyJacOps::Refresh_A(m_r_system); // calculate for entire system
+				_TyJacOps::Refresh_A(this->m_r_system); // calculate for entire system
 			m_b_system_dirty = false;
-			m_n_edges_in_A = m_r_system.r_Edge_Pool().n_Size(); // right? // yes.
+			m_n_edges_in_A = this->m_r_system.r_Edge_Pool().n_Size(); // right? // yes.
 			_ASSERTE(m_A.n_Row_Num() >= m_A.n_Column_Num()); // no, A is *not* square, but size of measurements >= vertices
 		} catch(std::bad_alloc&) {
 			return false;
@@ -545,11 +551,11 @@ public:
 	 */
 	void Incremental_Step(_TyBaseEdge &UNUSED(r_last_edge)) // throw(std::bad_alloc)
 	{
-		size_t n_vertex_num = m_r_system.r_Vertex_Pool().n_Size();
+		/*size_t n_vertex_num = this->m_r_system.r_Vertex_Pool().n_Size();
 		if(!m_b_had_loop_closure) {
-			_ASSERTE(!m_r_system.r_Edge_Pool().b_Empty());
+			_ASSERTE(!this->m_r_system.r_Edge_Pool().b_Empty());
 			typename _TyEdgeMultiPool::_TyConstBaseRef r_edge =
-				m_r_system.r_Edge_Pool()[m_r_system.r_Edge_Pool().n_Size() - 1];
+				this->m_r_system.r_Edge_Pool()[this->m_r_system.r_Edge_Pool().n_Size() - 1];
 			// get a reference to the last edge interface
 
 			if(r_edge.n_Vertex_Num() > 1) { // unary factors do not cause classical loop closures
@@ -611,7 +617,15 @@ public:
 				Optimize(1, 0); // only if there was a loop (ignores possibly high residual after single step optimization)
 			}
 			// simple optimization
-		}
+		}*/
+
+		std::pair<bool, int> t_optimize = this->t_Incremental_Step(r_last_edge);
+		if(t_optimize.second == 2) {
+			Optimize(this->m_t_incremental_config.n_max_nonlinear_iteration_num,
+				this->m_t_incremental_config.f_nonlinear_error_thresh); // nonlinear optimization
+		} else if(t_optimize.second == 1)
+			Optimize(1, 0); // linear optimization
+		// decide on incremental optimization
 	}
 
 	/**
@@ -622,8 +636,8 @@ public:
 	 */
 	void Optimize(size_t n_max_iteration_num = 5, double f_min_dx_norm = .01) // throw(std::bad_alloc)
 	{
-		const size_t n_variables_size = m_r_system.n_VertexElement_Num();
-		const size_t n_measurements_size = m_r_system.n_EdgeElement_Num();
+		const size_t n_variables_size = this->m_r_system.n_VertexElement_Num();
+		const size_t n_measurements_size = this->m_r_system.n_EdgeElement_Num();
 		if(n_variables_size > n_measurements_size) {
 			if(n_measurements_size)
 				fprintf(stderr, "warning: the system is underspecified\n");
@@ -635,13 +649,13 @@ public:
 			return; // nothing to solve (but no results need to be generated so it's ok)
 		// can't solve in such conditions
 
-		_TyJacOps::Extend_A(m_r_system, m_A, m_n_edges_in_A); // recalculated all the jacobians inside Extend_A()
+		_TyJacOps::Extend_A(this->m_r_system, m_A, m_n_edges_in_A); // recalculated all the jacobians inside Extend_A()
 		if(!m_b_system_dirty)
-			_TyJacOps::Refresh_A(m_r_system, m_n_edges_in_A); // calculate only for new edges
+			_TyJacOps::Refresh_A(this->m_r_system, m_n_edges_in_A); // calculate only for new edges
 		else
-			_TyJacOps::Refresh_A(m_r_system); // calculate for entire system
+			_TyJacOps::Refresh_A(this->m_r_system); // calculate for entire system
 		m_b_system_dirty = false;
-		m_n_edges_in_A = m_r_system.r_Edge_Pool().n_Size(); // right? // yes.
+		m_n_edges_in_A = this->m_r_system.r_Edge_Pool().n_Size(); // right? // yes.
 		//_ASSERTE(m_A.n_Row_Num() >= m_A.n_Column_Num()); // no, A is *not* square, but size of measurements >= vertices // this is lifted with solving of underspecified systems
 		// need to have A
 
@@ -654,7 +668,7 @@ public:
 			++ m_n_iteration_num;
 			// debug
 
-			if(m_b_verbose) {
+			if(this->m_b_verbose) {
 				if(n_max_iteration_num == 1)
 					printf("\n=== incremental optimization step ===\n\n");
 				else
@@ -663,23 +677,23 @@ public:
 			// verbose
 
 			if(n_iteration && m_b_system_dirty) {
-				_TyJacOps::Refresh_A(m_r_system);
+				_TyJacOps::Refresh_A(this->m_r_system);
 				m_b_system_dirty = false;
 			}
 			// no need to rebuild A, just refresh the values that are being referenced
 
 			_ASSERTE(m_A.n_Row_Num() == n_measurements_size); // should be the same
-			_TyJacOps::Collect_R_Errors(m_r_system, m_v_error);
+			_TyJacOps::Collect_R_Errors(this->m_r_system, m_v_error);
 			// collect errors (in parallel)
 
-			double f_serial_start = m_timer.f_Time();
+			double f_serial_start = this->m_timer.f_Time();
 
 			{
 				CUberBlockMatrix lambda;
 				m_A.PreMultiplyWithSelfTransposeTo_FBS_Parallel<_TyAMatrixBlockSizes>(lambda, true);
 				// calculate lambda without calculating At (and only upper diagonal thereof)
 
-				double f_ata_end = m_timer.f_Time();
+				double f_ata_end = this->m_timer.f_Time();
 
 				{
 					Eigen::VectorXd &v_eta = m_v_dx; // dx is calculated inplace from eta
@@ -694,51 +708,51 @@ public:
 				}
 				// calculate eta = A^T * b
 
-				double f_mul_end = m_timer.f_Time();
+				double f_mul_end = this->m_timer.f_Time();
 
 				bool b_cholesky_result;
 				{
 					Eigen::VectorXd &v_eta = m_v_dx; // dx is calculated inplace from eta
-					if(!m_b_use_schur) {
+					if(!this->m_b_use_schur) {
 						if(n_max_iteration_num > 1) {
 							do {
 								if(!n_iteration &&
-								   !_TyLinearSolverWrapper::FinalBlockStructure(m_linear_solver, lambda)) {
+								   !_TyLinearSolverWrapper::FinalBlockStructure(this->m_linear_solver, lambda)) {
 									b_cholesky_result = false;
 									break;
 								}
 								// prepare symbolic factorization, structure of lambda won't change in the next steps
 
-								b_cholesky_result = _TyLinearSolverWrapper::Solve(m_linear_solver, lambda, v_eta);
+								b_cholesky_result = _TyLinearSolverWrapper::Solve(this->m_linear_solver, lambda, v_eta);
 								// p_dx = eta = lambda / eta
 							} while(0);
 						} else
-							b_cholesky_result = m_linear_solver.Solve_PosDef(lambda, v_eta); // p_dx = eta = lambda / eta
+							b_cholesky_result = this->m_linear_solver.Solve_PosDef(lambda, v_eta); // p_dx = eta = lambda / eta
 					} else { // use Schur complement
 						if(!n_iteration)
-							m_schur_solver.SymbolicDecomposition_Blocky(lambda);
-						b_cholesky_result = m_schur_solver.Solve_PosDef_Blocky(lambda, v_eta);
+							this->m_schur_solver.SymbolicDecomposition_Blocky(lambda);
+						b_cholesky_result = this->m_schur_solver.Solve_PosDef_Blocky(lambda, v_eta);
 						// Schur
 					}
 
-					if(m_b_verbose) {
-						printf("%s %s", (m_b_use_schur)? "Schur" : "Cholesky",
+					if(this->m_b_verbose) {
+						printf("%s %s", (this->m_b_use_schur)? "Schur" : "Cholesky",
 							(b_cholesky_result)? "succeeded\n" : "failed\n");
 					}
 				}
 				// calculate cholesky, reuse block ordering if the linear solver supports it
 
-				double f_chol_end = m_timer.f_Time();
+				double f_chol_end = this->m_timer.f_Time();
 
 				double f_residual_norm = 0;
 				if(b_cholesky_result) {
 					f_residual_norm = m_v_dx.norm(); // Eigen likely uses SSE and OpenMP
-					if(m_b_verbose)
+					if(this->m_b_verbose)
 						printf("residual norm: %.4f\n", f_residual_norm);
 				}
 				// calculate residual norm
 
-				double f_norm_end = m_timer.f_Time();
+				double f_norm_end = this->m_timer.f_Time();
 				double f_serial_time = f_norm_end - f_serial_start;
 				m_f_ata_time += f_ata_end - f_serial_start;
 				m_f_premul_time += f_mul_end - f_ata_end;
@@ -752,7 +766,7 @@ public:
 				// in case the error is low enough, quit (saves us recalculating the hessians)
 
 				if(b_cholesky_result) {
-					_TyJacOps::PushValuesInGraphSystem(m_r_system, m_v_dx);
+					_TyJacOps::PushValuesInGraphSystem(this->m_r_system, m_v_dx);
 					m_b_system_dirty = true;
 
 					// t_odo - create more efficient system; use FAP to keep vertices and edges (doesn't change addresses, can quickly iterate)
@@ -779,5 +793,7 @@ protected:
 	CNonlinearSolver_A(const CNonlinearSolver_A &UNUSED(r_solver)); /**< @brief the object is not copyable */
 	CNonlinearSolver_A &operator =(const CNonlinearSolver_A &UNUSED(r_solver)) { return *this; } /**< @brief the object is not copyable */
 };
+
+/** @} */ // end of group
 
 #endif // !__NONLINEAR_BLOCKY_SOLVER_A_INCLUDED

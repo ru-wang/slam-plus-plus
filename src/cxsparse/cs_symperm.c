@@ -1,4 +1,4 @@
-#include "cs.h"
+#include "cxsparse/cs.h"
 /* C = A(p,p) where A and C are symmetric the upper part stored; pinv not p */
 cs *cs_symperm (const cs *A, const CS_INT *pinv, CS_INT values)
 {

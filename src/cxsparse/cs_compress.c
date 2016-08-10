@@ -1,4 +1,4 @@
-#include "cs.h"
+#include "cxsparse/cs.h"
 /* C = compressed-column form of a triplet matrix T */
 cs *cs_compress (const cs *T)
 {

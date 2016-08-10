@@ -1,4 +1,4 @@
-#include "cs.h"
+#include "cxsparse/cs.h"
 /* solve U'x=b where x and b are dense.  x=b on input, solution on output. */
 CS_INT cs_utsolve (const cs *U, CS_ENTRY *x)
 {

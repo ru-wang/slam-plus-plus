@@ -1,4 +1,4 @@
-#include "cs.h"
+#include "cxsparse/cs.h"
 /* depth-first-search of the graph of a matrix, starting at node j */
 CS_INT cs_dfs (CS_INT j, cs *G, CS_INT top, CS_INT *xi, CS_INT *pstack, const CS_INT *pinv)
 {

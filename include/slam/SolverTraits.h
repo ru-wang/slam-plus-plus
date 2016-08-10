@@ -21,6 +21,12 @@
  *	@date 2013
  */
 
+#include "slam/IncrementalPolicy.h"
+
+/** \addtogroup nlsolve
+ *	@{
+ */
+
 /**
  *	@brief solver trait class
  *	@tparam CSolver is solver type
@@ -46,9 +52,11 @@ public:
 		solver_IsPreferredIncremental = CSolver::solver_IsPreferredIncremental, /**< @brief preferred incremental solver flag; no additional interface required, the solver is supposed to be good at incremental solving */
 		solver_ExportsJacobian = CSolver::solver_ExportsJacobian, /**< @brief interface for exporting jacobian system matrix flag; solvers that support it have <tt>const CUberBlockMatrix &r_A() const</tt> */
 		solver_ExportsHessian = CSolver::solver_ExportsHessian, /**< @brief interface for exporting hessian system matrix flag; solvers that support it have <tt>const CUberBlockMatrix &r_Lambda() const</tt> */
-		solver_ExportsFactor = CSolver::solver_ExportsFactor /**< @brief interface for exporting factorized system matrix flag; solvers that support it have <tt>const CUberBlockMatrix &r_R() const</tt> */
+		solver_ExportsFactor = CSolver::solver_ExportsFactor /**< @brief interface for exporting factorized system matrix flag; solvers that support it have <tt>const CUberBlockMatrix &r_R() const</tt>, <tt>const size_t *p_R_Ordering() const</tt> and <tt>size_t n_R_Ordering_Size() const</tt> */
 	};
 };
+
+/** @} */ // end of group
 
 /**
  *	@brief token, used as a placeholder for solver templates,
@@ -95,6 +103,7 @@ public:
 	 *	@tparam CEdgeTraitsType is edge traits template name
 	 *	@tparam CVertexTraitsType is vertex traits template name
 	 *	@tparam CParseLoopType is parse loop template name
+	 *	@tparam CParsedPrimitives is a list of parsed primitives (e.g. CStandardParsedPrimitives)
 	 *	@tparam CRunEnvironment is type of environtment the solver is supposed to run in
 	 *
 	 *	@param[in] t_env is environtment the solver is supposed to run in
@@ -105,11 +114,11 @@ public:
 		template <class> class CVertexTraitsType,
 		template <class, class, template <class> class vcneedsnamehere,
 		template <class> class vcneedsnamehereaswell>
-		class CParseLoopType, class CRunEnvironment>
+		class CParseLoopType, class CParsedPrimitives, class CRunEnvironment>
 	static inline bool Run_MainApp(CRunEnvironment t_env) // throw(std::runtime_error, std::bad_alloc)
 	{
 		return t_env.template Run<CSystemType, CNonlinearSolverType,
-			CEdgeTraitsType, CVertexTraitsType, CParseLoopType>();
+			CEdgeTraitsType, CVertexTraitsType, CParseLoopType, CParsedPrimitives>();
 		// run with parameters
 	}
 };
@@ -136,6 +145,7 @@ public:
 	 *	@tparam CEdgeTraitsType is edge traits template name
 	 *	@tparam CVertexTraitsType is vertex traits template name
 	 *	@tparam CParseLoopType is parse loop template name
+	 *	@tparam CParsedPrimitives is a list of parsed primitives (e.g. CStandardParsedPrimitives)
 	 *	@tparam CRunEnvironment is type of environtment the solver is supposed to run in
 	 *
 	 *	@param[in] t_env is environtment the solver is supposed to run in
@@ -146,7 +156,7 @@ public:
 		template <class> class CVertexTraitsType,
 		template <class, class, template <class> class vcneedsnamehere,
 		template <class> class vcneedsnamehereaswell>
-		class CParseLoopType, class CRunEnvironment>
+		class CParseLoopType, class CParsedPrimitives, class CRunEnvironment>
 	static inline bool Run_MainApp(CRunEnvironment UNUSED(t_env))
 	{
 		fprintf(stderr, "error: the selected solver was not included\n");
@@ -176,6 +186,7 @@ public:
 	 *	@tparam CEdgeTraitsType is edge traits template name
 	 *	@tparam CVertexTraitsType is vertex traits template name
 	 *	@tparam CParseLoopType is parse loop template name
+	 *	@tparam CParsedPrimitives is a list of parsed primitives (e.g. CStandardParsedPrimitives)
 	 *	@tparam CRunEnvironment is type of environtment the solver is supposed to run in
 	 *
 	 *	@param[in] t_env is environtment the solver is supposed to run in
@@ -186,7 +197,7 @@ public:
 		template <class> class CVertexTraitsType,
 		template <class, class, template <class> class vcneedsnamehere,
 		template <class> class vcneedsnamehereaswell>
-		class CParseLoopType, class CRunEnvironment>
+		class CParseLoopType, class CParsedPrimitives, class CRunEnvironment>
 	static inline bool Run_MainApp(CRunEnvironment UNUSED(t_env))
 	{
 		fprintf(stderr, "error: the selected solver is not supported by the SE types\n");

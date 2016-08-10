@@ -39,12 +39,16 @@
 #include "slam/2DSolverBase.h"
 #include "slam/Parser.h" // parsed types passed to constructors
 
+/** \addtogroup se2
+ *	@{
+ */
+
 /**
  *	@brief SE(2) pose vertex type
  */
 class CVertexPose2D : public CSEBaseVertexImpl<CVertexPose2D, 3> {
 public:
-	__SE2_TYPES_ALIGN_OPERATOR_NEW
+	__GRAPH_TYPES_ALIGN_OPERATOR_NEW
 
 	/**
 	 *	@brief default constructor; has no effect
@@ -84,7 +88,7 @@ public:
  */
 class CVertexLandmark2D : public CSEBaseVertexImpl<CVertexLandmark2D, 2> {
 public:
-	__SE2_TYPES_ALIGN_OPERATOR_NEW
+	__GRAPH_TYPES_ALIGN_OPERATOR_NEW
 
 	/**
 	 *	@brief default constructor; has no effect
@@ -171,7 +175,7 @@ public:
 /**
  *	@brief SE(2) pose-pose edge
  */
-class CEdgePose2D : public CBaseEdgeImpl<CEdgePose2D, MakeTypelist(CVertexPose2D, CVertexPose2D), 3> {
+class CEdgePose2D : public CSEBaseEdgeImpl<CEdgePose2D, MakeTypelist(CVertexPose2D, CVertexPose2D), 3> {
 public:
 	/**
 	 *	@brief vertex initialization functor
@@ -207,7 +211,7 @@ public:
 	};
 
 public:
-	__SE2_TYPES_ALIGN_OPERATOR_NEW
+	__GRAPH_TYPES_ALIGN_OPERATOR_NEW
 
 	/**
 	 *	@brief default constructor; has no effect
@@ -225,7 +229,7 @@ public:
 	 */
 	template <class CSystem>
 	CEdgePose2D(const CParserBase::TEdge2D &r_t_edge, CSystem &r_system)
-		:CBaseEdgeImpl<CEdgePose2D, MakeTypelist(CVertexPose2D, CVertexPose2D), 3>(r_t_edge.m_n_node_0,
+		:CSEBaseEdgeImpl<CEdgePose2D, MakeTypelist(CVertexPose2D, CVertexPose2D), 3>(r_t_edge.m_n_node_0,
 		r_t_edge.m_n_node_1, r_t_edge.m_v_delta, r_t_edge.m_t_inv_sigma)
 	{
 		m_p_vertex0 = &r_system.template r_Get_Vertex<CVertexPose2D>(r_t_edge.m_n_node_0,
@@ -235,9 +239,10 @@ public:
 		// get vertices (initialize if required)
 		// "template" is required by g++, otherwise gives "expected primary-expression before '>' token"
 
-		_ASSERTE(r_system.r_Vertex_Pool()[r_t_edge.m_n_node_0].n_Dimension() == 3); // get the vertices from the vertex pool to ensure a correct type is used, do not use m_p_vertex0 / m_p_vertex1 for this
-		_ASSERTE(r_system.r_Vertex_Pool()[r_t_edge.m_n_node_1].n_Dimension() == 3);
+		//_ASSERTE(r_system.r_Vertex_Pool()[r_t_edge.m_n_node_0].n_Dimension() == 3); // get the vertices from the vertex pool to ensure a correct type is used, do not use m_p_vertex0 / m_p_vertex1 for this
+		//_ASSERTE(r_system.r_Vertex_Pool()[r_t_edge.m_n_node_1].n_Dimension() == 3);
 		// make sure the dimensionality is correct (might not be)
+		// this fails with const vertices, for obvious reasons. with the thunk tables this can be safely removed.
 	}
 
 	/**
@@ -254,7 +259,7 @@ public:
 	template <class CSystem>
 	CEdgePose2D(size_t n_node0, size_t n_node1, const Eigen::Vector3d &v_delta,
 		const Eigen::Matrix3d &r_t_inv_sigma, CSystem &r_system)
-		:CBaseEdgeImpl<CEdgePose2D, MakeTypelist(CVertexPose2D, CVertexPose2D), 3>(n_node0,
+		:CSEBaseEdgeImpl<CEdgePose2D, MakeTypelist(CVertexPose2D, CVertexPose2D), 3>(n_node0,
 		n_node1, v_delta, r_t_inv_sigma)
 	{
 		m_p_vertex0 = &r_system.template r_Get_Vertex<CVertexPose2D>(n_node0,
@@ -264,9 +269,10 @@ public:
 		// get vertices (initialize if required)
 		// "template" is required by g++, otherwise gives "expected primary-expression before '>' token"
 
-		_ASSERTE(r_system.r_Vertex_Pool()[n_node0].n_Dimension() == 3); // get the vertices from the vertex pool to ensure a correct type is used, do not use m_p_vertex0 / m_p_vertex1 for this
-		_ASSERTE(r_system.r_Vertex_Pool()[n_node1].n_Dimension() == 3);
+		//_ASSERTE(r_system.r_Vertex_Pool()[n_node0].n_Dimension() == 3); // get the vertices from the vertex pool to ensure a correct type is used, do not use m_p_vertex0 / m_p_vertex1 for this
+		//_ASSERTE(r_system.r_Vertex_Pool()[n_node1].n_Dimension() == 3);
 		// make sure the dimensionality is correct (might not be)
+		// this fails with const vertices, for obvious reasons. with the thunk tables this can be safely removed.
 	}
 
 	/**
@@ -275,8 +281,20 @@ public:
 	 */
 	inline void Update(const CParserBase::TEdge2D &r_t_edge)
 	{
-		CBaseEdgeImpl<CEdgePose2D, MakeTypelist(CVertexPose2D, CVertexPose2D),
+		CSEBaseEdgeImpl<CEdgePose2D, MakeTypelist(CVertexPose2D, CVertexPose2D),
 			3>::Update(r_t_edge.m_v_delta, r_t_edge.m_t_inv_sigma);
+	}
+
+	/**
+	 *	@brief updates the edge with new measurement
+	 *
+	 *	@param[in] r_v_measurement is the measurement vector
+	 *	@param[in] r_t_sigma_inv is inverse sigma matrix
+	 */
+	inline void Update(const _TyStorageVector &r_v_measurement, const _TyMatrix &r_t_sigma_inv) // note that this is only required by MSVC which somehow does not see CSEBaseEdgeImpl<CEdgePose2D, MakeTypelist(CVertexPose2D, CVertexPose2D), 3>::Update()
+	{
+		CSEBaseEdgeImpl<CEdgePose2D, MakeTypelist(CVertexPose2D, CVertexPose2D),
+			3>::Update(r_v_measurement, r_t_sigma_inv);
 	}
 
 	/**
@@ -301,8 +319,8 @@ public:
 	}
 
 	/**
-	 *	@brief calculates chi-square error
-	 *	@return Returns (unweighted) chi-square error for this edge.
+	 *	@brief calculates \f$\chi^2\f$ error
+	 *	@return Returns (unweighted) \f$\chi^2\f$ error for this edge.
 	 */
 	inline double f_Chi_Squared_Error() const
 	{
@@ -319,7 +337,7 @@ public:
 /**
  *	@brief SE(2) pose-landmark edge
  */
-class CEdgePoseLandmark2D : public CBaseEdgeImpl<CEdgePoseLandmark2D,
+class CEdgePoseLandmark2D : public CSEBaseEdgeImpl<CEdgePoseLandmark2D,
 	MakeTypelist(CVertexPose2D, CVertexLandmark2D), 2> {
 public:
 	/**
@@ -394,7 +412,7 @@ protected:
 	//_TyMatrixAlign m_t_sigma_inv_xy; /**< @brief inverse sigma, in euclidean coordinate space */
 
 public:
-	__SE2_TYPES_ALIGN_OPERATOR_NEW
+	__GRAPH_TYPES_ALIGN_OPERATOR_NEW
 
 	/**
 	 *	@brief default constructor; has no effect
@@ -412,7 +430,7 @@ public:
 	 */
 	template <class CSystem>
 	CEdgePoseLandmark2D(const CParserBase::TLandmark2D_RB &r_t_edge, CSystem &r_system)
-		:CBaseEdgeImpl<CEdgePoseLandmark2D, MakeTypelist(CVertexPose2D, CVertexLandmark2D),
+		:CSEBaseEdgeImpl<CEdgePoseLandmark2D, MakeTypelist(CVertexPose2D, CVertexLandmark2D),
 		2>(r_t_edge.m_n_node_0, r_t_edge.m_n_node_1, r_t_edge.m_v_delta,
 		r_t_edge.m_t_inv_sigma)
 	{
@@ -432,9 +450,10 @@ public:
 		// get references to the vertices, initialize the vertices, if neccessary
 		// "template" is required by g++, otherwise gives "expected primary-expression before '>' token"
 
-		_ASSERTE(r_system.r_Vertex_Pool()[r_t_edge.m_n_node_0].n_Dimension() == 3); // get the vertices from the vertex pool to ensure a correct type is used, do not use m_p_vertex0 / m_p_vertex1 for this
-		_ASSERTE(r_system.r_Vertex_Pool()[r_t_edge.m_n_node_1].n_Dimension() == 2);
+		//_ASSERTE(r_system.r_Vertex_Pool()[r_t_edge.m_n_node_0].n_Dimension() == 3); // get the vertices from the vertex pool to ensure a correct type is used, do not use m_p_vertex0 / m_p_vertex1 for this
+		//_ASSERTE(r_system.r_Vertex_Pool()[r_t_edge.m_n_node_1].n_Dimension() == 2);
 		// make sure the dimensionality is correct (might not be)
+		// this fails with const vertices, for obvious reasons. with the thunk tables this can be safely removed.
 
 		//m_t_sigma_inv_xy = r_t_edge.m_t_inv_sigma;
 		// it's in different coordinate space, save it
@@ -450,7 +469,7 @@ public:
 	 */
 	template <class CSystem>
 	CEdgePoseLandmark2D(const CParserBase::TLandmark2D_XY &r_t_edge, CSystem &r_system)
-		:CBaseEdgeImpl<CEdgePoseLandmark2D, MakeTypelist(CVertexPose2D, CVertexLandmark2D),
+		:CSEBaseEdgeImpl<CEdgePoseLandmark2D, MakeTypelist(CVertexPose2D, CVertexLandmark2D),
 		2>(r_t_edge.m_n_node_0, r_t_edge.m_n_node_1, v_ToPolar(r_t_edge.m_v_delta),
 		t_ToPolar(r_t_edge.m_t_inv_sigma))
 	{
@@ -470,9 +489,10 @@ public:
 		// get references to the vertices, initialize the vertices, if neccessary
 		// "template" is required by g++, otherwise gives "expected primary-expression before '>' token"
 
-		_ASSERTE(r_system.r_Vertex_Pool()[r_t_edge.m_n_node_0].n_Dimension() == 3); // get the vertices from the vertex pool to ensure a correct type is used, do not use m_p_vertex0 / m_p_vertex1 for this
-		_ASSERTE(r_system.r_Vertex_Pool()[r_t_edge.m_n_node_1].n_Dimension() == 2);
+		//_ASSERTE(r_system.r_Vertex_Pool()[r_t_edge.m_n_node_0].n_Dimension() == 3); // get the vertices from the vertex pool to ensure a correct type is used, do not use m_p_vertex0 / m_p_vertex1 for this
+		//_ASSERTE(r_system.r_Vertex_Pool()[r_t_edge.m_n_node_1].n_Dimension() == 2);
 		// make sure the dimensionality is correct (might not be)
+		// this fails with const vertices, for obvious reasons. with the thunk tables this can be safely removed.
 
 		//m_t_sigma_inv_xy = r_t_edge.m_t_inv_sigma;
 		// it's in different coordinate space, save it
@@ -492,7 +512,7 @@ public:
 	template <class CSystem>
 	CEdgePoseLandmark2D(size_t n_node0, size_t n_node1, const Eigen::Vector2d &r_v_delta,
 		const Eigen::Matrix2d &r_t_inv_sigma, CSystem &r_system)
-		:CBaseEdgeImpl<CEdgePoseLandmark2D, MakeTypelist(CVertexPose2D, CVertexLandmark2D),
+		:CSEBaseEdgeImpl<CEdgePoseLandmark2D, MakeTypelist(CVertexPose2D, CVertexLandmark2D),
 		2>(n_node0, n_node1, r_v_delta, r_t_inv_sigma)
 	{
 		if(r_system.r_Vertex_Pool().n_Size() > size_t(n_node0) &&
@@ -511,9 +531,10 @@ public:
 		// get references to the vertices, initialize the vertices, if neccessary
 		// "template" is required by g++, otherwise gives "expected primary-expression before '>' token"
 
-		_ASSERTE(r_system.r_Vertex_Pool()[n_node0].n_Dimension() == 3); // get the vertices from the vertex pool to ensure a correct type is used, do not use m_p_vertex0 / m_p_vertex1 for this
-		_ASSERTE(r_system.r_Vertex_Pool()[n_node1].n_Dimension() == 2);
+		//_ASSERTE(r_system.r_Vertex_Pool()[n_node0].n_Dimension() == 3); // get the vertices from the vertex pool to ensure a correct type is used, do not use m_p_vertex0 / m_p_vertex1 for this
+		//_ASSERTE(r_system.r_Vertex_Pool()[n_node1].n_Dimension() == 2);
 		// make sure the dimensionality is correct (might not be)
+		// this fails with const vertices, for obvious reasons. with the thunk tables this can be safely removed.
 
 		//m_t_sigma_inv_xy = r_t_inv_sigma;
 		// it's in different coordinate space, save it
@@ -526,7 +547,7 @@ public:
 	 */
 	inline void Update(const CParserBase::TLandmark2D_RB &r_t_edge)
 	{
-		CBaseEdgeImpl<CEdgePoseLandmark2D, MakeTypelist(CVertexPose2D, CVertexLandmark2D),
+		CSEBaseEdgeImpl<CEdgePoseLandmark2D, MakeTypelist(CVertexPose2D, CVertexLandmark2D),
 			2>::Update(r_t_edge.m_v_delta, r_t_edge.m_t_inv_sigma);
 	}
 
@@ -552,8 +573,8 @@ public:
 	}
 
 	/**
-	 *	@brief calculates chi-square error
-	 *	@return Returns (unweighted) chi-square error for this edge.
+	 *	@brief calculates \f$\chi^2\f$ error
+	 *	@return Returns (unweighted) \f$\chi^2\f$ error for this edge.
 	 */
 	inline double f_Chi_Squared_Error() const
 	{
@@ -595,6 +616,12 @@ public:
 	}
 };
 
+/** @} */ // end of group
+
+/** \addtogroup parser
+ *	@{
+ */
+
 /**
  *	@brief edge traits for SE(2) solver
  */
@@ -610,7 +637,7 @@ public:
 	 */
 	static const char *p_s_Reason()
 	{
-		return "unknown edge type occured";
+		return "unknown edge type occurred";
 	}
 };
 
@@ -665,7 +692,7 @@ public:
 	 */
 	static const char *p_s_Reason()
 	{
-		return "unknown edge type occured";
+		return "unknown edge type occurred";
 	}
 };
 
@@ -724,5 +751,7 @@ public:
 		return "landmark edges not permitted in pose-only solver";
 	}
 };
+
+/** @} */ // end of group
 
 #endif // !__SE2_PRIMITIVE_TYPES_INCLUDED

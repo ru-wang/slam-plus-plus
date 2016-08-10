@@ -1,4 +1,4 @@
-#include "cs.h"
+#include "cxsparse/cs.h"
 /* p [0..n] = cumulative sum of c [0..n-1], and then copy p [0..n-1] into c */
 double cs_cumsum (CS_INT *p, CS_INT *c, CS_INT n)
 {

@@ -23,6 +23,10 @@
 
 #include "slam/FlatSystem.h"
 
+/** \addtogroup nlsolve
+ *	@{
+ */
+
 /**
  *	@def __NONLINEAR_SOLVER_SPCG_PLOT_RESIDUAL
  *	@brief if defined, residual norm of the CG solution is calculated and saved in
@@ -297,7 +301,9 @@ public:
 						// skip UF
 
 						const _TyBaseEdge &r_edge = r_graph_edges[n_edge];
+						_ASSERTE(r_edge.n_Vertex_Num() == 2); // won't work for hyperedges
 						size_t n_other_vertex = r_edge.n_Vertex_Id(1);
+						_ASSERTE(n_other_vertex < n_vertex_num); // make sure that this is not const vertex (would just most likely skip it but i'm not going to debug this right now)
 						//if(n_other_vertex == n_vertex)
 						//	n_other_vertex = r_edge.n_Vertex_Id(0); // graph is oriented
 						if(n_other_vertex == n_vertex || is_T[n_other_vertex])
@@ -328,7 +334,9 @@ public:
 							// skip UF (it can't actually occur here, though)
 
 							const _TyBaseEdge &r_edge = r_graph_edges[n_edge];
+							_ASSERTE(r_edge.n_Vertex_Num() == 2); // won't work for hyperedges
 							size_t n_other_vertex = r_edge.n_Vertex_Id(1);
+							_ASSERTE(n_other_vertex < n_vertex_num); // make sure that this is not const vertex (would just most likely skip it but i'm not going to debug this right now)
 							//if(n_other_vertex == n_vertex)
 							//	n_other_vertex = r_edge.n_Vertex_Id(0); // graph is oriented
 							if(n_other_vertex == n_vertex || is_T[n_other_vertex])
@@ -1194,8 +1202,8 @@ public:
 	}
 
 	/**
-	 *	@brief calculates chi-squared error
-	 *	@return Returns chi-squared error.
+	 *	@brief calculates \f$\chi^2\f$ error
+	 *	@return Returns \f$\chi^2\f$ error.
 	 *	@note This only works with systems with edges of one degree of freedom
 	 *		(won't work for e.g. systems with both poses and landmarks).
 	 */
@@ -1208,8 +1216,8 @@ public:
 	}
 
 	/**
-	 *	@brief calculates denormalized chi-squared error
-	 *	@return Returns denormalized chi-squared error.
+	 *	@brief calculates denormalized \f$\chi^2\f$ error
+	 *	@return Returns denormalized \f$\chi^2\f$ error.
 	 *	@note This doesn't perform the final division by (number of edges - degree of freedoms).
 	 */
 	inline double f_Chi_Squared_Error_Denorm() const
@@ -1320,8 +1328,8 @@ public:
 				_ASSERTE(r_edge.n_Vertex_Id(0) != r_edge.n_Vertex_Id(1));
 				size_t n_first_vertex = std::min(r_edge.n_Vertex_Id(0), r_edge.n_Vertex_Id(1));
 				m_b_had_loop_closure = (n_first_vertex < n_vertex_num - 2);
-				_ASSERTE(m_b_had_loop_closure || std::max(r_edge.n_Vertex_Id(0),
-					r_edge.n_Vertex_Id(1)) == n_vertex_num - 1);
+				//_ASSERTE(m_b_had_loop_closure || std::max(r_edge.n_Vertex_Id(0),
+				//	r_edge.n_Vertex_Id(1)) == n_vertex_num - 1); // won't work with const vertices
 			} else {
 				size_t n_first_vertex = r_edge.n_Vertex_Id(0);
 				m_b_had_loop_closure = (n_first_vertex < n_vertex_num - 1);
@@ -1492,7 +1500,7 @@ protected:
 	/**
 	 *	@brief creates the A matrix from scratch
 	 */
-	inline void AddEntriesInSparseSystem() // throw(std::bad_alloc)
+	inline void AddEntriesInSparseSystem() // throw(std::bad_alloc, std::runtime_error)
 	{
 		if(m_r_system.r_Edge_Pool().n_Size() > 1000) { // wins 2.42237 - 2.48938 = .06701 seconds on 10k.graph, likely more on larger graphs
 			//printf("building large matrix from scratch ...\n"); // debug
@@ -1515,9 +1523,22 @@ protected:
 			// ...
 		}
 
-		const Eigen::MatrixXd &r_t_uf = m_r_system.r_t_Unary_Factor();
-		if(!m_A.Append_Block(r_t_uf, 0, 0))
-			throw std::bad_alloc();
+		{
+			size_t n_UF_order = m_r_system.n_Unary_Factor_Order();
+			const Eigen::MatrixXd &r_t_uf = m_r_system.r_t_Unary_Factor();
+			if(!r_t_uf.cols())
+				throw std::runtime_error("system matrix assembled but unary factor not initialized yet"); // if this triggers, consider sorting your dataset or using an explicit CUnaryFactor
+#ifdef __AUTO_UNARY_FACTOR_ON_VERTEX_ZERO
+			size_t n_gauge_vertex = 0; // simple
+#else // __AUTO_UNARY_FACTOR_ON_VERTEX_ZERO
+			_ASSERTE(!m_r_system.r_Edge_Pool().b_Empty());
+			size_t n_gauge_vertex = m_r_system.r_Edge_Pool()[0].n_Vertex_Id(0);
+#endif // __AUTO_UNARY_FACTOR_ON_VERTEX_ZERO
+			_ASSERTE(!m_r_system.r_Vertex_Pool()[n_gauge_vertex].b_IsConstant()); // this one must not be
+			size_t n_gauge_order = m_r_system.r_Vertex_Pool()[n_gauge_vertex].n_Order();
+			if(!m_A.Append_Block(r_t_uf, n_UF_order, n_gauge_order)) // put the UF at the right spot
+				throw std::bad_alloc();
+		}
 		// add unary factor
 
 		m_r_system.r_Edge_Pool().For_Each(CAlloc_JacobianBlocks(m_A));
@@ -1571,7 +1592,7 @@ protected:
 	 */
 	class CSum_ChiSquareError {
 	protected:
-		double m_f_sum; /**< @brief a running sum of chi-square errors */
+		double m_f_sum; /**< @brief a running sum of \f$\chi^2\f$ errors */
 
 	public:
 		/**
@@ -1696,5 +1717,7 @@ protected:
 	CNonlinearSolver_SPCG(const CNonlinearSolver_SPCG &UNUSED(r_solver)); /**< @brief the object is not copyable */
 	CNonlinearSolver_SPCG &operator =(const CNonlinearSolver_SPCG &UNUSED(r_solver)) { return *this; } /**< @brief the object is not copyable */
 };
+
+/** @} */ // end of group
 
 #endif // !__NONLINEAR_BLOCKY_SOLVER_SPCG_INCLUDED

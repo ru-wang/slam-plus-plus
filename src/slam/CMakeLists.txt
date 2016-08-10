@@ -23,12 +23,16 @@ ENDIF(SLAM_P_P_GPU_BLAS)
 SET(SLAM_BASE_LIBRARY_SOURCES
   LinearSolver_Schur_GPU.cpp
   BlockMatrix.cpp
-  IncrementalPolicy.cpp
+  BlockMatrixTests.cpp
+  Debug.cpp
+  Eigenvalues.cpp
   LinearSolver_CholMod.cpp
   LinearSolver_CSparse.cpp
   LinearSolver_CXSparse.cpp
+  LinearSolver_Schur.cpp
   OrderingMagic.cpp
   Parser.cpp
+  Tags.cpp
   Tga.cpp
   Timer.cpp)
 

@@ -1,4 +1,4 @@
-#include "cs.h"
+#include "cxsparse/cs.h"
 /* depth-first search and postorder of a tree rooted at node j */
 CS_INT cs_tdfs (CS_INT j, CS_INT k, CS_INT *head, const CS_INT *next, CS_INT *post, CS_INT *stack)
 {
