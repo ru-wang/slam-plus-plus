@@ -143,9 +143,9 @@
 			/>
 			<Tool
 				Name="VCLinkerTool"
-				AdditionalDependencies="CSparse3_64.lib eigen3_64.lib CxSparse_64.lib CHOLMOD_64.lib SLAMpp_base_64.lib cula_core.lib cula_lapack.lib cuda.lib cublas.lib cusparse.lib igraph.lib"
+				AdditionalDependencies="CSparse3_64.lib eigen3_64.lib CxSparse_64.lib CHOLMOD_64.lib SLAMpp_base_64.lib cula_core.lib cula_lapack.lib cuda.lib cublas.lib cusparse.lib"
 				LinkIncremental="2"
-				AdditionalLibraryDirectories="..\bin\$(ConfigurationName)64"
+				AdditionalLibraryDirectories="..\bin\Debug64"
 				GenerateDebugInformation="true"
 				SubSystem="1"
 				TargetMachine="17"
@@ -296,9 +296,9 @@
 			/>
 			<Tool
 				Name="VCLinkerTool"
-				AdditionalDependencies="CSparse3_64.lib eigen3_64.lib CxSparse_64.lib CHOLMOD_64.lib SLAMpp_base_64.lib cula_core.lib cula_lapack.lib cuda.lib cublas.lib cusparse.lib igraph.lib"
+				AdditionalDependencies="CSparse3_64.lib eigen3_64.lib CxSparse_64.lib CHOLMOD_64.lib SLAMpp_base_64.lib cula_core.lib cula_lapack.lib cuda.lib cublas.lib cusparse.lib"
 				LinkIncremental="2"
-				AdditionalLibraryDirectories="..\bin\$(ConfigurationName)64"
+				AdditionalLibraryDirectories="..\bin\Debug64"
 				GenerateDebugInformation="true"
 				SubSystem="1"
 				TargetMachine="17"
@@ -449,9 +449,9 @@
 			/>
 			<Tool
 				Name="VCLinkerTool"
-				AdditionalDependencies="CSparse3_64.lib eigen3_64.lib CxSparse_64.lib CHOLMOD_64.lib SLAMpp_base_64.lib cula_core.lib cula_lapack.lib cuda.lib cublas.lib cusparse.lib igraph.lib"
+				AdditionalDependencies="CSparse3_64.lib eigen3_64.lib CxSparse_64.lib CHOLMOD_64.lib SLAMpp_base_64.lib cula_core.lib cula_lapack.lib cuda.lib cublas.lib cusparse.lib"
 				LinkIncremental="2"
-				AdditionalLibraryDirectories="..\bin\$(ConfigurationName)64"
+				AdditionalLibraryDirectories="..\bin\Debug64"
 				GenerateDebugInformation="true"
 				SubSystem="1"
 				TargetMachine="17"
@@ -602,9 +602,9 @@
 			/>
 			<Tool
 				Name="VCLinkerTool"
-				AdditionalDependencies="CSparse3_64.lib eigen3_64.lib CxSparse_64.lib CHOLMOD_64.lib SLAMpp_base_64.lib cula_core.lib cula_lapack.lib cuda.lib cublas.lib cusparse.lib igraph.lib"
+				AdditionalDependencies="CSparse3_64.lib eigen3_64.lib CxSparse_64.lib CHOLMOD_64.lib SLAMpp_base_64.lib cula_core.lib cula_lapack.lib cuda.lib cublas.lib cusparse.lib"
 				LinkIncremental="2"
-				AdditionalLibraryDirectories="..\bin\$(ConfigurationName)64"
+				AdditionalLibraryDirectories="..\bin\Debug64"
 				GenerateDebugInformation="true"
 				SubSystem="1"
 				TargetMachine="17"
@@ -755,9 +755,9 @@
 			/>
 			<Tool
 				Name="VCLinkerTool"
-				AdditionalDependencies="CSparse3_64.lib eigen3_64.lib CxSparse_64.lib CHOLMOD_64.lib SLAMpp_base_64.lib cula_core.lib cula_lapack.lib cuda.lib cublas.lib cusparse.lib igraph.lib"
+				AdditionalDependencies="CSparse3_64.lib eigen3_64.lib CxSparse_64.lib CHOLMOD_64.lib SLAMpp_base_64.lib cula_core.lib cula_lapack.lib cuda.lib cublas.lib cusparse.lib"
 				LinkIncremental="2"
-				AdditionalLibraryDirectories="..\bin\$(ConfigurationName)64"
+				AdditionalLibraryDirectories="..\bin\Debug64"
 				GenerateDebugInformation="true"
 				SubSystem="1"
 				TargetMachine="17"
@@ -908,9 +908,9 @@
 			/>
 			<Tool
 				Name="VCLinkerTool"
-				AdditionalDependencies="CSparse3_64.lib eigen3_64.lib CxSparse_64.lib CHOLMOD_64.lib SLAMpp_base_64.lib cula_core.lib cula_lapack.lib cuda.lib cublas.lib cusparse.lib igraph.lib"
+				AdditionalDependencies="CSparse3_64.lib eigen3_64.lib CxSparse_64.lib CHOLMOD_64.lib SLAMpp_base_64.lib cula_core.lib cula_lapack.lib cuda.lib cublas.lib cusparse.lib"
 				LinkIncremental="2"
-				AdditionalLibraryDirectories="..\bin\$(ConfigurationName)64"
+				AdditionalLibraryDirectories="..\bin\Debug64"
 				GenerateDebugInformation="true"
 				SubSystem="1"
 				TargetMachine="17"
@@ -1067,9 +1067,9 @@
 			/>
 			<Tool
 				Name="VCLinkerTool"
-				AdditionalDependencies="CSparse3_64.lib eigen3_64.lib CxSparse_64.lib CHOLMOD_64.lib SLAMpp_base_64.lib cula_core.lib cula_lapack.lib cuda.lib cublas.lib cusparse.lib igraph.lib"
+				AdditionalDependencies="CSparse3_64.lib eigen3_64.lib CxSparse_64.lib CHOLMOD_64.lib SLAMpp_base_64.lib cula_core.lib cula_lapack.lib cuda.lib cublas.lib cusparse.lib"
 				LinkIncremental="1"
-				AdditionalLibraryDirectories="..\bin\$(ConfigurationName)64"
+				AdditionalLibraryDirectories="..\bin\Release64"
 				GenerateDebugInformation="true"
 				SubSystem="1"
 				OptimizeReferences="2"
@@ -1229,9 +1229,9 @@
 			/>
 			<Tool
 				Name="VCLinkerTool"
-				AdditionalDependencies="CSparse3_64.lib eigen3_64.lib CxSparse_64.lib CHOLMOD_64.lib SLAMpp_base_64.lib cula_core.lib cula_lapack.lib cuda.lib cublas.lib cusparse.lib igraph.lib"
+				AdditionalDependencies="CSparse3_64.lib eigen3_64.lib CxSparse_64.lib CHOLMOD_64.lib SLAMpp_base_64.lib cula_core.lib cula_lapack.lib cuda.lib cublas.lib cusparse.lib"
 				LinkIncremental="1"
-				AdditionalLibraryDirectories="..\bin\$(ConfigurationName)64"
+				AdditionalLibraryDirectories="..\bin\Release64"
 				GenerateDebugInformation="true"
 				SubSystem="1"
 				OptimizeReferences="2"
@@ -1391,9 +1391,9 @@
 			/>
 			<Tool
 				Name="VCLinkerTool"
-				AdditionalDependencies="CSparse3_64.lib eigen3_64.lib CxSparse_64.lib CHOLMOD_64.lib SLAMpp_base_64.lib cula_core.lib cula_lapack.lib cuda.lib cublas.lib cusparse.lib igraph.lib"
+				AdditionalDependencies="CSparse3_64.lib eigen3_64.lib CxSparse_64.lib CHOLMOD_64.lib SLAMpp_base_64.lib cula_core.lib cula_lapack.lib cuda.lib cublas.lib cusparse.lib"
 				LinkIncremental="1"
-				AdditionalLibraryDirectories="..\bin\$(ConfigurationName)64"
+				AdditionalLibraryDirectories="..\bin\Release64"
 				GenerateDebugInformation="true"
 				SubSystem="1"
 				OptimizeReferences="2"
@@ -1471,7 +1471,7 @@
 			/>
 			<Tool
 				Name="VCLinkerTool"
-				AdditionalDependencies="CSparse3.lib CxSparse.lib eigen3.lib cholmod.lib SLAMpp_base.lib cula_core.lib cula_lapack.lib cuda.lib cublas.lib cusparse.lib igraph.lib "
+				AdditionalDependencies="CSparse3.lib CxSparse.lib eigen3.lib cholmod.lib SLAMpp_base.lib cula_core.lib cula_lapack.lib cuda.lib cublas.lib cusparse.lib"
 				OutputFile="$(OutDir)\$(ProjectName)$(ConfigurationName).exe"
 				LinkIncremental="1"
 				AdditionalLibraryDirectories="&quot;..\bin\Release&quot;;&quot;E:\my-projects\z_libs\g2o\trunk\lib\Release&quot;;&quot;E:\my-projects\z_libs\boost\boost_1_50_0\stage\lib&quot;"
@@ -1553,9 +1553,9 @@
 			/>
 			<Tool
 				Name="VCLinkerTool"
-				AdditionalDependencies="CSparse3_64.lib eigen3_64.lib CxSparse_64.lib CHOLMOD_64.lib SLAMpp_base_64.lib cula_core.lib cula_lapack.lib cuda.lib cublas.lib cusparse.lib igraph.lib"
+				AdditionalDependencies="CSparse3_64.lib eigen3_64.lib CxSparse_64.lib CHOLMOD_64.lib SLAMpp_base_64.lib cula_core.lib cula_lapack.lib cuda.lib cublas.lib cusparse.lib"
 				LinkIncremental="1"
-				AdditionalLibraryDirectories="..\bin\$(ConfigurationName)64"
+				AdditionalLibraryDirectories="..\bin\Release64"
 				GenerateDebugInformation="true"
 				SubSystem="1"
 				OptimizeReferences="2"
@@ -1715,9 +1715,9 @@
 			/>
 			<Tool
 				Name="VCLinkerTool"
-				AdditionalDependencies="CSparse3_64.lib eigen3_64.lib CxSparse_64.lib CHOLMOD_64.lib SLAMpp_base_64.lib cula_core.lib cula_lapack.lib cuda.lib cublas.lib cusparse.lib igraph.lib"
+				AdditionalDependencies="CSparse3_64.lib eigen3_64.lib CxSparse_64.lib CHOLMOD_64.lib SLAMpp_base_64.lib cula_core.lib cula_lapack.lib cuda.lib cublas.lib cusparse.lib"
 				LinkIncremental="1"
-				AdditionalLibraryDirectories="..\bin\$(ConfigurationName)64"
+				AdditionalLibraryDirectories="..\bin\Release64"
 				GenerateDebugInformation="true"
 				SubSystem="1"
 				OptimizeReferences="2"
@@ -1795,7 +1795,7 @@
 			/>
 			<Tool
 				Name="VCLinkerTool"
-				AdditionalDependencies="CSparse3.lib CxSparse.lib eigen3.lib cholmod.lib SLAMpp_base.lib cula_core.lib cula_lapack.lib cuda.lib cublas.lib cusparse.lib igraph.lib "
+				AdditionalDependencies="CSparse3.lib CxSparse.lib eigen3.lib cholmod.lib SLAMpp_base.lib cula_core.lib cula_lapack.lib cuda.lib cublas.lib cusparse.lib"
 				OutputFile="$(OutDir)\$(ProjectName)$(ConfigurationName).exe"
 				LinkIncremental="1"
 				AdditionalLibraryDirectories="&quot;..\bin\Release&quot;;&quot;E:\my-projects\z_libs\g2o\trunk\lib\Release&quot;;&quot;E:\my-projects\z_libs\boost\boost_1_50_0\stage\lib&quot;"
@@ -1877,9 +1877,9 @@
 			/>
 			<Tool
 				Name="VCLinkerTool"
-				AdditionalDependencies="CSparse3_64.lib eigen3_64.lib CxSparse_64.lib CHOLMOD_64.lib SLAMpp_base_64.lib cula_core.lib cula_lapack.lib cuda.lib cublas.lib cusparse.lib igraph.lib"
+				AdditionalDependencies="CSparse3_64.lib eigen3_64.lib CxSparse_64.lib CHOLMOD_64.lib SLAMpp_base_64.lib cula_core.lib cula_lapack.lib cuda.lib cublas.lib cusparse.lib"
 				LinkIncremental="1"
-				AdditionalLibraryDirectories="..\bin\$(ConfigurationName)64"
+				AdditionalLibraryDirectories="..\bin\Release64"
 				GenerateDebugInformation="true"
 				SubSystem="1"
 				OptimizeReferences="2"
