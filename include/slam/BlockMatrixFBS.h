@@ -1615,40 +1615,31 @@ public:
 		 */
 		template <class CColumnWidth>
 		class CPreMAD_InnerLoop {
-		public:
-			typedef typename CMakeVectorRef<CColumnWidth::n_size>::_TyConst _TySrcVectorShape; /**< @brief source vector Eigen::Map type (note it is unaligned) */
-
 		protected:
-			const TColumn::TBlockEntry m_r_t_block;
-			const TRow &m_r_t_row;
-			/*const TColumn &m_r_t_col;*/
+			const double *m_p_block_data;
 			double *m_p_dest_vector;
-			const _TySrcVectorShape m_r_src;
+			const double *m_p_src_vector;
 
 		public:
-			CPreMAD_InnerLoop(const TColumn::TBlockEntry r_t_block, const TRow &r_t_row,
-				/*const TColumn &r_t_col,*/ double *p_dest_vector, const _TySrcVectorShape r_src)
-				:m_r_t_block(r_t_block), m_r_t_row(r_t_row), m_p_dest_vector(p_dest_vector), m_r_src(r_src)
+			CPreMAD_InnerLoop(const double *p_block_data, double *p_dest_vector, const double *p_src_vector)
+				:m_p_block_data(p_block_data), m_p_dest_vector(p_dest_vector), m_p_src_vector(p_src_vector)
 			{}
 
 			template <class CRowHeight>
 			__forceinline void operator ()()
 			{
-				typedef typename CMakeVectorRef<CColumnWidth::n_size>::_Ty _TySrcVectorShape; /**< @brief source vector Eigen::Map type (note it is unaligned) */
-				typedef typename CMakeVectorRef<CRowHeight::n_size>::_Ty _TyDestVectorShape; /**< @brief destination vector Eigen::Map type (note it is unaligned) */
-				typedef typename CMakeMatrixRef<CRowHeight::n_size, CColumnWidth::n_size>::_Ty _TyBlockShape; /**< @brief matrix block Eigen::Map type */
+				typedef typename CMakeVectorRef<CColumnWidth::n_size>::_TyConst _TySrcVectorShape; // source vector Eigen::Map type (note it is unaligned)
+				typedef typename CMakeVectorRef<CRowHeight::n_size>::_Ty _TyDestVectorShape; // destination vector Eigen::Map type (note it is unaligned)
+				typedef typename CMakeMatrixRef<CRowHeight::n_size, CColumnWidth::n_size>::_TyConst _TyBlockShape; // matrix block Eigen::Map type
 
-				_ASSERTE(m_r_t_row.n_height == CRowHeight::n_size); // this is the last option, make sure it is this one (omits the branch)
-				const size_t n_row = m_r_t_row.n_cumulative_height_sum; // src vector offset
-				// for-each row
-
-				_TyDestVectorShape dest(m_p_dest_vector + n_row);
-				_TyBlockShape block((double*)m_r_t_block.second);
+				_TySrcVectorShape src(m_p_src_vector);
+				_TyDestVectorShape dest(m_p_dest_vector);
+				_TyBlockShape block(m_p_block_data);
 
 #ifdef __UBER_BLOCK_MATRIX_FBS_LAZY_PRODUCT
-				dest += block.lazyProduct(m_r_src); // fbsla
+				dest += block.lazyProduct(src); // fbsla
 #else // __UBER_BLOCK_MATRIX_FBS_LAZY_PRODUCT
-				dest.noalias() += block * m_r_src; // axpy
+				dest.noalias() += block * src; // axpy
 #endif // __UBER_BLOCK_MATRIX_FBS_LAZY_PRODUCT
 				// perform the multiplication, one block at a time
 			}
@@ -1675,15 +1666,10 @@ public:
 			template <class CColWidth>
 			__forceinline void operator ()()
 			{
-				typedef typename CMakeVectorRef<CColWidth::n_size>::_TyConst _TySrcVectorShape; /**< @brief source vector Eigen::Map type (note it is unaligned) */
-
 				_ASSERTE(m_r_t_col.block_list.empty() || m_r_t_col.n_width == CColWidth::n_size); // this is the last option, make sure it is this one (omits the branch)
-				const size_t n_column = m_r_t_col.n_cumulative_width_sum; // dest vector offset
-				// for-each column
+				const size_t n_column = m_r_t_col.n_cumulative_width_sum; // src vector offset
 
-				_TySrcVectorShape src(m_p_src_vector + n_column); // forces unaligned memory - no SSE2 (p_dest_vector can't be aligned due to block size)
-				// gets dest vector as eigen blah
-
+				const double *p_src = m_p_src_vector + n_column;
 				for(_TyBlockConstIter p_block_it =
 				   m_r_t_col.block_list.begin(), p_end_it = m_r_t_col.block_list.end();
 				   p_block_it != p_end_it; ++ p_block_it) {
@@ -1693,9 +1679,11 @@ public:
 					const TRow &r_t_row = m_r_row_list[r_t_block.first];
 					// get block row ...
 
+					const size_t n_row = r_t_row.n_cumulative_height_sum; // dest vector offset
+				
 					fbs_ut::CWrap3<>::In_RowHeight_DecisionTree_Given_ColumnWidth<CBlockMatrixTypelist,
-						CColWidth::n_size>(int(r_t_row.n_height), CPreMAD_InnerLoop<CColWidth>(r_t_block,
-						r_t_row, /*r_t_col,*/ m_p_dest_vector, src));
+						CColWidth::n_size>(int(r_t_row.n_height), CPreMAD_InnerLoop<CColWidth>(r_t_block.second,
+						m_p_dest_vector + n_row, p_src));
 					// wrap the inner loop in a row height decision tree
 				}
 			}
