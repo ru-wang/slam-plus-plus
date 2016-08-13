@@ -16,7 +16,7 @@ edges:
     EDGE_SE2/EDGE2/ODOMETRY <node_id_from> <node_id_to> <X> <Y> <Theta> <XX> <XY> <XT> <YY> <YT> <TT>
     where node_id_from < node_id_to
 
-Variable initialization entries are supproted and marked by tag VERTEX_SE2 or VERTEX2.
+Variable initialization entries are supported and marked by tag VERTEX_SE2 or VERTEX2.
 Edges are marked by tags EDGE_SE2, EDGE2 or ODOMETRY.
 Angles are in radians.
 The information matrix associated to each edge is NOT in squared form. The
@@ -30,11 +30,62 @@ stored row by row from top to bottom, with left to right column order. Example:
 Note that the 3D format datasets are described in the documentation.
 
 ---------------------------------------------------
+- SLAM++ Incremental BA format specifications
+---------------------------------------------------
+
+The Bundle Adjustment datasets are usually unordered, e.g. g2o's Venice871 dataset
+is just 871 camera vertices followed by a bunch of landmark vertices followed by
+a bunch of observations. It is not easy for the incremental solver to process such
+a file without reading all of it first and performing some graph analysis.
+
+We have implemented a bash script which parses a BA dataset, constructs a spanning
+tree and then orders the vertices as if captured by a SfM system, ready for incremental
+processing. To make the life of the optimizer easier, it also inserts markers where
+the system is in consistent state and can be optimized (there are no missing / orphaned
+vertices and all the observations are in place). The said script can be found at:
+
+https://sourceforge.net/p/slam-plus-plus/code/HEAD/tree/trunk/scripts/incremental_BA/
+
+The format is derived from the same one as that of g2o, i.e.:
+
+VERTEX_CAM <id> <x> <y> <z> <qx> <qy> <qz> <qw> <fx> <fy> <cx> <cy> <d>
+VERTEX_XYZ <id> <x> <y> <z>
+EDGE_PROJECT_P2MC <pt-id> <cam-id> <ox> <oy> <XX> <XY> <YY>
+CONSISTENCY_MARKER
+
+where <x>, <y> and <z> are Euclidean coordinates of the point and camera
+in a global coordinate frame, <qx>, <qy>, <qz> ans <qw> is a quaternion
+specifying the rotation of the camera, <fx> and <fy> is the focal length,
+<cx> and <cy> is the principal point position and <d> is the first radial
+distortion parameter.
+
+For the edge, <ox> and <oy> are the observed coordinates of the point and
+<XX> <XY> <YY> specify the upper triangle of the covariance matrix.
+
+The consistency marker identifies positions where one can optimize.
+
+There are currently two incremental BA datasets, the Guildford cathedral
+created from stills from the IMPART dataset (http://cvssp.org/impart/)
+and the Venice dataset originally published in [6].
+
+---------------------------------------------------
 - Datasets
 ---------------------------------------------------
 
 The following text contains information about sources of dataset files
 available to download.
+
+Guildford cathedral [7]
+---------------------------------------------------
+download: http://sourceforge.net/projects/slam-plus-plus/files/data/cathedral.zip/download
+
+Guildford cathedral - incremental version [7]
+---------------------------------------------------
+download: http://sourceforge.net/projects/slam-plus-plus/files/data/cathedral_inc.zip/download
+
+Venice - incremental version [6]
+---------------------------------------------------
+download: http://sourceforge.net/projects/slam-plus-plus/files/data/venice_inc.zip/download
 
 intel [4]
 ---------------------------------------------------
@@ -96,6 +147,7 @@ download: http://sourceforge.net/projects/slam-plus-plus/files/data/parking-gara
 [4] A. Howard and N. Roy, "The robotics data set repository (Radish)," 2003. [Online]. Available: http://radish.sourceforge.net/
 [5] M. Bosse, P. Newman, J. Leonard, and S. Teller, "Simultaneous localization and map building in large-scale cyclic environments using the Atlas framework," Intl. J. of Robotics Research, vol. 23, no. 12, pp. 1113-1139, Dec 2004.
 [6] R. Kuemmerle, G. Grisetti, H. Strasdat, K. Konolige, and W. Burgard: "g2o: A General Framework for Graph Optimization", IEEE Intl. Conf. on Robotics and Automation (ICRA), 2011
+[7] H. Kim and A. Hilton, "Influence of Colour and Feature Geometry on Multi-modal 3D Point Clouds Data Registration," Proc. 3DV, 2014.
 
 ---------------------------------------------------
 - A note on the sphere2500 dataset. 
