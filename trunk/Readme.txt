@@ -67,6 +67,14 @@ Also, it's good to tweak optimizations in Visual Studio, you can turn
 "Full Optimization" on, enable link-time code generation, and importantly
 enable OpenMP support.
 
+Some Ubuntu distributions have linking problem which yields errors such as:
+
+$ Timer.cpp:(.text+0x18): undefined reference to `clock_gettime'
+
+This is solved by adding the "-Wl,--no-as-needed" (written together,
+exactly like that) in the EXE_LINKER_FLAGS field in CMake (the "-lrt"
+option is already there by default and adding it won't change anything).
+
 === Data ===
 
 Data can be downloaded from SourceForge, at:
