@@ -1,6 +1,6 @@
 
 # Set required variables.
-SET(SLAM_EXAMPLE_BINARY_NAME "ba_parameter_acra")
+SET(SLAM_EXAMPLE_BINARY_NAME "ba_parameter_acra_gxyz")
 
 FILE(GLOB_RECURSE SLAM_EXAMPLE_HEADERS ${SLAM_P_P_SOURCE_DIR}/include/ba_parameter_acra/*.h ${SLAM_P_P_SOURCE_DIR}/include/slam/*.h)
 
@@ -92,32 +92,32 @@ INSTALL(TARGETS ${SLAM_EXAMPLE_BINARY_NAME}
 
 # note that these still rebuild MainL.cpp and Eigenvalues.cpp for every config, even though that is not required. could make a library out of it and link to that. lazy.
 
-ADD_EXECUTABLE(       ba_iface_example_linvdepth ${SLAM_EXAMPLE_SOURCES} MainL.cpp)
-set_target_properties(ba_iface_example_linvdepth PROPERTIES COMPILE_DEFINITIONS "LANDMARK_TYPE_InvDepth;LANDMARKS_LOCAL")
-TARGET_LINK_LIBRARIES(ba_iface_example_linvdepth ${SLAM_EXAMPLE_LIBRARIES})
-INSTALL(TARGETS       ba_iface_example_linvdepth RUNTIME DESTINATION bin)
+ADD_EXECUTABLE(       ba_parameter_acra_linvdepth ${SLAM_EXAMPLE_SOURCES} MainL.cpp)
+set_target_properties(ba_parameter_acra_linvdepth PROPERTIES COMPILE_DEFINITIONS "LANDMARK_TYPE_InvDepth;LANDMARKS_LOCAL")
+TARGET_LINK_LIBRARIES(ba_parameter_acra_linvdepth ${SLAM_EXAMPLE_LIBRARIES})
+INSTALL(TARGETS       ba_parameter_acra_linvdepth RUNTIME DESTINATION bin)
 
-ADD_EXECUTABLE(       ba_iface_example_linvdist ${SLAM_EXAMPLE_SOURCES} MainL.cpp)
-set_target_properties(ba_iface_example_linvdist PROPERTIES COMPILE_DEFINITIONS "LANDMARK_TYPE_InvDist;LANDMARKS_LOCAL")
-TARGET_LINK_LIBRARIES(ba_iface_example_linvdist ${SLAM_EXAMPLE_LIBRARIES})
-INSTALL(TARGETS       ba_iface_example_linvdist RUNTIME DESTINATION bin)
+ADD_EXECUTABLE(       ba_parameter_acra_linvdist ${SLAM_EXAMPLE_SOURCES} MainL.cpp)
+set_target_properties(ba_parameter_acra_linvdist PROPERTIES COMPILE_DEFINITIONS "LANDMARK_TYPE_InvDist;LANDMARKS_LOCAL")
+TARGET_LINK_LIBRARIES(ba_parameter_acra_linvdist ${SLAM_EXAMPLE_LIBRARIES})
+INSTALL(TARGETS       ba_parameter_acra_linvdist RUNTIME DESTINATION bin)
 
-ADD_EXECUTABLE(       ba_iface_example_lxyz ${SLAM_EXAMPLE_SOURCES} MainL.cpp)
-set_target_properties(ba_iface_example_lxyz PROPERTIES COMPILE_DEFINITIONS "LANDMARK_TYPE_XYZ;LANDMARKS_LOCAL")
-TARGET_LINK_LIBRARIES(ba_iface_example_lxyz ${SLAM_EXAMPLE_LIBRARIES})
-INSTALL(TARGETS       ba_iface_example_lxyz RUNTIME DESTINATION bin)
+ADD_EXECUTABLE(       ba_parameter_acra_lxyz ${SLAM_EXAMPLE_SOURCES} MainL.cpp)
+set_target_properties(ba_parameter_acra_lxyz PROPERTIES COMPILE_DEFINITIONS "LANDMARK_TYPE_XYZ;LANDMARKS_LOCAL")
+TARGET_LINK_LIBRARIES(ba_parameter_acra_lxyz ${SLAM_EXAMPLE_LIBRARIES})
+INSTALL(TARGETS       ba_parameter_acra_lxyz RUNTIME DESTINATION bin)
 
-ADD_EXECUTABLE(       ba_iface_example_ginvdepth ${SLAM_EXAMPLE_SOURCES} MainL.cpp)
-set_target_properties(ba_iface_example_ginvdepth PROPERTIES COMPILE_DEFINITIONS "LANDMARK_TYPE_InvDepth;LANDMARKS_GLOBAL")
-TARGET_LINK_LIBRARIES(ba_iface_example_ginvdepth ${SLAM_EXAMPLE_LIBRARIES})
-INSTALL(TARGETS       ba_iface_example_ginvdepth RUNTIME DESTINATION bin)
+ADD_EXECUTABLE(       ba_parameter_acra_ginvdepth ${SLAM_EXAMPLE_SOURCES} MainL.cpp)
+set_target_properties(ba_parameter_acra_ginvdepth PROPERTIES COMPILE_DEFINITIONS "LANDMARK_TYPE_InvDepth;LANDMARKS_GLOBAL")
+TARGET_LINK_LIBRARIES(ba_parameter_acra_ginvdepth ${SLAM_EXAMPLE_LIBRARIES})
+INSTALL(TARGETS       ba_parameter_acra_ginvdepth RUNTIME DESTINATION bin)
 
-ADD_EXECUTABLE(       ba_iface_example_ginvdist ${SLAM_EXAMPLE_SOURCES} MainL.cpp)
-set_target_properties(ba_iface_example_ginvdist PROPERTIES COMPILE_DEFINITIONS "LANDMARK_TYPE_InvDist;LANDMARKS_GLOBAL")
-TARGET_LINK_LIBRARIES(ba_iface_example_ginvdist ${SLAM_EXAMPLE_LIBRARIES})
-INSTALL(TARGETS       ba_iface_example_ginvdist RUNTIME DESTINATION bin)
+ADD_EXECUTABLE(       ba_parameter_acra_ginvdist ${SLAM_EXAMPLE_SOURCES} MainL.cpp)
+set_target_properties(ba_parameter_acra_ginvdist PROPERTIES COMPILE_DEFINITIONS "LANDMARK_TYPE_InvDist;LANDMARKS_GLOBAL")
+TARGET_LINK_LIBRARIES(ba_parameter_acra_ginvdist ${SLAM_EXAMPLE_LIBRARIES})
+INSTALL(TARGETS       ba_parameter_acra_ginvdist RUNTIME DESTINATION bin)
 
-ADD_EXECUTABLE(       ba_iface_example_gxyz ${SLAM_EXAMPLE_SOURCES} MainL.cpp)
-set_target_properties(ba_iface_example_gxyz PROPERTIES COMPILE_DEFINITIONS "LANDMARK_TYPE_XYZ;LANDMARKS_GLOBAL")
-TARGET_LINK_LIBRARIES(ba_iface_example_gxyz ${SLAM_EXAMPLE_LIBRARIES})
-INSTALL(TARGETS       ba_iface_example_gxyz RUNTIME DESTINATION bin)
+#ADD_EXECUTABLE(       ba_parameter_acra_gxyz ${SLAM_EXAMPLE_SOURCES} MainL.cpp)
+#set_target_properties(ba_parameter_acra_gxyz PROPERTIES COMPILE_DEFINITIONS "LANDMARK_TYPE_XYZ;LANDMARKS_GLOBAL")
+#TARGET_LINK_LIBRARIES(ba_parameter_acra_gxyz ${SLAM_EXAMPLE_LIBRARIES})
+#INSTALL(TARGETS       ba_parameter_acra_gxyz RUNTIME DESTINATION bin)
