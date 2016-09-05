@@ -15,7 +15,7 @@
 #include "slam/BlockMatrixTests.h"
 
 /**
- *	@file include/slam/BlockMatrixTests.cpp
+ *	@file src/slam/BlockMatrixTests.cpp
  *	@brief block matrix testing functions and helpers implementation
  *	@author -tHE SWINe-
  *	@date 2016-08-06
