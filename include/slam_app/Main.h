@@ -175,6 +175,7 @@
  *	@section next_sec Next Steps
  *
  *	Some basic topics are covered here:
+ *	* \ref polyfitexample shows very simple polynomial fitting with SLAM++
  *	* \ref simpleexample shows how to use SLAM++ for batch solving
  *	* \ref onlineexample shows how to implement a simple online solver
  *	* \ref rot3d discusses different representations of rotations in 3D
