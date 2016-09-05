@@ -366,7 +366,7 @@ int main(int UNUSED(n_arg_num), const char **UNUSED(p_arg_list))
  *	This takes up to five iterations by default (it can be overriden by the first argument).
  *	The example ends by drawing an image with the observations and the estimated polynomial.
  *
- *	@section next_sec Further Reading
+ *	@section pfe_next_sec Further Reading
  *
  *	Some basic topics are covered here:
  *	* \ref simpleexample shows how to use SLAM++ for batch solving using the predefined types
@@ -374,7 +374,7 @@ int main(int UNUSED(n_arg_num), const char **UNUSED(p_arg_list))
  *	* \ref rot3d discusses different representations of rotations in 3D
  *	* \ref baifaceexample shows how to easily wrap SLAM++ with a simple interface
  *
- *	@section adv_sec Advanced
+ *	@section pfe_adv_sec Advanced
  *
  *	Some advanced topics are covered in the following pages:
  *	* \ref facades shows how to access edges and vertices stored in the optimized graph
