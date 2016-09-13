@@ -3,7 +3,7 @@
 								|                                    |
 								| *** Polynomial Fitting Example *** |
 								|                                    |
-								|   Copyright (c) -tHE SWINe- 2013   |
+								|   Copyright (c) -tHE SWINe- 2016   |
 								|                                    |
 								|              Main.cpp              |
 								|                                    |
@@ -14,7 +14,7 @@
  *	@file src/poly_fitting_example/Main.cpp
  *	@brief contains the main() function of the polynomial fitting example
  *	@author -tHE SWINe-
- *	@date 2016-11-13
+ *	@date 2016-09-02
  */
 
 #include <stdio.h> // printf
