@@ -989,6 +989,80 @@ public:
 	}
 
 	/**
+	 *	@brief iterates over all the elements in this multipool and performs
+	 *		operation on each, allows cooperation of several threads
+	 *	@tparam COp is client function object
+	 *	@param[in] op is instance of the client function object
+	 *	@return Returns instance of the client function object,
+	 *		after performing all the operations (can e.g. perform reduction).
+	 *	@note This does not create a new parallel region, rather it is expected to be called
+	 *		from one. Therefore, there are no options for minimal parallel threshold (set that
+	 *		up at the point where the parallel region is created).
+	 */
+	template <class COp>
+	inline COp For_Each_WorkShare(COp op) const // just as parallel but does not start a parallel region, is supposed to be in one
+	{
+#ifdef __FLAT_SYSTEM_USE_THUNK_TABLE
+		base_iface::CThunkTable<_TyBaseType, _TyTypelist, COp> &thunk_table =
+			base_iface::CFacadeAgglomerator<base_iface::CThunkTable<_TyBaseType, _TyTypelist, COp> >::r_Get();
+		_ASSERTE(m_uniform_list.size() <= INT_MAX);
+		const int n = int(m_uniform_list.size());
+		#pragma omp for
+		for(int i = 0; i < n; ++ i)
+			thunk_table[m_type_id_list[i]](m_uniform_list[i], op);
+		return op;
+#else // __FLAT_SYSTEM_USE_THUNK_TABLE
+#ifdef _OPENMP
+		_ASSERTE(m_uniform_list.size() <= INT_MAX);
+		const int n = int(m_uniform_list.size());
+		#pragma omp for
+		for(int i = 0; i < n; ++ i)
+			op(*m_uniform_list[i]);
+		return op;
+#else // _OPENMP
+		return std::for_each(m_uniform_list.begin(), m_uniform_list.end(), CDereference<COp>(op));
+#endif // _OPENMP
+#endif // __FLAT_SYSTEM_USE_THUNK_TABLE
+	}
+
+	/**
+	 *	@brief iterates over all the elements in this multipool and performs
+	 *		operation on each, allows cooperation of several threads
+	 *	@tparam COp is client function object
+	 *	@param[in] op is instance of the client function object
+	 *	@return Returns instance of the client function object,
+	 *		after performing all the operations (can e.g. perform reduction).
+	 *	@note This does not create a new parallel region, rather it is expected to be called
+	 *		from one. Therefore, there are no options for minimal parallel threshold (set that
+	 *		up at the point where the parallel region is created).
+	 */
+	template <class COp>
+	inline COp For_Each_WorkShare(COp op) // just as parallel but does not start a parallel region, is supposed to be in one
+	{
+#ifdef __FLAT_SYSTEM_USE_THUNK_TABLE
+		base_iface::CThunkTable<_TyBaseType, _TyTypelist, COp> &thunk_table =
+			base_iface::CFacadeAgglomerator<base_iface::CThunkTable<_TyBaseType, _TyTypelist, COp> >::r_Get();
+		_ASSERTE(m_uniform_list.size() <= INT_MAX);
+		const int n = int(m_uniform_list.size());
+		#pragma omp for
+		for(int i = 0; i < n; ++ i)
+			thunk_table[m_type_id_list[i]](m_uniform_list[i], op);
+		return op;
+#else // __FLAT_SYSTEM_USE_THUNK_TABLE
+#ifdef _OPENMP
+		_ASSERTE(m_uniform_list.size() <= INT_MAX);
+		const int n = int(m_uniform_list.size());
+		#pragma omp for
+		for(int i = 0; i < n; ++ i)
+			op(*m_uniform_list[i]);
+		return op;
+#else // _OPENMP
+		return std::for_each(m_uniform_list.begin(), m_uniform_list.end(), CDereference<COp>(op));
+#endif // _OPENMP
+#endif // __FLAT_SYSTEM_USE_THUNK_TABLE
+	}
+
+	/**
 	 *	@brief iterates over a selected range of elements
 	 *		in this multipool and performs operation on each
 	 *
@@ -1305,6 +1379,42 @@ public:
 			op(m_pool[i]); // todo - write pool::parallel_for_each that would simplify it's pointer arithmetic
 #else // _OPENMP
 		std::for_each(m_pool.begin(), m_pool.end(), op);
+#endif // _OPENMP
+	}
+
+	/**
+	 *	@copydoc CMultiPool::For_Each_WorkShare
+	 */
+	template <class COp>
+	inline COp For_Each_WorkShare(COp op) const // just as parallel but does not start a parallel region, is supposed to be in one
+	{
+#ifdef _OPENMP
+		_ASSERTE(m_pool.size() <= INT_MAX);
+		const int n = int(m_pool.size());
+		#pragma omp for
+		for(int i = 0; i < n; ++ i)
+			op(m_pool[i]); // todo - write pool::parallel_for_each that would simplify it's pointer arithmetic
+		return op;
+#else // _OPENMP
+		return std::for_each(m_pool.begin(), m_pool.end(), op);
+#endif // _OPENMP
+	}
+
+	/**
+	 *	@copydoc CMultiPool::For_Each_WorkShare
+	 */
+	template <class COp>
+	inline COp For_Each_WorkShare(COp op) // just as parallel but does not start a parallel region, is supposed to be in one
+	{
+#ifdef _OPENMP
+		_ASSERTE(m_pool.size() <= INT_MAX);
+		const int n = int(m_pool.size());
+		#pragma omp for
+		for(int i = 0; i < n; ++ i)
+			op(m_pool[i]); // todo - write pool::parallel_for_each that would simplify it's pointer arithmetic
+		return op;
+#else // _OPENMP
+		return std::for_each(m_pool.begin(), m_pool.end(), op);
 #endif // _OPENMP
 	}
 
@@ -2153,6 +2263,140 @@ public:
 	}
 
 	/**
+	 *	@brief determines whether all the vertices are covered
+	 *	@return Returns true if there is a measurement associated
+	 *		with each optimized vertex, otherwise returns false.
+	 */
+	bool b_AllVertices_Covered() const // throw(std::bad_alloc)
+	{
+		const size_t n_optimized_vertex_num = m_vertex_pool.n_Size();
+		std::vector<bool> cover(n_optimized_vertex_num, false); // throws
+
+		for(size_t i = 0, n = m_edge_pool.n_Size(); i < n; ++ i) {
+			typename _TyEdgeMultiPool::_TyConstBaseRef r_edge = m_edge_pool[i];
+			for(size_t j = 0, m = r_edge.n_Vertex_Num(); j < m; ++ j) {
+				size_t n_vertex = r_edge.n_Vertex_Id(j);
+				_ASSERTE(have_ConstVertices || n_vertex < n_optimized_vertex_num);
+				if(!have_ConstVertices  || n_vertex < n_optimized_vertex_num)
+					cover[n_vertex] = true;
+			}
+		}
+		// accumulate vertex cover
+
+		return std::find(cover.begin(), cover.end(), false) == cover.end();
+		// see if all the vertices are covered
+	}
+
+	/**
+	 *	@brief counts the number of connected components of the graph
+	 *	@param[in] b_use_sets is explicit vertex set flag; if set, vertex sets will
+	 *		be maintained in addition to vertex labels; this makes relabelling joined
+	 *		sets faster (may speed up on large graphs with unordered edges)
+	 *	@return Returns the number of disjunct groups of vertices, connected
+	 *		by edges. Disconnected vertices are not counted.
+	 */
+	size_t n_ConnectedComponent_Num(bool b_use_sets = true) const // throw(std::bad_alloc)
+	{
+		const size_t n_optimized_vertex_num = m_vertex_pool.n_Size();
+		std::vector<size_t> comp(n_optimized_vertex_num, 0); // throws
+		size_t n_last_component_label = 0;
+
+		std::map<size_t, std::vector<size_t> > comp_vertices;
+		// will have up to n sets in total n vertices so in theory the memory is O(n) but the STL
+		// preallocation might increase it quite a bit if there are many disconnected components
+
+		for(size_t i = 0, n = m_edge_pool.n_Size(); i < n; ++ i) {
+			typename _TyEdgeMultiPool::_TyConstBaseRef r_edge = m_edge_pool[i];
+			size_t n_vertex_comp = 0, n_unlabeled_num = 0;
+			for(size_t j = 0, m = r_edge.n_Vertex_Num(); j < m; ++ j) {
+				size_t n_vertex = r_edge.n_Vertex_Id(j);
+				_ASSERTE(have_ConstVertices || n_vertex < n_optimized_vertex_num);
+				if(!have_ConstVertices  || n_vertex < n_optimized_vertex_num) {
+					size_t n_cur_comp = comp[n_vertex];
+					if(n_cur_comp) { // a vertex is already colored
+						if(n_vertex_comp && n_cur_comp != n_vertex_comp) { // two or more groups of vertices labeled as different components are connected
+							if(b_use_sets) {
+								std::vector<size_t> &r_vertex_set = comp_vertices[n_vertex_comp],
+									&r_cur_set = comp_vertices[n_cur_comp];
+								// get the two sets
+								std::vector<size_t> &r_src_set = (r_vertex_set.size() < r_cur_set.size())?
+									r_vertex_set : r_cur_set, &r_tar_set = (r_vertex_set.size() < r_cur_set.size())?
+									r_cur_set : r_vertex_set;
+
+								if(r_vertex_set.size() < r_cur_set.size())
+									std::swap(n_vertex_comp, n_cur_comp); // join the smaller to the larger set, it is cheaper that way (less relabeling to be done)
+
+								for(size_t k = 0, o = r_src_set.size(); k < o; ++ k)
+									comp[r_src_set[k]] = n_vertex_comp; // !!
+								_ASSERTE(comp[n_vertex] == n_vertex_comp); // was replaced above; make sure this vertex was part of the set
+								r_tar_set.insert(r_tar_set.end(), r_src_set.begin(), r_src_set.end());
+								comp_vertices.erase(n_cur_comp); // invalidates r_cur_set, memory is potentially freed
+								// use the component vertex list to quickly re-label the vertices
+							} else {
+								std::replace(comp.begin(), comp.end(), n_cur_comp, n_vertex_comp);
+								comp[n_vertex] = n_vertex_comp; // !!
+							}
+							// replace all occurences of n_cur_comp with n_vertex_comp
+							// it would be better to take advantage of connectivity and follow
+							// the edges maybe? or maybe make a list of lists and just merge the
+							// lists (an orthogonal data structure to the labels)
+						} else
+							n_vertex_comp = n_cur_comp;
+					} else
+						++ n_unlabeled_num;
+				}
+			}
+			// go through the edge vertices, record the component of one of the vertices and record any unlabeled vertices
+
+			if(n_unlabeled_num) {
+				if(!n_vertex_comp)
+					n_vertex_comp = ++ n_last_component_label;
+				// decide on what the label should be
+
+				std::vector<size_t> *p_vertex_set; // avoid repeated std::map lookup in the loop below
+				if(b_use_sets)
+					p_vertex_set = &comp_vertices[n_vertex_comp];
+				// make sure the set is allocated
+
+				for(size_t j = 0, m = r_edge.n_Vertex_Num(); j < m; ++ j) {
+					size_t n_vertex = r_edge.n_Vertex_Id(j);
+					_ASSERTE(have_ConstVertices || n_vertex < n_optimized_vertex_num);
+					if(!have_ConstVertices  || n_vertex < n_optimized_vertex_num) {
+						_ASSERTE(!comp[n_vertex] || comp[n_vertex] == n_vertex_comp);
+						// either no label or the component we're labelling
+
+						if(b_use_sets && comp[n_vertex] != n_vertex_comp)
+							p_vertex_set->push_back(n_vertex);
+						comp[n_vertex] = n_vertex_comp;
+						// assign a (potentially) new label
+					}
+				}
+				// go through the vertices again and label them (cant do that in the first pass, the label may change)
+			}
+		}
+		// go through the edges and label the so far disconnected
+		// vertices, merge groups of connected vertices
+		// note that the merge is slow
+
+		// t_odo - optimize the merge, make this more reusable (return the components, then make a function that merely counts them)
+		// note that there is probably a component-adjacent ordering function somewhere that has code to non-destructively reassign the labels
+
+		if(b_use_sets) {
+			return comp_vertices.size();
+			// much simpler and faster
+		} else {
+			std::sort(comp.begin(), comp.end());
+			comp.erase(std::unique(comp.begin(), comp.end()), comp.end());
+			// only keep unique component ids
+			// note that this is slow but needs no extra storage (well, merge sort ...)
+
+			if(!comp.empty() && comp.front() == 0)
+				return comp.size() - 1; // the "component" of disconnected vertices does not count
+			return comp.size(); // all vertices are connected, all components count
+		}
+	}
+
+	/**
 	 *	@brief gets reference to vertex multipool
 	 *	@return Returns reference to vertex multipool.
 	 *	@note This pool contains only the optimized vertices, not const vertices.
@@ -2226,8 +2470,10 @@ public:
 		} else {
 			if(n_id < m_vertex_pool.n_Size())
 				return m_vertex_pool.template r_At<CVertexType>(n_id);
-			else if(have_ConstVertices && n_id >= SIZE_MAX - m_const_vertex_pool.n_Size())
+			else if(have_ConstVertices && n_id >= SIZE_MAX - m_const_vertex_pool.n_Size()) {
+
 				return this->template r_Get_ConstVertex<CVertexType>(n_id, init); // the id points in the constant vertex pool
+			}
 
 			throw std::runtime_error("vertices must be accessed in incremental manner");
 		}
@@ -2278,6 +2524,16 @@ public:
 		throw std::runtime_error("__BASE_TYPES_ALLOW_CONST_VERTICES not defined but const vertex added");
 #endif // !__BASE_TYPES_ALLOW_CONST_VERTICES
 
+		return this->template r_Get_ConstVertex_ConstCheck<CVertexType>(n_id, init);
+	}
+
+protected:
+	// todo - doc
+	template <class CVertexType, class CInitializer>
+	inline typename CEnableIf<have_ConstVertices && CFindTypelistItem<_TyConstVertexTypelist,
+		CVertexType>::b_result, CVertexType&>::T
+		r_Get_ConstVertex_ConstCheck(_TyId n_id, const CInitializer &init) // throw(std::bad_alloc, std::runtime_error)
+	{
 		_ASSERTE(n_id >= SIZE_MAX - m_const_vertex_pool.n_Size());
 		// make sure noone is trying to call this with zero-based indices (if this triggers, please read the documentation section on using contstant vertices)
 
@@ -2301,6 +2557,18 @@ public:
 		}
 	}
 
+	template <class CVertexType, class CInitializer>
+	inline typename CEnableIf<!have_ConstVertices || !CFindTypelistItem<_TyConstVertexTypelist,
+		CVertexType>::b_result, CVertexType&>::T
+		r_Get_ConstVertex_ConstCheck(_TyId n_id, const CInitializer &init) // throw(std::bad_alloc, std::runtime_error)
+	{
+		throw std::runtime_error("attempted to create constant vertex of type not in constant vertex list");
+
+		static CVertexType dummy_value = (CVertexType)init;
+		return dummy_value; // avoid unwanted build errors
+	}
+
+public:
 	/**
 	 *	@brief finds a constant vertex by id or creates a new one in case there is no vertex with such an id
 	 *		(specialization for const vertices disabled)
@@ -2345,6 +2613,25 @@ public:
 	inline _TyAnyVertexStateConstRef v_VertexState(_TyId n_id, size_t n_optimized_vertex_num) const
 	{
 		return v_VertexState_Impl<have_ConstVertices>(n_id, n_optimized_vertex_num);
+		// this needs to be wrapped inside a template function, otherwise
+		// accessing the const vertex pool will yield compile time errors
+	}
+
+	/**
+	 *	@brief reads vertex state
+	 *
+	 *	@param[in] n_id is vertex id, may include const vertices much like \ref r_Get_Vertex()
+	 *
+	 *	@return Returns a read-only reference to the vertex state.
+	 *
+	 *	@note This function cannot add new vertices and while protected by an assertion in
+	 *		debug mode, accessing vertices with unallocated id will result in undefined behavior.
+	 *	@note This function calls \ref r_Vertex_Pool().n_Size() so if calling it repeatedly,
+	 *		it might be more efficient to use the overload with two parameters.
+	 */
+	inline _TyAnyVertexStateConstRef v_VertexState(_TyId n_id) const
+	{
+		return v_VertexState_Impl<have_ConstVertices>(n_id, r_Vertex_Pool().n_Size());
 		// this needs to be wrapped inside a template function, otherwise
 		// accessing the const vertex pool will yield compile time errors
 	}
@@ -2545,11 +2832,11 @@ public:
 		const int n_tick_type = (f_tick_size > 2.5f)? plot::tick_Cross :
 			plot::tick_Cross_Subpixel, n_ctick_type = plot::tick_TiltedCross;
 		Draw_Vertices(p_image, t_transform, v_offset, 0xffff0000U, n_tick_type, f_tick_size,
-			f_tick_line_width, (b_landmark_ticks_only)? n_landmark_vertex_dim : 0,
-			(b_landmark_ticks_only)? n_landmark_vertex_dim : SIZE_MAX);
+			f_tick_line_width, (b_landmark_ticks_only)? int(n_landmark_vertex_dim) : 0,
+			(b_landmark_ticks_only)? int(n_landmark_vertex_dim) : SIZE_MAX);
 		Draw_ConstVertices(p_image, t_transform, v_offset, 0xff8800ffU, n_ctick_type, f_tick_size,
-			f_tick_line_width, (b_landmark_ticks_only)? n_landmark_vertex_dim : 0,
-			(b_landmark_ticks_only)? n_landmark_vertex_dim : SIZE_MAX);
+			f_tick_line_width, (b_landmark_ticks_only)? int(n_landmark_vertex_dim) : 0,
+			(b_landmark_ticks_only)? int(n_landmark_vertex_dim) : SIZE_MAX);
 		// draw all the vertices
 
 		Draw_Edges(p_image, t_transform, v_offset, 0xff0000ffU,
@@ -2643,11 +2930,11 @@ public:
 		const int n_tick_type = (f_tick_size > 2.5f)? plot::tick_Cross :
 			plot::tick_Cross_Subpixel, n_ctick_type = plot::tick_TiltedCross;
 		Draw_Vertices(p_image, t_transform, v_offset, 0xffff0000U, n_tick_type, f_tick_size,
-			f_tick_line_width, (b_landmark_ticks_only)? n_landmark_vertex_dim - 1 : 0,
-			(b_landmark_ticks_only)? n_landmark_vertex_dim : SIZE_MAX);
+			f_tick_line_width, (b_landmark_ticks_only)? int(n_landmark_vertex_dim) - 1 : 0,
+			(b_landmark_ticks_only)? int(n_landmark_vertex_dim) : SIZE_MAX);
 		Draw_ConstVertices(p_image, t_transform, v_offset, 0xff8800ffU, n_ctick_type, f_tick_size,
-			f_tick_line_width, (b_landmark_ticks_only)? n_landmark_vertex_dim - 1 : 0,
-			(b_landmark_ticks_only)? n_landmark_vertex_dim : SIZE_MAX);
+			f_tick_line_width, (b_landmark_ticks_only)? int(n_landmark_vertex_dim) - 1 : 0,
+			(b_landmark_ticks_only)? int(n_landmark_vertex_dim) : SIZE_MAX);
 		// draw all the vertices
 
 		Draw_Edges(p_image, t_transform, v_offset, 0xff0000ffU,
@@ -2661,11 +2948,17 @@ public:
 	}
 
 	/**
-	 *	@brief saves (2D) vertex positions into a text file
+	 *	@brief saves vertex positions into a text file
+	 *
 	 *	@param[in] p_s_filename is the output file name
+	 *	@param[in] b_dump_also_const_vertices is const vertex output flag (if set, all the constant
+	 *		vertices go after all the optimized vertices and are ordered by their increasing unsigned
+	 *		id--that is reverse order than in which they were inserted; if cleared, no constant
+	 *		vertices are present in the output (default))
+	 *
 	 *	@return Returns true on success, false on failure.
 	 */
-	bool Dump(const char *p_s_filename) const
+	bool Dump(const char *p_s_filename, bool b_dump_also_const_vertices = false) const
 	{
 		FILE *p_fw;
 		if(!(p_fw = fopen(p_s_filename, "w"))) {
@@ -2673,7 +2966,7 @@ public:
 			return false;
 		}
 
-		if(1/*!have_ConstVertices*/) { // this is as designed, only the optimized vertices are stored
+		if(!have_ConstVertices || !b_dump_also_const_vertices) { // only the optimized vertices are stored
 			for(size_t i = 0, n = m_vertex_pool.n_Size(); i < n; ++ i) {
 				Eigen::Map<const Eigen::VectorXd> v_state = m_vertex_pool[i].v_State();
 				for(size_t j = 0, m = v_state.rows(); j < m; ++ j) {
@@ -2685,9 +2978,8 @@ public:
 				}
 			}
 		} else {
-			// this could easily be done with v_VertexState() but we already specified that the const vertices are not a part of the output file as they are const. this could change in the future, based on the requirements.
-			/*for(size_t i = 0, n = m_vertex_lookup.size(); i < n; ++ i) { // can't, don't have type id for these vertices. i guess this was designed before the v2 reductions and the interfaces.
-				Eigen::Map<const Eigen::VectorXd> v_state = m_vertex_lookup[i]->v_StateC(); // save a copy here
+			for(size_t i = 0, n = m_vertex_pool.n_Size(); i < n; ++ i) {
+				Eigen::Map<const Eigen::VectorXd> v_state = m_vertex_pool[i].v_State();
 				for(size_t j = 0, m = v_state.rows(); j < m; ++ j) {
 					double f = v_state(j);
 					if(fabs(f) > 1)
@@ -2695,11 +2987,21 @@ public:
 					else
 						fprintf(p_fw, (j)? ((j + 1 == m)? " %g\n" : " %g") : ((j + 1 == m)? "%g\n" : "%g"), f);
 				}
-			}*/
-			// here the const vertices are mixed with non-const
+			}
+			// first the optimized vertices in natural order
 
-			// t_odo - support const vertices (need to do this; if there are const
-			// vertices then the ids will not correspond to lines in the output)
+			for(size_t i = m_const_vertex_pool.n_Size(); i > 0;) {
+				-- i; // here
+				_TyConstVertexStateConstRef v_state = v_ConstVertexState_Impl<have_ConstVertices>(i);
+				for(size_t j = 0, m = v_state.rows(); j < m; ++ j) {
+					double f = v_state(j);
+					if(fabs(f) > 1)
+						fprintf(p_fw, (j)? ((j + 1 == m)? " %f\n" : " %f") : ((j + 1 == m)? "%f\n" : "%f"), f);
+					else
+						fprintf(p_fw, (j)? ((j + 1 == m)? " %g\n" : " %g") : ((j + 1 == m)? "%g\n" : "%g"), f);
+				}
+			}
+			// const vertices afterwards, in reverse order (in the increasing unsigned id order)
 		}
 
 		if(ferror(p_fw)) {
@@ -2707,9 +3009,8 @@ public:
 			fclose(p_fw);
 			return false;
 		}
-		fclose(p_fw);
 
-		return true;
+		return !fclose(p_fw);
 	}
 
 	/**

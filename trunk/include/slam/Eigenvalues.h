@@ -49,7 +49,8 @@
  *
  *	@note This function throws std::bad_alloc.
  */
-std::vector<double> SpSym_Eigenvalues(const cs *p_matrix, size_t n_eig_num, bool b_smallest = false); // throw(std::bad_alloc)
+std::vector<double> SpSym_Eigenvalues(const cs *p_matrix, size_t n_eig_num,
+	bool b_smallest = false, size_t n_max_iterations = 1000, double f_tolerance = 1e-10); // throw(std::bad_alloc)
 
 /**
  *	@brief eigenvalue sorting mode
@@ -322,9 +323,9 @@ protected:
 	/**
 	 *	@brief implicitly restarted Arnoldi factorization
 	 *	@param[in] n_start is zero-based index of the Ritz vector to resume at
-	 *	@note This function throws std::bad_alloc.
+	 *	@note This function throws std::bad_alloc and std::runtime_error.
 	 */
-	void Restart(size_t n_start); // throw(std::bad_alloc)
+	void Restart(size_t n_start); // throw(std::bad_alloc, std::runtime_error)
 
 	/**
 	 *	@brief calculates the number of converged eigenvalues, sets the bit array

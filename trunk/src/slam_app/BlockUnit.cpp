@@ -658,11 +658,12 @@ void CBlockMatrixUnitTests::MatrixMultiplication_UnitTest() // throw(std::bad_al
 			A.PreMultiplyWithSelfTransposeTo(S); // S = A^T * A
 			B.PreMultiplyWithSelfTransposeTo(Q); // Q = B^T * B
 
-			typedef MakeTypelist_Safe((_TyBlockMatrix)) one_type_list;
-			typedef MakeTypelist_Safe((_TyBlockMatrix,
-				Eigen::Matrix<double, block_Size + 1, block_Size + 1>,
-				Eigen::Matrix<double, block_Size, block_Size + 1>,
-				Eigen::Matrix<double, block_Size + 1, block_Size>)) two_type_list; // that's correct, instances
+			typedef MakeTypelist1(_TyBlockMatrix) one_type_list;
+			typedef Eigen::Matrix<double, block_Size + 1, block_Size + 1> _TyBlockMatrix11;
+			typedef Eigen::Matrix<double, block_Size, block_Size + 1> _TyBlockMatrix01;
+			typedef Eigen::Matrix<double, block_Size + 1, block_Size>  _TyBlockMatrix10; // VS 2015 x86 fix -  formal parameter with requested alignment of 16 won't be aligned
+			typedef MakeTypelist4(_TyBlockMatrix, _TyBlockMatrix11,
+				_TyBlockMatrix01, _TyBlockMatrix10) two_type_list; // that's correct, instances
 			// block size lists with one and two (four actually, two per dimension) different block sizes
 
 			A.PreMultiplyWithSelfTransposeTo_FBS<one_type_list>(U); // U = A^T * A

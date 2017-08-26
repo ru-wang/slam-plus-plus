@@ -629,6 +629,24 @@ public:
 	}
 
 	/**
+	 *	@brief norify the solver of linearization point update (e.g. change in robust
+	 *		function parameters, external change to the current estimate, ...)
+	 *
+	 *	@param[in] n_first_changing_edge is zero-based index of the first edge being changed
+	 *	@param[in] n_first_changing_vertex is zero-based index of the first vertex being changed
+	 */
+	void Notify_LinearizationChange(size_t UNUSED(n_first_changing_edge) = 0,
+		size_t UNUSED(n_first_changing_vertex) = 0)
+	{
+		_ASSERTE(!n_first_changing_edge || n_first_changing_edge < this->m_r_system.r_Edge_Pool().n_Size());
+		_ASSERTE(!n_first_changing_vertex || n_first_changing_vertex < this->m_r_system.r_Vertex_Pool().n_Size());
+		// make sure those are valid indices
+
+		m_b_system_dirty = true;
+		// mark the system matrix as dirty, to force relinearization in the next step
+	}
+
+	/**
 	 *	@brief final optimization function
 	 *
 	 *	@param[in] n_max_iteration_num is the maximal number of iterations
@@ -648,6 +666,11 @@ public:
 		if(!n_measurements_size)
 			return; // nothing to solve (but no results need to be generated so it's ok)
 		// can't solve in such conditions
+
+		_ASSERTE(this->m_r_system.b_AllVertices_Covered());
+		// if not all vertices are covered then the system matrix will be rank deficient and this will fail
+		// this triggers typically if solving BA problems with incremental solve each N steps (the "proper"
+		// way is to use CONSISTENCY_MARKER and incremental solve period of SIZE_MAX).
 
 		_TyJacOps::Extend_A(this->m_r_system, m_A, m_n_edges_in_A); // recalculated all the jacobians inside Extend_A()
 		if(!m_b_system_dirty)

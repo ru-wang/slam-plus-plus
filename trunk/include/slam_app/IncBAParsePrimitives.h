@@ -21,6 +21,9 @@
  *	@date 2016-05-06
  */
 
+#include "slam/ParseLoop.h"
+#include "slam/TypeList.h"
+
 /**
  *	@brief consistency marker type (passed as an edge)
  */
@@ -77,13 +80,16 @@ public:
 
 protected:
 	size_t m_n_step; /**< @brief optimization step; increased every time a consistency marker is encountered */
+	bool m_b_save_intermediates; /**< @brief save intermediate solution steps solutions (and marginals if enabled) */
+	bool m_b_save_matrices; /**< @brief save intermediate system matrices */
 
 public:
 	/**
 	 *	@copydoc CParseLoop::CParseLoop
 	 */
 	inline CParseLoop_ConsistencyMarker(CSystem &r_system, CNonlinearSolver &r_solver)
-		:_TyBase(r_system, r_solver), m_n_step(0)
+		:_TyBase(r_system, r_solver), m_n_step(0),
+		m_b_save_intermediates(false), m_b_save_matrices(false)
 	{}
 
 	/**
@@ -160,25 +166,50 @@ public:
 
 		this->m_r_solver.Optimize(t_incremental_config.n_max_nonlinear_iteration_num,
 			t_incremental_config.f_nonlinear_error_thresh); // force optimization
-		if(0) { // enable this if you want to see system states at different incremental points in the graph
+		if(m_b_save_intermediates) { // enable this if you want to see system states at different incremental points in the graph // t_odo - add some commandline that handles this
 			char p_s_filename[256];
 			sprintf(p_s_filename, "solution_" PRIsize ".txt", m_n_step);
 			this->m_r_system.Dump(p_s_filename);
 			// save the current state to a file
 
+			if(CSystem::have_ConstVertices /*&& !system.r_ConstVertex_Pool().b_Empty()*/) { // the second condition makes processing the results potentially cumbersome
+				sprintf(p_s_filename, "solution_const_" PRIsize ".txt", m_n_step);
+				this->m_r_system.Dump(p_s_filename, true);
+			}
+			// save the current state, inclusing const vertices to a file
+
 			sprintf(p_s_filename, "marginals_" PRIsize ".txt", m_n_step);
 			SaveMarginals<CNonlinearSolver::solver_HasMarginals>(p_s_filename);
 			// save the marginals, in case the solver supports it (and in case -dm is specified)
-
-			/*sprintf(p_s_filename, "system_" PRIsize ".mtx", m_n_step);
+		}
+		if(m_b_save_matrices) {
+			char p_s_filename[256];
+			sprintf(p_s_filename, "system_" PRIsize ".mtx", m_n_step);
 			SaveSysMatrix<CNonlinearSolver::solver_ExportsJacobian ||
 				CNonlinearSolver::solver_ExportsHessian ||
 				CNonlinearSolver::solver_ExportsFactor>(p_s_filename);
-			// uncomment to save system matrix*/
-
+			// uncomment to save system matrix
 		}
 
 		++ m_n_step;
+	}
+
+	/**
+	 *	@brief enables saving intermediate solutions (and marginals if enabled) at each optimization marker
+	 *	@param[in] b_enable is a new value of the enable flag
+	 */
+	void Enable_Save_Solutions(bool b_enable)
+	{
+		m_b_save_intermediates = b_enable;
+	}
+
+	/**
+	 *	@brief enables saving system matrices at each optimization marker
+	 *	@param[in] b_enable is a new value of the enable flag
+	 */
+	void Enable_Save_SysMatrices(bool b_enable)
+	{
+		m_b_save_matrices = b_enable;
 	}
 
 	/**

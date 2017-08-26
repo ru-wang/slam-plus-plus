@@ -83,13 +83,20 @@ class CMyParseLoop {
 protected:
 	CBAOptimizer &m_r_optimizer; /**< @brief reference to the optimizer */
 
+	int m_n_inc_nls_iter_num; // incremental optimization setting
+	double m_f_inc_nlsolve_thresh; // incremental optimization setting
+
 public:
 	/**
 	 *	@brief default constructor
 	 *	@param[in] r_optimizer is reference to the optimizer to be filled with edges and vertices
+	 *	@param[in] n_inc_nls_iter_num
+	 *	@param[in] f_inc_nlsolve_thresh
 	 */
-	CMyParseLoop(CBAOptimizer &r_optimizer)
-		:m_r_optimizer(r_optimizer)
+	CMyParseLoop(CBAOptimizer &r_optimizer, int n_inc_nls_iter_num = 1,
+		double f_inc_nlsolve_thresh = .005)
+		:m_r_optimizer(r_optimizer), m_n_inc_nls_iter_num(n_inc_nls_iter_num),
+		m_f_inc_nlsolve_thresh(f_inc_nlsolve_thresh)
 	{}
 
 	/**
@@ -169,15 +176,16 @@ public:
 	 */
 	void AppendSystem(const CConsistencyMarker &UNUSED(r_marker)) // throw(std::bad_alloc)
 	{
-		m_r_optimizer.Optimize(1, 0.005); // handle incremental optimization
+		m_r_optimizer.Optimize(m_n_inc_nls_iter_num,
+			m_f_inc_nlsolve_thresh); // handle incremental optimization
 
-		{ // in case this is an incremental solve step, dump the dx vector
+		/*{ // in case this is an incremental solve step, dump the dx vector
 			static size_t n_iter_num = 0;
 			++ n_iter_num;
 			char p_s_filename[256];
 			sprintf(p_s_filename, "dx_iter_%05" _PRIsize "_SE3_solution.txt", n_iter_num - 1); // zero based!
 			m_r_optimizer.Dump_State_SE3(p_s_filename);
-		}
+		}*/
 	}
 };
 
@@ -368,9 +376,12 @@ int mainL(int n_arg_num, const char **p_arg_list) // started from Vincent's code
 	bool b_verbose = true, b_incremental = false;
 	int n_update_thresh = 0;
 	const char *p_s_input_file = 0, *p_s_ground_truth_file = 0;
+	int n_max_inc_iters = 1, n_max_final_iters = 5;
+	double f_inc_nlsolve_thresh = .005, f_final_nlsolve_thresh = .005;
 	for(int i = 1; i < n_arg_num; ++ i) {
 		if(!strcmp(p_arg_list[i], "--help") || !strcmp(p_arg_list[i], "-h")) {
-			printf("use: ba_iface_example [-i|--input <input-graph-file>] [-q|--quiet] [-inc|--incremental] [-dxt|--dx-thresh <negative-pervert-exponent>]\n");
+			printf("use: %s [-i|--input <input-graph-file>] [-q|--quiet] [-inc|--incremental]\n"
+				   "     [-dxt|--dx-thresh <negative-pervert-exponent>]\n", p_arg_list[0]);
 			return 0;
 		} else if(!strcmp(p_arg_list[i], "--quiet") || !strcmp(p_arg_list[i], "-q"))
 			b_verbose = false;
@@ -385,6 +396,14 @@ int mainL(int n_arg_num, const char **p_arg_list) // started from Vincent's code
 			p_s_ground_truth_file = p_arg_list[++ i];
 		else if(!strcmp(p_arg_list[i], "--dx-threshold") || !strcmp(p_arg_list[i], "-dxt"))
 			n_dummy_param = n_update_thresh = atol(p_arg_list[++ i]);
+		else if(!strcmp(p_arg_list[i], "--max-nonlinear-solve-iters") || !strcmp(p_arg_list[i], "-mnsi"))
+			n_max_inc_iters = atol(p_arg_list[++ i]);
+		else if(!strcmp(p_arg_list[i], "--nonlinear-solve-error-thresh") || !strcmp(p_arg_list[i], "-nset"))
+			f_inc_nlsolve_thresh = atof(p_arg_list[++ i]);
+		else if(!strcmp(p_arg_list[i], "--max-final-nonlinear-solve-iters") || !strcmp(p_arg_list[i], "-mfnsi"))
+			n_max_final_iters = atol(p_arg_list[++ i]);
+		else if(!strcmp(p_arg_list[i], "--final-nonlinear-solve-error-thresh") || !strcmp(p_arg_list[i], "-fnset"))
+			f_final_nlsolve_thresh = atof(p_arg_list[++ i]);
 		else {
 			fprintf(stderr, "error: argument \'%s\': an unknown argument\n", p_arg_list[i]);
 			return -1;
@@ -418,7 +437,7 @@ int mainL(int n_arg_num, const char **p_arg_list) // started from Vincent's code
 			CEdgeP2C3DParsePrimitive, CVertexCamSim3ParsePrimitive, CVertexInvDepthParsePrimitive,
 			CEdgeProjSelfParsePrimitive, CEdgeProjOtherParsePrimitive, CConsistencyMarker_ParsePrimitive) CMyParsedPrimitives; // add the incremental parse primitive (or the parse loop could handle it)
 		typedef CParserTemplate<CMyParseLoop, CMyParsedPrimitives> CMyParser;
-		CMyParseLoop parse_loop(optimizer);
+		CMyParseLoop parse_loop(optimizer, n_max_inc_iters, f_inc_nlsolve_thresh);
 		if(!CMyParser().Parse(p_s_input_file, parse_loop)) {
 			fprintf(stderr, "error: failed to parse \'%s\'\n", p_s_input_file);
 			return -1;
@@ -431,7 +450,7 @@ int mainL(int n_arg_num, const char **p_arg_list) // started from Vincent's code
 	// debug
 
 	if(!b_incremental)
-		optimizer.Optimize(5, 0.005);
+		optimizer.Optimize(n_max_final_iters, f_final_nlsolve_thresh);
 	// optimize the system (batch only)
 
 	optimizer.Show_Stats();

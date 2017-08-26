@@ -38,7 +38,7 @@ PROJECT_NAME           = "SLAM ++"
 # could be handy for archiving the generated documentation or if some version
 # control system is used.
 
-PROJECT_NUMBER         = "Version 2.1"
+PROJECT_NUMBER         = "Version 2.2"
 
 # Using the PROJECT_BRIEF tag one can provide an optional one line description
 # for a project that appears at the top of each page and should give viewer a
@@ -747,7 +747,8 @@ INPUT                  = ../include/slam \
                          ../src/slam_schur_orderings \
                          ../include/ba_marginals_example \
                          ../src/ba_marginals_example \
-                         ../src/poly_fitting_example
+                         ../src/poly_fitting_example \
+                         ../include/geometry
 
 # This tag can be used to specify the character encoding of the source files
 # that doxygen parses. Internally doxygen uses the UTF-8 encoding. Doxygen uses
@@ -789,7 +790,8 @@ EXCLUDE                = ../src/slam/FBS.cpp \
                          cholmod/CAMD/camd.h \
                          ../include/sparse_flops/cs_add_patched.inl \
                          ../include/sparse_flops/cs_multiply_patched.inl \
-                         ../include/sparse_flops/cs_util_patched.inl
+                         ../include/sparse_flops/cs_util_patched.inl \
+                         ../include/slam/BlockMatrixFBS_OldStyle.h
 
 # The EXCLUDE_SYMLINKS tag can be used to select whether or not files or
 # directories that are symbolic links (a Unix file system feature) are excluded
@@ -805,9 +807,7 @@ EXCLUDE_SYMLINKS       = NO
 # Note that the wildcards are matched against the file with absolute path, so to
 # exclude all test directories for example use the pattern */test/*
 
-EXCLUDE_PATTERNS       = FBS.cpp \
-                         NonlinearSolver_SPCG.h \
-                         BlockMatrix.inl
+EXCLUDE_PATTERNS       = NonlinearSolver_SPCG.h
 
 # The EXCLUDE_SYMBOLS tag can be used to specify one or more symbol names
 # (namespaces, classes, functions, etc.) that should be excluded from the
@@ -1655,7 +1655,8 @@ PAPER_TYPE             = a4wide
 # If left blank no extra packages will be included.
 # This tag requires that the tag GENERATE_LATEX is set to YES.
 
-EXTRA_PACKAGES         = 
+EXTRA_PACKAGES         = amsmath \
+                         amsfonts
 
 # The LATEX_HEADER tag can be used to specify a personal LaTeX header for the
 # generated LaTeX document. The header should contain everything until the first
@@ -1980,9 +1981,7 @@ SEARCH_INCLUDES        = YES
 # preprocessor.
 # This tag requires that the tag SEARCH_INCLUDES is set to YES.
 
-INCLUDE_PATH           = ../include/slam \
-                         ../include/slam_app \
-                         ../include/ba_interface_example
+INCLUDE_PATH           = 
 
 # You can use the INCLUDE_FILE_PATTERNS tag to specify one or more wildcard
 # patterns (like *.h and *.hpp) to filter out the header-files in the
@@ -2008,7 +2007,8 @@ PREDEFINED             = UNUSED(x)=x \
                          __SE_TYPES_SUPPORT_L_SOLVERS \
                          __SE_TYPES_SUPPORT_LAMBDA_SOLVERS \
                          __cplusplus \
-                         ENABLE_BA_OPTIMIZER_C_INTERFACE
+                         ENABLE_BA_OPTIMIZER_C_INTERFACE \
+                         __UBER_BLOCK_MATRIX_FIXED_BLOCK_SIZE_OPS
 
 # If the MACRO_EXPANSION and EXPAND_ONLY_PREDEF tags are set to YES then this
 # tag can be used to specify a list of macro names that should be expanded. The

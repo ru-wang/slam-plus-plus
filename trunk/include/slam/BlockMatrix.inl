@@ -29,14 +29,8 @@ inline size_t CUberBlockMatrix::n_Find_BlockRow(size_t n_row, size_t &r_n_block_
 	if(n_row >= m_n_row_num)
 		return size_t(-1);
 	else {
-		_TyRowConstIter p_row_it;
-#if defined(_MSC_VER) && !defined(__MWERKS__) && _MSC_VER >= 1400
-		p_row_it = std::upper_bound(m_block_rows_list.begin(),
+		_TyRowConstIter p_row_it = std::upper_bound(m_block_rows_list.begin(),
 			m_block_rows_list.end(), n_row, CFindLowerRow()); // t_odo
-#else // _MSC_VER && !__MWERKS__ && _MSC_VER >= 1400
-		p_row_it = std::upper_bound(m_block_rows_list.begin(),
-			m_block_rows_list.end(), n_row, _FindLowerRow); // t_odo
-#endif // _MSC_VER && !__MWERKS__ && _MSC_VER >= 1400
 		//_ASSERTE(p_row_it != m_block_rows_list.end());
 		if(p_row_it == m_block_rows_list.begin())
 			return -1;
@@ -70,15 +64,9 @@ inline size_t CUberBlockMatrix::n_Find_BlockColumn(size_t n_column, size_t &r_n_
 	if(n_column >= m_n_col_num)
 		return -1;
 	else {
-		_TyColumnConstIter p_col_it;
 		_ASSERTE(!m_block_cols_list.empty());
-#if defined(_MSC_VER) && !defined(__MWERKS__) && _MSC_VER >= 1400
-		p_col_it = std::upper_bound(m_block_cols_list.begin(),
+		_TyColumnConstIter p_col_it = std::upper_bound(m_block_cols_list.begin(),
 			m_block_cols_list.end(), n_column, CFindLowerColumn()); // t_odo
-#else // _MSC_VER && !__MWERKS__ && _MSC_VER >= 1400
-		p_col_it = std::upper_bound(m_block_cols_list.begin(),
-			m_block_cols_list.end(), n_column, _FindLowerColumn); // t_odo
-#endif // _MSC_VER && !__MWERKS__ && _MSC_VER >= 1400
 		//_ASSERTE(p_col_it != m_block_cols_list.end()); // t_odo - handle this as proper runtime error // done (the line below)
 		if(p_col_it == m_block_cols_list.begin())
 			return -1;
@@ -401,13 +389,8 @@ inline size_t CUberBlockMatrix::n_RowGet(size_t n_row, size_t &r_n_block_row_num
 	if(n_row >= m_n_row_num)
 		return -1;
 	else {
-#if defined(_MSC_VER) && !defined(__MWERKS__) && _MSC_VER >= 1400
 		_TyRowConstIter p_row_it = std::upper_bound(m_block_rows_list.begin(),
 			m_block_rows_list.end(), n_row, CFindLowerRow()); // t_odo
-#else // _MSC_VER && !__MWERKS__ && _MSC_VER >= 1400
-		_TyRowConstIter p_row_it = std::upper_bound(m_block_rows_list.begin(),
-			m_block_rows_list.end(), n_row, _FindLowerRow); // t_odo
-#endif // _MSC_VER && !__MWERKS__ && _MSC_VER >= 1400
 		//_ASSERTE(p_row_it != m_block_rows_list.end());
 		if(p_row_it == m_block_rows_list.begin())
 			return -1;
@@ -451,13 +434,8 @@ inline size_t CUberBlockMatrix::n_ColumnGet(size_t n_column, size_t &r_n_block_c
 		/*if(m_block_cols_list.back().n_cumulative_width_sum == n_column) // saves almost 10% of the time if filling by columns
 			p_col_it = m_block_cols_list.end() - 1;
 		else*/ {
-#if defined(_MSC_VER) && !defined(__MWERKS__) && _MSC_VER >= 1400
 			p_col_it = std::upper_bound(m_block_cols_list.begin(),
 				m_block_cols_list.end(), n_column, CFindLowerColumn()); // t_odo
-#else // _MSC_VER && !__MWERKS__ && _MSC_VER >= 1400
-			p_col_it = std::upper_bound(m_block_cols_list.begin(),
-				m_block_cols_list.end(), n_column, _FindLowerColumn); // t_odo
-#endif // _MSC_VER && !__MWERKS__ && _MSC_VER >= 1400
 			//_ASSERTE(p_col_it != m_block_cols_list.end()); // t_odo - handle this as proper runtime error // done (the line below)
 			if(p_col_it == m_block_cols_list.begin())
 				return -1;
@@ -561,12 +539,12 @@ bool CUberBlockMatrix::Append_Block_Log(const CMatrixType &r_t_block, size_t n_r
 	if(n_row_index == m_block_rows_list.size() &&
 	   (n_row_index = n_RowAlloc(m_n_row_num, r_t_block.rows())) == size_t(-1))
 		return false;
-	else if(m_block_rows_list[n_row_index].n_height != r_t_block.rows())
+	else if(m_block_rows_list[n_row_index].n_height != size_t(r_t_block.rows()))
 		return false;
 	if(n_column_index == m_block_cols_list.size() &&
 	   (n_column_index = n_ColumnAlloc(m_n_col_num, r_t_block.cols())) == size_t(-1))
 		return false;
-	else if(m_block_cols_list[n_column_index].n_width != r_t_block.cols())
+	else if(m_block_cols_list[n_column_index].n_width != size_t(r_t_block.cols()))
 		return false;
 	// in case either index points one past the last row / column, creates a new one
 	// note that n_ColumnAlloc() / n_RowAlloc() check dimensions,
@@ -849,12 +827,8 @@ bool CUberBlockMatrix::ElementwiseBinaryOp_ZeroInvariant(CUberBlockMatrix &r_des
 				size_t n_block_size = r_t_col.n_width * m_block_rows_list[n_old_row].n_height;
 				// get block data
 
-				_TyBlockIter p_block_it =
-#if defined(_MSC_VER) && !defined(__MWERKS__) && _MSC_VER >= 1400
-					std::lower_bound(p_first_it, r_t_dest_col.block_list.end(), n_new_row, CCompareBlockRow());
-#else // _MSC_VER && !__MWERKS__ && _MSC_VER >= 1400
-					std::lower_bound(p_first_it, r_t_dest_col.block_list.end(), n_new_row, CompareBlockRow);
-#endif // _MSC_VER && !__MWERKS__ && _MSC_VER >= 1400
+				_TyBlockIter p_block_it = std::lower_bound(p_first_it,
+					r_t_dest_col.block_list.end(), n_new_row, CCompareBlockRow());
 				// find where to put the block in the column
 
 				bool b_insert_at_end;
@@ -975,12 +949,8 @@ bool CUberBlockMatrix::ElementwiseBinaryOp_RightSideZeroInvariant(CUberBlockMatr
 				size_t n_block_size = r_t_col.n_width * m_block_rows_list[n_old_row].n_height;
 				// get block data
 
-				_TyBlockIter p_block_it =
-#if defined(_MSC_VER) && !defined(__MWERKS__) && _MSC_VER >= 1400
-					std::lower_bound(p_first_it, r_t_dest_col.block_list.end(), n_new_row, CCompareBlockRow());
-#else // _MSC_VER && !__MWERKS__ && _MSC_VER >= 1400
-					std::lower_bound(p_first_it, r_t_dest_col.block_list.end(), n_new_row, CompareBlockRow);
-#endif // _MSC_VER && !__MWERKS__ && _MSC_VER >= 1400
+				_TyBlockIter p_block_it = std::lower_bound(p_first_it,
+					r_t_dest_col.block_list.end(), n_new_row, CCompareBlockRow());
 				// find where to put the block in the column
 
 				bool b_insert_at_end;
@@ -1128,12 +1098,8 @@ bool CUberBlockMatrix::ElementwiseBinaryOp(CUberBlockMatrix &r_dest, CBinaryOp o
 				size_t n_block_size = r_t_col.n_width * m_block_rows_list[n_old_row].n_height;
 				// get block data
 
-				_TyBlockIter p_block_it =
-#if defined(_MSC_VER) && !defined(__MWERKS__) && _MSC_VER >= 1400
-					std::lower_bound(p_first_it, r_t_dest_col.block_list.end(), n_new_row, CCompareBlockRow());
-#else // _MSC_VER && !__MWERKS__ && _MSC_VER >= 1400
-					std::lower_bound(p_first_it, r_t_dest_col.block_list.end(), n_new_row, CompareBlockRow);
-#endif // _MSC_VER && !__MWERKS__ && _MSC_VER >= 1400
+				_TyBlockIter p_block_it = std::lower_bound(p_first_it,
+					r_t_dest_col.block_list.end(), n_new_row, CCompareBlockRow());
 				// find where to put the block in the column
 
 				for(; p_first_it != p_block_it; ++ p_first_it) {
@@ -1242,6 +1208,44 @@ bool CUberBlockMatrix::ElementwiseBinaryOp(CUberBlockMatrix &r_dest, CBinaryOp o
 	// make sure that this operation didn't damage matrix integrity
 
 	return true;
+}
+
+bool CUberBlockMatrix::ProductOf(const CUberBlockMatrix &r_A, const CUberBlockMatrix &r_B) // throw(std::bad_alloc)
+{
+	return r_A.MultiplyToWith(*this, r_B);
+}
+
+bool CUberBlockMatrix::ProductOf(const CUberBlockMatrix &r_A,
+	const CUberBlockMatrix &r_B, bool b_upper_diag_only) // throw(std::bad_alloc)
+{
+	return r_A.MultiplyToWith(*this, r_B, b_upper_diag_only);
+}
+
+bool CUberBlockMatrix::MultiplyToWith(CUberBlockMatrix &r_dest, const CUberBlockMatrix &r_other) const // throw(std::bad_alloc)
+{
+#ifdef __UBER_BLOCK_MATRIX_MULTIPLICATION_GUSTAVSON
+	return MultiplyToWith_AccumLookup(r_dest, r_other, false);
+#else // __UBER_BLOCK_MATRIX_MULTIPLICATION_GUSTAVSON
+#ifndef __UBER_BLOCK_MATRIX_MULTIPLICATION_LINEAR
+	return MultiplyToWith_LogLookup(r_dest, r_other, false);
+#else // !__UBER_BLOCK_MATRIX_MULTIPLICATION_LINEAR
+	return MultiplyToWith_TransposeSort(r_dest, r_other, false);
+#endif // !__UBER_BLOCK_MATRIX_MULTIPLICATION_LINEAR
+#endif // __UBER_BLOCK_MATRIX_MULTIPLICATION_GUSTAVSON
+}
+
+bool CUberBlockMatrix::MultiplyToWith(CUberBlockMatrix &r_dest, const CUberBlockMatrix &r_other,
+	bool b_upper_diag_only) const // throw(std::bad_alloc)
+{
+#ifdef __UBER_BLOCK_MATRIX_MULTIPLICATION_GUSTAVSON
+	return MultiplyToWith_AccumLookup(r_dest, r_other, b_upper_diag_only);
+#else // __UBER_BLOCK_MATRIX_MULTIPLICATION_GUSTAVSON
+#ifndef __UBER_BLOCK_MATRIX_MULTIPLICATION_LINEAR
+	return MultiplyToWith_LogLookup(r_dest, r_other, b_upper_diag_only);
+#else // !__UBER_BLOCK_MATRIX_MULTIPLICATION_LINEAR
+	return MultiplyToWith_TransposeSort(r_dest, r_other, b_upper_diag_only);
+#endif // !__UBER_BLOCK_MATRIX_MULTIPLICATION_LINEAR
+#endif // __UBER_BLOCK_MATRIX_MULTIPLICATION_GUSTAVSON
 }
 
 template <const int MatrixRowsAtCompileTime>
@@ -1475,7 +1479,7 @@ size_t CUberBlockMatrix::n_BlockStructure_SumWithSelfTranspose_ColumnLengths(CIn
 			p_diag = (b_likely_upper_triangular && p1 != p2 && (*(p2 - 1)).first <= i)?
 				(((*(p2 - 1)).first == i)? p2 - 1 : p2) : // it is one of the last two ones, depending whether the diagonal item is present or not
 				std::lower_bound(p1, p2, i, CCompareBlockRow()); // find the diagonal // in case the matrix is strictly upper, then this is a slight waste of time
-			_ASSERTE(!b_likely_upper_triangular || p_diag == std::lower_bound(p1, p2, i, CCompareBlockRow())); // make sure 
+			_ASSERTE(!b_likely_upper_triangular || p_diag == std::lower_bound(p1, p2, i, CCompareBlockRow())); // make sure
 			if(p_diag != p2 && (*p_diag).first == i) { // in case there is a diagonal element
 				++ n_diag_nnz_num;
 				p_transpose_col_off[i] = CInt1((p_diag - p1) + 1); // point to the first below-diagonal element
@@ -1679,7 +1683,7 @@ void CUberBlockMatrix::BlockStructure_SumWithSelfTranspose(CInt *p_column_ptrs, 
 			p_diag = (b_likely_upper_triangular && p1 != p2 && (*(p2 - 1)).first <= i)?
 				(((*(p2 - 1)).first == i)? p2 - 1 : p2) : // it is one of the last two ones, depending whether the diagonal item is present or not
 				std::lower_bound(p1, p2, i, CCompareBlockRow()); // find the diagonal // in case the matrix is strictly upper, then this is a slight waste of time
-			_ASSERTE(!b_likely_upper_triangular || p_diag == std::lower_bound(p1, p2, i, CCompareBlockRow())); // make sure 
+			_ASSERTE(!b_likely_upper_triangular || p_diag == std::lower_bound(p1, p2, i, CCompareBlockRow())); // make sure
 			if(p_diag != p2 && (*p_diag).first == i) { // in case there is a diagonal element
 				++ n_diag_nnz_num;
 				p_transpose_col_off[i] = CInt2((p_diag - p1) + 1); // point to the first below-diagonal element

@@ -24,6 +24,13 @@
  *
  *	Removed the explicitly hybrid orderings, as actually the NNZ of AAT is easy
  *	to calculate from just upper triangular of A (which is actually lambda).
+ *
+ *	@date 2017-04-04
+ *
+ *	Fixed a warning in VS 2015 using checked iterators. Thanks to a flaw in checked iterators
+ *	not allowing zero-length null array the code is rather messy. Re-ran AAT unit tests on both
+ *	VS 2015 and the old branch of the code (successfully).
+ *
  */
 
 /** \addtogroup ubm
@@ -976,7 +983,7 @@ public:
 			const csi *__restrict p_diag;
 			if(b_upper_triangular) { // compile-time-constant
 				_ASSERTE(p1 <= p2);
-				if(p1 != p2 && Ai[p2 - 1] == i) {
+				if(p1 != p2 && size_t(Ai[p2 - 1]) == i) {
 					p_diag = Ai + (p2 - 1);
 					++ n_diag_nnz_num;
 				} else
@@ -989,7 +996,7 @@ public:
 					((Ai[p2 - 1] == csi(i))? Ai + (p2 - 1) : Ai + p2) : // it is one of the last two ones, depending whether the diagonal item is present or not
 					std::lower_bound(Ai + p1, Ai + p2, csi(i)); // find the diagonal // in case the matrix is strictly upper, then this is a slight waste of time
 				_ASSERTE(!b_likely_upper_triangular || p_diag == std::lower_bound(Ai + p1, Ai + p2, csi(i))); // make sure 
-				if(p_diag != Ai + p2 && *p_diag == i) { // in case there is a diagonal element
+				if(p_diag != Ai + p2 && size_t(*p_diag) == i) { // in case there is a diagonal element
 					++ n_diag_nnz_num;
 					p_transpose_col_off[i] = CInt1(p_diag - (Ai /*+ p1*/) + 1); // point to the first below-diagonal element
 				} else {
@@ -1005,7 +1012,7 @@ public:
 
 			p_column_lengths[i] = CInt((b_output_full_diagonal)? (p_diag - (Ai + p1)) + 1 : // the number of above-diag elements + 1
 				(b_output_diagonal)? // the number of elements in the upper part of the column, including the diagonal if present
-					((b_upper_triangular)? (p_diag - (Ai + p1)) + ((p_diag != Ai + p2 && *p_diag == i)? 1 : 0) : // simplified before, have to calculate it now
+					((b_upper_triangular)? (p_diag - (Ai + p1)) + ((p_diag != Ai + p2 && size_t(*p_diag) == i)? 1 : 0) : // simplified before, have to calculate it now
 					p_transpose_col_off[i] - p1) : // the above else branch already calculated it
 				(p_diag - (Ai + p1))); // the number of above-diag elements
 			// number of (strictly) upper triangular items A(*, i)
@@ -1274,7 +1281,7 @@ public:
 			const csi *__restrict p_diag;
 			if(b_upper_triangular) { // compile-time-constant
 				_ASSERTE(p1 <= p2);
-				if(p1 != p2 && Ai[p2 - 1] == i) {
+				if(p1 != p2 && size_t(Ai[p2 - 1]) == i) {
 					p_diag = Ai + (p2 - 1);
 					++ n_diag_nnz_num;
 				} else
@@ -1287,7 +1294,7 @@ public:
 					((Ai[p2 - 1] == csi(i))? Ai + (p2 - 1) : Ai + p2) : // it is one of the last two ones, depending whether the diagonal item is present or not
 					std::lower_bound(Ai + p1, Ai + p2, csi(i)); // find the diagonal // in case the matrix is strictly upper, then this is a slight waste of time
 				_ASSERTE(!b_likely_upper_triangular || p_diag == std::lower_bound(Ai + p1, Ai + p2, csi(i))); // make sure 
-				if(p_diag != Ai + p2 && *p_diag == i) { // in case there is a diagonal element
+				if(p_diag != Ai + p2 && size_t(*p_diag) == i) { // in case there is a diagonal element
 					++ n_diag_nnz_num;
 					p_transpose_col_off[i] = CInt2(p_diag - (Ai /*+ p1*/) + 1); // point to the first below-diagonal element
 				} else {
@@ -1303,19 +1310,35 @@ public:
 
 			size_t n_add_nnz = (b_output_full_diagonal)? (p_diag - (Ai + p1)) + 1 : // the number of above-diag elements + 1
 				(b_output_diagonal)? // the number of elements in the upper part of the column, including the diagonal if present
-					((b_upper_triangular)? (p_diag - (Ai + p1)) + ((p_diag != Ai + p2 && *p_diag == i)? 1 : 0) : // simplified before, have to calculate it now
-					p_transpose_col_off[i] - p1) : // the above else branch already calculated it
+				((b_upper_triangular)? (p_diag - (Ai + p1)) + ((p_diag != Ai + p2 && size_t(*p_diag) == i)? 1 : 0) : // simplified before, have to calculate it now
+				p_transpose_col_off[i] - p1) : // the above else branch already calculated it
 				(p_diag - (Ai + p1)); // the number of above-diag elements
 			// number of (strictly) upper triangular items A(*, i)
 			// in case the diagonal should be included in the column length, just use p_transpose_col_off[i] - p1
 			// the diagonal entry would be added here
 
+			CInt *__restrict p_next;
+			{
+				const csi *__restrict p_copy_end = ((b_output_diagonal)? ((b_upper_triangular)?
+					Ai + (p1 + n_add_nnz) : Ai + p_transpose_col_off[i]) : p_diag); // either reuse p_transpose_col_off if we have it or use n_add_nnz if we don't
+#if defined(_DEBUG) && defined(_MSC_VER) && !defined(__MWERKS__) && _MSC_VER >= 1700
+				// visual studio 2015 is giving a hard time with this warning; personally I dont like having
+				// two versions of the code for debug / release but there seems to be no other (portable) way
+				stdext::checked_array_iterator<const csi*> Ai_checked(Ai + p1, p2 - p1); // make sure we only access inside this col
+				CInt n_dummy = 0xbaadf00d;
+				_ASSERTE(p_row_inds != 0 || (p_column_dest[i] == 0 && ((i + 1 == n)? n_nnz_sum : p_column_dest[i + 1]) - p_column_dest[i] == 0));
+				stdext::checked_array_iterator<CInt*> row_inds_checked((p_row_inds)? p_row_inds + p_column_dest[i] : &n_dummy, // checked iterator becomes utterly unusable if it is null (but we want it valid if it is also a zero length array)
+					((i + 1 == n)? n_nnz_sum : p_column_dest[i + 1]) - p_column_dest[i]); // make sure we only access inside this col
+				p_next = p_row_inds + ((std::copy(Ai_checked, Ai_checked + ((p_copy_end - Ai) - p1),
+					row_inds_checked) - row_inds_checked) + p_column_dest[i]); // checked copy
+				_ASSERTE(n_dummy == 0xbaadf00d); // make sure this wasnt overwritten
+#else // _DEBUG && _MSC_VER && !__MWERKS__ && _MSC_VER >= 1700
 #if defined(_MSC_VER) && !defined(__MWERKS__)
-			#pragma warning(suppress: 4996) // suppress the MSVC warning about std::copy with unpreotected iterators below
+				#pragma warning(suppress: 4996) // suppress the MSVC warning about std::copy with unpreotected iterators below
 #endif // _MSC_VER && !__MWERKS__
-			CInt *__restrict p_next = std::copy(Ai + p1, (b_output_diagonal)?
-				((b_upper_triangular)? Ai + (p1 + n_add_nnz) : Ai + p_transpose_col_off[i]) : // either reuse p_transpose_col_off if we have it or use n_add_nnz if we don't
-				p_diag, p_row_inds + p_column_dest[i]); // add the first n_add_nnz entries of column i
+				p_next = std::copy(Ai + p1, p_copy_end, p_row_inds + p_column_dest[i]); // add the first n_add_nnz entries of column i
+#endif // _DEBUG && _MSC_VER && !__MWERKS__ && _MSC_VER >= 1700
+			}
 			if(b_output_full_diagonal) {
 				*p_next = i; // fill the diagonal entry
 				_ASSERTE(++ p_next - (p_row_inds + p_column_dest[i]) == n_add_nnz); // make sure we filled what we promised
@@ -1496,7 +1519,6 @@ public:
  */
 class CMatrixTransposeSum_UnitTests {
 public:
-	
 	static void Test_AAT(const char *p_s_data_path = "data/AAT_testing") // throw(std::bad_alloc)
 	{
 		printf("testing an empry 0x0 matrix\n");

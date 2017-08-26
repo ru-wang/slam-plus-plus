@@ -38,15 +38,18 @@ int n_Run_BA_Solver(const TCommandLineArgs &t_args) // throw(std::runtime_error,
 #ifdef __BA_ENABLED
 	_ASSERTE(t_args.b_use_BA);
 	typedef MakeTypelist_Safe((CVertexCam, CVertexXYZ)) TVertexTypelist_BA;
-	typedef MakeTypelist_Safe((CEdgeP2C3D, CEdgeC2CE)) TEdgeTypelist_BA;
+	typedef MakeTypelist_Safe((CEdgeP2C3D)) TEdgeTypelist_BA;
 	// define types of vertices, edges
 
 	typedef CTypelist<CConsistencyMarker_ParsePrimitive, CStandardParsedPrimitives> CBAParsedPrimitives;
 	// use one more parsed primitive to signal points where incremental optimization should be performed
 
-	typedef CFlatSystem<CBaseVertex, TVertexTypelist_BA, CBaseEdge/*CEdgeP2C3D*/, TEdgeTypelist_BA> CSystemType;
-	//typedef CFlatSystem<CBaseVertex, TVertexTypelist_BA, CBaseEdge, TEdgeTypelist_BA,
-	//	CBasicUnaryFactorFactory, CBaseVertex, TVertexTypelist_BA> CSystemType; // test const vertices
+	typedef CFlatSystem<CBaseVertex, TVertexTypelist_BA,
+			CEdgeP2C3D, TEdgeTypelist_BA, CBasicUnaryFactorFactory
+#ifdef __SLAM_APP_USE_CONSTANT_VERTICES
+		, CBaseVertex, TVertexTypelist_BA
+#endif // __SLAM_APP_USE_CONSTANT_VERTICES
+		> CSystemType;
 	// make a system permitting BA vertex and edge types
 
 	typedef CSolverCaller<CSystemType, CBAEdgeTraits,

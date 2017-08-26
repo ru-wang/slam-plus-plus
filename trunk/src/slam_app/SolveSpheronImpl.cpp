@@ -76,7 +76,12 @@ int n_Run_Spheron_Solver(const TCommandLineArgs &t_args) // throw(std::runtime_e
 
 // Build Time 0:37 | Build Time 0:29 (when all solvers disabled)
 
-	typedef CFlatSystem<CBaseVertex, TVertexTypelist_BA, CEdgeSpheronXYZ, TEdgeTypelist_BA> CSystemType;
+	typedef CFlatSystem<CBaseVertex, TVertexTypelist_BA,
+		CEdgeSpheronXYZ, TEdgeTypelist_BA, CNullUnaryFactorFactory
+#ifdef __SLAM_APP_USE_CONSTANT_VERTICES
+		, CBaseVertex, TVertexTypelist_BA
+#endif // __SLAM_APP_USE_CONSTANT_VERTICES
+		> CSystemType;
 	// make a system permitting BA vertex and edge types
 
 // Build Time 0:38 | Build Time 0:29 (when all solvers disabled)

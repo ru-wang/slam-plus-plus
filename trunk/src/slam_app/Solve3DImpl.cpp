@@ -41,7 +41,11 @@ int n_Run_SE3_Solver(const TCommandLineArgs &t_args) // throw(std::runtime_error
 	// define types of vertices, edges
 
 	typedef CFlatSystem<CBaseVertex, TVertexTypelist_SE3,
-		CBaseEdge, TEdgeTypelist_SE3> CSystemType;
+		CBaseEdge, TEdgeTypelist_SE3, CBasicUnaryFactorFactory
+#ifdef __SLAM_APP_USE_CONSTANT_VERTICES
+		, CBaseVertex, TVertexTypelist_SE3
+#endif // __SLAM_APP_USE_CONSTANT_VERTICES
+		> CSystemType;
 	// make a system permitting SE(3) vertex and edge types
 
 	typedef CSolverCaller<CSystemType, CSE3LandmarkPoseEdgeTraits,

@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 
 FILES=../src/slam_app/Solve*Impl.cpp
 

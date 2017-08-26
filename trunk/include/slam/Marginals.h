@@ -426,10 +426,10 @@ public:
 	 *		block (less or equal to n_order_size)
 	 *
 	 *	@note This function throws std::bad_alloc.
-	 *	@note This used to be called Calculate_DenseMarginals_Fast_ColumnBand_FBS() which is
+	 *	@note This used to be called Calculate_DenseMarginals_Fast_ColumnBand_FBS() which was
 	 *		unfortunate because the function actually stores only a subblock of the marginals matrix
 	 *		rather than the dense matrix and the semantics depend on the type of the matrix
-	 *		(Eigen::MatrixXd for full matrix and anything else for matrix band). Seems wrong
+	 *		(Eigen::MatrixXd for full matrix and anything else for matrix band). Seemed wrong
 	 *		to call them the same.
 	 */
 	template <class CBlockMatrixTypelist, class Derived0>
@@ -3589,6 +3589,9 @@ public:
 			fake_perm[i] = i;
 		// build a fake permutation on R (we don't have the original one here)
 
+		CMatrixOrdering mord;
+		mord.p_InvertOrdering(&fake_perm.front(), fake_perm.size());
+
 		for(;;) {
 			double f_start = t.f_Time();
 			Calculate_DenseMarginals_Fast_FBS<CBlockMatrixTypelist>(C_fast, r_R, &fake_perm[0], fake_perm.size());
@@ -3604,7 +3607,7 @@ public:
 			C_rec = C_ref; // insert ground truth
 #endif // _DEBUG*/
 			double f_start = t.f_Time();
-			Calculate_DenseMarginals_Recurrent_FBS<CBlockMatrixTypelist>(C_rec, r_R);
+			Calculate_DenseMarginals_Recurrent_FBS<CBlockMatrixTypelist>(C_rec, r_R, mord, mpart_Diagonal);
 			++ n_rec_pass_num;
 			f_time_rec += t.f_Time() - f_start;
 			if((f_time_rec >= 1 && n_rec_pass_num >= 10) || f_time_rec > 4)
@@ -6102,7 +6105,7 @@ public:
 
 		CUberBlockMatrix sparse_margs_prev_ordered;
 		CMarginals::Calculate_DenseMarginals_Recurrent_FBS<typename CSystemType::
-			_TyHessianMatrixBlockList>(sparse_margs_prev_ordered, prev_R_ord);
+			_TyHessianMatrixBlockList>(sparse_margs_prev_ordered, prev_R_ord, mord, mpart_Diagonal);
 
 		timer.Accum_DiffSample(f_recurrent_time);
 
@@ -7196,8 +7199,7 @@ public:
 				fclose(p_fw);
 				return false;
 			}
-			fclose(p_fw);
-			return true;
+			return !fclose(p_fw);
 		}
 		// dump diagonal blocks of the marginals to a file
 

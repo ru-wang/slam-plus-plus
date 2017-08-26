@@ -43,14 +43,16 @@ public:
 
 	typedef void (CFLOPCountingScalar::*Boolean)() const; /**< @brief true value for the safe bool idiom */
 
+	typedef size_t _TyCount; /**< @brief instruction counter data type */
+
 protected:
 	_TyBase m_f_value; /**< @brief value */
 
-	static size_t m_n_add_num; /**< @brief counter for addition operations */
-	static size_t m_n_mul_num; /**< @brief counter for multiplication operations */
-	static size_t m_n_div_num; /**< @brief counter for division operations */
-	static size_t m_n_trcd_num; /**< @brief counter for transcendental operations */
-	static size_t m_n_cmp_num; /**< @brief counter for comparison operations */
+	static _TyCount m_n_add_num; /**< @brief counter for addition operations */
+	static _TyCount m_n_mul_num; /**< @brief counter for multiplication operations */
+	static _TyCount m_n_div_num; /**< @brief counter for division operations */
+	static _TyCount m_n_trcd_num; /**< @brief counter for transcendental operations */
+	static _TyCount m_n_cmp_num; /**< @brief counter for comparison operations */
 
 public:
 	/**
@@ -75,7 +77,7 @@ public:
 	 *	@return Returns the number of addition operations
 	 *		since the last call to \ref Reset_Counters().
 	 */
-	static inline size_t n_Add_Num()
+	static inline _TyCount n_Add_Num()
 	{
 		return m_n_add_num;
 	}
@@ -85,7 +87,7 @@ public:
 	 *	@return Returns the number of multiplication operations
 	 *		since the last call to \ref Reset_Counters().
 	 */
-	static inline size_t n_Multiply_Num()
+	static inline _TyCount n_Multiply_Num()
 	{
 		return m_n_mul_num;
 	}
@@ -95,7 +97,7 @@ public:
 	 *	@return Returns the number of division operations
 	 *		since the last call to \ref Reset_Counters().
 	 */
-	static inline size_t n_Divide_Num()
+	static inline _TyCount n_Divide_Num()
 	{
 		return m_n_div_num;
 	}
@@ -105,7 +107,7 @@ public:
 	 *	@return Returns the number of transcendental operations
 	 *		since the last call to \ref Reset_Counters().
 	 */
-	static inline size_t n_Transcendental_Num()
+	static inline _TyCount n_Transcendental_Num()
 	{
 		return m_n_trcd_num;
 	}
@@ -115,7 +117,7 @@ public:
 	 *	@return Returns the number of comparison operations
 	 *		since the last call to \ref Reset_Counters().
 	 */
-	static inline size_t n_Comparison_Num()
+	static inline _TyCount n_Comparison_Num()
 	{
 		return m_n_cmp_num;
 	}
@@ -126,7 +128,7 @@ public:
 	 *		since the last call to \ref Reset_Counters().
 	 *	@note This sum is equally weighted.
 	 */
-	static inline size_t n_FLOP_Num()
+	static inline _TyCount n_FLOP_Num()
 	{
 		return m_n_add_num + m_n_mul_num + m_n_div_num + m_n_trcd_num + m_n_cmp_num;
 	}
@@ -152,7 +154,7 @@ public:
 	 *	@param[in] n_transcendent_operation_num is number of
 	 *		transcendent operations it took to obtain the value
 	 */
-	CFLOPCountingScalar(_TyBase f_value, size_t n_transcendent_operation_num)
+	CFLOPCountingScalar(_TyBase f_value, _TyCount n_transcendent_operation_num)
 		:m_f_value(f_value)
 	{
 		#pragma omp atomic
@@ -741,15 +743,15 @@ inline bool operator >=(CBaseSclar f_x, CFLOPCountingScalar<CBaseSclar> f_y)
 }
 
 template <class CBaseSclar>
-size_t CFLOPCountingScalar<CBaseSclar>::m_n_add_num = 0;
+typename CFLOPCountingScalar<CBaseSclar>::_TyCount CFLOPCountingScalar<CBaseSclar>::m_n_add_num = 0;
 template <class CBaseSclar>
-size_t CFLOPCountingScalar<CBaseSclar>::m_n_mul_num = 0;
+typename CFLOPCountingScalar<CBaseSclar>::_TyCount CFLOPCountingScalar<CBaseSclar>::m_n_mul_num = 0;
 template <class CBaseSclar>
-size_t CFLOPCountingScalar<CBaseSclar>::m_n_div_num = 0;
+typename CFLOPCountingScalar<CBaseSclar>::_TyCount CFLOPCountingScalar<CBaseSclar>::m_n_div_num = 0;
 template <class CBaseSclar>
-size_t CFLOPCountingScalar<CBaseSclar>::m_n_trcd_num = 0;
+typename CFLOPCountingScalar<CBaseSclar>::_TyCount CFLOPCountingScalar<CBaseSclar>::m_n_trcd_num = 0;
 template <class CBaseSclar>
-size_t CFLOPCountingScalar<CBaseSclar>::m_n_cmp_num = 0;
+typename CFLOPCountingScalar<CBaseSclar>::_TyCount CFLOPCountingScalar<CBaseSclar>::m_n_cmp_num = 0;
 // values of the counters
 
 /**

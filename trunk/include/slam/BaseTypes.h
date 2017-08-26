@@ -1,22 +1,22 @@
 /*
-								+-----------------------------------+
-								|                                   |
-								|      ***  Base SE types  ***      |
-								|                                   |
-								|  Copyright  (c) -tHE SWINe- 2012  |
-								|                                   |
-								|            BaseTypes.h            |
-								|                                   |
-								+-----------------------------------+
+								+----------------------------------+
+								|                                  |
+								|    ***  Base graph types  ***    |
+								|                                  |
+								|  Copyright (c) -tHE SWINe- 2012  |
+								|                                  |
+								|           BaseTypes.h            |
+								|                                  |
+								+----------------------------------+
 */
 
 #pragma once
-#ifndef __BASE_SE_PRIMITIVE_TYPES_INCLUDED
-#define __BASE_SE_PRIMITIVE_TYPES_INCLUDED
+#ifndef __BASE_GRAPH_PRIMITIVE_TYPES_INCLUDED
+#define __BASE_GRAPH_PRIMITIVE_TYPES_INCLUDED
 
 /**
  *	@file include/slam/BaseTypes.h
- *	@brief base SE primitive types
+ *	@brief base graph primitive types
  *	@author -tHE SWINe-
  *	@date 2012-09-21
  */
@@ -24,6 +24,7 @@
 #include "slam/FlatSystem.h"
 #include "slam/ParseLoop.h" // todo this should not be here
 #include "slam/Tuple.h"
+#include "slam/Self.h"
 
 /** \addtogroup graph
  *	@{
@@ -148,6 +149,46 @@ public:
 	}
 };
 
+// this does not work as the type is incomplete at the time of making the stuff
+/*template<class CEdgeType, class CArgType>
+class CIsRobustEdge {
+protected:
+    template <class TType>
+	static TType &Instantiate(); // undefined
+
+	static const CArgType &MakeArg(); // undefined
+
+	struct TNo { int p_pad[1]; };
+	struct TYes { int p_pad[2]; }; // todo - two no make a yes
+
+	template <size_t n_dummy_size>
+	class CValueToType;
+
+	template <class CSignature, CSignature p_pointer>
+	class CSignatureCheck;
+
+    template <class T>
+	static TYes DeclCheck(CValueToType<sizeof(&T::f_RobustWeight)> *p_dummy_arg);
+	//static TYes DeclCheck(CSignatureCheck<double(T::*)(const CArgType&), &T::f_RobustWeight> *p_dummy_arg);
+
+    template <class T>
+	static TNo DeclCheck(...);
+
+	template <class T>
+	static TYes SigCheck(CValueToType<sizeof(Instantiate<T>().f_RobustWeight(MakeArg()))> *p_dummy_arg); // this fails on g++; we'll get that error anyway upon it being called though
+
+    template <class T>
+	static TNo SigCheck(...);
+
+public:
+	enum {
+		b_declared = sizeof(DeclCheck<CEdgeType>(0)) == sizeof(TYes),
+		b_good_signature = true,//b_declared && sizeof(SigCheck<CEdgeType>(0)) == sizeof(TYes),
+		b_incorrect_signature = b_declared && !b_good_signature,
+		b_result = b_declared && b_good_signature, 
+	};
+};*/
+
 } // ~base_edge_detail
 
 /**
@@ -160,10 +201,11 @@ namespace hyperedge_detail {
  */
 enum {
 #ifdef __BASE_TYPES_ALLOW_CONST_VERTICES
-	no_ConstVertices = false /**< @brief no const vertices flag @note This is used to optimize away some const-ness checks which the compiler cannot optimize by itself. */
+	no_ConstVertices = false, /**< @brief no const vertices flag @note This is used to optimize away some const-ness checks which the compiler cannot optimize by itself. */
 #else // __BASE_TYPES_ALLOW_CONST_VERTICES
-	no_ConstVertices = true /**< @brief no const vertices flag @note This is used to optimize away some const-ness checks which the compiler cannot optimize by itself. */
+	no_ConstVertices = true, /**< @brief no const vertices flag @note This is used to optimize away some const-ness checks which the compiler cannot optimize by itself. */
 #endif // __BASE_TYPES_ALLOW_CONST_VERTICES
+	explicit_SymmetricProduct = true /**< @brief use explicitly symmetric product when calculating diagonal blocks of the Hessian */
 };
 
 /**
@@ -271,6 +313,15 @@ struct CMakeRHS {
  */
 class CBaseEdge : public CEdgeInterface {
 public:
+	/**
+	 *	@brief edge options, stored as enum
+	 */
+	enum {
+		Plain = 0, /**< @brief plain edge type */
+		Robust = 1 /**< @brief edge with robust function */
+		// note that those need to be powers of two
+	};
+
 	struct null_initialize_vertices_tag {}; /**< @brief tag-scheduling type for automatic vertex initialization */
 	struct explicitly_initialized_vertices_tag {}; /**< @brief tag-scheduling type for explicit vertex initialization */
 
@@ -637,8 +688,10 @@ public:
  *	@tparam CVertexTypeList is list of types of the vertices
  *	@tparam _n_residual_dimension is residual vector dimension
  *	@tparam _n_storage_dimension is state vector storage dimension (or -1 if the same as _n_residual_dimension)
+ *	@tparam _n_options is a bitfield of options (use e.g. CBaseEdge::Robust)
  */
-template <class CDerivedEdge, class CVertexTypeList, int _n_residual_dimension, int _n_storage_dimension = -1>
+template <class CDerivedEdge, class CVertexTypeList, int _n_residual_dimension,
+	int _n_storage_dimension = -1, unsigned int _n_options = CBaseEdge::Plain>
 class CBaseEdgeImpl : public CBaseEdge {
 public:
 	typedef CVertexTypeList _TyVertices; /**< @brief list of vertex types */
@@ -667,9 +720,10 @@ public:
 #else // __BASE_TYPES_USE_ALIGNED_MATRICES
 		n_matrix_alignment = Eigen::DontAlign | Eigen::ColMajor, /**< @brief Eigen matrix alignment flags */
 #endif // __BASE_TYPES_USE_ALIGNED_MATRICES
-		n_offdiag_block_num = (n_vertex_num * n_vertex_num - n_vertex_num) / 2 /**< @brief the number of off-diag blocks */
+		n_offdiag_block_num = (n_vertex_num * n_vertex_num - n_vertex_num) / 2, /**< @brief the number of off-diag blocks */
 		// the number of off-diag blocks rises with O(n^2), it is every-to-every, but only upper diag
 		// (1: 0, 2: 1, 3: 3, 4: 6)
+		n_options = _n_options /**< @brief edge options bitfield */
 	};
 
 	/**
@@ -730,6 +784,14 @@ public:
 	typedef Eigen::Matrix<double, n_storage_dimension, 1, n_matrix_alignment> _TyStorageVectorAlign; /**< @brief edge dimension storage vector type with member alignment */
 	typedef Eigen::Matrix<double, n_residual_dimension, 1, n_matrix_alignment> _TyVectorAlign; /**< @brief edge dimension vector type with member alignment */
 	typedef Eigen::Matrix<double, n_residual_dimension, n_residual_dimension, n_matrix_alignment> _TyMatrixAlign; /**< @brief edge dimension matrix type with member alignment */
+
+	/**
+	 *	@brief edge parameters, stored as enum
+	 */
+	enum {
+		b_is_robust_edge = (n_options & CBaseEdge::Robust) != 0 /**< @brief robust edge detection */
+		//base_edge_detail::CIsRobustEdge<CBaseEdgeImpl<CDerivedEdge, CVertexTypeList, _n_residual_dimension, _n_storage_dimension>, _TyVector>::b_result
+	};
 
 protected:
 	size_t m_p_vertex_id[n_vertex_num]; /**< @brief ids of referenced vertices */
@@ -1262,6 +1324,9 @@ public:
 		// Calculate_Jacobians_Expectation_Error in CDerivedEdge should have been
 		// static and it would be simple, but now we can't force the users to rewrite
 		// all their code. meh.
+
+		// this will not be modified for robust edges, we're just
+		// after the jacobians here and not the sigma or weight
 	}
 
 #ifdef __SE_TYPES_SUPPORT_A_SOLVERS // --- A-SLAM specific functions ---
@@ -1364,6 +1429,62 @@ protected:
 		fbs_ut::CCTSize<n_vertex_num> UNUSED(tag))
 	{}
 
+	/**
+	 *	@brief multiplies Jacobians by square root of sigma inverse to get values of the Jacobian blocks
+	 *
+	 *	@tparam n_vertex is zero-based vertex index (in this edge)
+	 *
+	 *	@param[in] r_t_jacobian_tuple is tuple containging the vertex Jacobians
+	 *	@param[in] f_weight_sqrt is square-rooted edge weight
+	 *	@param[in] tag is specialization of fbs_ut::CCTSize for tag dispatch (unused at runtime)
+	 */
+	template <const int n_vertex>
+	inline void _Calculate_Jacobians(const _TyJacobianTuple &r_t_jacobian_tuple,
+		double f_weight_sqrt, fbs_ut::CCTSize<n_vertex> UNUSED(tag))
+	{
+		if(m_p_RH[n_vertex]) { // may be null if const vertices are allowed
+			Eigen::Map<typename CVertexTraits<n_vertex>::_TyJacobianMatrix,
+				CUberBlockMatrix::map_Alignment> t_RH(m_p_RH[n_vertex]);
+			// map Jacobian matrix
+
+			t_RH = f_weight_sqrt * m_t_square_root_sigma_inv_upper * r_t_jacobian_tuple.template Get<n_vertex>();
+			// recalculate RH (transpose cholesky of sigma times the jacobian)
+			// note that this references the A block matrix
+		}
+
+		_Calculate_Jacobians(r_t_jacobian_tuple, f_weight_sqrt, fbs_ut::CCTSize<n_vertex + 1>());
+		// loop
+	}
+
+	/**
+	 *	@brief multiplies Jacobians by square root of sigma inverse to get values of the
+	 *		Jacobian blocks (recursion termination specialization)
+	 *
+	 *	@param[in] r_t_jacobian_tuple is tuple containging the vertex Jacobians (unused)
+	 *	@param[in] f_weight_sqrt is square-rooted edge weight (unused)
+	 *	@param[in] tag is specialization of fbs_ut::CCTSize for tag dispatch (unused at runtime)
+	 */
+	inline void _Calculate_Jacobians(const _TyJacobianTuple &UNUSED(r_t_jacobian_tuple),
+		double UNUSED(f_weight_sqrt), fbs_ut::CCTSize<n_vertex_num> UNUSED(tag))
+	{}
+
+	inline void _Calculate_Jacobians_ChooseRobust(const _TyJacobianTuple &t_jacobians,
+		const _TyVector &v_error, fbs_ut::CCTSize<0> UNUSED(t_robust_tag))
+	{
+		m_v_error = v_error;
+		_Calculate_Jacobians(t_jacobians, fbs_ut::CCTSize<0>());
+	}
+
+	inline void _Calculate_Jacobians_ChooseRobust(const _TyJacobianTuple &t_jacobians,
+		const _TyVector &v_error, fbs_ut::CCTSize<1> UNUSED(t_robust_tag))
+	{
+		double f_robust_weight = sqrt(((CDerivedEdge*)this)->f_RobustWeight(v_error));
+		m_v_error = v_error * f_robust_weight;
+		_Calculate_Jacobians(t_jacobians, f_robust_weight, fbs_ut::CCTSize<0>());
+	}
+
+	// if there was also a need for explicit weight for edge switching, there could be another version
+
 public:
 	/**
 	 *	@copydoc base_iface::CEdgeFacade::Calculate_Jacobians
@@ -1375,10 +1496,9 @@ public:
 		_TyVector v_expectation, v_error;
 		((CDerivedEdge*)this)->Calculate_Jacobians_Expectation_Error(t_jacobian_tuple,
 			v_expectation, v_error);
-		m_v_error = v_error;
 		// calculates the expectation, error and the jacobians (implemented by the edge)
 
-		_Calculate_Jacobians(t_jacobian_tuple, fbs_ut::CCTSize<0>());
+		_Calculate_Jacobians_ChooseRobust(t_jacobian_tuple, v_error, fbs_ut::CCTSize<(b_is_robust_edge)? 1 : 0>());
 		// per-vertex processing
 	}
 
@@ -1862,6 +1982,8 @@ protected:
 		const CH0_Sigma_inv_Matrix &t_H0_sigma_inv, fbs_ut::CCTSize<n_vertex1> UNUSED(tag0),
 		fbs_ut::CCTSize<n_vertex0> tag1)
 	{
+		// no need to change this for robust edges, it works
+
 		// we need to reduce a block between n_vertex1 and n_vertex0
 
 		_ASSERTE(!m_vertex_ptr.template Get<n_vertex0>()->b_IsConstant()); // make sure that n_vertex0 is not constant
@@ -1978,15 +2100,20 @@ protected:
 
 			Eigen::Map<typename CVertexTraits<n_vertex0>::_TyMatrixAlign,
 				CUberBlockMatrix::map_Alignment> t_HtSiH_vertex0(m_p_HtSiH_vert[n_vertex0]);
-			t_HtSiH_vertex0.noalias() = t_H0_sigma_inv * t_jacobian0;
+			if(hyperedge_detail::explicit_SymmetricProduct) // compile-time const
+				t_HtSiH_vertex0/*.noalias()*/ = (t_H0_sigma_inv * t_jacobian0).template selfadjointView<Eigen::Upper>();
+			else
+				t_HtSiH_vertex0.noalias() = t_H0_sigma_inv * t_jacobian0;
 			/*Eigen::Map<typename CVertexTraits<n_vertex1>::_TyMatrixAlign,
 				CUberBlockMatrix::map_Alignment> t_HtSiH_vertex1(m_p_HtSiH_vert[n_vertex1]);
 			t_HtSiH_vertex1.noalias() = t_jacobian1.transpose() * m_t_sigma_inv * t_jacobian1;*/
 			// calculate diagonal Hessian contributions
 
+			//_ASSERTE(t_HtSiH_vertex0 == t_HtSiH_vertex0.transpose()); // is this symmetric?
+
 			Eigen::Map<typename CVertexTraits<n_vertex0>::_TyVectorAlign,
 				CUberBlockMatrix::map_Alignment> t_right_hand_vertex0(m_p_RHS_vert[n_vertex0]);
-			t_right_hand_vertex0.noalias() = t_jacobian0.transpose() * (m_t_sigma_inv * r_v_error);
+			t_right_hand_vertex0.noalias() = t_H0_sigma_inv * r_v_error;//t_jacobian0.transpose() * (m_t_sigma_inv * r_v_error);
 			/*Eigen::Map<typename CVertexTraits<n_vertex1>::_TyVectorAlign,
 				CUberBlockMatrix::map_Alignment> t_right_hand_vertex1(m_p_RHS_vert[n_vertex1]);
 			t_right_hand_vertex1.noalias() = t_jacobian1.transpose() * (m_t_sigma_inv * r_v_error);*/
@@ -2018,6 +2145,236 @@ protected:
 		const _TyVector &UNUSED(r_v_error), fbs_ut::CCTSize<n_vertex_num> UNUSED(tag))
 	{}
 
+	/**
+	 *	@brief calculates diagonal Hessian blocks and the corresponding parts
+	 *		of the right hand side vector (outer loop)
+	 *
+	 *	@tparam n_vertex0 is zero-based index of the first vertex (in this edge)
+	 *	@tparam n_vertex1 is zero-based index of the second vertex (in this edge)
+	 *	@tparam CH0_Sigma_inv_Matrix is specialization of Eigen::Matrix which holds the result
+	 *		of the product of Jacobian of n_vertex0 with sigma inverse
+	 *
+	 *	@param[in] r_t_jacobians is tuple of Jacobians, one for each vertex
+	 *	@param[in] r_v_error is error vector (measurement - expectation)
+	 *	@param[in] f_weight is edge weight
+	 *	@param[in] tag is specialization of fbs_ut::CCTSize for tag dispatch (unused at runtime)
+	 */
+	template <const int n_vertex0>
+	inline void _Calculate_Hessians_v2(const _TyJacobianTuple &r_t_jacobians,
+		const _TyVector &r_v_error, double f_weight, fbs_ut::CCTSize<n_vertex0> tag)
+	{
+		if(!m_vertex_ptr.template Get<n_vertex0>()->b_IsConstant()) { // if the vertex is not constant
+			const typename CVertexTraits<n_vertex0>::_TyJacobianMatrix &t_jacobian0 = r_t_jacobians.template Get<n_vertex0>();
+			//const typename CVertexTraits<n_vertex1>::_TyJacobianMatrix &t_jacobian1 = r_t_jacobians.template Get<n_vertex1>();
+			// can tradeoff a copy for unaligned processing here
+
+			Eigen::Matrix<double, CVertexTraits<n_vertex0>::n_dimension, n_residual_dimension> t_H0_sigma_inv =
+				t_jacobian0.transpose() * m_t_sigma_inv * f_weight; // will need to pass this down
+			// this already contains the weight, so the inner loop does
+			// not need to be reimplemented; it also changes the r.h.s.
+
+			Eigen::Map<typename CVertexTraits<n_vertex0>::_TyMatrixAlign,
+				CUberBlockMatrix::map_Alignment> t_HtSiH_vertex0(m_p_HtSiH_vert[n_vertex0]);
+			if(hyperedge_detail::explicit_SymmetricProduct) // compile-time const
+				t_HtSiH_vertex0/*.noalias()*/ = (t_H0_sigma_inv * t_jacobian0).template selfadjointView<Eigen::Upper>();
+			else
+				t_HtSiH_vertex0.noalias() = t_H0_sigma_inv * t_jacobian0;
+			/*Eigen::Map<typename CVertexTraits<n_vertex1>::_TyMatrixAlign,
+				CUberBlockMatrix::map_Alignment> t_HtSiH_vertex1(m_p_HtSiH_vert[n_vertex1]);
+			t_HtSiH_vertex1.noalias() = t_jacobian1.transpose() * m_t_sigma_inv * t_jacobian1;*/
+			// calculate diagonal Hessian contributions
+
+			//_ASSERTE(t_HtSiH_vertex0 == t_HtSiH_vertex0.transpose()); // is this symmetric?
+
+			Eigen::Map<typename CVertexTraits<n_vertex0>::_TyVectorAlign,
+				CUberBlockMatrix::map_Alignment> t_right_hand_vertex0(m_p_RHS_vert[n_vertex0]);
+			t_right_hand_vertex0.noalias() = t_H0_sigma_inv * r_v_error;//t_jacobian0.transpose() * (m_t_sigma_inv * r_v_error);
+			/*Eigen::Map<typename CVertexTraits<n_vertex1>::_TyVectorAlign,
+				CUberBlockMatrix::map_Alignment> t_right_hand_vertex1(m_p_RHS_vert[n_vertex1]);
+			t_right_hand_vertex1.noalias() = t_jacobian1.transpose() * (m_t_sigma_inv * r_v_error);*/
+			// calculate right hand side vector contributions
+
+			_Calculate_Hessians_v2_Inner(r_t_jacobians, t_H0_sigma_inv,
+				fbs_ut::CCTSize<n_vertex0 + 1>(), tag);
+			// calculate off-diagonal blocks
+		}
+
+		_Calculate_Hessians_v2(r_t_jacobians, r_v_error, f_weight, fbs_ut::CCTSize<n_vertex0 + 1>());
+		// loop
+	}
+
+	/**
+	 *	@brief calculates diagonal Hessian blocks and the corresponding parts
+	 *		of the right hand side vector (outer loop; specialisation for recursion termination)
+	 *
+	 *	@tparam n_vertex0 is zero-based index of the first vertex (in this edge)
+	 *	@tparam n_vertex1 is zero-based index of the second vertex (in this edge)
+	 *	@tparam CH0_Sigma_inv_Matrix is specialization of Eigen::Matrix which holds the result
+	 *		of the product of Jacobian of n_vertex0 with sigma inverse
+	 *
+	 *	@param[in] r_t_jacobians is tuple of Jacobians, one for each vertex (unused)
+	 *	@param[in] r_v_error is error vector (measurement - expectation; unused)
+	 *	@param[in] f_weight is edge weight (unused)
+	 *	@param[in] tag is specialization of fbs_ut::CCTSize for tag dispatch (unused at runtime)
+	 */
+	inline void _Calculate_Hessians_v2(const _TyJacobianTuple &UNUSED(r_t_jacobians),
+		const _TyVector &UNUSED(r_v_error), double UNUSED(f_weight),
+		fbs_ut::CCTSize<n_vertex_num> UNUSED(tag))
+	{}
+
+	/**
+	 *	@brief calculates diagonal Hessian blocks and the corresponding parts
+	 *		of the right hand side vector (outer loop)
+	 *
+	 *	@tparam n_vertex0 is zero-based index of the first vertex (in this edge)
+	 *	@tparam n_vertex1 is zero-based index of the second vertex (in this edge)
+	 *	@tparam CH0_Sigma_inv_Matrix is specialization of Eigen::Matrix which holds the result
+	 *		of the product of Jacobian of n_vertex0 with sigma inverse
+	 *
+	 *	@param[in] r_t_jacobians is tuple of Jacobians, one for each vertex
+	 *	@param[in] r_v_error is error vector (measurement - expectation)
+	 *	@param[in] tag is specialization of fbs_ut::CCTSize for tag dispatch (unused at runtime)
+	 *
+	 *	@return Returns the denominator of the gradient descent scaling factor (needed by dogleg).
+	 */
+	template <const int n_vertex0>
+	inline _TyVector _v_Calculate_Hessians_v2(const _TyJacobianTuple &r_t_jacobians,
+		const _TyVector &r_v_error, fbs_ut::CCTSize<n_vertex0> tag)
+	{
+		if(!m_vertex_ptr.template Get<n_vertex0>()->b_IsConstant()) { // if the vertex is not constant
+			const typename CVertexTraits<n_vertex0>::_TyJacobianMatrix &t_jacobian0 = r_t_jacobians.template Get<n_vertex0>();
+			//const typename CVertexTraits<n_vertex1>::_TyJacobianMatrix &t_jacobian1 = r_t_jacobians.template Get<n_vertex1>();
+			// can tradeoff a copy for unaligned processing here
+
+			Eigen::Matrix<double, CVertexTraits<n_vertex0>::n_dimension, n_residual_dimension> t_H0_sigma_inv =
+				t_jacobian0.transpose() * m_t_sigma_inv; // will need to pass this down
+
+			Eigen::Map<typename CVertexTraits<n_vertex0>::_TyMatrixAlign,
+				CUberBlockMatrix::map_Alignment> t_HtSiH_vertex0(m_p_HtSiH_vert[n_vertex0]);
+			if(hyperedge_detail::explicit_SymmetricProduct) // compile-time const
+				t_HtSiH_vertex0/*.noalias()*/ = (t_H0_sigma_inv * t_jacobian0).template selfadjointView<Eigen::Upper>();
+			else
+				t_HtSiH_vertex0.noalias() = t_H0_sigma_inv * t_jacobian0;
+			/*Eigen::Map<typename CVertexTraits<n_vertex1>::_TyMatrixAlign,
+				CUberBlockMatrix::map_Alignment> t_HtSiH_vertex1(m_p_HtSiH_vert[n_vertex1]);
+			t_HtSiH_vertex1.noalias() = t_jacobian1.transpose() * m_t_sigma_inv * t_jacobian1;*/
+			// calculate diagonal Hessian contributions
+
+			//_ASSERTE(t_HtSiH_vertex0 == t_HtSiH_vertex0.transpose()); // is this symmetric?
+
+			Eigen::Map<typename CVertexTraits<n_vertex0>::_TyVectorAlign,
+				CUberBlockMatrix::map_Alignment> t_right_hand_vertex0(m_p_RHS_vert[n_vertex0]);
+			typename CVertexTraits<n_vertex0>::_TyVectorAlign g = t_jacobian0.transpose() * (m_t_sigma_inv * r_v_error);
+			t_right_hand_vertex0.noalias() = g;
+			/*Eigen::Map<typename CVertexTraits<n_vertex1>::_TyVectorAlign,
+				CUberBlockMatrix::map_Alignment> t_right_hand_vertex1(m_p_RHS_vert[n_vertex1]);
+			t_right_hand_vertex1.noalias() = t_jacobian1.transpose() * (m_t_sigma_inv * r_v_error);*/
+			// calculate right hand side vector contributions
+
+			_TyVector v_Jg = t_jacobian0 * g;
+			// calculate squared norm of ||J g||^2 = ||J J^T Sigma^(-1) r||^2
+			// note that Jg is a vector with the same dimension as the error vector
+
+			_Calculate_Hessians_v2_Inner(r_t_jacobians, t_H0_sigma_inv,
+				fbs_ut::CCTSize<n_vertex0 + 1>(), tag);
+			// calculate off-diagonal blocks
+
+			return v_Jg + _v_Calculate_Hessians_v2(r_t_jacobians,
+				r_v_error, fbs_ut::CCTSize<n_vertex0 + 1>());
+			// loop (breaks tail recursion)
+		} else {
+			return _v_Calculate_Hessians_v2(r_t_jacobians,
+				r_v_error, fbs_ut::CCTSize<n_vertex0 + 1>());
+			// loop
+		}
+	}
+
+	/**
+	 *	@brief calculates diagonal Hessian blocks and the corresponding parts
+	 *		of the right hand side vector (outer loop; specialisation for recursion termination)
+	 *
+	 *	@tparam n_vertex0 is zero-based index of the first vertex (in this edge)
+	 *	@tparam n_vertex1 is zero-based index of the second vertex (in this edge)
+	 *	@tparam CH0_Sigma_inv_Matrix is specialization of Eigen::Matrix which holds the result
+	 *		of the product of Jacobian of n_vertex0 with sigma inverse
+	 *
+	 *	@param[in] r_t_jacobians is tuple of Jacobians, one for each vertex (unused)
+	 *	@param[in] r_v_error is error vector (measurement - expectation; unused)
+	 *	@param[in] tag is specialization of fbs_ut::CCTSize for tag dispatch (unused at runtime)
+	 *
+	 *	@return Returns the denominator of the gradient descent scaling factor (needed by dogleg).
+	 */
+	inline _TyVector _v_Calculate_Hessians_v2(const _TyJacobianTuple &UNUSED(r_t_jacobians),
+		const _TyVector &UNUSED(r_v_error), fbs_ut::CCTSize<n_vertex_num> UNUSED(tag))
+	{
+		return _TyVector::Zero();
+	}
+
+	/**
+	 *	@brief calculates the denominator of the gradient descent scaling factor
+	 *
+	 *	@tparam n_vertex is zero-based index of the vertex (in this edge)
+	 *
+	 *	@param[in] r_v_g is the g vector from the dogleg paper (\f$-J^T \Sigma^{-1} r\f$)
+	 *	@param[in] r_t_jacobians is tuple of Jacobians, one for each vertex
+	 *	@param[in] tag is specialization of fbs_ut::CCTSize for tag dispatch (unused at runtime)
+	 *
+	 *	@return Returns the denominator of the gradient descent scaling factor (needed by dogleg).
+	 */
+	template <const int n_vertex>
+	inline _TyVector _v_Calculate_SDS(const Eigen::VectorXd &r_v_g,
+		const _TyJacobianTuple &r_t_jacobians, fbs_ut::CCTSize<n_vertex> tag)
+	{
+		if(!m_vertex_ptr.template Get<n_vertex>()->b_IsConstant()) { // if the vertex is not constant
+			const typename CVertexTraits<n_vertex>::_TyJacobianMatrix &t_jacobian0 = r_t_jacobians.template Get<n_vertex>();
+			//const typename CVertexTraits<n_vertex1>::_TyJacobianMatrix &t_jacobian1 = r_t_jacobians.template Get<n_vertex1>();
+			// can tradeoff a copy for unaligned processing here
+
+			_TyVector v_Jg = t_jacobian0 * r_v_g.segment<CVertexTraits<n_vertex>::n_dimension>(
+				m_vertex_ptr.template Get<n_vertex>()->n_Order());
+			// calculate squared norm of ||J g||^2 = ||J J^T Sigma^(-1) r||^2
+			// note that Jg is a vector with the same dimension as the error vector
+			// no need to change this for robust edges; it works
+
+			return v_Jg + _v_Calculate_SDS(r_v_g, r_t_jacobians, fbs_ut::CCTSize<n_vertex + 1>());
+			// loop (breaks tail recursion)
+		} else {
+			return _v_Calculate_SDS(r_v_g, r_t_jacobians, fbs_ut::CCTSize<n_vertex + 1>());
+			// loop
+		}
+	}
+
+	/**
+	 *	@brief calculates the denominator of the gradient descent scaling factor
+	 *		(specialization for recursion termination)
+	 *
+	 *	@param[in] r_v_g is the g vector from the dogleg paper (unused)
+	 *	@param[in] r_t_jacobians is tuple of Jacobians, one for each vertex (unused)
+	 *	@param[in] tag is specialization of fbs_ut::CCTSize for tag dispatch (unused at runtime)
+	 *
+	 *	@return Returns a null vector.
+	 */
+	inline _TyVector _v_Calculate_SDS(const Eigen::VectorXd &UNUSED(r_v_g),
+		const _TyJacobianTuple &UNUSED(r_t_jacobians), fbs_ut::CCTSize<n_vertex_num> UNUSED(tag))
+	{
+		return _TyVector::Zero();
+	}
+
+	inline void _Calculate_Hessians_v2_ChooseRobust(const _TyJacobianTuple &t_jacobians,
+		const _TyVector &v_error, fbs_ut::CCTSize<0> UNUSED(t_robust_tag))
+	{
+		_Calculate_Hessians_v2(t_jacobians, v_error, fbs_ut::CCTSize<0>());
+	}
+
+	inline void _Calculate_Hessians_v2_ChooseRobust(const _TyJacobianTuple &t_jacobians,
+		const _TyVector &v_error, fbs_ut::CCTSize<1> UNUSED(t_robust_tag))
+	{
+		double f_robust_weight = ((CDerivedEdge*)this)->f_RobustWeight(v_error);
+		_Calculate_Hessians_v2(t_jacobians, v_error, f_robust_weight, fbs_ut::CCTSize<0>());
+	}
+
+	// if there was also a need for explicit weight for edge switching, there could be another version
+
 public:
 	/**
 	 *	@brief calculates Hessian contributions
@@ -2032,7 +2389,42 @@ public:
 		((CDerivedEdge*)this)->Calculate_Jacobians_Expectation_Error(t_jacobians, v_expectation, v_error);
 		// calculates the expectation and the jacobians
 
-		_Calculate_Hessians_v2(t_jacobians, v_error, fbs_ut::CCTSize<0>());
+		_Calculate_Hessians_v2_ChooseRobust(t_jacobians, v_error, fbs_ut::CCTSize<(b_is_robust_edge)? 1 : 0>());
+	}
+
+	/**
+	 *	@brief calculates the gradient descent scaling factor
+	 *	@param[in] r_v_g is the g vector from the dogleg paper (\f$-J^T \Sigma^{-1} r\f$)
+	 *	@return Returns the denominator of the gradient descent scaling factor (needed by dogleg).
+	 */
+	inline double f_Calculate_Steepest_Descent_Scale(const Eigen::VectorXd &r_v_g)
+	{
+		_TyJacobianTuple t_jacobians;
+		_TyVector v_expectation, v_error;
+		((CDerivedEdge*)this)->Calculate_Jacobians_Expectation_Error(t_jacobians, v_expectation, v_error);
+		// calculates the expectation and the jacobians
+
+		return _v_Calculate_SDS(r_v_g, t_jacobians, fbs_ut::CCTSize<0>()).squaredNorm(); // need to sum up in vector first, then take the norm
+		// no need to change this for robust edges; it works
+	}
+
+	/**
+	 *	@brief calculates Hessian contributions and the gradient descent scaling factor
+	 *
+	 *	@return Returns the denominator of the gradient descent scaling factor (needed by dogleg).
+	 *
+	 *	@note This only calculates the Hessians, either Reduce_Hessians_v2() or the
+	 *		reduction plan needs to be used to fill lambda with values.
+	 */
+	inline double f_Calculate_Hessians_and_Steepest_Descent_Scale()
+	{
+		_TyJacobianTuple t_jacobians;
+		_TyVector v_expectation, v_error;
+		((CDerivedEdge*)this)->Calculate_Jacobians_Expectation_Error(t_jacobians, v_expectation, v_error);
+		// calculates the expectation and the jacobians
+
+		_ASSERTE(!b_is_robust_edge); // robust edges not supported here (todo if it ends up being used, otherwise remove it)
+		return _v_Calculate_Hessians_v2(t_jacobians, v_error, fbs_ut::CCTSize<0>()).squaredNorm();
 	}
 
 #else // __LAMBDA_USE_V2_REDUCTION_PLAN
@@ -2160,6 +2552,8 @@ public:
 
 	inline void Calculate_Hessians()
 	{
+		_ASSERTE(!b_is_robust_edge); // robust edges not supported here
+
 		_ASSERTE(m_p_vertex0->b_IsReferencingEdge(this));
 		_ASSERTE(m_p_vertex1->b_IsReferencingEdge(this));
 		// makes sure this is amongst the referencing edges
@@ -2513,6 +2907,8 @@ public:
 		// loops for many vertices
 
 #else // __LAMBDA_USE_V2_REDUCTION_PLAN
+		_ASSERTE(!b_is_robust_edge); // robust edges not supported here
+
 		//_ASSERTE(r_omega.b_Empty()); // should be empty // can't assert that here, other edges might have added something already
 
 		_ASSERTE(n_vertex_num == 2);
@@ -2685,4 +3081,4 @@ public:
 
 /** @} */ // end of group
 
-#endif // !__BASE_SE_PRIMITIVE_TYPES_INCLUDED
+#endif // !__BASE_GRAPH_PRIMITIVE_TYPES_INCLUDED

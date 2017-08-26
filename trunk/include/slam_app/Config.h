@@ -131,8 +131,12 @@
 //#include "slam/Segregated.h"
 //#include "slam/BlockMatrix.h"
 //#include "slam/Tetris.h" // disable to speed up builds
-//#include "slam/BlockUnit.h" // don't need this right now
-//#include "slam_app/BlockBench.h" // don't need this right now
+#ifdef __SLAM_APP_ENABLE_UNIT_TESTS
+#include "slam_app/BlockUnit.h" // typically not needed by users
+#endif // __SLAM_APP_ENABLE_UNIT_TESTS
+#ifdef __SLAM_APP_ENABLE_PERF_TESTS
+#include "slam_app/BlockBench.h" // typically not needed by users
+#endif // __SLAM_APP_ENABLE_PERF_TESTS
 //#include "slam/FlatSystem.h"
 //#include "slam/ParseLoop.h"
 #include "slam/LinearSolver_UberBlock.h" // always include

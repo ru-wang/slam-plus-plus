@@ -33,11 +33,11 @@ fi
 
 # could also use sort -n -s which is stable (-s)
 
-#num_segments=`cat $1 | grep CONSISTENCY_MARKER | wc -l`
-num_lines=`cat $1 | wc -l`
-max_lmid=`cat $1 | grep VERTEX_XYZ | cut -d " " -f 2 | gawk 'BEGIN { max = 0; } { if(max < $1) max = $1 } END { print max; }'`
+#num_segments=`sed $'s/\r$//' $1 | grep CONSISTENCY_MARKER | wc -l`
+num_lines=`sed $'s/\r$//' $1 | wc -l`
+max_lmid=`sed $'s/\r$//' $1 | grep VERTEX_XYZ | cut -d " " -f 2 | gawk 'BEGIN { max = 0; } { if(max < $1) max = $1 } END { print max; }'`
 
-cat $1 | gawk -v "num_lines=$num_lines" -v "max_lmid=$max_lmid" '
+sed $'s/\r$//' $1 | gawk -v "num_lines=$num_lines" -v "max_lmid=$max_lmid" '
 	BEGIN {
 		if(max_lmid < num_lines)
 			max_lmid = num_lines;

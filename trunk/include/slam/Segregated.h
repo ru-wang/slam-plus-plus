@@ -43,6 +43,16 @@
  *	is causing trouble when building with visual studio 2012 (not sure if the max _MSC_VER is
  *	low enough, did not try VS 2010; if you get errors, try decrementing it.
  *
+ *	@date 2017-04-04
+ *
+ *	Added _Unchecked_type to the __SEGREGATED_MAKE_CHECKED_ITERATORS section for _MSC_VER >= 1900
+ *	(VS 2015 or above), to avoid warnings about iterating on unchecked iterators. This also
+ *	requires implementing conversion to/from unchecked iterators that is now implemented but the
+ *	current code does not seem to ever call it.
+ *
+ *	If you experience problems, please disable __SEGREGATED_MAKE_CHECKED_ITERATORS (will cause
+ *	a warning but will work). Any feedback on this is generally appreciated.
+ *
  */
 
 /**
@@ -81,6 +91,7 @@
 #define _ASSERTE(x) assert(x)
 #endif // !_ASSERTE
 #include <vector>
+#include <iterator> // std::random_access_iterator_tag
 #include <stdlib.h> // posix_memalign()
 
 /**
@@ -347,9 +358,65 @@ public:
 		typedef std::random_access_iterator_tag iterator_category; /**< @brief iterator category (MAC) */
 #elif defined(_MSC_VER) && !defined(__MWERKS__) && _MSC_VER >= 1400
 		typedef std::random_access_iterator_tag iterator_category; /**< @brief iterator category (MSVC) */
-#if defined(__SEGREGATED_MAKE_CHECKED_ITERATORS) && _SECURE_SCL && _MSC_VER < 1700 // not sure if the max _MSC_VER is low enough; if you get errors on the line below, decrement it
+#if defined(__SEGREGATED_MAKE_CHECKED_ITERATORS) && _SECURE_SCL
+#if _MSC_VER < 1700 // not sure if the max _MSC_VER is low enough; if you get errors on the line below, decrement it
 		typedef std::_Range_checked_iterator_tag _Checked_iterator_category; /**< @brief checked iterator category (MSVC 90) */
-#endif // __SEGREGATED_MAKE_CHECKED_ITERATORS && _SECURE_SCL && _MSC_VER < 1700
+#else //  _MSC_VER < 1700
+#if 0
+		typedef pointer _Unchecked_type; /**< @brief unchecked iterator type, marks a checked iterator (VS 2015) */
+
+		/**
+		 *	@brief reset from unchecked iterator (VS 2015)
+		 *	@param[in] _Right is unchecked iterator type
+		 *	@return Returns reference to this.
+		 */
+		CConstIterator &_Rechecked(_Unchecked_type _Right)
+		{
+			difference_type n_offset = _Right - &**this;
+			_ASSERTE(n_offset >= 0 || n_offset + m_n_page_off >= 0); // won't skip a page back
+			_ASSERTE(n_offset < 0 || n_offset < m_t_page_size - m_n_page_off); // won't skip a page ahead
+			// this is experimental; if this fails, it might be needed to avoid using pointer as unchecked type and
+			// instead use the iterator type itself as unchecked type, this function and the below then become no-op
+			*this += n_offset;
+			return *this;
+		} // this would fail e.g. in std::copy as it first converts the checked iterator to unchecked and then goes back (duh)
+
+		/**
+		 *	@brief make an unchecked iterator (VS 2015)
+		 *	@return Returns a pointer to array data.
+		 */
+		_Unchecked_type _Unchecked() const
+		{
+			return &**this; // pointer to the element
+		}
+#else // 0
+		typedef CConstIterator _Unchecked_type; /**< @brief unchecked iterator type, marks a checked iterator (VS 2015) */
+		
+		/**
+		 *	@brief reset from unchecked iterator (VS 2015)
+		 *	@param[in] _Right is unchecked iterator type
+		 *	@return Returns reference to this.
+		 */
+		CConstIterator &_Rechecked(_Unchecked_type _Right)
+		{
+			*this = _Right;
+			return *this;
+		}
+
+		/**
+		 *	@brief make an unchecked iterator (VS 2015)
+		 *	@return Returns a pointer to array data.
+		 */
+		_Unchecked_type _Unchecked() const
+		{
+			return *this; // pointer to the element
+		}
+#endif // 0
+#endif //  _MSC_VER < 1700
+#endif // __SEGREGATED_MAKE_CHECKED_ITERATORS && _SECURE_SCL
+#else // _MSC_VER && !__MWERKS__ && _MSC_VER >= 1400
+		typedef std::random_access_iterator_tag iterator_category; /**< @brief iterator category (*nix) */
+		// added 2017-02-15 (got some errors on Salomon, did not seem to be an issue before)
 #endif // _MSC_VER && !__MWERKS__ && _MSC_VER >= 1400
 		// more MSVC secure iterator bullshit
 
@@ -627,6 +694,65 @@ public:
 		typedef _Ty *pointer; /**< @brief pointer to the payload type */
 		typedef _Ty &reference; /**< @brief reference to the payload type */
 
+#if defined(_MSC_VER) && !defined(__MWERKS__) && _MSC_VER >= 1400
+		typedef std::random_access_iterator_tag iterator_category; /**< @brief iterator category (MSVC) */
+#if defined(__SEGREGATED_MAKE_CHECKED_ITERATORS) && _SECURE_SCL
+#if _MSC_VER < 1700 // not sure if the max _MSC_VER is low enough; if you get errors on the line below, decrement it
+		typedef std::_Range_checked_iterator_tag _Checked_iterator_category; /**< @brief checked iterator category (MSVC 90) */
+#else //  _MSC_VER < 1700
+#if 0
+		typedef pointer _Unchecked_type; /**< @brief unchecked iterator type, marks a checked iterator (VS 2015) */
+
+		/**
+		 *	@brief reset from unchecked iterator (VS 2015)
+		 *	@param[in] _Right is unchecked iterator type
+		 *	@return Returns reference to this.
+		 */
+		CConstIterator &_Rechecked(_Unchecked_type _Right)
+		{
+			difference_type n_offset = _Right - &**this;
+			_ASSERTE(n_offset >= 0 || n_offset + m_n_page_off >= 0); // won't skip a page back
+			_ASSERTE(n_offset < 0 || n_offset < m_t_page_size - m_n_page_off); // won't skip a page ahead
+			// this is experimental; if this fails, it might be needed to avoid using pointer as unchecked type and
+			// instead use the iterator type itself as unchecked type, this function and the below then become no-op
+			*this += n_offset;
+			return *this;
+		} // this would fail e.g. in std::copy as it first converts the checked iterator to unchecked and then goes back (duh)
+
+		/**
+		 *	@brief make an unchecked iterator (VS 2015)
+		 *	@return Returns a pointer to array data.
+		 */
+		_Unchecked_type _Unchecked() const
+		{
+			return &**this; // pointer to the element
+		}
+#else // 0
+		typedef CIterator _Unchecked_type; /**< @brief unchecked iterator type, marks a checked iterator (VS 2015) */
+		
+		/**
+		 *	@brief reset from unchecked iterator (VS 2015)
+		 *	@param[in] _Right is unchecked iterator type
+		 *	@return Returns reference to this.
+		 */
+		CConstIterator &_Rechecked(_Unchecked_type _Right)
+		{
+			*this = _Right;
+			return *this;
+		}
+
+		/**
+		 *	@brief make an unchecked iterator (VS 2015)
+		 *	@return Returns a pointer to array data.
+		 */
+		_Unchecked_type _Unchecked() const
+		{
+			return *this; // pointer to the element
+		}
+#endif // 0
+#endif //  _MSC_VER < 1700
+#endif // __SEGREGATED_MAKE_CHECKED_ITERATORS && _SECURE_SCL
+#endif // _MSC_VER && !__MWERKS__ && _MSC_VER >= 1400
 	public:
 		/**
 		 *	@copydoc CConstIterator::CConstIterator()
@@ -1398,7 +1524,7 @@ public:
 	 *	@brief default constructor; does nothing (page size was set at compile-time)
 	 */
 	inline forward_allocated_pool()
-		:fap_detail::fap_base<T, _n_page_size_elems, _n_memory_alignment>(_n_page_size_elems)
+		:fap_detail::fap_base<T, _n_page_size_elems, _n_memory_alignment>(static_cast<size_t>(_n_page_size_elems))
 	{}
 };
 

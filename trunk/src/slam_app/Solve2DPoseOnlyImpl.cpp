@@ -39,7 +39,11 @@ int n_Run_SE2PoseOnly_Solver(const TCommandLineArgs &t_args) // throw(std::runti
 	// define types of vertices, edges
 
 	typedef CFlatSystem<CVertexPose2D, TVertexTypelist,
-		/*CVertexTypeTraits,*/ CEdgePose2D, TEdgeTypelist> CSystemType;
+		CEdgePose2D, TEdgeTypelist, CBasicUnaryFactorFactory
+#ifdef __SLAM_APP_USE_CONSTANT_VERTICES
+		, CVertexPose2D, TVertexTypelist
+#endif // __SLAM_APP_USE_CONSTANT_VERTICES
+		> CSystemType;
 	// make a system permitting SE(2) vertex and edge types
 
 	typedef CSolverCaller<CSystemType, CSE2OnlyPoseEdgeTraits,

@@ -23,9 +23,286 @@
 #endif // _OPENMP
 #include "slam/LinearSolver_UberBlock.h"
 #include "slam/OrderingMagic.h"
-#include "ba_marginals_example/BAMarginals.h"
+#include "slam/BAMarginals.h"
+
+#include "sparse_flops/cts.hpp"
+#include "sparse_flops/Instrument.h"
 
 int n_dummy_param = 0; // required by the DL solver, otherwise causes a link error
+
+int LU_Test(CUberBlockMatrix &lambda, bool b_clflush, bool b_no_FBS, bool b_count_FLOPs,
+	bool b_intrablock_full_piv = true, bool b_interblock_part_piv = true,
+	double f_min_piv_gain = 0, int n_amd_type = 2, bool b_symperm = true)
+{
+	//bool b_block_bench_style_a = false;
+	//bool b_Eigen_full_piv = false;
+	;
+	;
+	//int n_block_size = 3;
+	;
+	;
+	;
+	// test configuration
+
+	printf("b_clflush = %s\n", (b_clflush)? "true" : "false");
+	printf("b_no_FBS = %s\n", (b_no_FBS)? "true" : "false");
+	printf("b_count_FLOPs = %s\n", (b_count_FLOPs)? "true" : "false");
+
+	//printf("n_block_size = %d\n", n_block_size);
+	//printf("b_block_bench_style_a = %s\n", (b_block_bench_style_a)?
+	//	"true (elems inflated to blocks)" : "false (matrix partitioned to blocks)");
+	printf("b_interblock_part_piv = %s\n", (b_interblock_part_piv)? "true" : "false");
+	printf("f_min_piv_gain = %g%%\n", f_min_piv_gain * 100);
+	//printf("n_piv_L_norm_type = %s\n", (n_norm_type == 1)? "1" : (n_norm_type == 2)? "2" :
+	//	(n_norm_type == Eigen::Infinity)? "Eigen::Infinity" : "[other]");
+	printf("b_intrablock_full_piv = %s\n", (b_intrablock_full_piv)? "true" : "false");
+	//printf("b_Eigen_full_piv = %s\n", (b_Eigen_full_piv)? "true" : "false");
+	printf("n_amd_type = %s\n", (n_amd_type == 0)? "0 (natural)" :
+		(n_amd_type == 1)? "1 (Chol)" : (n_amd_type == 2)? "2 (LU)" : (n_amd_type == 3)? "3 (QR)" : "[other]");
+	printf("b_symperm = %s\n\n", (b_symperm)? "true" : "false");
+
+	printf("ordering ...\n"); fflush(stdout);
+
+	cs *p_pat;
+	if(!(p_pat = lambda.p_BlockStructure_to_Sparse()))
+		throw std::bad_alloc();
+	csi *p_block_perm;
+	if(!(p_block_perm = cs_amd(n_amd_type, p_pat))) { // a different AMD than for Cholesky, apparently
+		fprintf(stderr, "error: cs_amd() failed\n");
+		return -1;
+	}
+	cs_spfree(p_pat);
+	// get symbolic block ordering
+
+	printf("permuting ...\n"); fflush(stdout);
+
+	_ASSERTE(sizeof(size_t) == sizeof(csi));
+	CMatrixOrdering mord;
+	const size_t *p_inv_block_perm = mord.p_InvertOrdering((const size_t*)p_block_perm, lambda.n_BlockColumn_Num());
+	CUberBlockMatrix lambda_amd;
+	lambda.PermuteTo(lambda_amd, p_inv_block_perm,
+		lambda.n_BlockColumn_Num(), b_symperm, true, false); // want to benchmark the decomposition, make a deep copy
+	cs_free(p_block_perm);
+	// repermute lambda
+
+	//lambda_amd = lambda; // use no ordering
+
+	lambda.Clear();
+	// save memory, could run out on large matrices
+
+	cs *p_A;
+	if(!(p_A = lambda_amd.p_Convert_to_Sparse()))
+		throw std::bad_alloc();
+
+	const double f_norm = cs_norm(p_A);
+	const double f_rel_err_scale = 1 / std::max(1.0, f_norm);
+
+	if(b_count_FLOPs) {
+		typedef CTSparse<CFLOPCountingDouble> CFLOPCountingSparse;
+
+		size_t n_before_LU = CFLOPCountingDouble::n_FLOP_Num();
+
+		CFLOPCountingSparse::css *p_S = CFLOPCountingSparse::sqr(0,
+			CFLOPCountingSparse::p_FromSparse(p_A), 0); // symbolic analysis, use natural ordering
+
+		size_t n_before_num = CFLOPCountingDouble::n_FLOP_Num();
+
+		CFLOPCountingSparse::csn *p_N = CFLOPCountingSparse::lu(CFLOPCountingSparse::p_FromSparse(p_A),
+			p_S, 1 + f_min_piv_gain); // numeric LU factorization
+
+		size_t n_flops = CFLOPCountingDouble::n_FLOP_Num() - n_before_LU;
+		size_t n_sym_flops = n_before_num - n_before_LU;
+
+		if(p_S && p_N) {
+			printf("number of FLOPs in sparse LU: " PRIsize " (" PRIsize
+				" in symbolic decomposition)\n", n_flops, n_sym_flops);
+		} else {
+			printf("number of FLOPs in sparse LU: fail (fail"
+				" in symbolic decomposition)\n");
+		}
+		fflush(stdout);
+
+		CFLOPCountingSparse::sfree(p_S);
+		CFLOPCountingSparse::nfree(p_N);
+	}
+
+	fbs_ut::CDummyAlgSpecializer::TBSMix t_block_sizes =
+		fbs_ut::CDummyAlgSpecializer::t_BlockSize_Mixture(lambda_amd);
+	std::sort(t_block_sizes.begin(), t_block_sizes.end());
+	const bool b_use_FBS23 = !b_no_FBS && t_block_sizes.size() == 4 &&
+		t_block_sizes[0] == std::make_pair(size_t(2), size_t(2)) &&
+		t_block_sizes[1] == std::make_pair(size_t(2), size_t(3)) &&
+		t_block_sizes[2] == std::make_pair(size_t(3), size_t(2)) &&
+		t_block_sizes[3] == std::make_pair(size_t(3), size_t(3));
+	const bool b_use_FBS3 = !b_no_FBS && t_block_sizes.size() == 1 &&
+		t_block_sizes.front() == std::make_pair(size_t(3), size_t(3));
+	const bool b_use_FBS4 = !b_no_FBS && t_block_sizes.size() == 1 &&
+		t_block_sizes.front() == std::make_pair(size_t(4), size_t(4));
+	const bool b_use_FBS5 = !b_no_FBS && t_block_sizes.size() == 1 &&
+		t_block_sizes.front() == std::make_pair(size_t(5), size_t(5));
+	const bool b_use_FBS6 = !b_no_FBS && t_block_sizes.size() == 1 &&
+		t_block_sizes.front() == std::make_pair(size_t(6), size_t(6));
+	const bool b_use_FBS36 = !b_no_FBS && t_block_sizes.size() == 4 &&
+		t_block_sizes[0] == std::make_pair(size_t(3), size_t(3)) &&
+		t_block_sizes[1] == std::make_pair(size_t(3), size_t(6)) &&
+		t_block_sizes[2] == std::make_pair(size_t(6), size_t(3)) &&
+		t_block_sizes[3] == std::make_pair(size_t(6), size_t(6));
+	const bool b_use_FBS37 = !b_no_FBS && t_block_sizes.size() == 4 &&
+		t_block_sizes[0] == std::make_pair(size_t(3), size_t(3)) &&
+		t_block_sizes[1] == std::make_pair(size_t(3), size_t(7)) &&
+		t_block_sizes[2] == std::make_pair(size_t(7), size_t(3)) &&
+		t_block_sizes[3] == std::make_pair(size_t(7), size_t(7));
+
+	printf((b_use_FBS3)? "decomposing (3x3 FBS) ...\n" :
+		(b_use_FBS4)? "decomposing (4x4 FBS) ...\n" :
+		(b_use_FBS5)? "decomposing (5x5 FBS) ...\n" :
+		(b_use_FBS6)? "decomposing (6x6 FBS) ...\n" :
+		(b_use_FBS23)? "decomposing (3x3 3x2 2x3 2x2 FBS) ...\n" :
+		(b_use_FBS36)? "decomposing (6x6 6x3 3x6 3x3 FBS) ...\n" :
+		(b_use_FBS37)? "decomposing (7x7 7x3 3x7 3x3 FBS) ...\n" :
+		"decomposing ...\n"); fflush(stdout);
+
+	CUberBlockMatrix L, U;
+	std::vector<size_t> row_perm(lambda_amd.n_Row_Num()), col_perm(lambda_amd.n_Column_Num());
+
+	if(b_clflush) {
+		CDebug::Evict(row_perm);
+		CDebug::Evict(col_perm);
+		CDebug::Evict(L);
+		CDebug::Evict(U);
+		CDebug::Evict(lambda_amd);
+		CDebug::Evict(p_A);
+		CDebug::Swamp_Cache(); // just to make sure
+	}
+
+	CDeltaTimer dt;
+	dt.Reset();
+
+	bool b_did_piv;
+	bool b_result;
+	if(b_use_FBS3) {
+		typedef MakeTypelist_Safe((fbs_ut::CCTSize2D<3, 3>)) TBS3;
+		b_result = lambda_amd.LUTo_FBS<TBS3>(L, U, &row_perm.front(), &col_perm.front(), &b_did_piv,
+			b_interblock_part_piv, f_min_piv_gain, b_intrablock_full_piv);
+		// test simple FBS LU // todo - add a proper specializer for multiple sizes
+	} else if(b_use_FBS4) {
+		typedef MakeTypelist_Safe((fbs_ut::CCTSize2D<4, 4>)) TBS4;
+		b_result = lambda_amd.LUTo_FBS<TBS4>(L, U, &row_perm.front(), &col_perm.front(), &b_did_piv,
+			b_interblock_part_piv, f_min_piv_gain, b_intrablock_full_piv);
+		// test simple FBS LU // todo - add a proper specializer for multiple sizes
+	} else if(b_use_FBS5) {
+		typedef MakeTypelist_Safe((fbs_ut::CCTSize2D<5, 5>)) TBS5;
+		b_result = lambda_amd.LUTo_FBS<TBS5>(L, U, &row_perm.front(), &col_perm.front(), &b_did_piv,
+			b_interblock_part_piv, f_min_piv_gain, b_intrablock_full_piv);
+		// test simple FBS LU // todo - add a proper specializer for multiple sizes
+	} else if(b_use_FBS6) {
+		typedef MakeTypelist_Safe((fbs_ut::CCTSize2D<6, 6>)) TBS6;
+		b_result = lambda_amd.LUTo_FBS<TBS6>(L, U, &row_perm.front(), &col_perm.front(), &b_did_piv,
+			b_interblock_part_piv, f_min_piv_gain, b_intrablock_full_piv);
+		// test simple FBS LU // todo - add a proper specializer for multiple sizes
+	} else if(b_use_FBS23) {
+		typedef MakeTypelist_Safe((fbs_ut::CCTSize2D<3, 3>,
+			fbs_ut::CCTSize2D<3, 2>, fbs_ut::CCTSize2D<2, 3>, fbs_ut::CCTSize2D<2, 2>)) TBS23;
+		b_result = lambda_amd.LUTo_FBS<TBS23>(L, U, &row_perm.front(), &col_perm.front(), &b_did_piv,
+			b_interblock_part_piv, f_min_piv_gain, b_intrablock_full_piv);
+		// test simple FBS LU // todo - add a proper specializer for multiple sizes
+	} else if(b_use_FBS36) {
+		typedef MakeTypelist_Safe((fbs_ut::CCTSize2D<6, 6>,
+			fbs_ut::CCTSize2D<6, 3>, fbs_ut::CCTSize2D<3, 6>, fbs_ut::CCTSize2D<3, 3>)) TBS36;
+		b_result = lambda_amd.LUTo_FBS<TBS36>(L, U, &row_perm.front(), &col_perm.front(), &b_did_piv,
+			b_interblock_part_piv, f_min_piv_gain, b_intrablock_full_piv);
+		// test simple FBS LU // todo - add a proper specializer for multiple sizes
+	} else if(b_use_FBS37) {
+		typedef MakeTypelist_Safe((fbs_ut::CCTSize2D<7, 7>,
+			fbs_ut::CCTSize2D<7, 3>, fbs_ut::CCTSize2D<3, 7>, fbs_ut::CCTSize2D<3, 3>)) TBS37;
+		b_result = lambda_amd.LUTo_FBS<TBS37>(L, U, &row_perm.front(), &col_perm.front(), &b_did_piv,
+			b_interblock_part_piv, f_min_piv_gain, b_intrablock_full_piv);
+		// test simple FBS LU // todo - add a proper specializer for multiple sizes
+	} else {
+		b_result = lambda_amd.LUTo(L, U, &row_perm.front(), &col_perm.front(), &b_did_piv,
+			b_interblock_part_piv, f_min_piv_gain, b_intrablock_full_piv);
+	}
+	// todo - time it
+
+	double f_lub_time = dt.f_Time();
+
+	if(b_result) {
+		CUberBlockMatrix LU;
+		LU.ProductOf(L, U);
+		cs *p_LU = LU.p_Convert_to_Sparse();
+		CMatrixOrdering pinv;
+		cs *p_PAQ = cs_permute(p_A, (const csi*)/*pinv.p_InvertOrdering(*/&row_perm.front()/*, // this is apparently already the inverse?
+			row_perm.size())*/, (const csi*)&col_perm.front(), 1);
+		cs *p_err = cs_add(p_LU, p_PAQ, 1, -1);
+		/*cs *p_PTLUQT = cs_permute(p_LU, (const csi*)&row_perm.front(),
+			(const csi*)pinv.p_InvertOrdering(&col_perm.front(), col_perm.size()), 1);
+
+		lambda_amd.Rasterize("LU_lambda_AMD.tga");
+		L.Rasterize("LU_L.tga");
+		U.Rasterize("LU_U.tga");
+		LU.Rasterize("LU_LU.tga");
+		CDebug::Dump_SparseMatrix_Subsample("LU_raw.tga", p_A);
+		CDebug::Dump_SparseMatrix_Subsample("LU_PTLUQT.tga", p_PTLUQT);
+		CDebug::Dump_SparseMatrix_Subsample("LU_correct.tga", p_PAQ);
+		CDebug::Dump_SparseMatrix_Subsample("LU_ubm.tga", p_LU);
+		CDebug::Dump_SparseMatrix_Subsample("LU_err.tga", p_err);
+
+		cs_spfree(p_PTLUQT);*/
+		cs_spfree(p_LU);
+		cs_spfree(p_PAQ);
+		double f_LUB_error = cs_norm(p_err);
+		cs_spfree(p_err);
+
+		printf("LUB %.3f msec, %g " PRIsize " " PRIsize " (%s piv)\n", f_lub_time * 1000,
+			f_LUB_error * f_rel_err_scale,
+			L.n_NonZero_Num(), U.n_NonZero_Num(), (b_did_piv)? "did" : "no"); fflush(stdout);
+	} else
+		printf("LUB -1 msec, fail fail fail\n"); fflush(stdout);
+	// analyze block LU results
+
+	L.Clear();
+	U.Clear();
+	// free some memory
+
+	if(b_clflush) {
+		CDebug::Evict(p_A);
+		CDebug::Swamp_Cache(); // just to make sure
+	}
+
+	double f_stats_time = dt.f_Time();
+
+	css *p_S = cs_sqr(0, p_A, 0); // symbolic analysis, use natural ordering
+	csn *p_N = cs_lu(p_A, p_S, 1 + f_min_piv_gain); // numeric LU factorization
+	// t_odo - time it
+
+	double f_cs_time = dt.f_Time();
+
+	if(p_S && p_N) {
+		size_t n_cs_nnz_L = p_N->L->p[p_N->L->n];
+		size_t n_cs_nnz_U = p_N->U->p[p_N->U->n];
+		cs *p_cs_LU = cs_multiply(p_N->L, p_N->U);
+		cs *p_PAQ = cs_permute(p_A, p_N->pinv, p_S->q, 1);
+		cs_nfree(p_N);
+		cs_sfree(p_S);
+		cs *p_cs_err = cs_add(p_cs_LU, p_PAQ, 1, -1);
+		cs_spfree(p_cs_LU);
+		cs_spfree(p_PAQ);
+		double f_cs_error = cs_norm(p_cs_err);
+		cs_spfree(p_cs_err);
+
+		printf("CSparse %.3f msec, %g " PRIsize " " PRIsize "\n", f_cs_time * 1000,
+			f_cs_error * f_rel_err_scale, n_cs_nnz_L, n_cs_nnz_U); fflush(stdout);
+	} else {
+		printf("CSparse -1 msec, fail fail fail\n"); fflush(stdout);
+		cs_sfree(p_S);
+		cs_nfree(p_N);
+	}
+	// compute and analyze CSparse LU
+
+	cs_spfree(p_A);
+
+	return 0;
+}
 
 /**
  *	@brief main
@@ -41,18 +318,39 @@ int main(int n_arg_num, const char **p_arg_list)
 	bool b_no_SchurD = false;
 	bool b_no_SchurD_Chol = false;
 	bool b_test_natural_Chol_only = false;
-	if(n_arg_num >= 3) {
-		if(!strcmp(p_arg_list[2], "-nSD"))
+	bool b_test_LU_only = false;
+	bool b_test_SC_LU_only = false;
+	bool b_clflush = false;
+	bool b_no_FBS = false;
+	bool b_count_FLOPs = false;
+	for(int i = 2; i < n_arg_num; ++ i) {
+		if(!strcmp(p_arg_list[i], "-nSD"))
 			b_no_SchurD = true;
-		else if(!strcmp(p_arg_list[2], "-tnCo"))
+		else if(!strcmp(p_arg_list[i], "-tnCo"))
 			b_test_natural_Chol_only = true;
-		else if(!strcmp(p_arg_list[2], "-nSDChol"))
+		else if(!strcmp(p_arg_list[i], "-tLUo"))
+			b_test_LU_only = true;
+		else if(!strcmp(p_arg_list[i], "-tSCLUo"))
+			b_test_SC_LU_only = true;
+		else if(!strcmp(p_arg_list[i], "-nSDChol"))
 			b_no_SchurD_Chol = true;
+		else if(!strcmp(p_arg_list[i], "-clflush"))
+			b_clflush = true;
+		else if(!strcmp(p_arg_list[i], "-nFBS"))
+			b_no_FBS = true;
+		else if(!strcmp(p_arg_list[i], "-cFLOPs"))
+			b_count_FLOPs = true;
 		else {
 			fprintf(stderr, "error: unknown switch: \'%s\'\n", p_arg_list[2]);
 			return -1;
 		}
 	}
+	if(b_clflush && !(b_test_LU_only || b_test_SC_LU_only))
+		fprintf(stderr, "warning: -clflush specified without -tLUo / tSCLUo (ignored)\n");
+	if(b_no_FBS && !(b_test_LU_only || b_test_SC_LU_only))
+		fprintf(stderr, "warning: -nFBS specified without -tLUo / tSCLUo (ignored)\n");
+	if(b_count_FLOPs && !(b_test_LU_only || b_test_SC_LU_only))
+		fprintf(stderr, "warning: -cFLOPs specified without -tLUo / tSCLUo (ignored)\n");
 	// "parse" commandline
 
 #ifdef _OPENMP
@@ -74,14 +372,18 @@ int main(int n_arg_num, const char **p_arg_list)
 	printf("done (needs %.2f MB)\n", lambda.n_Allocation_Size_NoLastPage() / 1048576.0); fflush(stdout);
 	// load lambda (from BA)
 
-	lambda.t_GetBlock_Log(0, 0) += Eigen::MatrixXd::Identity(6, 6) * 10000;
+	if(!b_test_LU_only)
+		lambda.t_GetBlock_Log(0, 0) += Eigen::MatrixXd::Identity(6, 6) * 10000;
 	// hack - raise the first block to avoid not pos def in SC
 
 	{
 		const char *p_s_filename_pat = "lambda_raw";
-		const bool b_symmetric = true;
+		const bool b_symmetric = !b_test_LU_only;
 
 		char p_s_filename[256];
+		sprintf(p_s_filename, "sc_0.0_%s.tga", p_s_filename_pat);
+		if(!lambda.Rasterize(p_s_filename))
+			remove(p_s_filename); // avoid keeping images from previous runs, would get confusing
 		cs *p_mat = lambda.p_BlockStructure_to_Sparse();
 		sprintf(p_s_filename, "sc_0.0_%s_SS.tga", p_s_filename_pat);
 		if(!p_mat || !CDebug::Dump_SparseMatrix_Subsample(p_s_filename,
@@ -93,6 +395,9 @@ int main(int n_arg_num, const char **p_arg_list)
 			remove(p_s_filename); // avoid keeping images from previous runs, would get confusing
 		cs_spfree(p_mat);
 	}
+
+	if(b_test_LU_only)
+		return LU_Test(lambda, b_clflush, b_no_FBS, b_count_FLOPs);
 
 	if(b_test_natural_Chol_only) {
 		CUberBlockMatrix R;
@@ -138,7 +443,7 @@ int main(int n_arg_num, const char **p_arg_list)
 	{
 		std::vector<size_t> lm;
 		for(size_t i = 0, n = lambda.n_BlockColumn_Num(); i < n; ++ i)
-			((lambda.n_BlockColumn_Column_Num(i) == 6)? ordering : lm).push_back(i);
+			((lambda.n_BlockColumn_Column_Num(i) != 3)? ordering : lm).push_back(i);
 		n_matrix_cut = ordering.size();
 		ordering.insert(ordering.end(), lm.begin(), lm.end());
 	}
@@ -182,7 +487,7 @@ int main(int n_arg_num, const char **p_arg_list)
 	CUberBlockMatrix U_Dinv;
 	U_Dinv.ProductOf_FBS<U_BlockSizes, D_BlockSizes>(U, Dinv);
 	CUberBlockMatrix U_Dinv_V;
-	U_Dinv.MultiplyToWith_FBS<U_BlockSizes, V_BlockSizes>(U_Dinv_V, V, true); // only the upper triangle is needed
+	U_Dinv_V.ProductOf_FBS<U_BlockSizes, V_BlockSizes>(U_Dinv, V, true); // only the upper triangle is needed
 	CUberBlockMatrix SC = A;
 	U_Dinv_V.AddTo_FBS<SC_BlockSizes>(SC, -1);
 	// ...
@@ -205,6 +510,25 @@ int main(int n_arg_num, const char **p_arg_list)
 	printf("\t    D: " PRIsize " elem. nnz, " PRIsize " blocks\n",
 		D.n_Block_Num() * 3 * 3, D.n_BlockColumn_Num()); fflush(stdout);
 	//printf("\t     : " PRIsize "\n", );
+
+	if(b_test_SC_LU_only) {
+		CUberBlockMatrix SC_full;
+		SC_full.SelfAdjointViewOf(SC, true, false);
+		// get a full symmetric SC
+
+		A.Clear();
+		U.Clear();
+		D.Clear();
+		V.Clear();
+		lambda.Clear();
+		Dinv.Clear();
+		U_Dinv.Clear();
+		U_Dinv_V.Clear();
+		// free memory
+
+		return LU_Test(SC_full, b_clflush, b_no_FBS, b_count_FLOPs);
+	}
+	// test LU of SC and exit
 
 	double f_stats_time = 0;
 	timer.Accum_DiffSample(f_stats_time);
@@ -279,7 +603,8 @@ int main(int n_arg_num, const char **p_arg_list)
 		cs *p_St = cs_transpose(p_S, 0);
 		// need p_St
 
-		U_Dinv.PermuteTo(U_Dinv_perm, p_SC_ord, n_SC_ord_size, true, false, true);
+		U_Dinv.PermuteTo(U_Dinv_perm, SC_ord.p_Get_InverseOrdering(), // this way and *not* the other way around!
+			SC_ord.n_Ordering_Size(), true, false, true);
 		// get a permuted view of U_Dinv
 
 		cs *p_B = U_Dinv_perm.p_BlockStructure_to_Sparse();
@@ -308,7 +633,7 @@ int main(int n_arg_num, const char **p_arg_list)
 			// unit basis matrix
 
 			for(size_t i = 0, n = S_bases.n_BlockColumn_Num(); i < n; ++ i) { // t_odo - do this in parallel (probably explicit matrix reduction rather than locking)
-				Calculate_UpperTriangularTransposeSolve_Bases_FBS<SC_BlockSizes>(S_bases,
+				sc_margs_detail::Calculate_UpperTriangularTransposeSolve_Bases_FBS<SC_BlockSizes>(S_bases,
 					S, p_St, i, S_dense_basis, workspace);
 				// use a function
 
@@ -522,7 +847,7 @@ int main(int n_arg_num, const char **p_arg_list)
 			// ATA: 1.237 sec on ff6, 31.101 sec on venice
 #else // 0
 			CUberBlockMatrix::_TyMatrixXdRef t_lminv_ii = sp_lm_inv_serial.t_GetBlock_Log(i, i);
-			BlockVector_PreMultiplyWithSelfTranspose_Add_FBS<U_BlockSizes>(t_lminv_ii, SinvT_U_Dinv_i_perm);
+			sc_margs_detail::BlockVector_PreMultiplyWithSelfTranspose_Add_FBS<U_BlockSizes>(t_lminv_ii, SinvT_U_Dinv_i_perm);
 			// about 6x cheaper FBS version of that
 			// ATA: 0.194 sec on ff6, 5.413 sec on venice
 #endif // 0
@@ -710,7 +1035,7 @@ int main(int n_arg_num, const char **p_arg_list)
 			const int _n = int(n);
 			#pragma omp for schedule(dynamic, 1) // t_odo - dynamic schedule? each column will likely have a different cost (todo - build histograms)
 			for(int i = 0; i < _n; ++ i) {
-				Calculate_UpperTriangularTransposeSolve_Bases_FBS<SC_BlockSizes>(S_bases_thr,
+				sc_margs_detail::Calculate_UpperTriangularTransposeSolve_Bases_FBS<SC_BlockSizes>(S_bases_thr,
 					S, p_St_thr, i, S_dense_basis, workspace);
 				// use the nice function instead
 
@@ -896,7 +1221,7 @@ int main(int n_arg_num, const char **p_arg_list)
 			// gets a sparse matrix, the size of U_Dinv_i_perm
 
 			CUberBlockMatrix::_TyMatrixXdRef t_lminv_ii = sp_lm_inv.t_GetBlock_Log(i, i);
-			BlockVector_PreMultiplyWithSelfTranspose_Add_FBS<U_BlockSizes>(t_lminv_ii, SinvT_U_Dinv_i_perm);
+			sc_margs_detail::BlockVector_PreMultiplyWithSelfTranspose_Add_FBS<U_BlockSizes>(t_lminv_ii, SinvT_U_Dinv_i_perm);
 #endif // 0
 		}
 
@@ -1063,7 +1388,14 @@ int main(int n_arg_num, const char **p_arg_list)
 			n_common_caminv_block_num, cam_cov_rec.n_Block_Num());
 		size_t n_common_lminv_block_num;
 		double f_lminv_error = CMarginals::f_IncompleteDifference(n_common_lminv_block_num, lm_cov_rec, sp_lm_inv);
-		printf("difference of recursive and SC landmark marginals\n"
+		printf("difference of recursive and parallel SC landmark marginals\n"
+			"\t  abs: %g\n"
+			"\t  rel: %g\n"
+			"\tshblk: " PRIsize " blocks (recursive formula of ,\\ recovered " PRIsize ")\n",
+			f_lminv_error, f_lminv_error / lm_cov_rec.f_Norm(),
+			n_common_lminv_block_num, lm_cov_rec.n_Block_Num()); fflush(stdout);
+		f_lminv_error = CMarginals::f_IncompleteDifference(n_common_lminv_block_num, lm_cov_rec, sp_lm_inv_serial);
+		printf("difference of recursive and serial SC landmark marginals\n"
 			"\t  abs: %g\n"
 			"\t  rel: %g\n"
 			"\tshblk: " PRIsize " blocks (recursive formula of ,\\ recovered " PRIsize ")\n",
@@ -1505,6 +1837,124 @@ int main(int n_arg_num, const char **p_arg_list)
 	printf("debug: stats time was %.3f\n", f_stats_time);
 
 	// dense tests below ... those will likely die on large mats
+
+	/*
+	M = rand(10, 10);
+	M = M' * M + 10 * eye(size(M));
+	R = chol(M);
+	S = inv(R);
+	norm_M_minus_RTR = norm(M - R' * R) / norm(M)
+	norm_invM_minus_SST = norm(inv(M) - S * S') / norm(inv(M))
+	*/
+	// note that inverse flips the transposes
+
+	printf("\ncalculating reference inverse of SC only\n"); fflush(stdout);
+	try {
+		CUberBlockMatrix SST_perm, SST;
+		S_bases.PreMultiplyWithSelfTransposeTo(SST_perm);
+		SST_perm.PermuteTo(SST, SC_ord.p_Get_Ordering(), SC_ord.n_Ordering_Size(), true, true, true);
+		// get SST_perm, SST (single storage)
+
+		printf("note: AMD(SC) is %sidentity ordering\n",
+			(CMatrixOrdering::b_IsIdentityOrdering(SC_ord.p_Get_Ordering(),
+			SC_ord.n_Ordering_Size()))? "" : "not ");
+		// see how this goes
+
+		{
+			Eigen::MatrixXd SST_dense;
+			S.Convert_to_Dense(SST_dense);
+			SST_dense = SST_dense.transpose() * SST_dense;
+			// dense rather than sparse inverse
+
+			Eigen::MatrixXd SC_ref;
+			SC_perm.Convert_to_Dense(SC_ref);
+			SC_ref.triangularView<Eigen::StrictlyLower>() =
+				SC_ref.triangularView<Eigen::StrictlyUpper>().transpose();
+			// get SC_perm^-1
+
+			double f_error = (SST_dense - SC_ref).norm(), f_norm = SC_ref.norm();
+			printf("dense(S)^Tdense(S) - SC_perm = %g (abs; %g rel error)\n", f_error, f_error / f_norm);
+		}
+		/*{
+			Eigen::MatrixXd SST_dense;
+			S.Convert_to_Dense(SST_dense);
+			SST_dense = SST_dense/* .triangularView<Eigen::Upper>()* /.inverse();
+			SST_dense = SST_dense.transpose() * SST_dense;
+			// dense rather than sparse inverse
+
+			Eigen::MatrixXd SC_inv_ref;
+			SC_perm.Convert_to_Dense(SC_inv_ref);
+			SC_inv_ref.triangularView<Eigen::StrictlyLower>() =
+				SC_inv_ref.triangularView<Eigen::StrictlyUpper>().transpose();
+			SC_inv_ref = SC_inv_ref.inverse();
+			// get SC_perm^-1
+
+			double f_error = (SST_dense - SC_inv_ref).norm(), f_norm = SC_inv_ref.norm();
+			printf("dense(S)^-Tdense(S)^-1 - SC_perm^-1 = %g (abs; %g rel error)\n", f_error, f_error / f_norm);
+		}*/ // S^-TS^-1 is indeed wrong
+		{
+			Eigen::MatrixXd SST_dense;
+			S.Convert_to_Dense(SST_dense);
+			SST_dense = SST_dense/*.triangularView<Eigen::Upper>()*/.inverse();
+			SST_dense = SST_dense * SST_dense.transpose();
+			// dense rather than sparse inverse
+
+			Eigen::MatrixXd SC_inv_ref;
+			SC_perm.Convert_to_Dense(SC_inv_ref);
+			SC_inv_ref.triangularView<Eigen::StrictlyLower>() =
+				SC_inv_ref.triangularView<Eigen::StrictlyUpper>().transpose();
+			SC_inv_ref = SC_inv_ref.inverse();
+			// get SC_perm^-1
+
+			double f_error = (SST_dense - SC_inv_ref).norm(), f_norm = SC_inv_ref.norm();
+			printf("dense(S)^-1dense(S)^-T - SC_perm^-1 = %g (abs; %g rel error)\n", f_error, f_error / f_norm);
+		}
+		{
+			Eigen::MatrixXd SST_dense;
+			SST_perm.Convert_to_Dense(SST_dense);
+
+			Eigen::MatrixXd SC_inv_ref;
+			SC_perm.Convert_to_Dense(SC_inv_ref);
+			SC_inv_ref.triangularView<Eigen::StrictlyLower>() =
+				SC_inv_ref.triangularView<Eigen::StrictlyUpper>().transpose();
+			SC_inv_ref = SC_inv_ref.inverse();
+			// get SC_perm^-1
+
+			double f_error = (SST_dense - SC_inv_ref).norm(), f_norm = SC_inv_ref.norm();
+			printf("S^-1S^-T - SC_perm^-1 = %g (abs; %g rel error)\n", f_error, f_error / f_norm);
+		}
+		{
+			Eigen::MatrixXd SST_dense;
+			SST.Convert_to_Dense(SST_dense);
+
+			Eigen::MatrixXd SC_inv_ref;
+			SC.Convert_to_Dense(SC_inv_ref);
+			SC_inv_ref.triangularView<Eigen::StrictlyLower>() =
+				SC_inv_ref.triangularView<Eigen::StrictlyUpper>().transpose();
+			SC_inv_ref = SC_inv_ref.inverse();
+			// get SC^-1
+
+			double f_error = (SST_dense - SC_inv_ref).norm(), f_norm = SC_inv_ref.norm();
+			printf("P^-1S^-1S^-TP - SC^-1 = %g (abs; %g rel error)\n", f_error, f_error / f_norm);
+		}
+		SST_perm.PermuteTo(SST, SC_ord.p_Get_InverseOrdering(), SC_ord.n_Ordering_Size(), true, true, true);
+		{
+			Eigen::MatrixXd SST_dense;
+			SST.Convert_to_Dense(SST_dense);
+
+			Eigen::MatrixXd SC_inv_ref;
+			SC.Convert_to_Dense(SC_inv_ref);
+			SC_inv_ref.triangularView<Eigen::StrictlyLower>() =
+				SC_inv_ref.triangularView<Eigen::StrictlyUpper>().transpose();
+			SC_inv_ref = SC_inv_ref.inverse();
+			// get SC^-1
+
+			double f_error = (SST_dense - SC_inv_ref).norm(), f_norm = SC_inv_ref.norm();
+			printf("PS^-1S^-TP^-1 - SC^-1 = %g (abs; %g rel error; this is the wrong way)\n", f_error, f_error / f_norm);
+		}
+	} catch(std::bad_alloc&) {
+		fprintf(stderr, "error: got bad_alloc: no reference will be available\n");
+	}
 
 	printf("\ncalculating reference inverse\n"); fflush(stdout);
 	Eigen::MatrixXd Sigma_ref;

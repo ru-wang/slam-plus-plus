@@ -176,6 +176,75 @@ void CUberBlockMatrix_Base::CopyTo(CUberBlockMatrix_Base &r_dest, bool b_share_d
 #endif // 0
 }
 
+bool CUberBlockMatrix_Base::Check_ModuleSettings(int n_pool_alignment, int n_map_alignment, bool b_debug_markers)
+{
+	static const int n_pool_align_when_built = pool_MemoryAlignment,
+		n_map_align_when_built = map_Alignment;
+	static const bool b_debug_markers_when_built =
+#ifdef __UBER_BLOCK_MATRIX_BUFFER_BOUNDS_CHECK
+		true;
+#else // __UBER_BLOCK_MATRIX_BUFFER_BOUNDS_CHECK
+		false;
+#endif // __UBER_BLOCK_MATRIX_BUFFER_BOUNDS_CHECK
+
+	bool b_result = true;
+	if(n_pool_alignment != n_pool_align_when_built) {
+		fprintf(stderr, "fatal error: pool alignment is %d B, but the SLAM++ module was built with %d B\n",
+			n_pool_alignment, n_pool_align_when_built);
+		b_result = false;
+	}
+	if(n_map_alignment != n_map_align_when_built) {
+		if((n_map_alignment == 16 && n_map_align_when_built == 1) || // 16 = Eigen::Align16
+		   (n_map_alignment == 1 && n_map_align_when_built == 16)) { // 1 = Eigen::Align (deprecated)
+			fprintf(stderr, "warning: Eigen alignment enum is %d, but the SLAM++\n"
+				" module was built with %d (the same alignment using a deprecated enum)\n",
+				n_map_alignment, n_map_align_when_built);
+		} else {
+			fprintf(stderr, "fatal error: Eigen alignment enum is %d, but the SLAM++ module was built with %d\n",
+				n_map_alignment, n_map_align_when_built);
+			b_result = false;
+		}
+	}
+	if(b_debug_markers != b_debug_markers_when_built) {
+		fprintf(stderr, "fatal error: debug markers are %s, but the SLAM++ module was built with them %s\n",
+			(b_debug_markers)? "enabled" : "disabled",
+			(b_debug_markers_when_built)? "enabled" : "disabled");
+		b_result = false;
+	}
+
+	return b_result;
+}
+
+bool CUberBlockMatrix_Base::Check_Block_Alignment_ModuleCfg() const
+{
+	if(!pool_MemoryAlignment)
+		return true; // unaligned addresses allowed
+
+	enum {
+		n_real_align = (pool_MemoryAlignment)? pool_MemoryAlignment : 1 // avoid "potential mod by 0" warning
+	};
+
+	int n_max_output = 0;
+	bool b_result = true;
+	for(size_t i = 0, n = m_block_cols_list.size(); i < n; ++ i) {
+		for(size_t j = 0, m = m_block_cols_list[i].block_list.size(); j < m; ++ j) {
+			double *p_block = m_block_cols_list[i].block_list[j].second;
+			if(ptrdiff_t(p_block) % n_real_align != 0) {
+				fprintf(stderr, "error: have a misaligned block at: 0x%08x\n",
+					(unsigned int)(ptrdiff_t(p_block) & 0xffffffffU));
+				b_result = false;
+				if(++ n_max_output == 100) {
+					fprintf(stderr, "error: the number of misaligned blocks "
+						"exceeded %d; stopping the check\n", n_max_output);
+					break;
+				}
+			}
+		}
+	}
+
+	return b_result;
+}
+
 } // ~blockmatrix_detail
 
 /*
@@ -275,14 +344,8 @@ bool CUberBlockMatrix::b_LowerTriangular() const
 			m_block_rows_list[n_last_diag_block_row].n_height));
 		// find the first diagonal row
 
-		_TyBlockConstIter p_end_it =
-//#if defined(_MSC_VER) && !defined(__MWERKS__) && _MSC_VER >= 1400
-			std::upper_bound(r_t_col.block_list.begin(), r_t_col.block_list.end(),
-			n_last_diag_block_row, CCompareBlockRow());
-/*#else // _MSC_VER && !__MWERKS__ && _MSC_VER >= 1400
-			std::upper_bound(r_t_col.block_list.begin(), r_t_col.block_list.end(),
-			n_last_diag_block_row, CompareBlockRow); // does not work with upper_bound()
-#endif // _MSC_VER && !__MWERKS__ && _MSC_VER >= 1400*/
+		_TyBlockConstIter p_end_it = std::upper_bound(r_t_col.block_list.begin(),
+			r_t_col.block_list.end(), n_last_diag_block_row, CCompareBlockRow());
 		if(p_end_it == r_t_col.block_list.begin())
 			continue;
 		// see if there are blocks on or above the diagonal
@@ -342,14 +405,8 @@ bool CUberBlockMatrix::b_UpperTriangular() const
 			m_block_rows_list[n_first_diag_block_row].n_height));
 		// find the first diagonal row
 
-		_TyBlockConstIter p_lower_block_it =
-#if defined(_MSC_VER) && !defined(__MWERKS__) && _MSC_VER >= 1400
-			std::lower_bound(r_t_col.block_list.begin(), r_t_col.block_list.end(),
-			n_first_diag_block_row, CCompareBlockRow());
-#else // _MSC_VER && !__MWERKS__ && _MSC_VER >= 1400
-			std::lower_bound(r_t_col.block_list.begin(), r_t_col.block_list.end(),
-			n_first_diag_block_row, CompareBlockRow);
-#endif // _MSC_VER && !__MWERKS__ && _MSC_VER >= 1400
+		_TyBlockConstIter p_lower_block_it = std::lower_bound(r_t_col.block_list.begin(),
+			r_t_col.block_list.end(), n_first_diag_block_row, CCompareBlockRow());
 		if(p_lower_block_it == r_t_col.block_list.end())
 			continue;
 		// see if there are blocks on or below the diagonal
@@ -443,14 +500,8 @@ bool CUberBlockMatrix::b_No_Diagonal_Blocks() const
 	for(size_t i = 0; i < n; ++ i) {
 		const std::vector<TColumn::TBlockEntry> &block_list_i = m_block_cols_list[i].block_list;
 
-		_TyBlockConstIter p_block_it =
-#if defined(_MSC_VER) && !defined(__MWERKS__) && _MSC_VER >= 1400
-			std::lower_bound(block_list_i.begin(),
+		_TyBlockConstIter p_block_it = std::lower_bound(block_list_i.begin(),
 			block_list_i.end(), i, CUberBlockMatrix::CCompareBlockRow());
-#else // _MSC_VER && !__MWERKS__ && _MSC_VER >= 1400
-			std::lower_bound(block_list_i.begin(),
-			block_list_i.end(), i, CompareBlockRow);
-#endif // _MSC_VER && !__MWERKS__ && _MSC_VER >= 1400
 		// find the diagonal block
 
 		if(p_block_it != block_list_i.end() && (*p_block_it).first == i)
@@ -469,14 +520,8 @@ bool CUberBlockMatrix::b_All_Diagonal_Blocks() const
 	for(size_t i = 0; i < n; ++ i) {
 		const std::vector<TColumn::TBlockEntry> &block_list_i = m_block_cols_list[i].block_list;
 
-		_TyBlockConstIter p_block_it =
-#if defined(_MSC_VER) && !defined(__MWERKS__) && _MSC_VER >= 1400
-			std::lower_bound(block_list_i.begin(),
+		_TyBlockConstIter p_block_it = std::lower_bound(block_list_i.begin(),
 			block_list_i.end(), i, CUberBlockMatrix::CCompareBlockRow());
-#else // _MSC_VER && !__MWERKS__ && _MSC_VER >= 1400
-			std::lower_bound(block_list_i.begin(),
-			block_list_i.end(), i, CompareBlockRow);
-#endif // _MSC_VER && !__MWERKS__ && _MSC_VER >= 1400
 		// find the diagonal block
 
 		if(p_block_it == block_list_i.end() || (*p_block_it).first != i)
@@ -553,14 +598,8 @@ bool CUberBlockMatrix::b_SymmetricBlocksOnly() const // throw(std::bad_alloc)
 	for(size_t i = 0; i < n; ++ i) {
 		const std::vector<TColumn::TBlockEntry> &block_list_i = m_block_cols_list[i].block_list;
 
-		_TyBlockConstIter p_block_it =
-#if defined(_MSC_VER) && !defined(__MWERKS__) && _MSC_VER >= 1400
-			std::lower_bound(block_list_i.begin(),
+		_TyBlockConstIter p_block_it = std::lower_bound(block_list_i.begin(),
 			block_list_i.end(), i, CUberBlockMatrix::CCompareBlockRow());
-#else // _MSC_VER && !__MWERKS__ && _MSC_VER >= 1400
-			std::lower_bound(block_list_i.begin(),
-			block_list_i.end(), i, CompareBlockRow);
-#endif // _MSC_VER && !__MWERKS__ && _MSC_VER >= 1400
 		// find the diagonal block
 
 		const size_t n_diag_elem = p_block_it - block_list_i.begin();
@@ -891,7 +930,7 @@ void CUberBlockMatrix::ExtendTopLeftTo(size_t n_row_num, size_t n_column_num) //
 	if(n_row_num > m_n_row_num) {
 		TRow t_row;
 		t_row.n_height = n_row_num - m_n_row_num;
-		t_row.n_cumulative_height_sum = 0; 
+		t_row.n_cumulative_height_sum = 0;
 		m_block_rows_list.insert(m_block_rows_list.begin(), t_row);
 		// add a new row
 
@@ -911,7 +950,7 @@ void CUberBlockMatrix::ExtendTopLeftTo(size_t n_row_num, size_t n_column_num) //
 	if(n_column_num > m_n_col_num) {
 		TColumn t_col;
 		t_col.n_width = n_column_num - m_n_col_num;
-		t_col.n_cumulative_width_sum = 0; 
+		t_col.n_cumulative_width_sum = 0;
 		m_block_cols_list.insert(m_block_cols_list.begin(), t_col);
 		// add a new column
 
@@ -935,14 +974,14 @@ void CUberBlockMatrix::ExtendTo(size_t n_row_num, size_t n_column_num) // throw(
 	if(n_row_num > m_n_row_num) {
 		TRow t_row;
 		t_row.n_height = n_row_num - m_n_row_num;
-		t_row.n_cumulative_height_sum = m_n_row_num; 
+		t_row.n_cumulative_height_sum = m_n_row_num;
 		m_block_rows_list.push_back(t_row);
 		m_n_row_num = n_row_num;
 	}
 	if(n_column_num > m_n_col_num) {
 		TColumn t_col;
 		t_col.n_width = n_column_num - m_n_col_num;
-		t_col.n_cumulative_width_sum = m_n_col_num; 
+		t_col.n_cumulative_width_sum = m_n_col_num;
 		m_block_cols_list.push_back(t_col);
 		m_n_col_num = n_column_num;
 	}
@@ -992,7 +1031,7 @@ CUberBlockMatrix::_TyMatrixXdRef CUberBlockMatrix::t_GetBlock_Log(size_t n_row_i
 			return _TyMatrixXdRef(0, 0, 0); // fixme - does this throw an exception or what?
 		size_t n_found_block_row_num = m_block_rows_list[n_row_index].n_height;
 		size_t n_found_block_column_num = m_block_cols_list[n_column_index].n_width;
-		double *p_data = (double*)p_GetBlockData(n_row_index, n_column_index);
+		double *p_data = const_cast<double*>(p_GetBlockData(n_row_index, n_column_index)); // this is a design failure, this should have returned _TyConstMatrixXdRef (but there are already parts using this loophole I guess) // todo - investigate
 		if(p_data && n_found_block_row_num == n_block_row_num &&
 		   n_found_block_column_num == n_block_column_num)
 			return _TyMatrixXdRef(p_data, n_block_row_num, n_block_column_num);
@@ -1042,7 +1081,7 @@ double *CUberBlockMatrix::p_GetBlock_Log(size_t n_row_index, size_t n_column_ind
 		   m_block_rows_list[n_row_index].n_height != n_block_row_num ||
 		   m_block_cols_list[n_column_index].n_width != n_block_column_num)
 			return 0;
-		return (double*)p_GetBlockData(n_row_index, n_column_index);
+		return const_cast<double*>(p_GetBlockData(n_row_index, n_column_index));
 	}
 }
 
@@ -1234,13 +1273,8 @@ size_t CUberBlockMatrix::n_RowAlloc(size_t n_row, size_t n_block_row_num) // thr
 		m_block_rows_list.push_back(t_new_row);
 		// make a new row at the end of the matrix to store the block
 	} else {
-#if defined(_MSC_VER) && !defined(__MWERKS__) && _MSC_VER >= 1400
 		_TyRowIter p_row_it = std::upper_bound(m_block_rows_list.begin(),
 			m_block_rows_list.end(), n_row, CFindLowerRow()); // t_odo
-#else // _MSC_VER && !__MWERKS__ && _MSC_VER >= 1400
-		_TyRowIter p_row_it = std::upper_bound(m_block_rows_list.begin(),
-			m_block_rows_list.end(), n_row, _FindLowerRow); // t_odo
-#endif // _MSC_VER && !__MWERKS__ && _MSC_VER >= 1400
 		//_ASSERTE(p_row_it != m_block_rows_list.end());
 		if(p_row_it == m_block_rows_list.begin())
 			return -1;
@@ -1446,13 +1480,8 @@ size_t CUberBlockMatrix::n_ColumnAlloc(size_t n_column, size_t n_block_column_nu
 		/*if(m_block_cols_list.back().n_cumulative_width_sum == n_column) // saves almost 10% of the time if filling by columns
 			p_col_it = m_block_cols_list.end() - 1;
 		else*/ {
-#if defined(_MSC_VER) && !defined(__MWERKS__) && _MSC_VER >= 1400
 			p_col_it = std::upper_bound(m_block_cols_list.begin(),
 				m_block_cols_list.end(), n_column, CFindLowerColumn()); // t_odo
-#else // _MSC_VER && !__MWERKS__ && _MSC_VER >= 1400
-			p_col_it = std::upper_bound(m_block_cols_list.begin(),
-				m_block_cols_list.end(), n_column, _FindLowerColumn); // t_odo
-#endif // _MSC_VER && !__MWERKS__ && _MSC_VER >= 1400
 			//_ASSERTE(p_col_it != m_block_cols_list.end()); // t_odo - handle this as proper runtime error // done (the line below)
 			if(p_col_it == m_block_cols_list.begin())
 				return -1;
@@ -1648,8 +1677,159 @@ bool CUberBlockMatrix::Build_AdditionLayouts(const std::vector<TRow> &r_row_list
 	return true;
 }
 
+void CUberBlockMatrix::SymmetricMultiply_Add(double *p_dest_vector, size_t UNUSED(n_dest_size),
+	const double *p_src_vector, size_t UNUSED(n_src_size), bool b_use_upper_triangle) const // @todo - this is largerly untested; test this
+{
+	CheckIntegrity(true);
+
+	_ASSERTE(b_SymmetricLayout()); // must be symmetric (and square)
+	_ASSERTE(p_dest_vector != p_src_vector); // won't work inplace
+	_ASSERTE(n_dest_size == m_n_row_num);
+	_ASSERTE(n_src_size == m_n_col_num);
+
+	size_t n_column_id = 0;
+	for(_TyColumnConstIter p_col_it = m_block_cols_list.begin(),
+	   p_col_end_it = m_block_cols_list.end(); p_col_it != p_col_end_it; ++ p_col_it, ++ n_column_id) {
+		const TColumn &r_t_col = *p_col_it;
+		const size_t n_column = r_t_col.n_cumulative_width_sum; // source vector offset
+		_TyConstVectorXdRef src(p_src_vector + n_column, r_t_col.n_width);
+		_TyRowVectorXdRef outer_dest(p_dest_vector + n_column, r_t_col.n_width);
+		// forces unaligned memory - no SSE2 (p_src_vector can't be aligned due to block size)
+
+		_TyBlockConstIter p_block_it = r_t_col.block_list.begin(),
+			p_end_it = r_t_col.block_list.end();
+		if(!b_use_upper_triangle) {
+			p_block_it = std::lower_bound(p_block_it, p_end_it,
+				n_column_id, CCompareBlockRow());
+			_ASSERTE(p_block_it == p_end_it || (*p_block_it).first >= n_column_id); // will begin with the diagonal block or below
+		}
+		for(; p_block_it != p_end_it; ++ p_block_it) {
+			const TColumn::TBlockEntry &r_t_block = *p_block_it;
+			// for each column, for each block ...
+
+			const size_t n_row_id = r_t_block.first;
+			if(b_use_upper_triangle && n_row_id > n_column_id)
+				break; // entered the lower part of the triangle
+
+			const TRow &r_t_row = m_block_rows_list[n_row_id];
+			const size_t n_row = r_t_row.n_cumulative_height_sum; // dest vector offset
+
+			_TyVectorXdRef dest(p_dest_vector + n_row, r_t_row.n_height);
+			// forces unaligned memory - no SSE2 (p_dest_vector can't be aligned due to block size)
+
+			_TyConstMatrixXdRef block(r_t_block.second, r_t_row.n_height, r_t_col.n_width);
+			// block
+
+#ifdef __UBER_BLOCK_MATRIX_LAZY_PRODUCT
+			dest += block.lazyProduct(src); // axpy
+#else // __UBER_BLOCK_MATRIX_LAZY_PRODUCT
+			dest.noalias() += block * src; // axpy
+#endif // __UBER_BLOCK_MATRIX_LAZY_PRODUCT
+			// perform the multiplication, one block at a time
+
+			if(n_row_id != n_column_id) {
+				_TyConstRowVectorXdRef outer_src(p_src_vector + n_row, r_t_row.n_height);
+				// forces unaligned memory - no SSE2 (p_src_vector can't be aligned due to block size)
+
+#ifdef __UBER_BLOCK_MATRIX_LAZY_PRODUCT
+				outer_dest += outer_src.lazyProduct(block); // xapy
+#else // __UBER_BLOCK_MATRIX_LAZY_PRODUCT
+				outer_dest.noalias() += outer_src * block; // xapy
+#endif // __UBER_BLOCK_MATRIX_LAZY_PRODUCT
+				// perform the multiplication, one block at a time
+			}
+			// off-diagonal blocks only
+		}
+	}
+}
+
+void CUberBlockMatrix::SymmetricMultiply_Add_ExpDiag(double *p_dest_vector, size_t UNUSED(n_dest_size),
+	const double *p_src_vector, size_t UNUSED(n_src_size), bool b_use_upper_triangle /*= true*/) const
+{
+	CheckIntegrity(true);
+
+	_ASSERTE(b_SymmetricLayout()); // must be symmetric (and square)
+	_ASSERTE(p_dest_vector != p_src_vector); // won't work inplace
+	_ASSERTE(n_dest_size == m_n_row_num);
+	_ASSERTE(n_src_size == m_n_col_num);
+
+	size_t n_column_id = 0;
+	for(_TyColumnConstIter p_col_it = m_block_cols_list.begin(),
+	   p_col_end_it = m_block_cols_list.end(); p_col_it != p_col_end_it; ++ p_col_it, ++ n_column_id) {
+		const TColumn &r_t_col = *p_col_it;
+		const size_t n_column = r_t_col.n_cumulative_width_sum; // source vector offset
+		_TyConstVectorXdRef src(p_src_vector + n_column, r_t_col.n_width);
+		_TyRowVectorXdRef outer_dest(p_dest_vector + n_column, r_t_col.n_width);
+		// forces unaligned memory - no SSE2 (p_src_vector can't be aligned due to block size)
+
+		_TyBlockConstIter p_block_it = r_t_col.block_list.begin(),
+			p_end_it = r_t_col.block_list.end();
+		if(!b_use_upper_triangle) {
+			p_block_it = std::lower_bound(p_block_it, p_end_it,
+				n_column_id, CCompareBlockRow());
+			_ASSERTE(p_block_it == p_end_it || (*p_block_it).first >= n_column_id); // will begin with the diagonal block or below
+		}
+		for(; p_block_it != p_end_it; ++ p_block_it) {
+			const TColumn::TBlockEntry &r_t_block = *p_block_it;
+			// for each column, for each block ...
+
+			const size_t n_row_id = r_t_block.first;
+			if(b_use_upper_triangle && n_row_id > n_column_id)
+				break; // entered the lower part of the triangle
+
+			const TRow &r_t_row = m_block_rows_list[n_row_id];
+			const size_t n_row = r_t_row.n_cumulative_height_sum; // dest vector offset
+
+			_TyVectorXdRef dest(p_dest_vector + n_row, r_t_row.n_height);
+			// forces unaligned memory - no SSE2 (p_dest_vector can't be aligned due to block size)
+
+			_TyConstMatrixXdRef block(r_t_block.second, r_t_row.n_height, r_t_col.n_width);
+			// block
+
+			if(n_row_id != n_column_id) {
+				// off-diagonal blocks only
+
+#ifdef __UBER_BLOCK_MATRIX_LAZY_PRODUCT
+				dest += block.lazyProduct(src); // axpy
+#else // __UBER_BLOCK_MATRIX_LAZY_PRODUCT
+				dest.noalias() += block * src; // axpy
+#endif // __UBER_BLOCK_MATRIX_LAZY_PRODUCT
+				// perform the multiplication, one block at a time
+
+				_TyConstRowVectorXdRef outer_src(p_src_vector + n_row, r_t_row.n_height);
+				// forces unaligned memory - no SSE2 (p_src_vector can't be aligned due to block size)
+
+#ifdef __UBER_BLOCK_MATRIX_LAZY_PRODUCT
+				outer_dest += outer_src.lazyProduct(block); // xapy
+#else // __UBER_BLOCK_MATRIX_LAZY_PRODUCT
+				outer_dest.noalias() += outer_src * block; // xapy
+#endif // __UBER_BLOCK_MATRIX_LAZY_PRODUCT
+				// perform the multiplication, one block at a time
+			} else {
+				// diagonal blocks
+
+				if(b_use_upper_triangle) { // t_odo - disable the lazy product here? // nope, gives slightly different results
+#ifdef __UBER_BLOCK_MATRIX_LAZY_PRODUCT
+					dest += Eigen::MatrixXd(block.selfadjointView<Eigen::Upper>()).lazyProduct(src); // axpy // requires forming a temp matrix
+#else // __UBER_BLOCK_MATRIX_LAZY_PRODUCT
+					dest.noalias() += block.selfadjointView<Eigen::Upper>() * src; // axpy
+#endif // __UBER_BLOCK_MATRIX_LAZY_PRODUCT
+				} else {
+#ifdef __UBER_BLOCK_MATRIX_LAZY_PRODUCT
+					dest += Eigen::MatrixXd(block.selfadjointView<Eigen::Lower>()).lazyProduct(src); // axpy // requires forming a temp matrix
+#else // __UBER_BLOCK_MATRIX_LAZY_PRODUCT
+					dest.noalias() += block.selfadjointView<Eigen::Lower>() * src; // axpy
+#endif // __UBER_BLOCK_MATRIX_LAZY_PRODUCT
+				}
+				// perform the multiplication of the diagonal block
+				// while explicitly using only the specified triangle
+			}
+		}
+	}
+}
+
 void CUberBlockMatrix::PreMultiply_Add(double *p_dest_vector, size_t UNUSED(n_dest_size),
-	const double *p_src_vector, size_t UNUSED(n_src_size)) const // @todo - this is largerly untested; test this
+	const double *p_src_vector, size_t UNUSED(n_src_size)) const // @t_odo - this is largerly untested; test this
 {
 	CheckIntegrity(true);
 
@@ -1662,7 +1842,7 @@ void CUberBlockMatrix::PreMultiply_Add(double *p_dest_vector, size_t UNUSED(n_de
 		const TColumn &r_t_col = *p_col_it;
 		const size_t n_column = r_t_col.n_cumulative_width_sum; // source vector offset
 		//Eigen::R_eferencingMatrixXd src(1, r_t_col.n_width, (double*)p_src_vector + n_column); // source vector (column vector)
-		_TyVectorXdRef src((double*)p_src_vector + n_column, r_t_col.n_width);
+		_TyConstVectorXdRef src(p_src_vector + n_column, r_t_col.n_width);
 		// forces unaligned memory - no SSE2 (p_src_vector can't be aligned due to block size)
 
 		// note that this loop can be omp parallelized as there will be no two blocks
@@ -1682,7 +1862,7 @@ void CUberBlockMatrix::PreMultiply_Add(double *p_dest_vector, size_t UNUSED(n_de
 			_TyVectorXdRef dest(p_dest_vector + n_row, r_t_row.n_height);
 			// forces unaligned memory - no SSE2 (p_dest_vector can't be aligned due to block size)
 
-			_TyMatrixXdRef block((double*)r_t_block.second, r_t_row.n_height, r_t_col.n_width);
+			_TyConstMatrixXdRef block(r_t_block.second, r_t_row.n_height, r_t_col.n_width);
 			// block
 
 #ifdef __UBER_BLOCK_MATRIX_LAZY_PRODUCT
@@ -1736,9 +1916,9 @@ void CUberBlockMatrix::PostMultiply_Add(double *p_dest_vector, size_t UNUSED(n_d
 			// forces unaligned memory - no SSE2 (p_src_vector can't be aligned due to block size)
 			_TyMatrix3dRef block((double*)r_t_block.second); // block
 #else // __UBER_BLOCK_MATRIX_FORCE_3x3_BLOCKS*/
-			_TyRowVectorXdRef src((double*)p_src_vector + n_row, r_t_row.n_height);
+			_TyConstRowVectorXdRef src(p_src_vector + n_row, r_t_row.n_height);
 			// forces unaligned memory - no SSE2 (p_src_vector can't be aligned due to block size)
-			_TyMatrixXdRef block((double*)r_t_block.second,
+			_TyConstMatrixXdRef block(r_t_block.second,
 				r_t_row.n_height, r_t_col.n_width); // block
 //#endif // __UBER_BLOCK_MATRIX_FORCE_3x3_BLOCKS
 
@@ -1797,8 +1977,8 @@ void CUberBlockMatrix::PostMultiply_Add_Parallel(double *p_dest_vector, size_t U
 			_TyRowVector3dRef src((double*)p_src_vector + n_row); // forces unaligned memory - no SSE2 (p_src_vector can't be aligned due to block size)
 			_TyMatrix3dRef block((double*)r_t_block.second); // block
 #else // __UBER_BLOCK_MATRIX_FORCE_3x3_BLOCKS*/
-			_TyRowVectorXdRef src((double*)p_src_vector + n_row, r_t_row.n_height); // forces unaligned memory - no SSE2 (p_src_vector can't be aligned due to block size)
-			_TyMatrixXdRef block((double*)r_t_block.second, r_t_row.n_height, r_t_col.n_width); // block
+			_TyConstRowVectorXdRef src(p_src_vector + n_row, r_t_row.n_height); // forces unaligned memory - no SSE2 (p_src_vector can't be aligned due to block size)
+			_TyConstMatrixXdRef block(r_t_block.second, r_t_row.n_height, r_t_col.n_width); // block
 //#endif // __UBER_BLOCK_MATRIX_FORCE_3x3_BLOCKS
 
 #ifdef __UBER_BLOCK_MATRIX_LAZY_PRODUCT
@@ -2660,13 +2840,8 @@ inline void CUberBlockMatrix::From_Sparse_ParallelInnerLoop(const cs *p_sparse,
 	// get row id
 
 	_TyBlockIter p_block_it = r_t_col.block_list.begin();
-#if defined(_MSC_VER) && !defined(__MWERKS__) && _MSC_VER >= 1400
 	p_block_it = std::lower_bound(p_block_it, r_t_col.block_list.end(),
 		n_min_row_id, CCompareBlockRow());
-#else // _MSC_VER && !__MWERKS__ && _MSC_VER >= 1400
-	p_block_it = std::lower_bound(p_block_it, r_t_col.block_list.end(),
-		n_min_row_id, CompareBlockRow);
-#endif // _MSC_VER && !__MWERKS__ && _MSC_VER >= 1400
 	// get block iterator - note the use of lower_bound() !!
 	// complexity O(log N) in average column fill
 
@@ -2679,13 +2854,8 @@ inline void CUberBlockMatrix::From_Sparse_ParallelInnerLoop(const cs *p_sparse,
 
 		if(p_block_it != r_t_col.block_list.end()) {
 			if((*p_block_it).first < n_min_row_id) {
-#if defined(_MSC_VER) && !defined(__MWERKS__) && _MSC_VER >= 1400
 				p_block_it = std::lower_bound(p_block_it, r_t_col.block_list.end(),
 					n_min_row_id, CCompareBlockRow());
-#else // _MSC_VER && !__MWERKS__ && _MSC_VER >= 1400
-				p_block_it = std::lower_bound(p_block_it, r_t_col.block_list.end(),
-					n_min_row_id, CompareBlockRow);
-#endif // _MSC_VER && !__MWERKS__ && _MSC_VER >= 1400
 				// get block iterator - note the use of lower_bound() !!
 				// complexity O(log N) in average column fill
 			}
@@ -2873,13 +3043,8 @@ inline void CUberBlockMatrix::From_Sparse_InnerLoop(const cs *p_sparse, TColumn 
 	// get row id
 
 	_TyBlockIter p_block_it = r_t_col.block_list.begin();
-#if defined(_MSC_VER) && !defined(__MWERKS__) && _MSC_VER >= 1400
 	p_block_it = std::lower_bound(p_block_it, r_t_col.block_list.end(),
 		n_min_row_id, CCompareBlockRow());
-#else // _MSC_VER && !__MWERKS__ && _MSC_VER >= 1400
-	p_block_it = std::lower_bound(p_block_it, r_t_col.block_list.end(),
-		n_min_row_id, CompareBlockRow);
-#endif // _MSC_VER && !__MWERKS__ && _MSC_VER >= 1400
 	// get block iterator - note the use of lower_bound() !!
 	// complexity O(log N) in average column fill
 
@@ -2892,13 +3057,8 @@ inline void CUberBlockMatrix::From_Sparse_InnerLoop(const cs *p_sparse, TColumn 
 
 		if(p_block_it != r_t_col.block_list.end()) {
 			if((*p_block_it).first < n_min_row_id) {
-#if defined(_MSC_VER) && !defined(__MWERKS__) && _MSC_VER >= 1400
 				p_block_it = std::lower_bound(p_block_it, r_t_col.block_list.end(),
 					n_min_row_id, CCompareBlockRow());
-#else // _MSC_VER && !__MWERKS__ && _MSC_VER >= 1400
-				p_block_it = std::lower_bound(p_block_it, r_t_col.block_list.end(),
-					n_min_row_id, CompareBlockRow);
-#endif // _MSC_VER && !__MWERKS__ && _MSC_VER >= 1400
 				// get block iterator - note the use of lower_bound() !!
 				// complexity O(log N) in average column fill
 			}
@@ -3036,13 +3196,8 @@ bool CUberBlockMatrix::From_Sparse32(size_t n_base_row_id, size_t n_base_column_
 			// fill workspace with row index lookup
 		} else {
 			_TyRowIter p_row_it;
-#if defined(_MSC_VER) && !defined(__MWERKS__) && _MSC_VER >= 1400
 			p_row_it = std::upper_bound(m_block_rows_list.begin(),
 				m_block_rows_list.end(), n_start, CFindLowerRow());
-#else // _MSC_VER && !__MWERKS__ && _MSC_VER >= 1400
-			p_row_it = std::upper_bound(m_block_rows_list.begin(),
-				m_block_rows_list.end(), n_start, _FindLowerRow);
-#endif // _MSC_VER && !__MWERKS__ && _MSC_VER >= 1400
 			if(p_row_it != m_block_rows_list.begin())
 				-- p_row_it;
 			_ASSERTE((*p_row_it).n_cumulative_height_sum <= n_start);
@@ -3121,13 +3276,8 @@ bool CUberBlockMatrix::From_Sparse32_Parallel(size_t n_base_row_id, size_t n_bas
 			// fill workspace with row index lookup
 		} else {
 			_TyRowIter p_row_it;
-#if defined(_MSC_VER) && !defined(__MWERKS__) && _MSC_VER >= 1400
 			p_row_it = std::upper_bound(m_block_rows_list.begin(),
 				m_block_rows_list.end(), n_start, CFindLowerRow());
-#else // _MSC_VER && !__MWERKS__ && _MSC_VER >= 1400
-			p_row_it = std::upper_bound(m_block_rows_list.begin(),
-				m_block_rows_list.end(), n_start, _FindLowerRow);
-#endif // _MSC_VER && !__MWERKS__ && _MSC_VER >= 1400
 			if(p_row_it != m_block_rows_list.begin())
 				-- p_row_it;
 			_ASSERTE((*p_row_it).n_cumulative_height_sum <= n_start);
@@ -3239,13 +3389,8 @@ bool CUberBlockMatrix::From_Sparse_Parallel(size_t n_base_row_id, size_t n_base_
 			// fill workspace with row index lookup
 		} else {
 			_TyRowIter p_row_it;
-#if defined(_MSC_VER) && !defined(__MWERKS__) && _MSC_VER >= 1400
 			p_row_it = std::upper_bound(m_block_rows_list.begin(),
 				m_block_rows_list.end(), n_start, CFindLowerRow());
-#else // _MSC_VER && !__MWERKS__ && _MSC_VER >= 1400
-			p_row_it = std::upper_bound(m_block_rows_list.begin(),
-				m_block_rows_list.end(), n_start, _FindLowerRow);
-#endif // _MSC_VER && !__MWERKS__ && _MSC_VER >= 1400
 			if(p_row_it != m_block_rows_list.begin())
 				-- p_row_it;
 			_ASSERTE((*p_row_it).n_cumulative_height_sum <= n_start);
@@ -3359,13 +3504,8 @@ bool CUberBlockMatrix::From_Sparse(size_t n_base_row_id, size_t n_base_column_id
 			// fill workspace with row index lookup
 		} else {
 			_TyRowIter p_row_it;
-#if defined(_MSC_VER) && !defined(__MWERKS__) && _MSC_VER >= 1400
 			p_row_it = std::upper_bound(m_block_rows_list.begin(),
 				m_block_rows_list.end(), n_start, CFindLowerRow());
-#else // _MSC_VER && !__MWERKS__ && _MSC_VER >= 1400
-			p_row_it = std::upper_bound(m_block_rows_list.begin(),
-				m_block_rows_list.end(), n_start, _FindLowerRow);
-#endif // _MSC_VER && !__MWERKS__ && _MSC_VER >= 1400
 			if(p_row_it != m_block_rows_list.begin())
 				-- p_row_it;
 			_ASSERTE((*p_row_it).n_cumulative_height_sum <= n_start);
@@ -3409,13 +3549,8 @@ bool CUberBlockMatrix::From_Sparse(size_t n_base_row_id, size_t n_base_column_id
 #if 0 // the code below has high runtime complexity
 	if(b_transpose) {
 		_TyRowIter p_row_it;
-#if defined(_MSC_VER) && !defined(__MWERKS__) && _MSC_VER >= 1400
 		p_row_it = std::upper_bound(m_block_rows_list.begin(),
 			m_block_rows_list.end(), n_base_row, CFindLowerRow());
-#else // _MSC_VER && !__MWERKS__ && _MSC_VER >= 1400
-		p_row_it = std::upper_bound(m_block_rows_list.begin(),
-			m_block_rows_list.end(), n_base_row, _FindLowerRow);
-#endif // _MSC_VER && !__MWERKS__ && _MSC_VER >= 1400
 		if(p_row_it != m_block_rows_list.begin())
 			-- p_row_it;
 
@@ -3433,13 +3568,8 @@ bool CUberBlockMatrix::From_Sparse(size_t n_base_row_id, size_t n_base_column_id
 					++ p_row_it; // try the immediate neighbour
 					_ASSERTE((*p_row_it).n_cumulative_height_sum <= n_row); // current column should always be to the left
 					if((*p_row_it).n_cumulative_height_sum + (*p_row_it).n_height <= n_row) { // not enough, need to seek
-#if defined(_MSC_VER) && !defined(__MWERKS__) && _MSC_VER >= 1400
 						p_row_it = std::upper_bound(p_row_it,
 							m_block_rows_list.end(), n_base_column, CFindLowerRow());
-#else // _MSC_VER && !__MWERKS__ && _MSC_VER >= 1400
-						p_row_it = std::upper_bound(p_row_it,
-							m_block_rows_list.end(), n_base_column, _FindLowerRow);
-#endif // _MSC_VER && !__MWERKS__ && _MSC_VER >= 1400
 						_ASSERTE(p_row_it != m_block_rows_list.begin());
 						-- p_row_it; // for sure doesn't equal begin()
 					}
@@ -3454,13 +3584,8 @@ bool CUberBlockMatrix::From_Sparse(size_t n_base_row_id, size_t n_base_column_id
 			size_t n_first_column = n_base_column + p_cs_row_index[p_cs_col_ptr[i]];
 
 			_TyColumnIter p_col_it;
-#if defined(_MSC_VER) && !defined(__MWERKS__) && _MSC_VER >= 1400
 			p_col_it = std::upper_bound(m_block_cols_list.begin(),
 				m_block_cols_list.end(), n_first_column, CFindLowerColumn());
-#else // _MSC_VER && !__MWERKS__ && _MSC_VER >= 1400
-			p_col_it = std::upper_bound(m_block_cols_list.begin(),
-				m_block_cols_list.end(), n_first_column, _FindLowerColumn);
-#endif // _MSC_VER && !__MWERKS__ && _MSC_VER >= 1400
 			if(p_col_it != m_block_cols_list.begin())
 				-- p_col_it;
 
@@ -3475,13 +3600,8 @@ bool CUberBlockMatrix::From_Sparse(size_t n_base_row_id, size_t n_base_column_id
 						++ p_col_it; // try the immediate neighbour
 						_ASSERTE((*p_col_it).n_cumulative_width_sum <= n_column); // current column should always be to the left
 						if((*p_col_it).n_cumulative_width_sum + (*p_col_it).n_width <= n_column) { // not enough, need to seek
-#if defined(_MSC_VER) && !defined(__MWERKS__) && _MSC_VER >= 1400
 							p_col_it = std::upper_bound(p_col_it,
 								m_block_cols_list.end(), n_column, CFindLowerColumn());
-#else // _MSC_VER && !__MWERKS__ && _MSC_VER >= 1400
-							p_col_it = std::upper_bound(p_col_it,
-								m_block_cols_list.end(), n_column, _FindLowerColumn);
-#endif // _MSC_VER && !__MWERKS__ && _MSC_VER >= 1400
 							_ASSERTE(p_col_it != m_block_cols_list.begin());
 							-- p_col_it; // for sure doesn't equal begin()
 						}
@@ -3508,13 +3628,8 @@ bool CUberBlockMatrix::From_Sparse(size_t n_base_row_id, size_t n_base_column_id
 		}
 	} else {
 		_TyColumnIter p_col_it;
-#if defined(_MSC_VER) && !defined(__MWERKS__) && _MSC_VER >= 1400
 		p_col_it = std::upper_bound(m_block_cols_list.begin(),
 			m_block_cols_list.end(), n_base_column, CFindLowerColumn());
-#else // _MSC_VER && !__MWERKS__ && _MSC_VER >= 1400
-		p_col_it = std::upper_bound(m_block_cols_list.begin(),
-			m_block_cols_list.end(), n_base_column, _FindLowerColumn);
-#endif // _MSC_VER && !__MWERKS__ && _MSC_VER >= 1400
 		if(p_col_it != m_block_cols_list.begin())
 			-- p_col_it;
 
@@ -3532,13 +3647,8 @@ bool CUberBlockMatrix::From_Sparse(size_t n_base_row_id, size_t n_base_column_id
 					++ p_col_it; // try the immediate neighbour
 					_ASSERTE((*p_col_it).n_cumulative_width_sum <= n_column); // current column should always be to the left
 					if((*p_col_it).n_cumulative_width_sum + (*p_col_it).n_width <= n_column) { // not enough, need to seek
-#if defined(_MSC_VER) && !defined(__MWERKS__) && _MSC_VER >= 1400
 						p_col_it = std::upper_bound(p_col_it,
 							m_block_cols_list.end(), n_base_column, CFindLowerColumn());
-#else // _MSC_VER && !__MWERKS__ && _MSC_VER >= 1400
-						p_col_it = std::upper_bound(p_col_it,
-							m_block_cols_list.end(), n_base_column, _FindLowerColumn);
-#endif // _MSC_VER && !__MWERKS__ && _MSC_VER >= 1400
 						_ASSERTE(p_col_it != m_block_cols_list.begin());
 						-- p_col_it; // for sure doesn't equal begin()
 					}
@@ -3554,13 +3664,8 @@ bool CUberBlockMatrix::From_Sparse(size_t n_base_row_id, size_t n_base_column_id
 			size_t n_first_row = n_base_row + p_cs_row_index[p_cs_col_ptr[i]];
 
 			_TyRowIter p_row_it;
-#if defined(_MSC_VER) && !defined(__MWERKS__) && _MSC_VER >= 1400
 			p_row_it = std::upper_bound(m_block_rows_list.begin(),
 				m_block_rows_list.end(), n_first_row, CFindLowerRow());
-#else // _MSC_VER && !__MWERKS__ && _MSC_VER >= 1400
-			p_row_it = std::upper_bound(m_block_rows_list.begin(),
-				m_block_rows_list.end(), n_first_row, _FindLowerRow);
-#endif // _MSC_VER && !__MWERKS__ && _MSC_VER >= 1400
 			if(p_row_it != m_block_rows_list.begin())
 				-- p_row_it;
 
@@ -3575,13 +3680,8 @@ bool CUberBlockMatrix::From_Sparse(size_t n_base_row_id, size_t n_base_column_id
 						++ p_row_it; // try the immediate neighbour
 						_ASSERTE((*p_row_it).n_cumulative_height_sum <= n_row); // current column should always be to the left
 						if((*p_row_it).n_cumulative_height_sum + (*p_row_it).n_height <= n_row) { // not enough, need to seek
-#if defined(_MSC_VER) && !defined(__MWERKS__) && _MSC_VER >= 1400
 							p_row_it = std::upper_bound(p_row_it,
 								m_block_rows_list.end(), n_base_column, CFindLowerRow());
-#else // _MSC_VER && !__MWERKS__ && _MSC_VER >= 1400
-							p_row_it = std::upper_bound(p_row_it,
-								m_block_rows_list.end(), n_base_column, _FindLowerRow);
-#endif // _MSC_VER && !__MWERKS__ && _MSC_VER >= 1400
 							_ASSERTE(p_row_it != m_block_rows_list.begin());
 							-- p_row_it; // for sure doesn't equal begin()
 						}
@@ -4565,7 +4665,7 @@ void CUberBlockMatrix::PreMultiplyWithSelfTransposeTo(CUberBlockMatrix &r_dest,
 				// for each block in the current column in B
 
 				size_t n_bmB_cols;
-				_TyMatrixXdRef blockB(r_t_block_B.second, r_row_list_B[n_row_id_B].n_height,
+				_TyConstMatrixXdRef blockB(r_t_block_B.second, r_row_list_B[n_row_id_B].n_height,
 					n_bmB_cols = r_t_column_B.n_width);
 				// create map to block B data
 
@@ -4590,7 +4690,7 @@ void CUberBlockMatrix::PreMultiplyWithSelfTransposeTo(CUberBlockMatrix &r_dest,
 					// this block would've ended up at lower diagonal, don't want that
 
 					size_t n_bmA_rows; // @todo - is this calculated correctly? might fail with rectangular blocks
-					_TyMatrixXdRef blockA_not_transposed(r_t_block_A.second,
+					_TyConstMatrixXdRef blockA_not_transposed(r_t_block_A.second,
 						r_t_column_A.n_width, n_bmA_rows = r_row_list_A[n_row_id_A].n_width);
 					// create map to block A data
 
@@ -4648,7 +4748,7 @@ void CUberBlockMatrix::PreMultiplyWithSelfTransposeTo(CUberBlockMatrix &r_dest,
 				// for each block in the current column in B
 
 				size_t n_bmB_cols;
-				_TyMatrixXdRef blockB(r_t_block_B.second,
+				_TyConstMatrixXdRef blockB(r_t_block_B.second,
 					r_row_list_B[n_row_id_B].n_height, n_bmB_cols = r_t_column_B.n_width);
 				// create map to block B data
 
@@ -4673,7 +4773,7 @@ void CUberBlockMatrix::PreMultiplyWithSelfTransposeTo(CUberBlockMatrix &r_dest,
 					// this block would've ended up at lower diagonal, don't want that
 
 					size_t n_bmA_rows; // @todo - is this calculated correctly? might fail with rectangular blocks
-					_TyMatrixXdRef blockA_not_transposed(r_t_block_A.second,
+					_TyConstMatrixXdRef blockA_not_transposed(r_t_block_A.second,
 						r_t_column_A.n_width, n_bmA_rows = r_row_list_A[n_row_id_A].n_width);
 					// create map to block A data
 
@@ -4769,7 +4869,7 @@ void CUberBlockMatrix::PreMultiplyWithSelfTransposeTo(CUberBlockMatrix &r_dest,
 				_TyMatrix3dRef blockA0_not_transposed(r_t_block_A0.second);
 #else // __UBER_BLOCK_MATRIX_FORCE_3x3_BLOCKS*/
 				size_t n_bmA0_rows; // this is of transposed block
-				_TyMatrixXdRef blockA0_not_transposed(r_t_block_A0.second,
+				_TyConstMatrixXdRef blockA0_not_transposed(r_t_block_A0.second,
 					n_bm_cols, n_bmA0_rows = r_row_list_A[n_row_id_A0].n_width); // t_odo - this is mixing rows and cols, transpose and straight, definitely buggy // nope, not buggy at all
 //#endif // __UBER_BLOCK_MATRIX_FORCE_3x3_BLOCKS
 				// create map to block A0 data
@@ -4790,7 +4890,7 @@ void CUberBlockMatrix::PreMultiplyWithSelfTransposeTo(CUberBlockMatrix &r_dest,
 					_TyMatrix3dRef blockA1(r_t_block_A1.second);
 #else // __UBER_BLOCK_MATRIX_FORCE_3x3_BLOCKS*/
 					size_t n_bmA1_cols; // this is of straight block
-					_TyMatrixXdRef blockA1(r_t_block_A1.second,
+					_TyConstMatrixXdRef blockA1(r_t_block_A1.second,
 						n_bm_cols, n_bmA1_cols = r_row_list_A[n_row_id_A1].n_width); // t_odo - this is mixing rows and cols, transpose and straight, definitely buggy // no, not buggy at all
 //#endif // __UBER_BLOCK_MATRIX_FORCE_3x3_BLOCKS
 					// create map to block A1 data
@@ -4825,14 +4925,8 @@ void CUberBlockMatrix::PreMultiplyWithSelfTransposeTo(CUberBlockMatrix &r_dest,
 
 					{
 						TColumn &r_t_dest_col = r_col_list_dest[n_row_id_A1];
-						_TyBlockIter p_block_it =
-#if defined(_MSC_VER) && !defined(__MWERKS__) && _MSC_VER >= 1400
-							std::lower_bound(r_t_dest_col.block_list.begin(),
+						_TyBlockIter p_block_it = std::lower_bound(r_t_dest_col.block_list.begin(),
 							r_t_dest_col.block_list.end(), n_row_id_A0, CCompareBlockRow());
-#else // _MSC_VER && !__MWERKS__ && _MSC_VER >= 1400
-							std::lower_bound(r_t_dest_col.block_list.begin(),
-							r_t_dest_col.block_list.end(), n_row_id_A0, CompareBlockRow);
-#endif // _MSC_VER && !__MWERKS__ && _MSC_VER >= 1400
 						// find where to put the block in the column
 
 						if((p_block_it == r_t_dest_col.block_list.end()) ||
@@ -4918,7 +5012,7 @@ void CUberBlockMatrix::PreMultiplyWithSelfTransposeTo(CUberBlockMatrix &r_dest,
 				_ASSERTE(r_row_list_B[n_row_id_B].n_height == 3 && n_bm_cols == 3);
 				_TyMatrix3dRef blockB(r_t_block_B.second);
 #else // __UBER_BLOCK_MATRIX_FORCE_3x3_BLOCKS*/
-				_TyMatrixXdRef blockB(r_t_block_B.second,
+				_TyConstMatrixXdRef blockB(r_t_block_B.second,
 					r_row_list_B[n_row_id_B].n_height, n_bm_cols);
 //#endif // __UBER_BLOCK_MATRIX_FORCE_3x3_BLOCKS
 				// create map to block B data
@@ -4977,8 +5071,8 @@ void CUberBlockMatrix::PreMultiplyWithSelfTransposeTo(CUberBlockMatrix &r_dest,
 					/*for(size_t x = 0; x < n_block_width; ++ x)
 						for(size_t y = 0; y < n_block_height; ++ y)
 							p_block_data[y + n_block_height * x] = p_src_data[x + n_block_width * y];*/ // fixme - does the src / dest ordering matter? is it interchangable? // t_odo - test transposing a matrix // this seems to be correct
-					_TyMatrixXdRef src((double*)p_src_data, n_block_width, n_block_height),
-						dest(p_block_data, n_block_height, n_block_width);
+					_TyConstMatrixXdRef src(p_src_data, n_block_width, n_block_height);
+					_TyMatrixXdRef dest(p_block_data, n_block_height, n_block_width);
 					dest = src.transpose();
 					// copy/transpose the block
 				} else {
@@ -4990,13 +5084,16 @@ void CUberBlockMatrix::PreMultiplyWithSelfTransposeTo(CUberBlockMatrix &r_dest,
 		// transpose the blocks from the triangle above diagonal to the triangle below diagonal
 		// this takes O(n) time in number of blocks above the diagonal, or O(n/2) in number of all blocks
 	}
-
-	//r_dest.CheckIntegrity();
-	// makes sure the dest matrix is ok
 }
 
-bool CUberBlockMatrix::MultiplyToWith(CUberBlockMatrix &r_dest,
+bool CUberBlockMatrix::MultiplyToWith_LogLookup(CUberBlockMatrix &r_dest,
 	const CUberBlockMatrix &r_other) const // throw(std::bad_alloc)
+{
+	return MultiplyToWith_LogLookup(r_dest, r_other, false);
+}
+
+bool CUberBlockMatrix::MultiplyToWith_LogLookup(CUberBlockMatrix &r_dest,
+	const CUberBlockMatrix &r_other, bool b_upper_diag_only) const // throw(std::bad_alloc)
 {
 	CheckIntegrity(true);
 	r_other.CheckIntegrity(true);
@@ -5031,9 +5128,262 @@ bool CUberBlockMatrix::MultiplyToWith(CUberBlockMatrix &r_dest,
 		r_dest.m_n_col_num = n_dest_col_num;
 		r_dest.m_n_row_num = n_dest_row_num;
 		// create layout for the destination matrix (linear time)
+	}
 
-		//r_dest.CheckIntegrity();
-		// makes sure the dest layout is ok
+	std::vector<size_t> reindex_rows_B_to_cols_A;
+	{
+		{
+			std::vector<size_t> reindex_cols_A;
+			size_t n_common_size = n_MergeLayout(r_col_list_A,
+				r_row_list_B, reindex_cols_A, reindex_rows_B_to_cols_A);
+			// merge matrix layouts (linear time in max(A column blocks, B row blocks) or something like that)
+
+			std::vector<size_t> common(n_common_size, size_t(-2)); // helper array (note the use of -2 !!)
+			for(size_t i = 0, n = reindex_cols_A.size(); i < n; ++ i) {
+				size_t n_common_A;
+				if((n_common_A = reindex_cols_A[i]) == size_t(-1))
+					continue;
+				_ASSERTE(n_common_A < common.size());
+				common[n_common_A] = i;
+			}
+			// create inverse mapping for columns of A (linear time in number of column blocks of A)
+
+			if(reindex_cols_A.capacity() < reindex_rows_B_to_cols_A.size())
+				reindex_cols_A.clear(); // to prevent resize() on the next line from copying the data (that are going to be overwritten anyway)
+			reindex_cols_A.resize(reindex_rows_B_to_cols_A.size()); // reuse this array as output (may not actually resize in most cases)
+			for(size_t i = 0, n = reindex_rows_B_to_cols_A.size(); i < n; ++ i) {
+				size_t n_common_B;
+				if((n_common_B = reindex_rows_B_to_cols_A[i]) == size_t(-1)) {
+					reindex_cols_A[i] = -1; // !!
+					continue;
+				}
+				_ASSERTE(n_common_B < common.size());
+				reindex_cols_A[i] = common[n_common_B];
+			}
+			reindex_cols_A.swap(reindex_rows_B_to_cols_A); // swap with the array we want output in
+			// map inverse mapping of A to B (linear time in number of row blocks of B)
+		}
+	}
+	// merge the common dimension layout (linear time)
+	// -1 means the row did not map/exist in B, -2 meants it did not map/exist in A
+
+	size_t n_column_id_B = 0;
+	if(b_upper_diag_only) {
+		for(_TyColumnConstIter p_col_B_it = r_col_list_B.begin(),
+		   p_col_B_end_it = r_col_list_B.end(); p_col_B_it != p_col_B_end_it;
+		   ++ p_col_B_it, ++ n_column_id_B) {
+			const TColumn &r_t_column_B = *p_col_B_it;
+			// for each column in B (index is n_column_id_B)
+
+			for(_TyBlockConstIter
+			   p_block_B_it = r_t_column_B.block_list.begin(),
+			   p_block_B_end_it = r_t_column_B.block_list.end();
+			   p_block_B_it != p_block_B_end_it; ++ p_block_B_it) {
+				const TColumn::TBlockEntry &r_t_block_B = *p_block_B_it;
+				size_t n_row_id_B = r_t_block_B.first; // get row of the block
+				// for each block in the current column in B
+
+				size_t n_bmB_cols;
+				_TyConstMatrixXdRef blockB(r_t_block_B.second,
+					r_row_list_B[n_row_id_B].n_height, n_bmB_cols = r_t_column_B.n_width);
+				// create map to block B data
+
+				size_t n_column_id_A = reindex_rows_B_to_cols_A[n_row_id_B];
+				_ASSERTE(size_t(-1) > size_t(-2)); // just to make sure the next line is correct
+				if(n_column_id_A >= size_t(-2)) {
+					if(n_column_id_A == -1)
+						return false; // didn't map from B to common and we know it was not empty (we have a block here)
+					continue; // do not fail, it might also mean that there are no blocks in that column in A and hence the result of multiplication is zero
+				}
+				_ASSERTE(n_column_id_A < r_col_list_A.size());
+				const TColumn &r_t_column_A = r_col_list_A[n_column_id_A];
+				_ASSERTE(r_t_column_A.n_width == r_row_list_B[n_row_id_B].n_height);
+				// lookup which column in A corresponds with current block row in B
+
+				for(_TyBlockConstIter p_block_A_it = r_t_column_A.block_list.begin(), p_block_A_end_it =
+				   std::upper_bound(r_t_column_A.block_list.begin(), r_t_column_A.block_list.end(),
+				   n_column_id_B, CCompareBlockRow()); p_block_A_it != p_block_A_end_it; ++ p_block_A_it) {
+					const TColumn::TBlockEntry &r_t_block_A = *p_block_A_it;
+					size_t n_row_id_A = r_t_block_A.first; // get row of the block
+					// for each block in the current column in A
+
+					_ASSERTE(n_row_id_A <= n_column_id_B); // upper
+
+					size_t n_bmA_rows;
+					//Eigen::R_eferencingMatrixXd blockA(n_bmA_rows = r_row_list_A[n_row_id_A].n_height,
+					//	r_t_column_A.n_width, r_t_block_A.second);
+					_TyConstMatrixXdRef blockA(r_t_block_A.second, n_bmA_rows =
+						r_row_list_A[n_row_id_A].n_height, r_t_column_A.n_width);
+					// create map to block A data
+
+					// multiplication of blockA * blockB yields block at (n_row_id_A, n_column_id_B)
+
+					_ASSERTE(n_row_id_A < r_row_list_dest.size());
+					_ASSERTE(n_column_id_B < r_col_list_dest.size());
+					_ASSERTE(r_row_list_dest[n_row_id_A].n_height == blockA.rows());
+					_ASSERTE(r_col_list_dest[n_column_id_B].n_width == blockB.cols());
+					//if(blockA.cols() != blockB.rows()) // already asserted above, given by the layout merge
+					//	return false; // make sure the blocks are multiplicable
+					// basic checks about matrix dimensions
+
+					{
+						bool b_uninitialized;
+						double *p_new_block_data = r_dest.p_AllocBlockData(n_row_id_A,
+							n_column_id_B, n_bmA_rows, n_bmB_cols, b_uninitialized); // note this clears block data to 0 if not there yet // t_odo - create version with boolean flag saying whether it cleared or not
+						// get storage (log(N) time :(, no good way around it)
+
+						//Eigen::R_eferencingMatrixXd block_dest(n_bmA_rows, n_bmB_cols, p_new_block_data);
+						_TyMatrixXdRef block_dest(p_new_block_data,
+							n_bmA_rows, n_bmB_cols);
+						if(b_uninitialized) {
+#ifdef __UBER_BLOCK_MATRIX_LAZY_PRODUCT
+							block_dest = blockA.lazyProduct(blockB); // initialize a new block
+#else // __UBER_BLOCK_MATRIX_LAZY_PRODUCT
+							block_dest.noalias() = blockA * blockB; // initialize a new block
+#endif // __UBER_BLOCK_MATRIX_LAZY_PRODUCT
+						} else {
+#ifdef __UBER_BLOCK_MATRIX_LAZY_PRODUCT
+							block_dest += blockA.lazyProduct(blockB); // add to the existing block (run the dot sum)
+#else // __UBER_BLOCK_MATRIX_LAZY_PRODUCT
+							block_dest.noalias() += blockA * blockB; // add to the existing block (run the dot sum)
+#endif // __UBER_BLOCK_MATRIX_LAZY_PRODUCT
+						}
+						// perform the dense multiplication using reference matrices and eigen
+					}
+				}
+			}
+		}
+	} else {
+		for(_TyColumnConstIter p_col_B_it = r_col_list_B.begin(),
+		   p_col_B_end_it = r_col_list_B.end(); p_col_B_it != p_col_B_end_it;
+		   ++ p_col_B_it, ++ n_column_id_B) {
+			const TColumn &r_t_column_B = *p_col_B_it;
+			// for each column in B (index is n_column_id_B)
+
+			for(_TyBlockConstIter
+			   p_block_B_it = r_t_column_B.block_list.begin(),
+			   p_block_B_end_it = r_t_column_B.block_list.end();
+			   p_block_B_it != p_block_B_end_it; ++ p_block_B_it) {
+				const TColumn::TBlockEntry &r_t_block_B = *p_block_B_it;
+				size_t n_row_id_B = r_t_block_B.first; // get row of the block
+				// for each block in the current column in B
+
+				size_t n_bmB_cols;
+				_TyConstMatrixXdRef blockB(r_t_block_B.second,
+					r_row_list_B[n_row_id_B].n_height, n_bmB_cols = r_t_column_B.n_width);
+				// create map to block B data
+
+				size_t n_column_id_A = reindex_rows_B_to_cols_A[n_row_id_B];
+				_ASSERTE(size_t(-1) > size_t(-2)); // just to make sure the next line is correct
+				if(n_column_id_A >= size_t(-2)) {
+					if(n_column_id_A == -1)
+						return false; // didn't map from B to common and we know it was not empty (we have a block here)
+					continue; // do not fail, it might also mean that there are no blocks in that column in A and hence the result of multiplication is zero
+				}
+				_ASSERTE(n_column_id_A < r_col_list_A.size());
+				const TColumn &r_t_column_A = r_col_list_A[n_column_id_A];
+				_ASSERTE(r_t_column_A.n_width == r_row_list_B[n_row_id_B].n_height);
+				// lookup which column in A corresponds with current block row in B
+
+				for(_TyBlockConstIter p_block_A_it =
+				   r_t_column_A.block_list.begin(), p_block_A_end_it =
+				   r_t_column_A.block_list.end(); p_block_A_it != p_block_A_end_it;
+				   ++ p_block_A_it) {
+					const TColumn::TBlockEntry &r_t_block_A = *p_block_A_it;
+					size_t n_row_id_A = r_t_block_A.first; // get row of the block
+					// for each block in the current column in A
+
+					size_t n_bmA_rows;
+					//Eigen::R_eferencingMatrixXd blockA(n_bmA_rows = r_row_list_A[n_row_id_A].n_height,
+					//	r_t_column_A.n_width, r_t_block_A.second);
+					_TyConstMatrixXdRef blockA(r_t_block_A.second, n_bmA_rows =
+						r_row_list_A[n_row_id_A].n_height, r_t_column_A.n_width);
+					// create map to block A data
+
+					// multiplication of blockA * blockB yields block at (n_row_id_A, n_column_id_B)
+
+					_ASSERTE(n_row_id_A < r_row_list_dest.size());
+					_ASSERTE(n_column_id_B < r_col_list_dest.size());
+					_ASSERTE(r_row_list_dest[n_row_id_A].n_height == blockA.rows());
+					_ASSERTE(r_col_list_dest[n_column_id_B].n_width == blockB.cols());
+					//if(blockA.cols() != blockB.rows()) // already asserted above, given by the layout merge
+					//	return false; // make sure the blocks are multiplicable
+					// basic checks about matrix dimensions
+
+					{
+						bool b_uninitialized;
+						double *p_new_block_data = r_dest.p_AllocBlockData(n_row_id_A,
+							n_column_id_B, n_bmA_rows, n_bmB_cols, b_uninitialized); // note this clears block data to 0 if not there yet // t_odo - create version with boolean flag saying whether it cleared or not
+						// get storage (log(N) time :(, no good way around it)
+
+						//Eigen::R_eferencingMatrixXd block_dest(n_bmA_rows, n_bmB_cols, p_new_block_data);
+						_TyMatrixXdRef block_dest(p_new_block_data,
+							n_bmA_rows, n_bmB_cols);
+						if(b_uninitialized) {
+#ifdef __UBER_BLOCK_MATRIX_LAZY_PRODUCT
+							block_dest = blockA.lazyProduct(blockB); // initialize a new block
+#else // __UBER_BLOCK_MATRIX_LAZY_PRODUCT
+							block_dest.noalias() = blockA * blockB; // initialize a new block
+#endif // __UBER_BLOCK_MATRIX_LAZY_PRODUCT
+						} else {
+#ifdef __UBER_BLOCK_MATRIX_LAZY_PRODUCT
+							block_dest += blockA.lazyProduct(blockB); // add to the existing block (run the dot sum)
+#else // __UBER_BLOCK_MATRIX_LAZY_PRODUCT
+							block_dest.noalias() += blockA * blockB; // add to the existing block (run the dot sum)
+#endif // __UBER_BLOCK_MATRIX_LAZY_PRODUCT
+						}
+						// perform the dense multiplication using reference matrices and eigen
+					}
+				}
+			}
+		}
+	}
+
+	return true;
+}
+
+bool CUberBlockMatrix::MultiplyToWith_TransposeSort(CUberBlockMatrix &r_dest,
+	const CUberBlockMatrix &r_other) const // throw(std::bad_alloc)
+{
+	return MultiplyToWith_TransposeSort(r_dest, r_other, false);
+}
+
+bool CUberBlockMatrix::MultiplyToWith_TransposeSort(CUberBlockMatrix &r_dest,
+	const CUberBlockMatrix &r_other, bool b_upper_diag_only) const // throw(std::bad_alloc)
+{
+	CheckIntegrity(true);
+	r_other.CheckIntegrity(true);
+
+	if(m_n_col_num != r_other.m_n_row_num)
+		return false;
+	// check common dimension
+
+	const CUberBlockMatrix &A = *this;
+	const CUberBlockMatrix &B = r_other;
+	// name the matrices; the operation is r_dest = A * B
+
+	const std::vector<TRow> &r_row_list_A = A.m_block_rows_list;
+	const std::vector<TRow> &r_row_list_B = B.m_block_rows_list;
+	std::vector<TRow> &r_row_list_dest = r_dest.m_block_rows_list;
+	const std::vector<TColumn> &r_col_list_A = A.m_block_cols_list;
+	const std::vector<TColumn> &r_col_list_B = B.m_block_cols_list;
+	std::vector<TColumn> &r_col_list_dest = r_dest.m_block_cols_list;
+	// name the cumsums for easier access
+
+	size_t n_dest_col_num = B.m_n_col_num; // t_odo - these and some others do not follow the naming conventions; take care of that
+	size_t n_dest_row_num = A.m_n_row_num;
+	// these are the dimensions of the new matrix
+
+	{
+		r_dest.Clear();
+		r_row_list_dest = r_row_list_A; // copy row layout from this
+		r_col_list_dest.resize(r_col_list_B.size());
+		//std::for_each(r_col_list_dest.begin(), r_col_list_dest.end(), CColumnCumsumCopy(r_col_list_B.begin())); // copy column layout but not the blocks
+		std::transform(r_col_list_B.begin(), r_col_list_B.end(),
+			r_col_list_dest.begin(), t_ColumnCumsumCopy);
+		r_dest.m_n_col_num = n_dest_col_num;
+		r_dest.m_n_row_num = n_dest_row_num;
+		// create layout for the destination matrix (linear time)
 	}
 
 	std::vector<size_t> reindex_rows_B_to_cols_A;
@@ -5074,99 +5424,6 @@ bool CUberBlockMatrix::MultiplyToWith(CUberBlockMatrix &r_dest,
 	// -1 means the row did not map/exist in B, -2 meants it did not map/exist in A
 
 	{
-#ifndef __UBER_BLOCK_MATRIX_MULTIPLICATION_LINEAR
-		// this version have straight output to dest, block lookup is done in log(N) time
-
-		size_t n_column_id_B = 0;
-		for(_TyColumnConstIter p_col_B_it = r_col_list_B.begin(),
-		   p_col_B_end_it = r_col_list_B.end(); p_col_B_it != p_col_B_end_it;
-		   ++ p_col_B_it, ++ n_column_id_B) {
-			const TColumn &r_t_column_B = *p_col_B_it;
-			// for each column in B (index is n_column_id_B)
-
-			for(_TyBlockConstIter
-			   p_block_B_it = r_t_column_B.block_list.begin(),
-			   p_block_B_end_it = r_t_column_B.block_list.end();
-			   p_block_B_it != p_block_B_end_it; ++ p_block_B_it) {
-				const TColumn::TBlockEntry &r_t_block_B = *p_block_B_it;
-				size_t n_row_id_B = r_t_block_B.first; // get row of the block
-				// for each block in the current column in B
-
-				size_t n_bmB_cols;
-				//Eigen::R_eferencingMatrixXd blockB(r_row_list_B[n_row_id_B].n_height,
-				//	n_bmB_cols = r_t_column_B.n_width, r_t_block_B.second);
-				_TyMatrixXdRef blockB(r_t_block_B.second,
-					r_row_list_B[n_row_id_B].n_height, n_bmB_cols = r_t_column_B.n_width);
-				// create map to block B data
-
-				size_t n_column_id_A = reindex_rows_B_to_cols_A[n_row_id_B];
-				_ASSERTE(size_t(-1) > size_t(-2)); // just to make sure the next line is correct
-				if(n_column_id_A >= size_t(-2)) {
-					if(n_column_id_A == -1)
-						return false; // didn't map from B to common and we know it was not empty (we have a block here)
-					continue; // do not fail, it might also mean that there are no blocks in that column in A and hence the result of multiplication is zero
-				}
-				_ASSERTE(n_column_id_A < r_col_list_A.size());
-				const TColumn &r_t_column_A = r_col_list_A[n_column_id_A];
-				_ASSERTE(r_t_column_A.n_width == r_row_list_B[n_row_id_B].n_height);
-				// lookup which column in A corresponds with current block row in B
-
-				for(_TyBlockConstIter p_block_A_it =
-				   r_t_column_A.block_list.begin(), p_block_A_end_it =
-				   r_t_column_A.block_list.end(); p_block_A_it != p_block_A_end_it;
-				   ++ p_block_A_it) {
-					const TColumn::TBlockEntry &r_t_block_A = *p_block_A_it;
-					size_t n_row_id_A = r_t_block_A.first; // get row of the block
-					// for each block in the current column in A
-
-					size_t n_bmA_rows;
-					//Eigen::R_eferencingMatrixXd blockA(n_bmA_rows = r_row_list_A[n_row_id_A].n_height,
-					//	r_t_column_A.n_width, r_t_block_A.second);
-					_TyMatrixXdRef blockA(r_t_block_A.second, n_bmA_rows =
-						r_row_list_A[n_row_id_A].n_height, r_t_column_A.n_width);
-					// create map to block A data
-
-					// multiplication of blockA * blockB yields block at (n_row_id_A, n_column_id_B)
-
-					_ASSERTE(n_row_id_A < r_row_list_dest.size());
-					_ASSERTE(n_column_id_B < r_col_list_dest.size());
-					//size_t n_prod_rows = r_row_list_dest[n_row_id_A].n_height;
-					//size_t n_prod_cols = r_col_list_dest[n_column_id_B].n_width; // unused
-					_ASSERTE(r_row_list_dest[n_row_id_A].n_height == blockA.rows());
-					_ASSERTE(r_col_list_dest[n_column_id_B].n_width == blockB.cols());
-					if(blockA.cols() != blockB.rows())
-						return false; // make sure the blocks are multiplicable (not able to verify by just merging the layout)
-					// basic checks about matrix dimensions
-
-					{
-						bool b_uninitialized;
-						double *p_new_block_data = r_dest.p_AllocBlockData(n_row_id_A,
-							n_column_id_B, n_bmA_rows, n_bmB_cols, b_uninitialized); // note this clears block data to 0 if not there yet // t_odo - create version with boolean flag saying whether it cleared or not
-						// get storage (log(N) time :(, no good way around it)
-
-						//Eigen::R_eferencingMatrixXd block_dest(n_bmA_rows, n_bmB_cols, p_new_block_data);
-						_TyMatrixXdRef block_dest(p_new_block_data,
-							n_bmA_rows, n_bmB_cols);
-						if(b_uninitialized)
-							block_dest.noalias() = blockA * blockB; // initialize a new block
-						else
-							block_dest.noalias() += blockA * blockB; // add to the existing block (run the dot sum)
-						// perform the dense multiplication using reference matrices and eigen
-					}
-				}
-			}
-		}
-		// performs sparse matrix multiplication (linear time in number of blocks * log time to lookup and insert the blocks)
-
-		// note that with proper loop reorganization, it should be possible to create
-		// a linear time version (the resulting blocks would come out in sorted order) // todo - investigate the possibility
-		// evidently you have to traverse column in B and a row in A at the same time. traversing row in A is log(N) again,
-		// but if A is transposed, then it's linear. the multiplication then reduces to merging two sorted lists, right?
-
-		// or transpose the result, that will allow for direct modification of this loop and will be very simple
-#else // !__UBER_BLOCK_MATRIX_MULTIPLICATION_LINEAR
-		// this version have output to transpose matrix, then transpose that to dest, block lookup is not needed
-
 #ifdef __UBER_BLOCK_MATRIX_MULTIPLICATION_PREALLOCATES_BLOCK_LISTS
 		std::vector<size_t> cols_load_list(r_col_list_dest.size(), 0);
 #endif // __UBER_BLOCK_MATRIX_MULTIPLICATION_PREALLOCATES_BLOCK_LISTS
@@ -5175,107 +5432,193 @@ bool CUberBlockMatrix::MultiplyToWith(CUberBlockMatrix &r_dest,
 		// list for storing transpose columns (note that the sizes and cumsums are not initialized and are invalid)
 
 		size_t n_column_id_B = 0;
-		for(_TyColumnConstIter p_col_B_it = r_col_list_B.begin(),
-		   p_col_B_end_it = r_col_list_B.end(); p_col_B_it != p_col_B_end_it;
-		   ++ p_col_B_it, ++ n_column_id_B) {
-			const TColumn &r_t_column_B = *p_col_B_it;
-			// for each column in B (index is n_column_id_B)
+		if(b_upper_diag_only) {
+			for(_TyColumnConstIter p_col_B_it = r_col_list_B.begin(),
+			   p_col_B_end_it = r_col_list_B.end(); p_col_B_it != p_col_B_end_it;
+			   ++ p_col_B_it, ++ n_column_id_B) {
+				const TColumn &r_t_column_B = *p_col_B_it;
+				// for each column in B (index is n_column_id_B)
 
-			for(_TyBlockConstIter p_block_B_it =
-			   r_t_column_B.block_list.begin(), p_block_B_end_it = r_t_column_B.block_list.end();
-			   p_block_B_it != p_block_B_end_it; ++ p_block_B_it) {
-				const TColumn::TBlockEntry &r_t_block_B = *p_block_B_it;
-				size_t n_row_id_B = r_t_block_B.first; // get row of the block
-				// for each block in the current column in B
+				for(_TyBlockConstIter p_block_B_it =
+				   r_t_column_B.block_list.begin(), p_block_B_end_it = r_t_column_B.block_list.end();
+				   p_block_B_it != p_block_B_end_it; ++ p_block_B_it) {
+					const TColumn::TBlockEntry &r_t_block_B = *p_block_B_it;
+					size_t n_row_id_B = r_t_block_B.first; // get row of the block
+					// for each block in the current column in B
 
-				size_t n_bmB_cols;
-/*#ifdef __UBER_BLOCK_MATRIX_FORCE_3x3_BLOCKS
-				_ASSERTE(r_row_list_B[n_row_id_B].n_height == 3);
-				_ASSERTE(r_t_column_B.n_width == 3);
-				n_bmB_cols = 3;
-				_TyMatrix3dRef blockB(r_t_block_B.second);
-#else // __UBER_BLOCK_MATRIX_FORCE_3x3_BLOCKS*/
-				_TyMatrixXdRef blockB(r_t_block_B.second, r_row_list_B[n_row_id_B].n_height,
-					n_bmB_cols = r_t_column_B.n_width);
-//#endif // __UBER_BLOCK_MATRIX_FORCE_3x3_BLOCKS
-				// create map to block B data
+					size_t n_bmB_cols;
+					_TyConstMatrixXdRef blockB(r_t_block_B.second, r_row_list_B[n_row_id_B].n_height,
+						n_bmB_cols = r_t_column_B.n_width);
+					// create map to block B data
 
-				size_t n_column_id_A = reindex_rows_B_to_cols_A[n_row_id_B];
-				_ASSERTE(size_t(-1) > size_t(-2)); // just to make sure the next line is correct
-				if(n_column_id_A >= size_t(-2)) {
-					if(n_column_id_A == size_t(-1))
-						return false; // didn't map from B to common and we know it was not empty (we have a block here)
-					continue; // do not fail, it might also mean that there are no blocks in that column in A and hence the result of multiplication is zero
-				}
-				_ASSERTE(n_column_id_A < r_col_list_A.size());
-				const TColumn &r_t_column_A = r_col_list_A[n_column_id_A];
-				_ASSERTE(r_t_column_A.n_width == r_row_list_B[n_row_id_B].n_height);
-				// lookup which column in A corresponds with current block row in B
+					size_t n_column_id_A = reindex_rows_B_to_cols_A[n_row_id_B];
+					_ASSERTE(size_t(-1) > size_t(-2)); // just to make sure the next line is correct
+					if(n_column_id_A >= size_t(-2)) {
+						if(n_column_id_A == size_t(-1))
+							return false; // didn't map from B to common and we know it was not empty (we have a block here)
+						continue; // do not fail, it might also mean that there are no blocks in that column in A and hence the result of multiplication is zero
+					}
+					_ASSERTE(n_column_id_A < r_col_list_A.size());
+					const TColumn &r_t_column_A = r_col_list_A[n_column_id_A];
+					_ASSERTE(r_t_column_A.n_width == r_row_list_B[n_row_id_B].n_height);
+					// lookup which column in A corresponds with current block row in B
 
-				for(_TyBlockConstIter p_block_A_it =
-				   r_t_column_A.block_list.begin(), p_block_A_end_it =
-				   r_t_column_A.block_list.end(); p_block_A_it != p_block_A_end_it;
-				   ++ p_block_A_it) {
-					const TColumn::TBlockEntry &r_t_block_A = *p_block_A_it;
-					size_t n_row_id_A = r_t_block_A.first; // get row of the block
-					// for each block in the current column in A
+					for(_TyBlockConstIter p_block_A_it = r_t_column_A.block_list.begin(), p_block_A_end_it =
+					   std::upper_bound(r_t_column_A.block_list.begin(), r_t_column_A.block_list.end(),
+					   n_column_id_B, CCompareBlockRow()); p_block_A_it != p_block_A_end_it; ++ p_block_A_it) {
+						const TColumn::TBlockEntry &r_t_block_A = *p_block_A_it;
+						size_t n_row_id_A = r_t_block_A.first; // get row of the block
+						// for each block in the current column in A
 
-					size_t n_bmA_rows;
-/*#ifdef __UBER_BLOCK_MATRIX_FORCE_3x3_BLOCKS
-					n_bmA_rows = 3;
-					_TyMatrix3dRef blockA(r_t_block_A.second);
-#else // __UBER_BLOCK_MATRIX_FORCE_3x3_BLOCKS*/
-					_TyMatrixXdRef blockA(r_t_block_A.second,
-						n_bmA_rows = r_row_list_A[n_row_id_A].n_height, r_t_column_A.n_width);
-//#endif // __UBER_BLOCK_MATRIX_FORCE_3x3_BLOCKS
-					// create map to block A data
+						_ASSERTE(n_row_id_A <= n_column_id_B); // upper
 
-					// multiplication of blockA * blockB yields block at (n_row_id_A, n_column_id_B)
+						size_t n_bmA_rows;
+						_TyConstMatrixXdRef blockA(r_t_block_A.second,
+							n_bmA_rows = r_row_list_A[n_row_id_A].n_height, r_t_column_A.n_width);
+						// create map to block A data
 
-					_ASSERTE(n_row_id_A < r_row_list_dest.size());
-					_ASSERTE(n_column_id_B < r_col_list_dest.size());
-					//size_t n_prod_rows = r_row_list_dest[n_row_id_A].n_height;
-					//size_t n_prod_cols = r_col_list_dest[n_column_id_B].n_width; // unused
-					_ASSERTE(r_row_list_dest[n_row_id_A].n_height == blockA.rows());
-					_ASSERTE(r_col_list_dest[n_column_id_B].n_width == blockB.cols());
-					if(blockA.cols() != blockB.rows())
-						return false; // make sure the blocks are multiplicable (not able to verify by just merging the layout)
-					// basic checks about matrix dimensions
+						// multiplication of blockA * blockB yields block at (n_row_id_A, n_column_id_B)
 
-					_ASSERTE(n_row_id_A < transpose_cols_list.size());
-					std::vector<TColumn::TBlockEntry> &r_transpose_column =
-						transpose_cols_list[n_row_id_A];
-					if(r_transpose_column.empty() ||
-					   r_transpose_column.back().first < n_column_id_B) {
-						double *p_new_block_data =
-							r_dest.p_Get_DenseStorage(n_bmA_rows * n_bmB_cols);
-						// get storage
+						_ASSERTE(n_row_id_A < r_row_list_dest.size());
+						_ASSERTE(n_column_id_B < r_col_list_dest.size());
+						_ASSERTE(r_row_list_dest[n_row_id_A].n_height == blockA.rows());
+						_ASSERTE(r_col_list_dest[n_column_id_B].n_width == blockB.cols());
+						//if(blockA.cols() != blockB.rows()) // already asserted above, given by the layout merge
+						//	return false; // make sure the blocks are multiplicable
+						// basic checks about matrix dimensions
 
-						_TyMatrixXdRef block_dest(p_new_block_data, n_bmA_rows, n_bmB_cols);
-						block_dest = blockA * blockB;
+						_ASSERTE(n_row_id_A < transpose_cols_list.size());
+						std::vector<TColumn::TBlockEntry> &r_transpose_column =
+							transpose_cols_list[n_row_id_A];
+						if(r_transpose_column.empty() ||
+						   r_transpose_column.back().first < n_column_id_B) {
+							double *p_new_block_data = r_dest.p_Get_DenseStorage(n_bmA_rows * n_bmB_cols);
+							// get storage
+
+							_TyMatrixXdRef block_dest(p_new_block_data, n_bmA_rows, n_bmB_cols);
+#ifdef __UBER_BLOCK_MATRIX_LAZY_PRODUCT
+							block_dest = blockA.lazyProduct(blockB);
+#else // __UBER_BLOCK_MATRIX_LAZY_PRODUCT
+							block_dest.noalias() = blockA * blockB;
+#endif // __UBER_BLOCK_MATRIX_LAZY_PRODUCT
 						// initialize a new block
 
-						r_transpose_column.push_back(
-							TColumn::TBlockEntry(n_column_id_B, p_new_block_data));
-						// add it to the list
+							r_transpose_column.push_back(
+								TColumn::TBlockEntry(n_column_id_B, p_new_block_data));
+							// add it to the list
 
 #ifdef __UBER_BLOCK_MATRIX_MULTIPLICATION_PREALLOCATES_BLOCK_LISTS
-						_ASSERTE(n_column_id_B < cols_load_list.size());
-						++ cols_load_list[n_column_id_B];
-						// we have a list of numbers of entries per row, that can be done in linear time and it might help speeding up the final matrix transpose later
+							_ASSERTE(n_column_id_B < cols_load_list.size());
+							++ cols_load_list[n_column_id_B];
+							// we have a list of numbers of entries per row, that can be done in linear time and it might help speeding up the final matrix transpose later
 #endif // __UBER_BLOCK_MATRIX_MULTIPLICATION_PREALLOCATES_BLOCK_LISTS
-					} else {
-						_ASSERTE(r_transpose_column.back().first == n_column_id_B); // n_column_id_B is monotonically increasing, no matter what, don't have to do log(N) lookup here ;)
-						double *p_block_data = r_transpose_column.back().second;
-						_TyMatrixXdRef block_dest(p_block_data, n_bmA_rows, n_bmB_cols);
+						} else {
+							_ASSERTE(r_transpose_column.back().first == n_column_id_B); // n_column_id_B is monotonically increasing, no matter what, don't have to do log(N) lookup here ;)
+							double *p_block_data = r_transpose_column.back().second;
+							_TyMatrixXdRef block_dest(p_block_data, n_bmA_rows, n_bmB_cols);
 #ifdef __UBER_BLOCK_MATRIX_LAZY_PRODUCT
-						block_dest += blockA.lazyProduct(blockB);
+							block_dest += blockA.lazyProduct(blockB);
 #else // __UBER_BLOCK_MATRIX_LAZY_PRODUCT
-						block_dest.noalias() += blockA * blockB;
+							block_dest.noalias() += blockA * blockB;
 #endif // __UBER_BLOCK_MATRIX_LAZY_PRODUCT
-						// add to the existing block (run the dot sum)
+							// add to the existing block (run the dot sum)
+						}
+						// perform the dense multiplication using reference matrices and eigen
 					}
-					// perform the dense multiplication using reference matrices and eigen
+				}
+			}
+		} else {
+			for(_TyColumnConstIter p_col_B_it = r_col_list_B.begin(),
+			   p_col_B_end_it = r_col_list_B.end(); p_col_B_it != p_col_B_end_it;
+			   ++ p_col_B_it, ++ n_column_id_B) {
+				const TColumn &r_t_column_B = *p_col_B_it;
+				// for each column in B (index is n_column_id_B)
+
+				for(_TyBlockConstIter p_block_B_it =
+				   r_t_column_B.block_list.begin(), p_block_B_end_it = r_t_column_B.block_list.end();
+				   p_block_B_it != p_block_B_end_it; ++ p_block_B_it) {
+					const TColumn::TBlockEntry &r_t_block_B = *p_block_B_it;
+					size_t n_row_id_B = r_t_block_B.first; // get row of the block
+					// for each block in the current column in B
+
+					size_t n_bmB_cols;
+					_TyConstMatrixXdRef blockB(r_t_block_B.second, r_row_list_B[n_row_id_B].n_height,
+						n_bmB_cols = r_t_column_B.n_width);
+					// create map to block B data
+
+					size_t n_column_id_A = reindex_rows_B_to_cols_A[n_row_id_B];
+					_ASSERTE(size_t(-1) > size_t(-2)); // just to make sure the next line is correct
+					if(n_column_id_A >= size_t(-2)) {
+						if(n_column_id_A == size_t(-1))
+							return false; // didn't map from B to common and we know it was not empty (we have a block here)
+						continue; // do not fail, it might also mean that there are no blocks in that column in A and hence the result of multiplication is zero
+					}
+					_ASSERTE(n_column_id_A < r_col_list_A.size());
+					const TColumn &r_t_column_A = r_col_list_A[n_column_id_A];
+					_ASSERTE(r_t_column_A.n_width == r_row_list_B[n_row_id_B].n_height);
+					// lookup which column in A corresponds with current block row in B
+
+					for(_TyBlockConstIter p_block_A_it =
+					   r_t_column_A.block_list.begin(), p_block_A_end_it =
+					   r_t_column_A.block_list.end(); p_block_A_it != p_block_A_end_it;
+					   ++ p_block_A_it) {
+						const TColumn::TBlockEntry &r_t_block_A = *p_block_A_it;
+						size_t n_row_id_A = r_t_block_A.first; // get row of the block
+						// for each block in the current column in A
+
+						size_t n_bmA_rows;
+						_TyConstMatrixXdRef blockA(r_t_block_A.second,
+							n_bmA_rows = r_row_list_A[n_row_id_A].n_height, r_t_column_A.n_width);
+						// create map to block A data
+
+						// multiplication of blockA * blockB yields block at (n_row_id_A, n_column_id_B)
+
+						_ASSERTE(n_row_id_A < r_row_list_dest.size());
+						_ASSERTE(n_column_id_B < r_col_list_dest.size());
+						_ASSERTE(r_row_list_dest[n_row_id_A].n_height == blockA.rows());
+						_ASSERTE(r_col_list_dest[n_column_id_B].n_width == blockB.cols());
+						//if(blockA.cols() != blockB.rows()) // already asserted above, given by the layout merge
+						//	return false; // make sure the blocks are multiplicable
+						// basic checks about matrix dimensions
+
+						_ASSERTE(n_row_id_A < transpose_cols_list.size());
+						std::vector<TColumn::TBlockEntry> &r_transpose_column =
+							transpose_cols_list[n_row_id_A];
+						if(r_transpose_column.empty() ||
+						   r_transpose_column.back().first < n_column_id_B) {
+							double *p_new_block_data = r_dest.p_Get_DenseStorage(n_bmA_rows * n_bmB_cols);
+							// get storage
+
+							_TyMatrixXdRef block_dest(p_new_block_data, n_bmA_rows, n_bmB_cols);
+#ifdef __UBER_BLOCK_MATRIX_LAZY_PRODUCT
+							block_dest = blockA.lazyProduct(blockB);
+#else // __UBER_BLOCK_MATRIX_LAZY_PRODUCT
+							block_dest.noalias() = blockA * blockB;
+#endif // __UBER_BLOCK_MATRIX_LAZY_PRODUCT
+						// initialize a new block
+
+							r_transpose_column.push_back(
+								TColumn::TBlockEntry(n_column_id_B, p_new_block_data));
+							// add it to the list
+
+#ifdef __UBER_BLOCK_MATRIX_MULTIPLICATION_PREALLOCATES_BLOCK_LISTS
+							_ASSERTE(n_column_id_B < cols_load_list.size());
+							++ cols_load_list[n_column_id_B];
+							// we have a list of numbers of entries per row, that can be done in linear time and it might help speeding up the final matrix transpose later
+#endif // __UBER_BLOCK_MATRIX_MULTIPLICATION_PREALLOCATES_BLOCK_LISTS
+						} else {
+							_ASSERTE(r_transpose_column.back().first == n_column_id_B); // n_column_id_B is monotonically increasing, no matter what, don't have to do log(N) lookup here ;)
+							double *p_block_data = r_transpose_column.back().second;
+							_TyMatrixXdRef block_dest(p_block_data, n_bmA_rows, n_bmB_cols);
+#ifdef __UBER_BLOCK_MATRIX_LAZY_PRODUCT
+							block_dest += blockA.lazyProduct(blockB);
+#else // __UBER_BLOCK_MATRIX_LAZY_PRODUCT
+							block_dest.noalias() += blockA * blockB;
+#endif // __UBER_BLOCK_MATRIX_LAZY_PRODUCT
+							// add to the existing block (run the dot sum)
+						}
+						// perform the dense multiplication using reference matrices and eigen
+					}
 				}
 			}
 		}
@@ -5302,10 +5645,6 @@ bool CUberBlockMatrix::MultiplyToWith(CUberBlockMatrix &r_dest,
 			}
 		}
 		// performs the final transpose (linear time in number of blocks)
-#endif // !__UBER_BLOCK_MATRIX_MULTIPLICATION_LINEAR
-
-		//r_dest.CheckIntegrity();
-		// makes sure the dest matrix is ok
 	}
 
 	// note it might be beneficial (and possibly quite easy) to implement Strassen's algorithm here.
@@ -5320,7 +5659,13 @@ bool CUberBlockMatrix::MultiplyToWith(CUberBlockMatrix &r_dest,
 	return true;
 }
 
-bool CUberBlockMatrix::MultiplyToWith(CUberBlockMatrix &r_dest,
+bool CUberBlockMatrix::MultiplyToWith_AccumLookup(CUberBlockMatrix &r_dest,
+	const CUberBlockMatrix &r_other) const // throw(std::bad_alloc)
+{
+	return MultiplyToWith_AccumLookup(r_dest, r_other, false);
+}
+
+bool CUberBlockMatrix::MultiplyToWith_AccumLookup(CUberBlockMatrix &r_dest,
 	const CUberBlockMatrix &r_other, bool b_upper_diag_only) const // throw(std::bad_alloc)
 {
 	CheckIntegrity(true);
@@ -5363,6 +5708,348 @@ bool CUberBlockMatrix::MultiplyToWith(CUberBlockMatrix &r_dest,
 
 	std::vector<size_t> reindex_rows_B_to_cols_A;
 	{
+		std::vector<size_t> reindex_cols_A;
+		size_t n_common_size = n_MergeLayout(r_col_list_A,
+			r_row_list_B, reindex_cols_A, reindex_rows_B_to_cols_A);
+		// merge matrix layouts (linear time in max(A column blocks, B row blocks) or something like that)
+
+		std::vector<size_t> common(n_common_size, size_t(-2)); // helper array (note the use of -2 !!)
+		for(size_t i = 0, n = reindex_cols_A.size(); i < n; ++ i) {
+			size_t n_common_A;
+			if((n_common_A = reindex_cols_A[i]) == size_t(-1))
+				continue;
+			_ASSERTE(n_common_A < common.size());
+			common[n_common_A] = i;
+		}
+		// create inverse mapping for columns of A (linear time in number of column blocks of A)
+
+		if(reindex_cols_A.capacity() < reindex_rows_B_to_cols_A.size())
+			reindex_cols_A.clear(); // to prevent resize() on the next line from copying the data (that are going to be overwritten anyway)
+		reindex_cols_A.resize(reindex_rows_B_to_cols_A.size()); // reuse this array as output (may not actually resize in most cases)
+		for(size_t i = 0, n = reindex_rows_B_to_cols_A.size(); i < n; ++ i) {
+			size_t n_common_B;
+			if((n_common_B = reindex_rows_B_to_cols_A[i]) == size_t(-1)) {
+				reindex_cols_A[i] = -1; // !!
+				continue;
+			}
+			_ASSERTE(n_common_B < common.size());
+			reindex_cols_A[i] = common[n_common_B];
+		}
+		reindex_cols_A.swap(reindex_rows_B_to_cols_A); // swap with the array we want output in
+		// map inverse mapping of A to B (linear time in number of row blocks of B)
+	}
+	// merge the common dimension layout (linear time)
+	// -1 means the row did not map/exist in B, -2 meants it did not map/exist in A
+
+	std::vector<double*> block_pointers(r_row_list_dest.size(), (double*)0); // throws
+	// a helper array of pointers to the blocks for the current column
+
+	size_t n_column_id_B = 0;
+	if(b_upper_diag_only) {
+		for(_TyColumnConstIter p_col_B_it = r_col_list_B.begin(),
+		   p_col_B_end_it = r_col_list_B.end(); p_col_B_it != p_col_B_end_it;
+		   ++ p_col_B_it, ++ n_column_id_B) {
+			const TColumn &r_t_column_B = *p_col_B_it;
+			// for each column in B (index is n_column_id_B)
+
+			for(_TyBlockConstIter
+			   p_block_B_it = r_t_column_B.block_list.begin(),
+			   p_block_B_end_it = r_t_column_B.block_list.end();
+			   p_block_B_it != p_block_B_end_it; ++ p_block_B_it) {
+				const TColumn::TBlockEntry &r_t_block_B = *p_block_B_it;
+				size_t n_row_id_B = r_t_block_B.first; // get row of the block
+				// for each block in the current column in B
+
+				size_t n_bmB_cols;
+				_TyConstMatrixXdRef blockB(r_t_block_B.second,
+					r_row_list_B[n_row_id_B].n_height, n_bmB_cols = r_t_column_B.n_width);
+				// create map to block B data
+
+				size_t n_column_id_A = reindex_rows_B_to_cols_A[n_row_id_B];
+				_ASSERTE(size_t(-1) > size_t(-2)); // just to make sure the next line is correct
+				if(n_column_id_A >= size_t(-2)) {
+					if(n_column_id_A == -1)
+						return false; // didn't map from B to common and we know it was not empty (we have a block here)
+					continue; // do not fail, it might also mean that there are no blocks in that column in A and hence the result of multiplication is zero
+				}
+				_ASSERTE(n_column_id_A < r_col_list_A.size());
+				const TColumn &r_t_column_A = r_col_list_A[n_column_id_A];
+				_ASSERTE(r_t_column_A.n_width == r_row_list_B[n_row_id_B].n_height);
+				// lookup which column in A corresponds with current block row in B
+
+				std::vector<TColumn::TBlockEntry> &r_dest_blocks = r_col_list_dest[n_column_id_B].block_list;
+				_TyBlockIter p_dest_block_it = r_dest_blocks.begin();
+				// the destination block and iterator
+
+				const bool b_use_lower_bound = r_t_column_A.block_list.size() < r_dest_blocks.size() / 64;
+				// in case we're adding a relatively short vector into a long vector, use lower bound
+
+				for(_TyBlockConstIter p_block_A_it = r_t_column_A.block_list.begin(), p_block_A_end_it =
+				   std::upper_bound(r_t_column_A.block_list.begin(), r_t_column_A.block_list.end(),
+				   n_column_id_B, CCompareBlockRow()); p_block_A_it != p_block_A_end_it; ++ p_block_A_it) {
+					const TColumn::TBlockEntry &r_t_block_A = *p_block_A_it;
+					size_t n_row_id_A = r_t_block_A.first; // get row of the block
+					// for each block in the current column in A
+
+					_ASSERTE(n_row_id_A <= n_column_id_B); // upper
+
+					size_t n_bmA_rows;
+					_TyConstMatrixXdRef blockA(r_t_block_A.second, n_bmA_rows =
+						r_row_list_A[n_row_id_A].n_height, r_t_column_A.n_width);
+					// create map to block A data
+
+					// multiplication of blockA * blockB yields block at (n_row_id_A, n_column_id_B)
+
+					_ASSERTE(n_row_id_A < r_row_list_dest.size());
+					_ASSERTE(n_column_id_B < r_col_list_dest.size());
+					_ASSERTE(r_row_list_dest[n_row_id_A].n_height == blockA.rows());
+					_ASSERTE(r_col_list_dest[n_column_id_B].n_width == blockB.cols());
+					//if(blockA.cols() != blockB.rows()) // already asserted above, given by the layout merge
+					//	return false; // make sure the blocks are multiplicable
+					// basic checks about matrix dimensions
+
+					double *p_new_block_data;
+					if(!(p_new_block_data = block_pointers[n_row_id_A])) {
+						//p_new_block_data = r_dest.p_GetBlock_Log(n_row_id_A,
+						//	n_column_id_B, n_bmA_rows, n_bmB_cols, true, false); // does not initialize the block data
+						//block_pointers[n_row_id_A] = p_new_block_data;
+						p_new_block_data = r_dest.p_Get_DenseStorage(n_bmA_rows * n_bmB_cols); // alloc storage for new block
+
+						_ASSERTE(p_dest_block_it == r_dest_blocks.begin() || // either it is the first iteration and we know nothing yet
+							(*(p_dest_block_it - 1)).first < n_row_id_A); // or the iterator points after the block that would be preceding
+						// make sure the blocks are coming in ordered fashion
+
+						if(b_use_lower_bound) {
+							p_dest_block_it = std::lower_bound(p_dest_block_it, r_dest_blocks.end(),
+								n_row_id_A, CCompareBlockRow());
+							// use binary search, this takes O(n_A_blocks * log(n_prod_blocks))
+						} else {
+							p_dest_block_it = std::find_if(p_dest_block_it, r_dest_blocks.end(),
+								CFindGreaterBlockRow_Unordered(n_row_id_A));
+							// just use linear search, complexity will be O(n_A_blocks + n_prod_blocks)
+						}
+						_ASSERTE(p_dest_block_it == r_dest_blocks.end() || // this must be a new block so either the column is empty
+							(*p_dest_block_it).first > n_row_id_A); // or the column is not empty and the block row is different
+						_ASSERTE(p_dest_block_it == r_dest_blocks.begin() || // this must be either the first block (or the list is empty)
+							(*(p_dest_block_it - 1)).first < n_row_id_A); // or there must be a preceding block on a lower row
+						p_dest_block_it = r_dest_blocks.insert(p_dest_block_it,
+							TColumn::TBlockEntry(n_row_id_A, p_new_block_data)); // a new block (invalidates the iterator)
+						++ p_dest_block_it; // next time it will be on the next position
+						block_pointers[n_row_id_A] = p_new_block_data;
+						// get storage (log(N) time :(, no good way around it but only happens the first time)
+
+						_TyMatrixXdRef block_dest(p_new_block_data, n_bmA_rows, n_bmB_cols);
+#ifdef __UBER_BLOCK_MATRIX_LAZY_PRODUCT
+						block_dest = blockA.lazyProduct(blockB); // initialize a new block
+#else // __UBER_BLOCK_MATRIX_LAZY_PRODUCT
+						block_dest.noalias() = blockA * blockB; // initialize a new block
+#endif // __UBER_BLOCK_MATRIX_LAZY_PRODUCT
+					} else {
+						_TyMatrixXdRef block_dest(p_new_block_data, n_bmA_rows, n_bmB_cols);
+#ifdef __UBER_BLOCK_MATRIX_LAZY_PRODUCT
+						block_dest += blockA.lazyProduct(blockB); // add to the existing block (run the dot sum)
+#else // __UBER_BLOCK_MATRIX_LAZY_PRODUCT
+						block_dest.noalias() += blockA * blockB; // add to the existing block (run the dot sum)
+#endif // __UBER_BLOCK_MATRIX_LAZY_PRODUCT
+					}
+					// get block, multiply
+				}
+			}
+
+			const std::vector<TColumn::TBlockEntry> &r_t_column_dest = r_col_list_dest[n_column_id_B].block_list;
+			for(size_t i = 0, n = r_t_column_dest.size(); i < n; ++ i) {
+				_ASSERTE(block_pointers[r_t_column_dest[i].first] != 0); // make sure this was not zero
+				block_pointers[r_t_column_dest[i].first] = 0; // zero it
+			}
+			// re-zero the pointer array (make sure to only rezero the entries
+			// that are actually nonzero, otherwise the complexity rises)
+
+#ifdef _DEBUG
+			for(size_t i = 0, n = block_pointers.size(); i < n; ++ i)
+				_ASSERTE(!block_pointers[i]);
+#endif // _DEBUG
+			// make sure it is completely zeroed; would need std::find_first_not_of or a lambda to avoid the loop
+		}
+	} else {
+		for(_TyColumnConstIter p_col_B_it = r_col_list_B.begin(),
+		   p_col_B_end_it = r_col_list_B.end(); p_col_B_it != p_col_B_end_it;
+		   ++ p_col_B_it, ++ n_column_id_B) {
+			const TColumn &r_t_column_B = *p_col_B_it;
+			// for each column in B (index is n_column_id_B)
+
+			for(_TyBlockConstIter
+			   p_block_B_it = r_t_column_B.block_list.begin(),
+			   p_block_B_end_it = r_t_column_B.block_list.end();
+			   p_block_B_it != p_block_B_end_it; ++ p_block_B_it) {
+				const TColumn::TBlockEntry &r_t_block_B = *p_block_B_it;
+				size_t n_row_id_B = r_t_block_B.first; // get row of the block
+				// for each block in the current column in B
+
+				size_t n_bmB_cols;
+				_TyConstMatrixXdRef blockB(r_t_block_B.second,
+					r_row_list_B[n_row_id_B].n_height, n_bmB_cols = r_t_column_B.n_width);
+				// create map to block B data
+
+				size_t n_column_id_A = reindex_rows_B_to_cols_A[n_row_id_B];
+				_ASSERTE(size_t(-1) > size_t(-2)); // just to make sure the next line is correct
+				if(n_column_id_A >= size_t(-2)) {
+					if(n_column_id_A == -1)
+						return false; // didn't map from B to common and we know it was not empty (we have a block here)
+					continue; // do not fail, it might also mean that there are no blocks in that column in A and hence the result of multiplication is zero
+				}
+				_ASSERTE(n_column_id_A < r_col_list_A.size());
+				const TColumn &r_t_column_A = r_col_list_A[n_column_id_A];
+				_ASSERTE(r_t_column_A.n_width == r_row_list_B[n_row_id_B].n_height);
+				// lookup which column in A corresponds with current block row in B
+
+				std::vector<TColumn::TBlockEntry> &r_dest_blocks = r_col_list_dest[n_column_id_B].block_list;
+				_TyBlockIter p_dest_block_it = r_dest_blocks.begin();
+				// the destination block and iterator
+
+				const bool b_use_lower_bound = r_t_column_A.block_list.size() < r_dest_blocks.size() / 64;
+				// in case we're adding a relatively short vector into a long vector, use lower bound
+
+				for(_TyBlockConstIter p_block_A_it =
+				   r_t_column_A.block_list.begin(), p_block_A_end_it =
+				   r_t_column_A.block_list.end(); p_block_A_it != p_block_A_end_it;
+				   ++ p_block_A_it) {
+					const TColumn::TBlockEntry &r_t_block_A = *p_block_A_it;
+					size_t n_row_id_A = r_t_block_A.first; // get row of the block
+					// for each block in the current column in A
+
+					size_t n_bmA_rows;
+					_TyConstMatrixXdRef blockA(r_t_block_A.second, n_bmA_rows =
+						r_row_list_A[n_row_id_A].n_height, r_t_column_A.n_width);
+					// create map to block A data
+
+					// multiplication of blockA * blockB yields block at (n_row_id_A, n_column_id_B)
+
+					_ASSERTE(n_row_id_A < r_row_list_dest.size());
+					_ASSERTE(n_column_id_B < r_col_list_dest.size());
+					_ASSERTE(r_row_list_dest[n_row_id_A].n_height == blockA.rows());
+					_ASSERTE(r_col_list_dest[n_column_id_B].n_width == blockB.cols());
+					//if(blockA.cols() != blockB.rows()) // already asserted above, given by the layout merge
+					//	return false; // make sure the blocks are multiplicable
+					// basic checks about matrix dimensions
+
+					double *p_new_block_data;
+					if(!(p_new_block_data = block_pointers[n_row_id_A])) {
+						//p_new_block_data = r_dest.p_GetBlock_Log(n_row_id_A,
+						//	n_column_id_B, n_bmA_rows, n_bmB_cols, true, false); // does not initialize the block data
+						//block_pointers[n_row_id_A] = p_new_block_data;
+						p_new_block_data = r_dest.p_Get_DenseStorage(n_bmA_rows * n_bmB_cols); // alloc storage for new block
+
+						_ASSERTE(p_dest_block_it == r_dest_blocks.begin() || // either it is the first iteration and we know nothing yet
+							(*(p_dest_block_it - 1)).first < n_row_id_A); // or the iterator points after the block that would be preceding
+						// make sure the blocks are coming in ordered fashion
+
+						if(b_use_lower_bound) {
+							p_dest_block_it = std::lower_bound(p_dest_block_it, r_dest_blocks.end(),
+								n_row_id_A, CCompareBlockRow());
+							// use binary search, this takes O(n_A_blocks * log(n_prod_blocks))
+						} else {
+							p_dest_block_it = std::find_if(p_dest_block_it, r_dest_blocks.end(),
+								CFindGreaterBlockRow_Unordered(n_row_id_A));
+							// just use linear search, complexity will be O(n_A_blocks + n_prod_blocks)
+						}
+						_ASSERTE(p_dest_block_it == r_dest_blocks.end() || // this must be a new block so either the column is empty
+							(*p_dest_block_it).first > n_row_id_A); // or the column is not empty and the block row is different
+						_ASSERTE(p_dest_block_it == r_dest_blocks.begin() || // this must be either the first block (or the list is empty)
+							(*(p_dest_block_it - 1)).first < n_row_id_A); // or there must be a preceding block on a lower row
+						p_dest_block_it = r_dest_blocks.insert(p_dest_block_it,
+							TColumn::TBlockEntry(n_row_id_A, p_new_block_data)); // a new block (invalidates the iterator)
+						++ p_dest_block_it; // next time it will be on the next position
+						block_pointers[n_row_id_A] = p_new_block_data;
+						// get storage (log(N) time :(, no good way around it but only happens the first time)
+
+						_TyMatrixXdRef block_dest(p_new_block_data, n_bmA_rows, n_bmB_cols);
+#ifdef __UBER_BLOCK_MATRIX_LAZY_PRODUCT
+						block_dest = blockA.lazyProduct(blockB); // initialize a new block
+#else // __UBER_BLOCK_MATRIX_LAZY_PRODUCT
+						block_dest.noalias() = blockA * blockB; // initialize a new block
+#endif // __UBER_BLOCK_MATRIX_LAZY_PRODUCT
+					} else {
+						_TyMatrixXdRef block_dest(p_new_block_data, n_bmA_rows, n_bmB_cols);
+#ifdef __UBER_BLOCK_MATRIX_LAZY_PRODUCT
+						block_dest += blockA.lazyProduct(blockB); // add to the existing block (run the dot sum)
+#else // __UBER_BLOCK_MATRIX_LAZY_PRODUCT
+						block_dest.noalias() += blockA * blockB; // add to the existing block (run the dot sum)
+#endif // __UBER_BLOCK_MATRIX_LAZY_PRODUCT
+					}
+					// get block, multiply
+				}
+			}
+
+			const std::vector<TColumn::TBlockEntry> &r_t_column_dest = r_col_list_dest[n_column_id_B].block_list;
+			for(size_t i = 0, n = r_t_column_dest.size(); i < n; ++ i) {
+				_ASSERTE(block_pointers[r_t_column_dest[i].first] != 0); // make sure this was not zero
+				block_pointers[r_t_column_dest[i].first] = 0; // zero it
+			}
+			// re-zero the pointer array (make sure to only rezero the entries
+			// that are actually nonzero, otherwise the complexity rises)
+
+#ifdef _DEBUG
+			for(size_t i = 0, n = block_pointers.size(); i < n; ++ i)
+				_ASSERTE(!block_pointers[i]);
+#endif // _DEBUG
+			// make sure it is completely zeroed; would need std::find_first_not_of or a lambda to avoid the loop
+		}
+	}
+	// performs sparse matrix multiplication (linear time in number of blocks * log time to lookup and insert the blocks)
+
+	return true;
+}
+
+#if 0 // legacy code
+
+bool CUberBlockMatrix::MultiplyToWith(CUberBlockMatrix &r_dest,
+	const CUberBlockMatrix &r_other, bool b_upper_diag_only) const // throw(std::bad_alloc)
+{
+	if(!b_upper_diag_only)
+		return MultiplyToWith(r_dest, r_other);
+	_ASSERTE(b_upper_diag_only);
+	// so that this is surely set below
+
+	CheckIntegrity(true);
+	r_other.CheckIntegrity(true);
+
+	if(m_n_col_num != r_other.m_n_row_num)
+		return false;
+	// check common dimension
+
+	const CUberBlockMatrix &A = *this;
+	const CUberBlockMatrix &B = r_other;
+	// name the matrices; the operation is r_dest = A * B
+
+	const std::vector<TRow> &r_row_list_A = A.m_block_rows_list;
+	const std::vector<TRow> &r_row_list_B = B.m_block_rows_list;
+	std::vector<TRow> &r_row_list_dest = r_dest.m_block_rows_list;
+	const std::vector<TColumn> &r_col_list_A = A.m_block_cols_list;
+	const std::vector<TColumn> &r_col_list_B = B.m_block_cols_list;
+	std::vector<TColumn> &r_col_list_dest = r_dest.m_block_cols_list;
+	// name the cumsums for easier access
+
+	size_t n_dest_col_num = B.m_n_col_num; // t_odo - these and some others do not follow the naming conventions; take care of that
+	size_t n_dest_row_num = A.m_n_row_num;
+	// these are the dimensions of the new matrix
+
+	{
+		r_dest.Clear();
+		r_row_list_dest = r_row_list_A; // copy row layout from this
+		r_col_list_dest.resize(r_col_list_B.size());
+		//std::for_each(r_col_list_dest.begin(), r_col_list_dest.end(), CColumnCumsumCopy(r_col_list_B.begin())); // copy column layout but not the blocks
+		std::transform(r_col_list_B.begin(), r_col_list_B.end(),
+			r_col_list_dest.begin(), t_ColumnCumsumCopy);
+		r_dest.m_n_col_num = n_dest_col_num;
+		r_dest.m_n_row_num = n_dest_row_num;
+		// create layout for the destination matrix (linear time)
+
+		//r_dest.CheckIntegrity();
+		// makes sure the dest layout is ok
+	}
+
+	std::vector<size_t> reindex_rows_B_to_cols_A;
+	{
 		{
 			std::vector<size_t> reindex_cols_A;
 			size_t n_common_size = n_MergeLayout(r_col_list_A,
@@ -5420,7 +6107,7 @@ bool CUberBlockMatrix::MultiplyToWith(CUberBlockMatrix &r_dest,
 				size_t n_bmB_cols;
 				//Eigen::R_eferencingMatrixXd blockB(r_row_list_B[n_row_id_B].n_height,
 				//	n_bmB_cols = r_t_column_B.n_width, r_t_block_B.second);
-				_TyMatrixXdRef blockB(r_t_block_B.second,
+				_TyConstMatrixXdRef blockB(r_t_block_B.second,
 					r_row_list_B[n_row_id_B].n_height, n_bmB_cols = r_t_column_B.n_width);
 				// create map to block B data
 
@@ -5444,14 +6131,15 @@ bool CUberBlockMatrix::MultiplyToWith(CUberBlockMatrix &r_dest,
 					size_t n_row_id_A = r_t_block_A.first; // get row of the block
 					// for each block in the current column in A
 
-					if(b_upper_diag_only && n_row_id_A > n_column_id_B)
+					_ASSERTE(b_upper_diag_only); // otherwise would call the general version
+					if(/*b_upper_diag_only &&*/ n_row_id_A > n_column_id_B)
 						break; // these only get higher, might as well break instead of continue
 					// this block would've ended up at lower diagonal, don't want that
 
 					size_t n_bmA_rows;
 					//Eigen::R_eferencingMatrixXd blockA(n_bmA_rows = r_row_list_A[n_row_id_A].n_height,
 					//	r_t_column_A.n_width, r_t_block_A.second);
-					_TyMatrixXdRef blockA(r_t_block_A.second, n_bmA_rows =
+					_TyConstMatrixXdRef blockA(r_t_block_A.second, n_bmA_rows =
 						r_row_list_A[n_row_id_A].n_height, r_t_column_A.n_width);
 					// create map to block A data
 
@@ -5463,8 +6151,8 @@ bool CUberBlockMatrix::MultiplyToWith(CUberBlockMatrix &r_dest,
 					//size_t n_prod_cols = r_col_list_dest[n_column_id_B].n_width; // unused
 					_ASSERTE(r_row_list_dest[n_row_id_A].n_height == blockA.rows());
 					_ASSERTE(r_col_list_dest[n_column_id_B].n_width == blockB.cols());
-					if(blockA.cols() != blockB.rows())
-						return false; // make sure the blocks are multiplicable (not able to verify by just merging the layout)
+					//if(blockA.cols() != blockB.rows()) // already asserted above, given by the layout merge
+					//	return false; // make sure the blocks are multiplicable
 					// basic checks about matrix dimensions
 
 					{
@@ -5476,10 +6164,19 @@ bool CUberBlockMatrix::MultiplyToWith(CUberBlockMatrix &r_dest,
 						//Eigen::R_eferencingMatrixXd block_dest(n_bmA_rows, n_bmB_cols, p_new_block_data);
 						_TyMatrixXdRef block_dest(p_new_block_data,
 							n_bmA_rows, n_bmB_cols);
-						if(b_uninitialized)
+						if(b_uninitialized) {
+#ifdef __UBER_BLOCK_MATRIX_LAZY_PRODUCT
+							block_dest = blockA.lazyProduct(blockB); // initialize a new block
+#else // __UBER_BLOCK_MATRIX_LAZY_PRODUCT
 							block_dest.noalias() = blockA * blockB; // initialize a new block
-						else
+#endif // __UBER_BLOCK_MATRIX_LAZY_PRODUCT
+						} else {
+#ifdef __UBER_BLOCK_MATRIX_LAZY_PRODUCT
+							block_dest += blockA.lazyProduct(blockB); // add to the existing block (run the dot sum)
+#else // __UBER_BLOCK_MATRIX_LAZY_PRODUCT
 							block_dest.noalias() += blockA * blockB; // add to the existing block (run the dot sum)
+#endif // __UBER_BLOCK_MATRIX_LAZY_PRODUCT
+						}
 						// perform the dense multiplication using reference matrices and eigen
 					}
 				}
@@ -5524,7 +6221,7 @@ bool CUberBlockMatrix::MultiplyToWith(CUberBlockMatrix &r_dest,
 				n_bmB_cols = 3;
 				_TyMatrix3dRef blockB(r_t_block_B.second);
 #else // __UBER_BLOCK_MATRIX_FORCE_3x3_BLOCKS*/
-				_TyMatrixXdRef blockB(r_t_block_B.second, r_row_list_B[n_row_id_B].n_height,
+				_TyConstMatrixXdRef blockB(r_t_block_B.second, r_row_list_B[n_row_id_B].n_height,
 					n_bmB_cols = r_t_column_B.n_width);
 //#endif // __UBER_BLOCK_MATRIX_FORCE_3x3_BLOCKS
 				// create map to block B data
@@ -5549,7 +6246,7 @@ bool CUberBlockMatrix::MultiplyToWith(CUberBlockMatrix &r_dest,
 					size_t n_row_id_A = r_t_block_A.first; // get row of the block
 					// for each block in the current column in A
 
-					if(b_upper_diag_only && n_row_id_A > n_column_id_B)
+					if(/*b_upper_diag_only &&*/ n_row_id_A > n_column_id_B) // otherwise would have called the general version
 						break; // these only get higher, might as well break instead of continue
 					// this block would've ended up at lower diagonal, don't want that
 
@@ -5558,7 +6255,7 @@ bool CUberBlockMatrix::MultiplyToWith(CUberBlockMatrix &r_dest,
 					n_bmA_rows = 3;
 					_TyMatrix3dRef blockA(r_t_block_A.second);
 #else // __UBER_BLOCK_MATRIX_FORCE_3x3_BLOCKS*/
-					_TyMatrixXdRef blockA(r_t_block_A.second,
+					_TyConstMatrixXdRef blockA(r_t_block_A.second,
 						n_bmA_rows = r_row_list_A[n_row_id_A].n_height, r_t_column_A.n_width);
 //#endif // __UBER_BLOCK_MATRIX_FORCE_3x3_BLOCKS
 					// create map to block A data
@@ -5571,8 +6268,8 @@ bool CUberBlockMatrix::MultiplyToWith(CUberBlockMatrix &r_dest,
 					//size_t n_prod_cols = r_col_list_dest[n_column_id_B].n_width; // unused
 					_ASSERTE(r_row_list_dest[n_row_id_A].n_height == blockA.rows());
 					_ASSERTE(r_col_list_dest[n_column_id_B].n_width == blockB.cols());
-					if(blockA.cols() != blockB.rows())
-						return false; // make sure the blocks are multiplicable (not able to verify by just merging the layout)
+					//if(blockA.cols() != blockB.rows()) // already asserted above, given by the layout merge
+					//	return false; // make sure the blocks are multiplicable
 					// basic checks about matrix dimensions
 
 					_ASSERTE(n_row_id_A < transpose_cols_list.size());
@@ -5652,6 +6349,8 @@ bool CUberBlockMatrix::MultiplyToWith(CUberBlockMatrix &r_dest,
 
 	return true;
 }
+
+#endif // 0
 
 TBmp *CUberBlockMatrix::p_Rasterize(TBmp *p_storage /*= 0*/, int n_scalar_size /*= 5*/) const
 {
@@ -6077,13 +6776,8 @@ TBmp *CUberBlockMatrix::p_Rasterize(const CUberBlockMatrix &r_prev_state,
 				// get a column in the prev matrix
 
 				_TyBlockConstIter p_prev_block_it =
-#if defined(_MSC_VER) && !defined(__MWERKS__) && _MSC_VER >= 1400
 					std::lower_bound(t_prev_col.block_list.begin(),
 					t_prev_col.block_list.end(), n_row, CCompareBlockRow());
-#else // _MSC_VER && !__MWERKS__ && _MSC_VER >= 1400
-					std::lower_bound(t_prev_col.block_list.begin(),
-					t_prev_col.block_list.end(), n_row, CompareBlockRow);
-#endif // _MSC_VER && !__MWERKS__ && _MSC_VER >= 1400
 				// look for a block with the same row as the current block
 
 				n_prev_block_lbound = p_prev_block_it - t_prev_col.block_list.begin();
@@ -6304,13 +6998,8 @@ double *CUberBlockMatrix::p_AllocBlockData(size_t n_row_index, TColumn &r_t_col,
 		r_t_col.block_list.push_back(TColumn::TBlockEntry(n_row_index, p_data)); // just add to the end
 	} else {
 		_TyBlockIter p_block_dest_it =
-#if defined(_MSC_VER) && !defined(__MWERKS__) && _MSC_VER >= 1400
 			std::lower_bound(r_t_col.block_list.begin(), r_t_col.block_list.end(),
 			n_row_index, CCompareBlockRow()); // t_odo - use lower bound instead of upper. this will never find blocks it's looking for // t_odo - make sure this works
-#else // _MSC_VER && !__MWERKS__ && _MSC_VER >= 1400
-			std::lower_bound(r_t_col.block_list.begin(), r_t_col.block_list.end(),
-			n_row_index, CompareBlockRow); // t_odo - use lower bound instead of upper. this will never find blocks it's looking for // t_odo - make sure this works
-#endif // _MSC_VER && !__MWERKS__ && _MSC_VER >= 1400
 		if(p_block_dest_it == r_t_col.block_list.end() ||
 		   (*p_block_dest_it).first != n_row_index) {
 			p_data = p_Get_DenseStorage(n_block_row_num * n_block_column_num);
@@ -6350,13 +7039,8 @@ const double *CUberBlockMatrix::p_GetBlockData(size_t n_row_index, size_t n_colu
 		return 0;
 	else {
 		_TyBlockConstIter p_block_dest_it =
-#if defined(_MSC_VER) && !defined(__MWERKS__) && _MSC_VER >= 1400
 			std::lower_bound(r_t_col.block_list.begin(), r_t_col.block_list.end(),
 			n_row_index, CCompareBlockRow()); // t_odo - use lower bound instead of upper. this will never find blocks it's looking for // t_odo - make sure this works
-#else // _MSC_VER && !__MWERKS__ && _MSC_VER >= 1400
-			std::lower_bound(r_t_col.block_list.begin(), r_t_col.block_list.end(),
-			n_row_index, CompareBlockRow); // t_odo - use lower bound instead of upper. this will never find blocks it's looking for // t_odo - make sure this works
-#endif // _MSC_VER && !__MWERKS__ && _MSC_VER >= 1400
 		if(p_block_dest_it == r_t_col.block_list.end() || (*p_block_dest_it).first != n_row_index)
 			return 0;
 		else {
@@ -6389,13 +7073,8 @@ double *CUberBlockMatrix::p_GetBlockData(size_t n_row_index, size_t n_column_ind
 		return 0;
 	else {
 		_TyBlockConstIter p_block_dest_it =
-#if defined(_MSC_VER) && !defined(__MWERKS__) && _MSC_VER >= 1400
 			std::lower_bound(r_t_col.block_list.begin(), r_t_col.block_list.end(),
 			n_row_index, CCompareBlockRow()); // t_odo - use lower bound instead of upper. this will never find blocks it's looking for // t_odo - make sure this works
-#else // _MSC_VER && !__MWERKS__ && _MSC_VER >= 1400
-			std::lower_bound(r_t_col.block_list.begin(), r_t_col.block_list.end(),
-			n_row_index, CompareBlockRow); // t_odo - use lower bound instead of upper. this will never find blocks it's looking for // t_odo - make sure this works
-#endif // _MSC_VER && !__MWERKS__ && _MSC_VER >= 1400
 		if(p_block_dest_it == r_t_col.block_list.end() || (*p_block_dest_it).first != n_row_index)
 			return 0;
 		else {
@@ -6455,21 +7134,11 @@ void CUberBlockMatrix::PasteTo(CUberBlockMatrix &r_dest,
 		// make sure that the columns match
 
 		_TyBlockIter p_dst_range_begin =
-#if defined(_MSC_VER) && !defined(__MWERKS__) && _MSC_VER >= 1400
 			std::lower_bound(r_t_dest.block_list.begin(), r_t_dest.block_list.end(),
 			n_dest_row_index, CCompareBlockRow());
-#else // _MSC_VER && !__MWERKS__ && _MSC_VER >= 1400
-			std::lower_bound(r_t_dest.block_list.begin(), r_t_dest.block_list.end(),
-			n_dest_row_index, CompareBlockRow);
-#endif // _MSC_VER && !__MWERKS__ && _MSC_VER >= 1400
 		_TyBlockConstIter p_dst_range_end = // note it might be faster to just check for the end in iterating the range, especially if the number of blocks is very low
-#if defined(_MSC_VER) && !defined(__MWERKS__) && _MSC_VER >= 1400
 			std::upper_bound(r_t_dest.block_list.begin(), r_t_dest.block_list.end(),
 			n_dest_row_index + m, CCompareBlockRow());
-#else // _MSC_VER && !__MWERKS__ && _MSC_VER >= 1400
-			std::upper_bound(r_t_dest.block_list.begin(), r_t_dest.block_list.end(),
-			n_dest_row_index + m, _CompareBlockRow);
-#endif // _MSC_VER && !__MWERKS__ && _MSC_VER >= 1400
 		// find where the first block comes to (note upper_bound() used to find the end - one past the last)
 
 		_TyBlockConstIter p_src_block_it = r_t_src.block_list.begin(),
@@ -6678,9 +7347,66 @@ void CUberBlockMatrix::SetIdentity() // throw(std::bad_alloc)
 	CheckIntegrity(true);
 }
 
+void CUberBlockMatrix::ToleranceViewOf(const CUberBlockMatrix &r_src, double f_tol /*= 0*/,
+	bool b_use_abs_max /*= true*/, bool b_share_data /*= true*/)
+{
+	if(&r_src == this) {
+		_ASSERTE(!b_share_data || m_data_pool.empty());
+		// cannot ref from self unless this also refs from another matrix,
+		// the data pool will be lost after this function returns
+
+		CUberBlockMatrix temp;
+		temp.ToleranceViewOf(r_src, f_tol, b_use_abs_max, b_share_data);
+		temp.Swap(*this);
+
+		return;
+	}
+
+	r_src.CheckIntegrity(true);
+
+	//Clear(); // CopyLayoutTo() does that
+	r_src.CopyLayoutTo(*this);
+
+	if(!b_use_abs_max)
+		f_tol *= f_tol; // will use L2 norm, can save a bunch of sqrt
+
+	for(size_t i = 0, n = m_block_cols_list.size(); i < n; ++ i) {
+		TColumn &r_t_dest = m_block_cols_list[i];
+		const size_t n_column_width = r_t_dest.n_width;
+		const TColumn &r_t_src = r_src.m_block_cols_list[i];
+		// get src / dest columns
+
+		for(_TyBlockConstIter p_block_it = r_t_src.block_list.begin(),
+		   p_end_it = r_t_src.block_list.end(); p_block_it != p_end_it; ++ p_block_it) {
+			const TColumn::TBlockEntry &r_t_block = *p_block_it;
+			size_t n_row_id = r_t_block.first; // get row of the block
+			const size_t n_row_height = m_block_rows_list[n_row_id].n_height;
+
+			_TyConstMatrixXdRef block(r_t_block.second, n_row_height, n_column_width);
+			// create map to block data
+
+			if((b_use_abs_max && block.lpNorm<Eigen::Infinity>() > f_tol) ||
+			   (!b_use_abs_max && block.squaredNorm() > f_tol)) {
+				if(b_share_data)
+					r_t_dest.block_list.push_back(r_t_block);
+				else {
+					double *p_data = p_Get_DenseStorage(n_row_height * n_column_width);
+					memcpy(p_data, r_t_block.second, n_row_height * n_column_width * sizeof(double));
+					// alloc buffer in dest matrix, copy contents
+
+					r_t_dest.block_list.push_back(TColumn::TBlockEntry(r_t_block.first, p_data));
+					// recalculate row index and use the new buffer
+				}
+			}
+		}
+	}
+}
+
 void CUberBlockMatrix::TriangularViewOf(const CUberBlockMatrix &r_src,
 	bool b_upper_triangular, bool b_share_data /*= true*/, int n_block_diag_offset /*= 0*/) // throw(std::bad_alloc)
 {
+	_ASSERTE(&r_src != this); // doesn't work inplace
+
 	//_ASSERTE(b_upper_triangular); // does only the upper triangular now
 	//_ASSERTE(b_share_data); // can only share now
 
@@ -6707,12 +7433,8 @@ void CUberBlockMatrix::TriangularViewOf(const CUberBlockMatrix &r_src,
 
 			_TyBlockConstIter p_begin_it = r_t_src.block_list.begin(),
 				p_end_it = r_t_src.block_list.end(), p_tri_it =
-//#if defined(_MSC_VER) && !defined(__MWERKS__) && _MSC_VER >= 1400
 				std::upper_bound(p_begin_it, p_end_it, i + n_block_diag_offset,
 				CUberBlockMatrix::CCompareBlockRow());
-/*#else // _MSC_VER && !__MWERKS__ && _MSC_VER >= 1400
-				std::upper_bound(p_begin_it, p_end_it, i + n_block_diag_offset, CompareBlockRow); // does not work with upper_bound()
-#endif // _MSC_VER && !__MWERKS__ && _MSC_VER >= 1400*/
 			// find where to put the block in the column
 
 			_ASSERTE(p_begin_it == p_end_it || // either the column is empty
@@ -6885,6 +7607,124 @@ void CUberBlockMatrix::SelfAdjointViewOf(const CUberBlockMatrix &r_src,
 		// perform the transpose along with transposing the data (blocks ordered by rows in the storage)
 #endif
 	} else /*if(!b_upper_triangular)*/ {
+		CUberBlockMatrix tr;
+		{
+			CUberBlockMatrix sl;
+			sl.TriangularViewOf(*this, false, true, 1); // make a strictly lower view of this
+			tr.TransposeOf(sl); // transpose
+		}
+		tr.AddTo(*this); // add to this
+		// todo - if b_share_data is set, it would be slightly better to make
+		// a strictly lower triangular view of r_src, transpose it to this (so
+		// that this has all the data) and then just add refs to the upper
+		// blocks to each column vector
+	}
+	// todo - the lower-triangular version is not optimized
+}
+
+void CUberBlockMatrix::SelfAdjointView_ExpDiag_Of(const CUberBlockMatrix &r_src,
+	bool b_upper_triangular, bool b_share_data /*= true*/) // throw(std::bad_alloc)
+{
+	_ASSERTE(r_src.b_SymmetricLayout()); // must be square and symmetric
+
+	if(&r_src != this)
+		TriangularViewOf(r_src, b_upper_triangular, b_share_data);
+	// make sure we are working inplace
+
+	_ASSERTE(!b_upper_triangular || b_UpperBlockTriangular());
+	_ASSERTE(b_upper_triangular || b_LowerBlockTriangular());
+	// if we work inplace, the matrix needs to be already triangular
+
+	const bool b_owned_diagonal_blocks = (&r_src == this && !r_src.m_n_ref_elem_num) || !b_share_data;
+	// need to modify the diagonal blocks
+	// if &r_src == this or !b_share_data then we can do that inplace
+	// otherwise need to allocate the diagonal blocks anew
+
+	if(b_upper_triangular) {
+		// this has the upper triangular blocks already in it
+
+		const size_t n = m_block_cols_list.size();
+		std::vector<size_t> original_block_num(n);
+
+		for(size_t i = 0; i < n; ++ i) {
+			const std::vector<TColumn::TBlockEntry> &r_col = m_block_cols_list[i].block_list;
+
+			size_t m = r_col.size(); // have not changed since, only adding new blocks to the columns to the left of it
+			original_block_num[i] = m;
+			// record the original sizes
+
+			_ASSERTE(!m || r_col.back().first <= i); // is upper triangular
+			if(m && r_col.back().first == i)
+				-- m;
+			// skip the diagonal
+
+			for(size_t j = 0; j < m; ++ j) {
+				size_t n_row = r_col[j].first;
+				double *p_data = r_col[j].second;
+				_ASSERTE(n_row < i); // strictly upper, makes sure no oob access occurs at the line below
+				m_block_cols_list[n_row].block_list.push_back(TColumn::TBlockEntry(i, p_data));
+			}
+		}
+		// perform the transpose without actually transposing the data
+
+		for(size_t i = 0; i < n; ++ i) {
+			std::vector<TColumn::TBlockEntry> &r_col = m_block_cols_list[i].block_list;
+			size_t n_orig_blocks = original_block_num[i];
+			size_t n_col_width = m_block_cols_list[i].n_width;
+			_ASSERTE(!n_orig_blocks || r_col[n_orig_blocks - 1].first <= i); // this is upper-triangular
+			if(n_orig_blocks && r_col[n_orig_blocks - 1].first == i) { // is there a diagonal block?
+				if(b_owned_diagonal_blocks) {
+					double *p_data = r_col[n_orig_blocks - 1].second;
+					_TyMatrixXdRef diag_block(p_data, n_col_width, n_col_width);
+					diag_block.triangularView<Eigen::StrictlyLower>() =
+						diag_block.triangularView<Eigen::StrictlyUpper>().transpose();
+				} else {
+					const double *p_data = r_col[n_orig_blocks - 1].second;
+					double *p_new_data = p_Get_DenseStorage(n_col_width * n_col_width);
+					r_col[n_orig_blocks - 1].second = p_new_data; // overwrite the pointer
+					_TyConstMatrixXdRef src(p_data, n_col_width, n_col_width); // this is transposed now
+					_TyMatrixXdRef dest(p_new_data, n_col_width, n_col_width); // this is actual
+					dest/*.noalias()*/ = src.selfadjointView<Eigen::Upper>(); // self-adjoint the block
+				}
+				// handle the self-adjoint of the diagonal block
+			}
+			for(size_t j = n_orig_blocks, m = r_col.size(); j < m; ++ j) { // loop over the new blocks (the transposed ones)
+				size_t n_row = r_col[j].first;
+				const double *p_data = r_col[j].second;
+				size_t n_row_height = /*m_block_rows_list[n_row].n_height*/
+					m_block_cols_list[n_row].n_width; // symmetric layout
+				double *p_new_data = p_Get_DenseStorage(n_col_width * n_row_height);
+				r_col[j].second = p_new_data; // overwrite the pointer
+				_TyConstMatrixXdRef src(p_data, n_col_width, n_row_height); // this is transposed now
+				_TyMatrixXdRef dest(p_new_data, n_row_height, n_col_width); // this is actual
+				dest.noalias() = src.transpose(); // transpose the block
+			}
+		}
+		// transpose the data, allocate in column order
+	} else /*if(!b_upper_triangular)*/ {
+		for(size_t i = 0, n = m_block_cols_list.size(); i < n; ++ i) {
+			std::vector<TColumn::TBlockEntry> &r_col = m_block_cols_list[i].block_list;
+			size_t n_col_width = m_block_cols_list[i].n_width;
+			_ASSERTE(r_col.front().first >= i); // this is lower-triangular
+			if(!r_col.empty() && r_col.front().first == i) { // is there a diagonal block?
+				if(b_owned_diagonal_blocks) {
+					double *p_data = r_col.front().second;
+					_TyMatrixXdRef diag_block(p_data, n_col_width, n_col_width);
+					diag_block.triangularView<Eigen::StrictlyUpper>() =
+						diag_block.triangularView<Eigen::StrictlyLower>().transpose();
+				} else {
+					const double *p_data = r_col.front().second;
+					double *p_new_data = p_Get_DenseStorage(n_col_width * n_col_width);
+					r_col.front().second = p_new_data; // overwrite the pointer
+					_TyConstMatrixXdRef src(p_data, n_col_width, n_col_width); // this is transposed now
+					_TyMatrixXdRef dest(p_new_data, n_col_width, n_col_width); // this is actual
+					dest/*.noalias()*/ = src.selfadjointView<Eigen::Lower>(); // self-adjoint the block
+				}
+				// handle the self-adjoint of the diagonal block
+			}
+		}
+		// handle the diagonal
+
 		CUberBlockMatrix tr;
 		{
 			CUberBlockMatrix sl;
@@ -7151,21 +7991,11 @@ void CUberBlockMatrix::SliceTo(CUberBlockMatrix &r_dest, size_t n_first_row_inde
 		// copy/offset column dimensions
 
 		_TyBlockConstIter p_block_it =
-#if defined(_MSC_VER) && !defined(__MWERKS__) && _MSC_VER >= 1400
 			std::lower_bound(r_t_src.block_list.begin(), r_t_src.block_list.end(),
 			n_first_row_index, CCompareBlockRow());
-#else // _MSC_VER && !__MWERKS__ && _MSC_VER >= 1400
-			std::lower_bound(r_t_src.block_list.begin(), r_t_src.block_list.end(),
-			n_first_row_index, CompareBlockRow);
-#endif // _MSC_VER && !__MWERKS__ && _MSC_VER >= 1400
 		_TyBlockConstIter p_end_it = // note it might be faster to just check for the end in iterating the range, especially if the number of blocks is very low
-#if defined(_MSC_VER) && !defined(__MWERKS__) && _MSC_VER >= 1400
 			std::lower_bound(p_block_it, r_t_src.block_list.end(),
 			n_last_row_index, CCompareBlockRow());
-#else // _MSC_VER && !__MWERKS__ && _MSC_VER >= 1400
-			std::lower_bound(p_block_it, r_t_src.block_list.end(),
-			n_last_row_index, CompareBlockRow);
-#endif // _MSC_VER && !__MWERKS__ && _MSC_VER >= 1400
 		r_t_dest.block_list.resize(p_end_it - p_block_it);
 		_TyBlockIter p_dest_it = r_t_dest.block_list.begin();
 		const size_t n_column_width = r_t_src.n_width;
@@ -7438,8 +8268,8 @@ void CUberBlockMatrix::Permute_UpperTriangular_To(CUberBlockMatrix &r_dest,
 					const size_t n_row_height = m_block_rows_list[r_t_block.first].n_height;
 					_ASSERTE(r_dest.m_block_rows_list[n_dest_row].n_height == n_row_height);
 					double *p_data = r_dest.p_Get_DenseStorage(n_row_height * n_column_width);
-					_TyMatrixXdRef src((double*)r_t_block.second, n_row_height, n_column_width), // src is rows, cols
-						dest(p_data, n_column_width, n_row_height); // dest is cols, rows
+					_TyConstMatrixXdRef src(r_t_block.second, n_row_height, n_column_width); // src is rows, cols
+					_TyMatrixXdRef dest(p_data, n_column_width, n_row_height); // dest is cols, rows
 					_ASSERTE(r_dest.m_block_cols_list[n_dest_row].n_width == dest.cols() &&
 						r_dest.m_block_rows_list[n_dest_col].n_height == dest.rows()); // make sure that the transpose has correct dimensions
 					dest.noalias() = src.transpose();
@@ -7474,8 +8304,8 @@ void CUberBlockMatrix::Permute_UpperTriangular_To(CUberBlockMatrix &r_dest,
 					*p_dest_it = TColumn::TBlockEntry(n_dest_row, p_data);
 					// recalculate row index and use the new buffer
 				} else {
-					_TyMatrixXdRef src((double*)r_t_block.second, n_row_height, n_column_width), // src is rows, cols
-						dest(p_data, n_column_width, n_row_height); // dest is cols, rows
+					_TyConstMatrixXdRef src(r_t_block.second, n_row_height, n_column_width); // src is rows, cols
+					_TyMatrixXdRef dest(p_data, n_column_width, n_row_height); // dest is cols, rows
 					_ASSERTE(r_dest.m_block_cols_list[n_dest_row].n_width == dest.cols() &&
 						r_dest.m_block_rows_list[n_dest_col].n_height == dest.rows()); // make sure that the transpose has correct dimensions
 					dest.noalias() = src.transpose();
@@ -7636,8 +8466,8 @@ void CUberBlockMatrix::Permute_UpperTriangular_To(CUberBlockMatrix &r_dest,
 						const size_t n_row_height = m_block_rows_list[r_t_block.first].n_height;
 						_ASSERTE(r_dest.m_block_rows_list[n_dest_row].n_height == n_row_height);
 						double *p_data = r_dest.p_Get_DenseStorage(n_row_height * n_column_width);
-						_TyMatrixXdRef src((double*)r_t_block.second, n_row_height, n_column_width), // src is rows, cols
-							dest(p_data, n_column_width, n_row_height); // dest is cols, rows
+						_TyConstMatrixXdRef src(r_t_block.second, n_row_height, n_column_width); // src is rows, cols
+						_TyMatrixXdRef dest(p_data, n_column_width, n_row_height); // dest is cols, rows
 						_ASSERTE(r_dest.m_block_cols_list[n_dest_row].n_width == dest.cols() &&
 							r_dest.m_block_rows_list[n_dest_col].n_height == dest.rows()); // make sure that the transpose has correct dimensions
 						dest.noalias() = src.transpose();
@@ -7668,8 +8498,8 @@ void CUberBlockMatrix::Permute_UpperTriangular_To(CUberBlockMatrix &r_dest,
 						_ASSERTE(r_dest.m_block_rows_list[n_dest_row].n_height == n_row_height);
 						double *p_data = r_dest.p_Get_DenseStorage(n_row_height * n_column_width);
 						_ASSERTE(n_dest_row > n_dest_col);
-						_TyMatrixXdRef src((double*)r_t_block.second, n_row_height, n_column_width), // src is rows, cols
-							dest(p_data, n_column_width, n_row_height); // dest is cols, rows
+						_TyConstMatrixXdRef src(r_t_block.second, n_row_height, n_column_width); // src is rows, cols
+						_TyMatrixXdRef dest(p_data, n_column_width, n_row_height); // dest is cols, rows
 						_ASSERTE(r_dest.m_block_cols_list[n_dest_row].n_width == dest.cols() &&
 							r_dest.m_block_rows_list[n_dest_col].n_height == dest.rows()); // make sure that the transpose has correct dimensions
 						dest.noalias() = src.transpose();
@@ -7691,13 +8521,8 @@ void CUberBlockMatrix::Permute_UpperTriangular_To(CUberBlockMatrix &r_dest,
 
 		_TyBlockConstIter p_end_it = r_t_src.block_list.end();
 		_TyBlockConstIter p_block_it = r_t_src.block_list.begin();
-/*#if defined(_MSC_VER) && !defined(__MWERKS__) && _MSC_VER >= 1400
-			std::lower_bound(r_t_src.block_list.begin(),
-			p_end_it, n_min_block_row_column, CUberBlockMatrix::CCompareBlockRow());
-#else // _MSC_VER && !__MWERKS__ && _MSC_VER >= 1400
-			std::lower_bound(r_t_src.block_list.begin(),
-			p_end_it, n_min_block_row_column, CompareBlockRow);
-#endif // _MSC_VER && !__MWERKS__ && _MSC_VER >= 1400*/ // can't do this, there's a permutation in there
+		/*	std::lower_bound(r_t_src.block_list.begin(),
+			p_end_it, n_min_block_row_column, CUberBlockMatrix::CCompareBlockRow());*/ // can't do this, there's a permutation in there
 		size_t n_off = (b_keep_upper_left_part)? r_t_dest.block_list.size() : 0;
 		r_t_dest.block_list.resize((p_end_it - p_block_it) + n_off);
 		_TyBlockIter p_dest_it = (b_keep_upper_left_part)?
@@ -7725,8 +8550,8 @@ void CUberBlockMatrix::Permute_UpperTriangular_To(CUberBlockMatrix &r_dest,
 					const size_t n_row_height = m_block_rows_list[r_t_block.first].n_height;
 					_ASSERTE(r_dest.m_block_rows_list[n_dest_row].n_height == n_row_height);
 					double *p_data = r_dest.p_Get_DenseStorage(n_row_height * n_column_width);
-					_TyMatrixXdRef src((double*)r_t_block.second, n_row_height, n_column_width), // src is rows, cols
-						dest(p_data, n_column_width, n_row_height); // dest is cols, rows
+					_TyConstMatrixXdRef src(r_t_block.second, n_row_height, n_column_width); // src is rows, cols
+					_TyMatrixXdRef dest(p_data, n_column_width, n_row_height); // dest is cols, rows
 					_ASSERTE(r_dest.m_block_cols_list[n_dest_row].n_width == dest.cols() &&
 						r_dest.m_block_rows_list[n_dest_col].n_height == dest.rows()); // make sure that the transpose has correct dimensions
 					dest.noalias() = src.transpose();
@@ -7766,8 +8591,8 @@ void CUberBlockMatrix::Permute_UpperTriangular_To(CUberBlockMatrix &r_dest,
 					*p_dest_it = TColumn::TBlockEntry(n_dest_row, p_data);
 					// recalculate row index and use the new buffer
 				} else {
-					_TyMatrixXdRef src((double*)r_t_block.second, n_row_height, n_column_width), // src is rows, cols
-						dest(p_data, n_column_width, n_row_height); // dest is cols, rows
+					_TyConstMatrixXdRef src(r_t_block.second, n_row_height, n_column_width); // src is rows, cols
+					_TyMatrixXdRef dest(p_data, n_column_width, n_row_height); // dest is cols, rows
 					_ASSERTE(r_dest.m_block_cols_list[n_dest_row].n_width == dest.cols() &&
 						r_dest.m_block_rows_list[n_dest_col].n_height == dest.rows()); // make sure that the transpose has correct dimensions
 					dest.noalias() = src.transpose();
@@ -7846,7 +8671,7 @@ bool CUberBlockMatrix::UpperTriangularTranspose_Solve(double *p_x, size_t UNUSED
 			_ASSERTE(n_y + n_height <= n_x); // make sure that the diagonal part of the vector is not affected here
 
 			_TyRowVectorXdRef x_part(p_x + n_y, n_height); // also column vector, also unaligned
-			_TyMatrixXdRef block(r_t_block.second, n_height, n_width); // block
+			_TyConstMatrixXdRef block(r_t_block.second, n_height, n_width); // block
 
 #if 0
 			for(size_t i = 0; i < n_width; ++ i) {
@@ -7865,7 +8690,7 @@ bool CUberBlockMatrix::UpperTriangularTranspose_Solve(double *p_x, size_t UNUSED
 		// for every other block in this column (note no reverse order here)
 		// note that this loop mostly executes once (optimize for that? how?)
 
-		_TyMatrixXdRef diag_block(r_t_diag_block.second, n_width, n_width);
+		_TyConstMatrixXdRef diag_block(r_t_diag_block.second, n_width, n_width);
 		for(size_t i = 0; i < n_width; ++ i) {
 			double f_old_x = diag_x(i);
 			for(size_t j = 0; j < i; ++ j) // elements strictly above diagonal
@@ -7936,7 +8761,7 @@ bool CUberBlockMatrix::UpperTriangularTranspose_Solve(double *p_x, size_t UNUSED
 			_ASSERTE(n_y + n_height <= n_x); // make sure that the diagonal part of the vector is not affected here
 
 			_TyRowVectorXdRef x_part(p_x + n_y, n_height); // also column vector, also unaligned
-			_TyMatrixXdRef block(r_t_block.second, n_height, n_width); // block
+			_TyConstMatrixXdRef block(r_t_block.second, n_height, n_width); // block
 
 #if 0
 			for(size_t i = 0; i < n_width; ++ i) {
@@ -7955,7 +8780,7 @@ bool CUberBlockMatrix::UpperTriangularTranspose_Solve(double *p_x, size_t UNUSED
 		// for every other block in this column (note no reverse order here)
 		// note that this loop mostly executes once (optimize for that? how?)
 
-		_TyMatrixXdRef diag_block(r_t_diag_block.second, n_width, n_width);
+		_TyConstMatrixXdRef diag_block(r_t_diag_block.second, n_width, n_width);
 		for(size_t i = 0; i < n_width; ++ i) {
 			double f_old_x = diag_x(i);
 			for(size_t j = 0; j < i; ++ j) // elements strictly above diagonal
@@ -8022,7 +8847,7 @@ bool CUberBlockMatrix::UpperTriangularTranspose_Solve(double *p_x,
 			_ASSERTE(n_y + n_height <= n_x); // make sure that the diagonal part of the vector is not affected here
 
 			_TyRowVectorXdRef x_part(p_x + n_y, n_height); // also column vector, also unaligned
-			_TyMatrixXdRef block(r_t_block.second, n_height, n_width); // block
+			_TyConstMatrixXdRef block(r_t_block.second, n_height, n_width); // block
 
 #if 0
 			for(size_t i = 0; i < n_width; ++ i) {
@@ -8041,7 +8866,7 @@ bool CUberBlockMatrix::UpperTriangularTranspose_Solve(double *p_x,
 		// for every other block in this column (note no reverse order here)
 		// note that this loop mostly executes once (optimize for that? how?)
 
-		_TyMatrixXdRef diag_block(r_t_diag_block.second, n_width, n_width);
+		_TyConstMatrixXdRef diag_block(r_t_diag_block.second, n_width, n_width);
 		for(size_t i = 0; i < n_width; ++ i) {
 			double f_old_x = diag_x(i);
 			for(size_t j = 0; j < i; ++ j) // elements strictly above diagonal
@@ -8102,7 +8927,7 @@ bool CUberBlockMatrix::UpperTriangular_Solve(double *p_x, size_t UNUSED(n_vector
 		// make sure that the last block is on the diagonal, and is square (that does happen in L)
 
 		_TyVectorXdRef diag_x(p_x + n_x, n_width); // note this is always unaligned
-		_TyMatrixXdRef diag_block(r_t_diag_block.second, n_width, n_width);
+		_TyConstMatrixXdRef diag_block(r_t_diag_block.second, n_width, n_width);
 		for(size_t i = n_width; i > 0;) {
 			-- i; // !!
 
@@ -8136,7 +8961,7 @@ bool CUberBlockMatrix::UpperTriangular_Solve(double *p_x, size_t UNUSED(n_vector
 			_ASSERTE(n_y + n_height <= n_x); // make sure that the diagonal part of the vector is not affected here
 
 			_TyVectorXdRef x_part(p_x + n_y, n_height); // also column vector, also unaligned
-			_TyMatrixXdRef block(r_t_block.second, n_height, n_width); // block
+			_TyConstMatrixXdRef block(r_t_block.second, n_height, n_width); // block
 
 #if 0
 			for(size_t i = n_width; i > 0;) { // even reversing loop direction gives numerical discrepancies (big dynamic range in the matrix / vector)
@@ -8198,7 +9023,7 @@ bool CUberBlockMatrix::UpperTriangular_Solve(double *p_x,
 		// make sure that the last block is on the diagonal, and is square (that does happen in L)
 
 		_TyVectorXdRef diag_x(p_x + n_x, n_width); // note this is always unaligned
-		_TyMatrixXdRef diag_block(r_t_diag_block.second, n_width, n_width);
+		_TyConstMatrixXdRef diag_block(r_t_diag_block.second, n_width, n_width);
 		for(size_t i = n_width; i > 0;) {
 			-- i; // !!
 
@@ -8232,7 +9057,7 @@ bool CUberBlockMatrix::UpperTriangular_Solve(double *p_x,
 			_ASSERTE(n_y + n_height <= n_x); // make sure that the diagonal part of the vector is not affected here
 
 			_TyVectorXdRef x_part(p_x + n_y, n_height); // also column vector, also unaligned
-			_TyMatrixXdRef block(r_t_block.second, n_height, n_width); // block
+			_TyConstMatrixXdRef block(r_t_block.second, n_height, n_width); // block
 
 #if 0
 			for(size_t i = n_width; i > 0;) { // even reversing loop direction gives numerical discrepancies (big dynamic range in the matrix / vector)
@@ -8297,14 +9122,9 @@ bool CUberBlockMatrix::From_Matrix(size_t n_base_row_id, size_t n_base_column_id
 		// see at which row to insert the first block
 
 		_TyBlockIter p_insert_it =
-#if defined(_MSC_VER) && !defined(__MWERKS__) && _MSC_VER >= 1400
 			std::lower_bound(r_t_dest_col.block_list.begin(),
 			r_t_dest_col.block_list.end(), n_insert_row,
 			CUberBlockMatrix::CCompareBlockRow());
-#else // _MSC_VER && !__MWERKS__ && _MSC_VER >= 1400
-			std::lower_bound(r_t_dest_col.block_list.begin(),
-			r_t_dest_col.block_list.end(), n_insert_row, CompareBlockRow);
-#endif // _MSC_VER && !__MWERKS__ && _MSC_VER >= 1400
 		// find where to put the block in the column
 
 		_TyBlockConstIter p_block_it =
@@ -8326,14 +9146,9 @@ bool CUberBlockMatrix::From_Matrix(size_t n_base_row_id, size_t n_base_column_id
 				_ASSERTE(p_insert_it != r_t_dest_col.block_list.end());
 				if(n_next_dest_row < n_dest_row) {
 					p_insert_it =
-#if defined(_MSC_VER) && !defined(__MWERKS__) && _MSC_VER >= 1400
 						std::lower_bound(p_insert_it,
 						r_t_dest_col.block_list.end(), n_dest_row,
 						CUberBlockMatrix::CCompareBlockRow());
-#else // _MSC_VER && !__MWERKS__ && _MSC_VER >= 1400
-						std::lower_bound(p_insert_it,
-						r_t_dest_col.block_list.end(), n_dest_row, CompareBlockRow);
-#endif // _MSC_VER && !__MWERKS__ && _MSC_VER >= 1400
 					// find where to put the block in the column
 
 					if(p_insert_it == r_t_dest_col.block_list.end())
@@ -8423,6 +9238,31 @@ void CUberBlockMatrix::Convert_to_Dense(Eigen::MatrixXd &r_dest) const // throw(
 	}
 }
 
+double CUberBlockMatrix::f_LInfNorm() const
+{
+	CheckIntegrity(true);
+
+	double f_norm = 0;
+	for(_TyColumnConstIter p_col_it = m_block_cols_list.begin(),
+	   p_col_end_it = m_block_cols_list.end(); p_col_it != p_col_end_it; ++ p_col_it) {
+		const TColumn &r_t_col = *p_col_it;
+
+		for(_TyBlockConstIter p_block_it =
+		   r_t_col.block_list.begin(), p_block_end_it = r_t_col.block_list.end();
+		   p_block_it != p_block_end_it; ++ p_block_it) {
+			const TColumn::TBlockEntry &r_t_block = *p_block_it;
+			size_t n_row_id = r_t_block.first; // get row of the block
+
+			_TyConstMatrixXdRef block(r_t_block.second,
+				m_block_rows_list[n_row_id].n_height, r_t_col.n_width);
+			// create map to block data
+
+			f_norm = std::max(f_norm, block.lpNorm<Eigen::Infinity>());
+		}
+	}
+	return f_norm;
+}
+
 double CUberBlockMatrix::f_Squared_Norm() const
 {
 	CheckIntegrity(true);
@@ -8438,7 +9278,7 @@ double CUberBlockMatrix::f_Squared_Norm() const
 			const TColumn::TBlockEntry &r_t_block = *p_block_it;
 			size_t n_row_id = r_t_block.first; // get row of the block
 
-			_TyMatrixXdRef block(r_t_block.second,
+			_TyConstMatrixXdRef block(r_t_block.second,
 				m_block_rows_list[n_row_id].n_height, r_t_col.n_width);
 			// create map to block data
 
@@ -8781,13 +9621,8 @@ bool CUberBlockMatrix::CholeskyOf(const CUberBlockMatrix &r_lambda,
 				// make sure we're not going to search for the correct position in vain
 
 				_TyBlockIter p_dest_block_it =
-#if defined(_MSC_VER) && !defined(__MWERKS__) && _MSC_VER >= 1400
 					std::lower_bound(r_col_L_j.block_list.begin(),
 					r_col_L_j.block_list.end(), k, CCompareBlockRow());
-#else // _MSC_VER && !__MWERKS__ && _MSC_VER >= 1400
-					std::lower_bound(r_col_L_j.block_list.begin(),
-					r_col_L_j.block_list.end(), k, CompareBlockRow);
-#endif // _MSC_VER && !__MWERKS__ && _MSC_VER >= 1400
 				// have to search for the insertion position to keep the column sorted
 
 				p_jk_block_it = r_col_L_j.block_list.insert(p_dest_block_it,
@@ -8799,28 +9634,17 @@ bool CUberBlockMatrix::CholeskyOf(const CUberBlockMatrix &r_lambda,
 			{
 				_ASSERTE(p_A_block_it != p_A_block_end_it);
 				size_t n_block_row_id;
-				if((n_block_row_id = (*p_A_block_it).first) < k) {
-					p_A_block_it =
-#if defined(_MSC_VER) && !defined(__MWERKS__) && _MSC_VER >= 1400
-						std::lower_bound(p_A_block_it, p_A_block_end_it, k, CCompareBlockRow());
-#else // _MSC_VER && !__MWERKS__ && _MSC_VER >= 1400
-						std::lower_bound(p_A_block_it, p_A_block_end_it, k, CompareBlockRow);
-#endif // _MSC_VER && !__MWERKS__ && _MSC_VER >= 1400
-				} else if(n_block_row_id > k) {
-					p_A_block_it =
-#if defined(_MSC_VER) && !defined(__MWERKS__) && _MSC_VER >= 1400
-						std::lower_bound(r_col_A_j.block_list.begin(),
+				if((n_block_row_id = (*p_A_block_it).first) < k)
+					p_A_block_it = std::lower_bound(p_A_block_it, p_A_block_end_it, k, CCompareBlockRow());
+				else if(n_block_row_id > k) {
+					p_A_block_it = std::lower_bound(r_col_A_j.block_list.begin(),
 						p_A_block_end_it, k, CCompareBlockRow());
-#else // _MSC_VER && !__MWERKS__ && _MSC_VER >= 1400
-						std::lower_bound(r_col_A_j.block_list.begin(),
-						p_A_block_end_it, k, CompareBlockRow);
-#endif // _MSC_VER && !__MWERKS__ && _MSC_VER >= 1400
 					// a rare case where ereach is not monotonically increasing
 				}
 				_ASSERTE(p_A_block_it != p_A_block_end_it);
 
 				if((*p_A_block_it).first == k) {
-					L_block_kj = _TyMatrixXdRef((*p_A_block_it).second,
+					L_block_kj = _TyConstMatrixXdRef((*p_A_block_it).second,
 						n_col_k_width, n_col_j_width);
 					// here or after the following loop, no matter; L(k, j) not accessed : only L(k - 1, j) is accessed
 
@@ -8873,9 +9697,9 @@ bool CUberBlockMatrix::CholeskyOf(const CUberBlockMatrix &r_lambda,
 						const size_t n_row_i_height = m_block_cols_list[n_row_i].n_width;
 						// an optimistic case, we found blocks at the same row
 
-						_TyMatrixXdRef L_block_ik((*p_k_block_it).second,
+						_TyConstMatrixXdRef L_block_ik((*p_k_block_it).second,
 							n_row_i_height, n_col_k_width);
-						_TyMatrixXdRef L_block_ij((*p_j_block_it).second,
+						_TyConstMatrixXdRef L_block_ij((*p_j_block_it).second,
 							n_row_i_height, n_col_j_width);
 
 #ifdef __UBER_BLOCK_MATRIX_LAZY_PRODUCT
@@ -8897,7 +9721,7 @@ bool CUberBlockMatrix::CholeskyOf(const CUberBlockMatrix &r_lambda,
 
 			_ASSERTE(!m_block_cols_list[k].block_list.empty() &&
 				m_block_cols_list[k].block_list.back().first == k); // makes sure that k-th column contains a diagonal block
-			_TyMatrixXdRef d(m_block_cols_list[k].block_list.back().second,
+			_TyConstMatrixXdRef d(m_block_cols_list[k].block_list.back().second,
 				n_col_k_width, n_col_k_width);
 			d.triangularView<Eigen::Upper>().transpose().solveInPlace(L_block_kj); // modifies L_block_kj
 			// d.marked<Eigen::UpperTriangular>().transpose().solveTriangularInPlace(L_block_kj); // the above line is deprecated, this line should do the trick in the new version(L_block_kj) of Eigen
@@ -8916,25 +9740,19 @@ bool CUberBlockMatrix::CholeskyOf(const CUberBlockMatrix &r_lambda,
 
 			_ASSERTE(p_A_block_it != p_A_block_end_it && (*p_A_block_it).first <= j);
 			// it is pointing before or at the diagonal already
-			if((*p_A_block_it).first != j) {
-				p_A_block_it =
-#if defined(_MSC_VER) && !defined(__MWERKS__) && _MSC_VER >= 1400
-					std::lower_bound(p_A_block_it, p_A_block_end_it, j, CCompareBlockRow());
-#else // _MSC_VER && !__MWERKS__ && _MSC_VER >= 1400
-					std::lower_bound(p_A_block_it, p_A_block_end_it, j, CompareBlockRow);
-#endif // _MSC_VER && !__MWERKS__ && _MSC_VER >= 1400
-			}
+			if((*p_A_block_it).first != j)
+				p_A_block_it = std::lower_bound(p_A_block_it, p_A_block_end_it, j, CCompareBlockRow());
 			_ASSERTE(p_A_block_it != p_A_block_end_it && (*p_A_block_it).first == j); // should always be nonzero
 			// find the diagonal block (note that if A is upper diagonal, it is the
 			// last block and we can optimize for that)
 
-			L_block_jj = _TyMatrixXdRef((*p_A_block_it).second, n_col_j_width, n_col_j_width);
+			L_block_jj = _TyConstMatrixXdRef((*p_A_block_it).second, n_col_j_width, n_col_j_width);
 			// copy contents of the diagonal block
 
 			for(_TyBlockConstIter p_L_block_j_it =
 			   r_col_L_j.block_list.begin(), p_j_block_end_it = r_col_L_j.block_list.end() - 1;
 			   p_L_block_j_it != p_j_block_end_it; ++ p_L_block_j_it) {
-				_TyMatrixXdRef L_block_ij((*p_L_block_j_it).second,
+				_TyConstMatrixXdRef L_block_ij((*p_L_block_j_it).second,
 					m_block_cols_list[(*p_L_block_j_it).first].n_width, n_col_j_width);
 				L_block_jj.triangularView<Eigen::Upper>() -=
 					L_block_ij.transpose().lazyProduct(L_block_ij);
@@ -9055,14 +9873,8 @@ bool CUberBlockMatrix::CholeskyOf(const CUberBlockMatrix &r_lambda,
 				_ASSERTE(!r_col_L_j.block_list.empty() && r_col_L_j.block_list.back().first > k); // r_col_L_j.block_list.back().first = n_highest_k and n_highest_k > k
 				// make sure we're not going to search for the correct position in vain
 
-				_TyBlockIter p_dest_block_it =
-#if defined(_MSC_VER) && !defined(__MWERKS__) && _MSC_VER >= 1400
-					std::lower_bound(r_col_L_j.block_list.begin(),
+				_TyBlockIter p_dest_block_it = std::lower_bound(r_col_L_j.block_list.begin(),
 					r_col_L_j.block_list.end(), k, CCompareBlockRow());
-#else // _MSC_VER && !__MWERKS__ && _MSC_VER >= 1400
-					std::lower_bound(r_col_L_j.block_list.begin(),
-					r_col_L_j.block_list.end(), k, CompareBlockRow);
-#endif // _MSC_VER && !__MWERKS__ && _MSC_VER >= 1400
 				// have to search for the insertion position to keep the column sorted
 
 				p_jk_block_it = r_col_L_j.block_list.insert(p_dest_block_it,
@@ -9074,28 +9886,17 @@ bool CUberBlockMatrix::CholeskyOf(const CUberBlockMatrix &r_lambda,
 			{
 				_ASSERTE(p_A_block_it != p_A_block_end_it);
 				size_t n_block_row_id;
-				if((n_block_row_id = (*p_A_block_it).first) < k) {
-					p_A_block_it =
-#if defined(_MSC_VER) && !defined(__MWERKS__) && _MSC_VER >= 1400
-						std::lower_bound(p_A_block_it, p_A_block_end_it, k, CCompareBlockRow());
-#else // _MSC_VER && !__MWERKS__ && _MSC_VER >= 1400
-						std::lower_bound(p_A_block_it, p_A_block_end_it, k, CompareBlockRow);
-#endif // _MSC_VER && !__MWERKS__ && _MSC_VER >= 1400
-				} else if(n_block_row_id > k) {
-					p_A_block_it =
-#if defined(_MSC_VER) && !defined(__MWERKS__) && _MSC_VER >= 1400
-						std::lower_bound(r_col_A_j.block_list.begin(),
+				if((n_block_row_id = (*p_A_block_it).first) < k)
+					p_A_block_it = std::lower_bound(p_A_block_it, p_A_block_end_it, k, CCompareBlockRow());
+				else if(n_block_row_id > k) {
+					p_A_block_it = std::lower_bound(r_col_A_j.block_list.begin(),
 						p_A_block_end_it, k, CCompareBlockRow());
-#else // _MSC_VER && !__MWERKS__ && _MSC_VER >= 1400
-						std::lower_bound(r_col_A_j.block_list.begin(),
-						p_A_block_end_it, k, CompareBlockRow);
-#endif // _MSC_VER && !__MWERKS__ && _MSC_VER >= 1400
 					// a rare case where ereach is not monotonically increasing
 				}
 				_ASSERTE(p_A_block_it != p_A_block_end_it);
 
 				if((*p_A_block_it).first == k) {
-					L_block_kj = _TyMatrixXdRef((*p_A_block_it).second,
+					L_block_kj = _TyConstMatrixXdRef((*p_A_block_it).second,
 						n_col_k_width, n_col_j_width);
 					// here or after the following loop, no matter; L(k, j) not accessed : only L(k - 1, j) is accessed
 
@@ -9147,9 +9948,9 @@ bool CUberBlockMatrix::CholeskyOf(const CUberBlockMatrix &r_lambda,
 						const size_t n_row_i_height = m_block_cols_list[n_row_i].n_width;
 						// an optimistic case, we found blocks at the same row
 
-						_TyMatrixXdRef L_block_ik((*p_k_block_it).second,
+						_TyConstMatrixXdRef L_block_ik((*p_k_block_it).second,
 							n_row_i_height, n_col_k_width);
-						_TyMatrixXdRef L_block_ij((*p_j_block_it).second,
+						_TyConstMatrixXdRef L_block_ij((*p_j_block_it).second,
 							n_row_i_height, n_col_j_width);
 
 #ifdef __UBER_BLOCK_MATRIX_LAZY_PRODUCT
@@ -9171,7 +9972,7 @@ bool CUberBlockMatrix::CholeskyOf(const CUberBlockMatrix &r_lambda,
 
 			_ASSERTE(!m_block_cols_list[k].block_list.empty() &&
 				m_block_cols_list[k].block_list.back().first == k); // makes sure that k-th column contains a diagonal block
-			_TyMatrixXdRef d(m_block_cols_list[k].block_list.back().second,
+			_TyConstMatrixXdRef d(m_block_cols_list[k].block_list.back().second,
 				n_col_k_width, n_col_k_width);
 			d.triangularView<Eigen::Upper>().transpose().solveInPlace(L_block_kj); // modifies L_block_kj
 			// d.marked<Eigen::UpperTriangular>().transpose().solveTriangularInPlace(L_block_kj); // the above line is deprecated, this line should do the trick in the new version(L_block_kj) of Eigen
@@ -9190,25 +9991,19 @@ bool CUberBlockMatrix::CholeskyOf(const CUberBlockMatrix &r_lambda,
 
 			_ASSERTE(p_A_block_it != p_A_block_end_it && (*p_A_block_it).first <= j);
 			// it is pointing before or at the diagonal already
-			if((*p_A_block_it).first != j) {
-				p_A_block_it =
-#if defined(_MSC_VER) && !defined(__MWERKS__) && _MSC_VER >= 1400
-					std::lower_bound(p_A_block_it, p_A_block_end_it, j, CCompareBlockRow());
-#else // _MSC_VER && !__MWERKS__ && _MSC_VER >= 1400
-					std::lower_bound(p_A_block_it, p_A_block_end_it, j, CompareBlockRow);
-#endif // _MSC_VER && !__MWERKS__ && _MSC_VER >= 1400
-			}
+			if((*p_A_block_it).first != j)
+				p_A_block_it = std::lower_bound(p_A_block_it, p_A_block_end_it, j, CCompareBlockRow());
 			_ASSERTE(p_A_block_it != p_A_block_end_it && (*p_A_block_it).first == j); // should always be nonzero
 			// find the diagonal block (note that if A is upper diagonal, it is the
 			// last block and we can optimize for that) // RSStodo
 
-			L_block_jj = _TyMatrixXdRef((*p_A_block_it).second, n_col_j_width, n_col_j_width);
+			L_block_jj = _TyConstMatrixXdRef((*p_A_block_it).second, n_col_j_width, n_col_j_width);
 			// copy contents of the diagonal block
 
 			for(_TyBlockConstIter p_L_block_j_it =
 			   r_col_L_j.block_list.begin(), p_j_block_end_it = r_col_L_j.block_list.end() - 1;
 			   p_L_block_j_it != p_j_block_end_it; ++ p_L_block_j_it) {
-				_TyMatrixXdRef L_block_ij((*p_L_block_j_it).second,
+				_TyConstMatrixXdRef L_block_ij((*p_L_block_j_it).second,
 					m_block_cols_list[(*p_L_block_j_it).first].n_width, n_col_j_width);
 				L_block_jj.triangularView<Eigen::Upper>() -=
 					L_block_ij.transpose().lazyProduct(L_block_ij);
@@ -9236,6 +10031,1079 @@ bool CUberBlockMatrix::CholeskyOf(const CUberBlockMatrix &r_lambda,
 
 	//CheckIntegrity(true);
 	// makes sure the factor matrix (this) is ok
+
+	return true;
+}
+
+template <class CDerived0>
+inline std::pair<size_t, double> t_ScoreBlock_for_Pivot(const Eigen::MatrixBase<CDerived0> &r_block,
+	bool b_full_intrablock_pivoting)
+{
+	size_t n_nnz_piv = r_block.cols();
+
+	typedef typename CDeriveMatrixType<CDerived0, true>::_TyResult _TyMatrix;
+
+	/*std::vector<int> rperm(r_block.rows()), cperm(r_block.cols()); // throws, not suitable for FBS
+	for(int i = 0, n = r_block.rows(); i < n; ++ i)
+		rperm[i] = i;
+	for(int i = 0, n = r_block.cols(); i < n; ++ i)
+		cperm[i] = i;
+	double f_best_prod = 1;
+	int n_best_nnz = 0;
+	do {
+		do {
+			double f_prod = 1;
+			int n_nnz = r_block.cols();
+			for(int i = 0, n = r_block.cols(); i < n; ++ i) {
+				double f_diag = r_block(rperm[i], cperm[i]);
+				if(!f_diag)
+					-- n_nnz;
+				else
+					f_prod *= f_diag;
+			}
+			f_prod = fabs(f_prod);
+			if(n_nnz > n_best_nnz || (n_nnz == n_best_nnz && f_prod > f_best_prod)) {
+				n_best_nnz = n_nnz;
+				f_best_prod = f_prod;
+			}
+		} while(std::next_permutation(cperm.begin(), cperm.end()));
+	} while(std::next_permutation(rperm.begin(), rperm.end()));
+	return std::make_pair(n_best_nnz, f_best_prod);
+	// brute force find max transversal
+	// note that separating column and row permutations generates more combinations; the product is always the same irrespective of the order
+	// this is horribly slow and not terribly precise in the end*/
+
+	/*double f_prod;
+	_TyMatrix t_block = r_block.array().abs().matrix(); // abs(), this likely fits in the cache
+	_TyMatrix t_blocka = t_block;
+
+	for(size_t i = 0, n = r_block.rows(); i < n; ++ i) {
+		double f_max = r_block.row(i).template lpNorm<Eigen::Infinity>();
+		if(f_max != .0)
+			t_block.row(i) /= f_max;
+	}
+	// prenormalize the block (dividing by columns does not change the result, understandably)
+	// this improves the result
+
+	for(size_t i = 0, n = t_block.cols(); i < n; ++ i) { // unroll (should this be templated to force the unroll? would make the corner expressions templates, will probably be much faster)
+		typename _TyMatrix::Index n_piv_row; // this is local coordinate in the unresolved part of the matrix
+		double f_pivot = t_block.col(i).tail(n - i).maxCoeff(&n_piv_row);
+		f_pivot = t_blocka.col(i).tail(n - i)(n_piv_row); // use the original value
+		if(n_piv_row) {
+			t_block.bottomRightCorner(n - i, n - i).row(n_piv_row).swap(
+				t_block.bottomRightCorner(n - i, n - i).row(0));
+			t_blocka.bottomRightCorner(n - i, n - i).row(n_piv_row).swap(
+				t_blocka.bottomRightCorner(n - i, n - i).row(0));
+			// note that it might be faster to swap the entire row instead, at least up to certain size
+		}
+		if(!i) {
+			f_prod = f_pivot;
+			if(!f_pivot) {
+				-- n_nnz_piv;
+				f_prod = 1;
+			}
+		} else if(f_pivot)
+			f_prod *= f_pivot;
+		else
+			-- n_nnz_piv;
+	}
+	return std::make_pair(n_nnz_piv, fabs(f_prod));
+	// partially pivoted LU (this should be a pesimistic guess)*/ // works well somewhere but not so well in some easy cases
+
+	/*double f_prod;
+	_TyMatrix t_block = r_block.array().abs().matrix(); // abs(), this likely fits in the cache
+	//_TyMatrix t_blocka = t_block;
+
+	//for(size_t i = 0, n = r_block.rows(); i < n; ++ i) {
+	//	double f_max = r_block.row(i).template lpNorm<Eigen::Infinity>();
+	//	if(f_max != .0)
+	//		t_block.row(i) /= f_max;
+	//}
+	//for(size_t i = 0, n = r_block.cols(); i < n; ++ i) {
+	//	double f_max = r_block.col(i).template lpNorm<Eigen::Infinity>();
+	//	if(f_max != .0)
+	//		t_block.col(i) /= f_max;
+	//}
+	// prenormalize the block (seems to help sometimes, hurt sometime other, scaling by
+	// cols gives better results on fluorem than by rows, both at once give worse results)
+
+	for(size_t i = 0, n = t_block.cols(); i < n; ++ i) { // unroll (should this be templated to force the unroll? would make the corner expressions templates, will probably be much faster)
+		typename _TyMatrix::Index n_piv_row, n_piv_col; // this is local coordinate in the unresolved part of the matrix
+		double f_pivot = t_block.bottomRightCorner(n - i, n - i).maxCoeff(&n_piv_row, &n_piv_col);
+		//f_pivot = t_blocka.bottomRightCorner(n - i, n - i)(n_piv_row, n_piv_col); // use the original value
+		if(n_piv_col) {
+			t_block.bottomRightCorner(n - i, n - i).col(n_piv_col).swap(
+				t_block.bottomRightCorner(n - i, n - i).col(0));
+			//t_blocka.bottomRightCorner(n - i, n - i).col(n_piv_col).swap(
+			//	t_blocka.bottomRightCorner(n - i, n - i).col(0));
+			// note that it might be faster to swap the entire column instead, at least up to certain size
+		}
+		if(n_piv_row) {
+			t_block.bottomRightCorner(n - i, n - i).row(n_piv_row).swap(
+				t_block.bottomRightCorner(n - i, n - i).row(0));
+			//t_blocka.bottomRightCorner(n - i, n - i).row(n_piv_row).swap(
+			//	t_blocka.bottomRightCorner(n - i, n - i).row(0));
+			// note that it might be faster to swap the entire row instead, at least up to certain size
+		}
+		if(!i) {
+			f_prod = f_pivot;
+			if(!f_pivot) {
+				-- n_nnz_piv;
+				f_prod = 1;
+			}
+		} else if(f_pivot)
+			f_prod *= f_pivot;
+		else
+			-- n_nnz_piv;
+	}
+	return std::make_pair(n_nnz_piv, fabs(f_prod));*/
+	// this should be the same as below, only without the factorization taking place
+	// (calculates greedy maximum transversal diagonal product)
+
+/*#if 0
+	Eigen::Matrix<double, _TyMatrix::RowsAtCompileTime, 1> scaler(r_block.rows());
+	Eigen::Matrix<double, _TyMatrix::RowsAtCompileTime, 1> scalerc(r_block.rows()); // this is actually a row vector, hence the .transpose() below
+	for(size_t i = 0, n = r_block.rows(); i < n; ++ i) {
+		scaler(i) = r_block.row(i).lpNorm<Eigen::Infinity>();
+		scalerc(i) = r_block.col(i).lpNorm<Eigen::Infinity>();
+	}
+	// this maybe does not make a whole lot sense; see how the divisions affect rows/columns
+
+#if 0
+	// scale both ways (ok, but seems worse than csparse on garage, horrid on fluorem_gt01r)
+#elif 0
+	scaler.array() *= scaler.array(); // compensate the sqrt() below
+	scalerc.setConstant(1.0); // ignore this direction
+	// worse than both ways on garage, horrid on fluorem_gt01r
+#else
+	scaler.setConstant(1.0); // ignore this direction
+	scalerc.array() *= scalerc.array(); // compensate the sqrt() below
+	// even worse than row-wise on garage, also horrid on fluorem_gt01r
+#endif
+
+	_TyMatrix t_blocka = r_block.array().abs();
+	_TyMatrix t_block = (r_block.array().abs() / (scaler * scalerc.transpose()).array().sqrt()).matrix(); // abs!, this likely fits in the cache
+#else
+	_TyMatrix t_blocka = r_block.array().abs();
+	_TyMatrix t_block = t_blocka; // no scaling at all (cant be a ref, would have to remove the double swaps below)
+#endif
+	double f_prod = 1;
+	for(size_t i = 0, n = t_block.cols(); i < n; ++ i) { // unroll (should this be templated to force the unroll? would make the corner expressions templates, will probably be much faster)
+		typename _TyMatrix::Index n_piv_row, n_piv_col; // this is local coordinate in the unresolved part of the matrix
+		t_block.bottomRightCorner(n - i, n - i).maxCoeff(&n_piv_row, &n_piv_col);
+		double f_pivot = t_blocka.bottomRightCorner(n - i, n - i)(n_piv_row, n_piv_col); // the unscaled one!
+		if(n_piv_col) {
+			t_block.bottomRightCorner(n - i, n - i).col(n_piv_col).swap(
+				t_block.bottomRightCorner(n - i, n - i).col(0));
+			t_blocka.bottomRightCorner(n - i, n - i).col(n_piv_col).swap(
+				t_blocka.bottomRightCorner(n - i, n - i).col(0));
+			// note that it might be faster to swap the entire column instead, at least up to certain size
+		}
+		if(n_piv_row) {
+			t_block.bottomRightCorner(n - i, n - i).row(n_piv_row).swap(
+				t_block.bottomRightCorner(n - i, n - i).row(0));
+			t_blocka.bottomRightCorner(n - i, n - i).row(n_piv_row).swap(
+				t_blocka.bottomRightCorner(n - i, n - i).row(0));
+			// note that it might be faster to swap the entire row instead, at least up to certain size
+		} // note that there is probably no need to swap, a simple replacement would do (will never look up/left again) // todo
+		if(!i) {
+			f_prod = f_pivot;
+			if(!f_pivot) {
+				-- n_nnz_piv;
+				f_prod = 1;
+			}
+		} else if(f_pivot)
+			f_prod *= f_pivot;
+		else
+			-- n_nnz_piv;
+	}
+	return std::make_pair(n_nnz_piv, f_prod);
+	// this should be the same as below, only without the factorization taking place
+	// (calculates greedy maximum transversal diagonal product)*/
+
+	if(!b_full_intrablock_pivoting) { // this needs to be respected otherwise it will fail again for the failure to predict what would the factorization do
+		Eigen::PartialPivLU<Eigen::MatrixXd> partialLU(r_block);
+		Eigen::VectorXd v = (partialLU.permutationP() * r_block).diagonal();
+		double f_prod = v(0);
+		if(!f_prod) {
+			-- n_nnz_piv;
+			f_prod = 1; // in case there are rank deficient blocks, it is better to choose one that actually has full rank (nonzero prod)
+		}
+		for(size_t i = 1, n = r_block.cols(); i < n; ++ i) {
+			if(!v(i))
+				-- n_nnz_piv;
+			else
+				f_prod *= v(i);
+		}
+		if(!_finite(f_prod))
+			/*f*/printf(/*stderr ,*/ "warning: infinite pivot block diag product\n"); // put this to stdout so that we can see it in the log
+		return std::make_pair(n_nnz_piv, fabs(f_prod));
+		// this seems much worse than the full version below
+	} else {
+		Eigen::FullPivLU<Eigen::MatrixXd> fullLU(r_block);
+		Eigen::VectorXd v = (fullLU.permutationP() * r_block * fullLU.permutationQ()).diagonal();
+		double f_prod = v(0);
+		if(!f_prod) {
+			-- n_nnz_piv;
+			f_prod = 1; // in case there are rank deficient blocks, it is better to choose one that actually has full rank (nonzero prod)
+		}
+		for(size_t i = 1, n = r_block.cols(); i < n; ++ i) {
+			if(!v(i))
+				-- n_nnz_piv;
+			else
+				f_prod *= v(i);
+		}
+		if(!_finite(f_prod))
+			/*f*/printf(/*stderr ,*/ "warning: infinite pivot block diag product\n"); // put this to stdout so that we can see it in the log
+		return std::make_pair(n_nnz_piv, fabs(f_prod));
+		// this works fairly well but it is a tad slow. seems no way around it though,
+		// there is otherwise no telling which pivots would it choose (it can also take some bad steps itself).
+	}
+
+	// todo - we could have a speculative search but the problem is the cost is not an upper nor a lower bound
+
+	/*Eigen::VectorXd v = r_block.array().abs().matrix().colwise().maxCoeff();
+	double f_prod = v(0);
+	if(!f_prod) {
+		-- n_nnz_piv;
+		f_prod = 1;
+	}
+	for(size_t i = 1, n = r_block.cols(); i < n; ++ i) {
+		if(v(i) != 0)
+			f_prod *= v(i);
+		else
+			-- n_nnz_piv;
+	}
+	return std::make_pair(n_nnz_piv, f_prod);*/
+
+	/*double f_prod = r_block(0, 0);
+	if(!f_prod)
+		f_prod = 1;
+	for(size_t i = 1, n = r_block.cols(); i < n; ++ i) {
+		if(r_block(i, i) != 0)
+			f_prod *= r_block(i, i);
+	}
+	return f_prod;*/
+	// this actually seems to work pretty well
+
+	/*double f_prod = r_block(0, 0);
+	for(size_t i = 1, n = r_block.cols(); i < n; ++ i)
+		f_prod *= r_block(i, i);
+	return f_prod;*/
+	// this actually seems to work pretty well
+
+	//return sqrt((r_block.diagonal().array().abs()./*colwise().maxCoeff().*/minCoeff() *
+	//	r_block.diagonal().lpNorm<n_norm_type>()));
+	// suceeds but sometimes horribly wrong
+
+	//return r_block.diagonal().array().abs().minCoeff();
+	// fairly good but fails in some cases
+
+	//return sqrt((r_block.diagonal().array().abs()./*colwise().maxCoeff().*/minCoeff() *
+	//	r_block./*diagonal().*/lpNorm<n_norm_type>()));
+	// fairly good but fails in some cases
+
+	//return r_block.diagonal().lpNorm<n_norm_type>();
+	// often fails
+
+	/*Eigen::MatrixXd LU;
+	if(!b_full_intrablock_pivoting) {
+		Eigen::PartialPivLU<Eigen::MatrixXd> pivot_LU(r_block); // factorize the pivot block (must be invertible)
+		LU = pivot_LU.matrixLU();
+	} else {
+		Eigen::FullPivLU<Eigen::MatrixXd> pivot_LU(r_block); // factorize the pivot block (no requirements)
+		LU = pivot_LU.matrixLU();
+	}*/
+
+	//return sqrt(LU.diagonal().array().abs().minCoeff() * LU.diagonal().array().abs().maxCoeff());
+	// typically a few orders of magnitude worse than csparse, not horrible but done better
+
+	//return LU.diagonal().array().abs().minCoeff();
+	// works but not great
+
+	/*Eigen::VectorXd v = Eigen::VectorXd::Ones(LU.cols());
+	LU.triangularView<Eigen::UnitLower>().solveInPlace(v);
+	LU.triangularView<Eigen::Upper>().solveInPlace(v);
+	return 1 / v.lpNorm<n_norm_type>();*/
+	// particularly poor
+
+	//return LU.diagonal().lpNorm<n_norm_type>();
+	// very poor
+
+	//return LU.array().abs().matrix().trace();
+	// does not work at all
+}
+
+// todo - decide on how to pass permutations, should provide robustness (buffer size checking), maybe will need the perms as size_t
+//		- actually the column permutation is only intra-block, could pass that as a local perm
+//		- the row permutation is intra+inter-block, maybe it is difficult to use with block matrices (will need to see how exactly to permute a block matrix, currently the safest bet is to convert to cs* and permute that instead)
+bool CUberBlockMatrix::LUTo(CUberBlockMatrix &r_L, CUberBlockMatrix &r_U, size_t *p_row_perm, size_t *p_col_perm,
+	bool *p_pivoted /*= 0*/, bool b_partial_interblock_pivoting /*= true*/, double f_min_piv_gain /*= 0*/,
+	bool b_full_intrablock_pivoting /*= true*/) const
+{
+	_ASSERTE(&r_L != &r_U); // merged LU not supported at the moment, it could be done to save some memory in the diagonal (memory corresponding to block diagonal of A is wasted since the lower part is unused in U and the upper/diagonal part is unused in L (the diagonal is used but holds all ones, could write a modified lsolve))
+	_ASSERTE(b_SymmetricLayout());
+	_ASSERTE(f_min_piv_gain >= 0); // negative gain would choose worse pivots
+	// input validation
+
+	bool b_pivoted_temp;
+	if(p_pivoted)
+		*p_pivoted = false;
+	else
+		p_pivoted = &b_pivoted_temp; // use some temp storage to not have to worry about null pointer
+
+	bool b_had_deficient_pivots = false;
+	double f_max_lower_rank_def = 0; // maximum value in lower triangle under a deficient pivot (if nonzero, the result will be wrong)
+
+	//r_L.Clear();
+	//r_U.Clear(); // CopyLayoutTo() does that
+	CopyLayoutTo(r_L);
+	CopyLayoutTo(r_U);
+
+	const CUberBlockMatrix &A_struct = *this;
+	CUberBlockMatrix &resultL = r_L, &resultU = r_U;
+	// rename
+
+	{
+		const size_t n = A_struct.m_n_col_num;
+		const size_t nb = A_struct.m_block_cols_list.size();
+		_ASSERTE(n == A_struct.m_n_row_num);
+		_ASSERTE(nb == A_struct.m_block_rows_list.size());
+
+		if(!b_full_intrablock_pivoting) {
+			for(size_t i = 0; i < n; ++ i)
+				p_col_perm[i] = i;
+			// identity
+		}
+#ifdef _DEBUG
+		if(b_full_intrablock_pivoting) {
+			for(size_t i = 0; i < n; ++ i)
+				p_col_perm[i] = -1;
+			// debug
+		}
+		for(size_t i = 0; i < n; ++ i)
+			p_row_perm[i] = -1;
+		// debug
+#endif // _DEBUG
+	}
+	// hide the scope of n
+
+	// have two loops where fill-in is introduced in U and in L
+	// both take a dot product of a row from L and a column from U,
+	// could do this using a dense block column and the Gustavson's algorithm for sparse matrix multiplication
+	// (iterate over blocks in col of U, a row of the block chooses a column in L, product scatters to the result),
+	// scatter the result into the sparse matrix afterwards, guarantees that an ordered sparse matrix is produced
+	// the matters are perhaps a bit more complicated in U since the
+	// product needs to be produced in a particular order (intertwined by piv mod) but not sure
+
+	// t_odo - convert this to sparse-in-dense code, similar to how it was done for cholesky
+
+	typedef Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor> DenseColMatrix;
+	typedef Eigen::Block<DenseColMatrix, Eigen::Dynamic, Eigen::Dynamic, true> DCBlockXd;
+	//typedef Eigen::MatrixXd DenseColMatrix;
+	//typedef Eigen::Block<DenseColMatrix, Eigen::Dynamic, Eigen::Dynamic/*, true*/> DCBlockXd;
+
+	_ASSERTE(sizeof(ptrdiff_t) == sizeof(size_t));
+	typedef Eigen::Matrix<ptrdiff_t/*size_t*/, Eigen::Dynamic, 1> PermVec; // Eigen otherwise uses int, needs to be signed
+	typedef Eigen::Map<PermVec, Eigen::DontAlign> TPermVecMap;
+	typedef const Eigen::Map<const PermVec, Eigen::DontAlign> TPermVecConstMap;
+	typedef const Eigen::PermutationWrapper<TPermVecConstMap> TPermMatrixConstMap;
+
+	DenseColMatrix dense_col; // a dense column for accumulating the blocks // todo - row major? test perf on it
+	std::vector<bool> col_pattern(resultL.m_block_rows_list.size(), false); // nonzero block pattern of the current column
+	// could change the bool array for an array of starting rows in the dense column, then the entries in the dense column would be packed close together, possibly making a better use of the cache
+
+	std::vector<std::vector<size_t> > LT_block_pattern((b_partial_interblock_pivoting)?
+		resultL.m_block_rows_list.size() : 0);
+	// transpose pattern of L, only used if pivoting
+	// we can't use csc form here because the scattering and index
+	// shifting would raise the complexity too much
+	// anyway, this is probably only for the paper, not expecting it to give competitive performance like that
+
+	std::vector<size_t> block_row_perm(A_struct.m_block_cols_list.size());
+	for(size_t i = 0, n = A_struct.m_block_cols_list.size(); i < n; ++ i)
+		block_row_perm[i] = i; // identity permutation at the beginning
+	std::vector<size_t> block_row_invperm(block_row_perm);
+	// partial pivoting row permutation (not sure if it is possible to form
+	// the inverse without also forming the direct permutation)
+
+	std::vector<double> piv_weights((b_partial_interblock_pivoting)? resultL.m_block_rows_list.size() : 0, .0);
+	if(b_partial_interblock_pivoting) {
+		for(size_t k = 0, o = A_struct.m_block_cols_list.size(); k < o; ++ k) {
+			const TColumn &r_t_col = A_struct.m_block_cols_list[k];
+			const size_t n_col_k_org = r_t_col.n_cumulative_width_sum;
+			const size_t n_col_k_width = r_t_col.n_width;
+
+			for(size_t j = 0, m = r_t_col.block_list.size(); j < m; ++ j) {
+				const size_t n_row_j = r_t_col.block_list[j].first;
+				const size_t n_row_j_org = A_struct.m_block_cols_list[n_row_j].n_cumulative_width_sum;
+				const size_t n_row_j_height = A_struct.m_block_cols_list[n_row_j].n_width; // has a symmetric layout
+
+				piv_weights[n_row_j] = std::max(piv_weights[n_row_j], _TyConstMatrixXdRef(r_t_col.block_list[j].second,
+					n_row_j_height, n_col_k_width).lpNorm<Eigen::Infinity>());
+			}
+		}
+		for(size_t k = 0, o = A_struct.m_block_cols_list.size(); k < o; ++ k) {
+			if(!piv_weights[k])
+				;//fprintf(stderr, "error: the matrix is singular\n");
+			else
+				piv_weights[k] = 1 / piv_weights[k]; // !!
+		}
+	}
+	// calculate approximate pivot scaling
+
+	// a simple block partial-pivoting left-looking algorithm
+	for(size_t k = 0, o = A_struct.m_block_cols_list.size(); k < o; ++ k) {
+		TColumn &r_t_dest_col_U = resultU.m_block_cols_list[k];
+		TColumn &r_t_dest_col_L = resultL.m_block_cols_list[k]; // want this to be disjoint matrices, saves plenty of searching
+		const TColumn &r_t_col = A_struct.m_block_cols_list[k];
+		const size_t n_col_k_org = r_t_col.n_cumulative_width_sum;
+		const size_t n_col_k_width = r_t_col.n_width;
+
+		dense_col.resize(A_struct.m_n_row_num, n_col_k_width);
+		// make space (need not be zero, will overwrite with the first entries)
+
+		_ASSERTE(std::find(col_pattern.begin(), col_pattern.end(), true) == col_pattern.end());
+		// make sure the previous iteration rezeroed it correctly
+
+		if(!b_partial_interblock_pivoting) { // the top branch does not support pivoting
+			size_t n_A_diag_block = r_t_col.block_list.size(); // will be changed in the loop below (or could do lower_bound)
+			for(size_t j = 0; j < n_A_diag_block; ++ j) {
+				const size_t n_row_j = r_t_col.block_list[j].first; // could do lower_bound
+				if(n_row_j >= k) {
+					n_A_diag_block = j; // remember which block is the diagonal one (or the first one below the diagonal)
+					break;
+				}
+				const size_t n_row_j_org = A_struct.m_block_cols_list[n_row_j].n_cumulative_width_sum;
+				const size_t n_row_j_height = A_struct.m_block_cols_list[n_row_j].n_width; // has a symmetric layout
+
+				_ASSERTE(!col_pattern[n_row_j]);
+				col_pattern[n_row_j].flip(); // set this output to one
+				r_t_dest_col_U.block_list.push_back(TColumn::TBlockEntry(n_row_j, 0)); // add it to the list
+				dense_col.middleRows(n_row_j_org, n_row_j_height) =
+					_TyConstMatrixXdRef(r_t_col.block_list[j].second, n_row_j_height, n_col_k_width);
+				// stream in new data (if sparse, not neccessarily all the blocks would be nonzero)
+			}
+			// copy the block column of A into the output U
+
+			for(size_t j = n_A_diag_block, m = r_t_col.block_list.size(); j < m; ++ j) {
+				const size_t n_row_j = r_t_col.block_list[j].first;
+				const size_t n_row_j_org = A_struct.m_block_cols_list[n_row_j].n_cumulative_width_sum;
+				const size_t n_row_j_height = A_struct.m_block_cols_list[n_row_j].n_width; // has a symmetric layout
+
+				_ASSERTE(!col_pattern[n_row_j]);
+				col_pattern[n_row_j].flip(); // set this output to one
+				r_t_dest_col_L.block_list.push_back(TColumn::TBlockEntry(n_row_j, 0)); // add it to the list
+				dense_col.middleRows(n_row_j_org, n_row_j_height) =
+					_TyConstMatrixXdRef(r_t_col.block_list[j].second, n_row_j_height, n_col_k_width);
+				// stream in new data (if sparse, not neccessarily all the blocks would be nonzero)
+			}
+			// copy the block column of A into the output L
+		} else {
+			for(size_t j = 0, m = r_t_col.block_list.size(); j < m; ++ j) {
+				const size_t n_row_j = r_t_col.block_list[j].first;
+				const size_t n_row_j_org = A_struct.m_block_cols_list[n_row_j].n_cumulative_width_sum;
+				const size_t n_row_j_height = A_struct.m_block_cols_list[n_row_j].n_width; // has a symmetric layout
+
+				const size_t n_row_p = block_row_invperm[n_row_j];
+				const size_t n_row_p_org = A_struct.m_block_cols_list[n_row_p].n_cumulative_width_sum;
+				const size_t n_row_p_height = A_struct.m_block_cols_list[n_row_p].n_width; // has a symmetric layout
+
+				_ASSERTE(!col_pattern[n_row_p]);
+				col_pattern[n_row_p].flip(); // set this output to one
+				dense_col.middleRows(n_row_p_org, n_row_p_height) =
+					_TyConstMatrixXdRef(r_t_col.block_list[j].second, n_row_j_height, n_col_k_width);
+				if(n_row_p < k)
+					r_t_dest_col_U.block_list.push_back(TColumn::TBlockEntry(n_row_p, 0)); // add it to the list
+				else if(!b_partial_interblock_pivoting || n_row_p > k)
+					r_t_dest_col_L.block_list.push_back(TColumn::TBlockEntry(n_row_p, 0)); // add it to the list
+				else {
+					r_t_dest_col_L.block_list.insert(r_t_dest_col_L.block_list.begin(),
+						TColumn::TBlockEntry(n_row_p, 0)); // add it to *the front* of the list (we assume L is unordered, except that the natural pivot is always the first)
+				}
+				// stream in new data (if sparse, not neccessarily all the blocks would be nonzero)
+			}
+			// copy the block column of A into the output U or L, depending on where it is pivoted
+
+			std::sort(r_t_dest_col_U.block_list.begin(),
+				r_t_dest_col_U.block_list.end(), CCompareBlockRow());
+			// the columns of U are maintained ordered
+		}
+		// copy A to L and U, if pivoting then the rows are permuted
+
+		// U and L are both sorted at this point
+		// the below code scatters in U while also reading U
+
+		for(size_t j = 0, m = r_t_dest_col_U.block_list.size(); j < m; ++ j) { // all the nonzero blocks, strictly above the pivot, choose the block cols to the left of the current diagonal
+			const size_t n_row_j = r_t_dest_col_U.block_list[j].first;
+			_ASSERTE(n_row_j < k); // strictly upper
+			const size_t n_row_j_org = A_struct.m_block_cols_list[n_row_j].n_cumulative_width_sum;
+			const size_t n_row_j_height = A_struct.m_block_cols_list[n_row_j].n_width; // has a symmetric layout
+
+			DCBlockXd jk_block(dense_col.middleRows(n_row_j_org, n_row_j_height)); // a block in U
+
+			TColumn &r_t_col_j_L = resultL.m_block_cols_list[n_row_j]; // this column was processed before the current one, and was already sorted
+			const size_t n_col_r_org = r_t_col_j_L.n_cumulative_width_sum;
+			const size_t n_col_r_width = r_t_col_j_L.n_width;
+			_ASSERTE(!r_t_col_j_L.block_list.empty() && r_t_col_j_L.block_list.front().first == n_row_j); // the first one is the diagonal block (if we do row pivoting then this is guaranteed, if not then we would have already failed earlier by not having a diagonal block to factorize)
+
+			{
+				_TyConstMatrixXdRef jj_block(r_t_col_j_L.block_list.front().second, n_row_j_height, n_col_r_width);
+				// the former pivot
+
+				TPermVecConstMap perm_map((ptrdiff_t*)p_row_perm + n_row_j_org, n_row_j_height);
+				TPermMatrixConstMap Pj(perm_map);
+				// the corresponding permutation
+
+				jk_block = jj_block.triangularView<Eigen::UnitLower>().solve(Pj * jk_block);
+			}
+			// finalize the jk block
+
+			for(size_t i = 1, n = r_t_col_j_L.block_list.size(); i < n; ++ i) { // for all blocks in L, below block jk (start at 1 to skip the diag block which we asserted above)
+				const size_t n_row_i = r_t_col_j_L.block_list[i].first;
+				_ASSERTE(n_row_i > n_row_j); // strictly below it
+				const size_t n_row_i_org = A_struct.m_block_cols_list[n_row_i].n_cumulative_width_sum;
+				const size_t n_row_i_height = A_struct.m_block_cols_list[n_row_i].n_width; // has a symmetric layout
+
+				_TyConstMatrixXdRef ij_block(r_t_col_j_L.block_list[i].second, n_row_i_height, n_col_r_width); // j > i so row > col and this is strictly lower, in previous column i
+
+				DCBlockXd ik_block(dense_col.middleRows(n_row_i_org, n_row_i_height)); // i < j < k so row < col and this is strictly upper
+				if(n_row_i < k) { // based on where the block is, it will go either to L or to U (the order does not matter here)
+					if(!col_pattern[n_row_i]) { // this potentially causes fill-in in U
+						col_pattern[n_row_i].flip(); // set this output to one
+						r_t_dest_col_U.block_list.insert(std::lower_bound(r_t_dest_col_U.block_list.begin(),
+							r_t_dest_col_U.block_list.end(), n_row_i, CCompareBlockRow()),
+							TColumn::TBlockEntry(n_row_i, 0)); // add it to the list
+						++ m; // we just added one block worth of fill-in in the current column of U, will need to process it as well
+						// t_odo - use lower_bound to add it to a sorted location; we have added it below i though so no need to track that change
+
+						_ASSERTE(n_row_i != n_row_j); // otherwise would alias
+						ik_block.noalias() = -ij_block * jk_block; // scatter me down!
+					} else {
+						_ASSERTE(n_row_i != n_row_j); // otherwise would alias
+						ik_block.noalias() -= ij_block * jk_block; // scatter me down!
+					}
+					// keep U ordered
+				} else {
+					if(!col_pattern[n_row_i]) { // this potentially causes fill-in in L
+						col_pattern[n_row_i].flip(); // set this output to one
+						if(b_partial_interblock_pivoting && n_row_i == k) {
+							r_t_dest_col_L.block_list.insert(r_t_dest_col_L.block_list.begin(),
+								TColumn::TBlockEntry(n_row_i, 0)); // add it to the front of the list // todo - is this needed? will sort the list below anyways
+						} else
+							r_t_dest_col_L.block_list.push_back(TColumn::TBlockEntry(n_row_i, 0)); // add it to the list (unsorted)
+						_ASSERTE(n_row_j != n_row_i); // otherwise would alias
+						ik_block.noalias() = -ij_block * jk_block; // new block
+					} else {
+						_ASSERTE(n_row_j != n_row_i); // otherwise would alias
+						ik_block.noalias() -= ij_block * jk_block; // existing block // todo - see if lazyProduct() helps here (there is an ifdef for that)
+					}
+					// L is unordered
+				}
+			}
+			// this causes fill-in in L and U, the pattern is different from that of A
+			// the ik block is yet to be solved and permuted
+			// the ij block is from a preceding column, the jk block was just solved above
+		}
+		// all the blocks on the pivotal block column, above the pivot in U (the first
+		// inner loop branch) and below / including the pivot in L (the second inner loop branch)
+
+		std::sort(r_t_dest_col_L.block_list.begin(),
+			r_t_dest_col_L.block_list.end(), CCompareBlockRow()); // todo - figure out whether it is cheaper to insert in a sorted fashion or whether to sort at the end (should be similar, and if the matrix is already very dense or has very little fill-in then inserting in sorted fashion should help)
+		// this is unsorted, need to sort it; will not have any more fill-in from now on
+		// in case we will perform pivoting, we will try to keep the sorted order in all
+		// the columns (but the block order in memory might be broken)
+
+		// at this point, we're still free to choose any pivot from the lower part of the current *column*
+		// (so it will be a *partially* pivoted algorithm, for sure; it cannot be fully pivoted because
+		// the columns to the right haven't been computed yet)
+
+		// will produce one column, containing both L and U
+
+		bool b_had_empty_col = false;
+		if(r_t_dest_col_L.block_list.empty() || // either completely empty
+		   (!b_partial_interblock_pivoting && r_t_dest_col_L.block_list.front().first != k)) { // or missing a diagonal block while not inter-block pivoting (would not be able to use the off-diag block as a pivot then)
+			r_t_dest_col_L.block_list.insert(r_t_dest_col_L.block_list.begin(), TColumn::TBlockEntry(k, 0)); // put it to front (to maintain ordered L if not inter-block pivoting)
+			dense_col.middleRows(n_col_k_org, n_col_k_width).setZero();
+			_ASSERTE(!col_pattern[k]);
+			col_pattern[k].flip(); // !!
+			printf("warning: rank deficient matrices not tested yet\n"); // put it to stdout to be able to see it in otder in the log
+			b_had_empty_col = true;
+		}
+		// supply a zero block in place of the pivot, will decompose to U=0 and L=I and we can go on
+
+		size_t n_pivot_block = k, n_pivot_index = 0;
+		if(b_partial_interblock_pivoting) { // do intrablock (partial) pivoting?
+			n_pivot_block = r_t_dest_col_L.block_list.front().first; // use something that's actually there
+
+			DCBlockXd piv_block(dense_col.middleRows(n_col_k_org, n_col_k_width));
+			std::pair<size_t, double> t_best_pivot_score = (n_pivot_block == k)? // is there a natural pivot at all?
+				t_ScoreBlock_for_Pivot(piv_block, b_full_intrablock_pivoting) :
+				std::make_pair(size_t(0), -1.0);
+			t_best_pivot_score.second *= (f_min_piv_gain + 1) * piv_weights[k];
+			// gain < candidate / natural - 1 and so (gain + 1) * natural < candidate
+
+			size_t n_start = (r_t_dest_col_L.block_list.front().first == k)? 1 : 0; // make sure we're skipping the diagonal block here
+			for(size_t i = n_start, n = r_t_dest_col_L.block_list.size(); i < n; ++ i) { // for all blocks in L, below block kk (start at 1 to skip the diag block)
+				const size_t n_row_i = r_t_dest_col_L.block_list[i].first;
+				_ASSERTE(n_row_i > k); // make sure this is in L and that we dont repeat calculating the norm of k
+				const size_t n_row_i_org = A_struct.m_block_cols_list[n_row_i].n_cumulative_width_sum;
+				const size_t n_row_i_height = A_struct.m_block_cols_list[n_row_i].n_width; // has a symmetric layout
+
+				if(n_row_i_height == n_col_k_width) { // only if this does not break symmetry (need a square pivot)
+					DCBlockXd i_block(dense_col.middleRows(n_row_i_org, n_row_i_height));
+					std::pair<size_t, double> t_score = t_ScoreBlock_for_Pivot(i_block, b_full_intrablock_pivoting);
+					t_score.second *= piv_weights[n_row_i];
+					if(t_best_pivot_score < t_score) {
+						t_best_pivot_score = t_score;
+						n_pivot_block = n_row_i;
+						n_pivot_index = i;
+					}
+				}
+			}
+			// simple pivot choice based on magnitude of the diagonal and approximate implicit pivot scaling
+
+			piv_weights[n_pivot_block] = piv_weights[k]; // no need to swap, will not need to access piv_weights[k] anymore
+			// maintain ordering of the pivot weights array
+		} else {
+			if(r_t_dest_col_L.block_list.empty() ||
+			   r_t_dest_col_L.block_list.front().first != k) // no L at all? probably structurally rank deficient
+				throw std::runtime_error("diagonal of this matrix is not full"); // can't handle that without partial pivoting
+			// check the existence of the diag block if doing pivoting
+		}
+		// choose a pivot, if multiple block sizes are present then the pivoting does not make
+		// the matrix asymmetric (only rows of the same dimension can be swapped)
+
+		if(n_pivot_block != k) {
+			_ASSERTE(p_pivoted);
+			*p_pivoted = true;
+			//printf("piv\n"); // debug
+
+			const TColumn &r_t_piv_col = A_struct.m_block_cols_list[n_pivot_block];
+			const size_t n_row_p_org = r_t_piv_col.n_cumulative_width_sum; // symmetric layout
+			const size_t n_row_p_height = r_t_piv_col.n_width;
+
+			std::swap(block_row_perm[k], block_row_perm[n_pivot_block]);
+			// update row permutation
+
+			block_row_invperm[block_row_perm[k]] = k;
+			block_row_invperm[block_row_perm[n_pivot_block]] = n_pivot_block;
+			// update the inverse permutation as well (probably no way to do that
+			// without also managing the direct perm)
+
+#ifdef _DEBUG
+			std::vector<size_t> pinv(block_row_perm.size());
+			for(size_t j = 0, m = block_row_perm.size(); j < m; ++ j)
+				pinv[block_row_perm[j]] = j;
+			_ASSERTE(pinv == block_row_invperm);
+#endif // _DEBUG
+			// make sure this is indeed correct
+
+			const std::vector<size_t> &r_affected_cols_p = LT_block_pattern[block_row_perm[k]], // cols that contain row n_pivot_block
+				&r_affected_cols_k = LT_block_pattern[block_row_perm[n_pivot_block]]; // cols that contain row k
+			// determine which columns in L will need to be repermuted
+			// t_odo - make use of LTp, LTi for selecting only the columns that have nenozeros at the given rows
+
+#ifdef _DEBUG
+			for(size_t j = 0, i = 0, n = r_affected_cols_k.size(); i < n; ++ i) {
+				size_t j1 = r_affected_cols_k[i];
+				for(; j < j1; ++ j) {
+					TColumn &r_t_j_col_L = resultL.m_block_cols_list[j];
+					_ASSERTE(std::find_if(r_t_j_col_L.block_list.begin(), r_t_j_col_L.block_list.end(),
+						CFindBlockRow_Unordered(k)) == r_t_j_col_L.block_list.end());
+				}
+				// make sure the columns in between do not contain the block we're after
+
+				TColumn &r_t_j_col_L = resultL.m_block_cols_list[j];
+				_ASSERTE(std::find_if(r_t_j_col_L.block_list.begin(), r_t_j_col_L.block_list.end(),
+					CFindBlockRow_Unordered(k)) != r_t_j_col_L.block_list.end());
+				++ j; // skip the selected column
+				// make sure that the selected column does contain the block
+			}
+			for(size_t j = (r_affected_cols_k.empty())? 0 : r_affected_cols_k.back() + 1; j < k; ++ j) {
+				TColumn &r_t_j_col_L = resultL.m_block_cols_list[j];
+				_ASSERTE(std::find_if(r_t_j_col_L.block_list.begin(), r_t_j_col_L.block_list.end(),
+					CFindBlockRow_Unordered(k)) == r_t_j_col_L.block_list.end());
+				// make sure the columns at the end do not contain the block we're after
+			}
+			for(size_t j = 0, i = 0, n = r_affected_cols_p.size(); i < n; ++ i) {
+				size_t j1 = r_affected_cols_p[i];
+				for(; j < j1; ++ j) {
+					TColumn &r_t_j_col_L = resultL.m_block_cols_list[j];
+					_ASSERTE(std::find_if(r_t_j_col_L.block_list.begin(), r_t_j_col_L.block_list.end(),
+						CFindBlockRow_Unordered(n_pivot_block)) == r_t_j_col_L.block_list.end());
+				}
+				// make sure the columns in between do not contain the block we're after
+
+				TColumn &r_t_j_col_L = resultL.m_block_cols_list[j];
+				_ASSERTE(std::find_if(r_t_j_col_L.block_list.begin(), r_t_j_col_L.block_list.end(),
+					CFindBlockRow_Unordered(n_pivot_block)) != r_t_j_col_L.block_list.end());
+				++ j; // skip the selected column
+				// make sure that the selected column does contain the block
+			}
+			for(size_t j = (r_affected_cols_p.empty())? 0 : r_affected_cols_p.back() + 1; j < k; ++ j) {
+				TColumn &r_t_j_col_L = resultL.m_block_cols_list[j];
+				_ASSERTE(std::find_if(r_t_j_col_L.block_list.begin(), r_t_j_col_L.block_list.end(),
+					CFindBlockRow_Unordered(n_pivot_block)) == r_t_j_col_L.block_list.end());
+				// make sure the columns at the end do not contain the block we're after
+			}
+			// debug the column selection
+
+			std::vector<size_t> affected_cols(r_affected_cols_k.size() + r_affected_cols_p.size());
+			affected_cols.erase(std::set_union(r_affected_cols_k.begin(), r_affected_cols_k.end(),
+				r_affected_cols_p.begin(), r_affected_cols_p.end(), affected_cols.begin()), affected_cols.end());
+			// (this is a silly silly way, for debugging)
+#endif // _DEBUG
+
+			for(size_t jk = 0, jp = 0, mk = r_affected_cols_k.size(),
+			   mp = r_affected_cols_p.size(); jk < mk || jp < mp;) {
+				size_t j;
+				bool b_has_only_k, b_has_only_p;
+				if(jk == mk || (jp != mp && r_affected_cols_p[jp] < r_affected_cols_k[jk])) {
+					b_has_only_p = true;
+					b_has_only_k = false; // !!
+					j = r_affected_cols_p[jp];
+					++ jp;
+				} else if(jp == mp || (jk != mk && r_affected_cols_p[jp] > r_affected_cols_k[jk])) {
+					b_has_only_k = true;
+					b_has_only_p = false; // !!
+					j = r_affected_cols_k[jk];
+					++ jk;
+				} else {
+					_ASSERTE(jk != mk && jp != mp && r_affected_cols_p[jp] == r_affected_cols_k[jk]);
+					b_has_only_k = b_has_only_p = false;
+					j = r_affected_cols_p[jp];
+					++ jk;
+					++ jp;
+				}
+				// ordered union of the two arrays, also get information about which block(s) are present
+
+#ifdef _DEBUG
+				_ASSERTE(!affected_cols.empty() && affected_cols.front() == j);
+				affected_cols.erase(affected_cols.begin());
+#endif // _DEBUG
+
+				TColumn &r_t_j_col_L = resultL.m_block_cols_list[j];
+
+				_ASSERTE(!r_t_j_col_L.block_list.empty() &&
+					r_t_j_col_L.block_list.front().first == j); // make sure the first is the diagonal block here
+				_ASSERTE(CDebug::b_IsStrictlySortedSet(r_t_j_col_L.block_list.begin(), r_t_j_col_L.block_list.end())); // make sure it is sorted
+
+				_ASSERTE(j < k && k < n_pivot_block); // how the entries are ordered in the column
+				std::vector<TColumn::TBlockEntry>::iterator p_k_it =
+					std::lower_bound(r_t_j_col_L.block_list.begin() + 1, // surely not at the beginning, there is the pivot, j
+					r_t_j_col_L.block_list.end(), k, CCompareBlockRow());
+				std::vector<TColumn::TBlockEntry>::iterator p_p_it =
+					std::lower_bound((b_has_only_p)? p_k_it : p_k_it + 1, // p must go after k, except if k is not really present
+					r_t_j_col_L.block_list.end(), n_pivot_block, CCompareBlockRow());
+				// find k and p, or at least the positions where those would have been placed
+
+				if(b_has_only_k) {
+					(*p_k_it).first = n_pivot_block;
+					std::rotate(p_k_it, p_k_it + 1, p_p_it); // rotate k at the end of the range
+				} else if(b_has_only_p) {
+					(*p_p_it).first = k;
+					std::rotate(p_k_it, p_p_it, p_p_it + 1); // rotate p to the beginning of the range
+				} else {
+					std::swap((*p_k_it).second, (*p_p_it).second);
+					//std::swap(_TyMatrixXdRef((*p_k_it).second, n_col_k_width, n_col_k_width),
+					//	_TyMatrixXdRef((*p_p_it).second, n_col_k_width, n_col_k_width)); // this keeps it sorted // todo - benchmark the difference
+					// both blocks remain where they are, only the columns are swapped
+				}
+
+				_ASSERTE(CDebug::b_IsStrictlySortedSet(r_t_j_col_L.block_list.begin(), r_t_j_col_L.block_list.end())); // make sure it is still sorted
+				_ASSERTE(!r_t_j_col_L.block_list.empty() &&
+					r_t_j_col_L.block_list.front().first == j); // make sure the first is still the diagonal block here
+			}
+#ifdef _DEBUG
+			_ASSERTE(affected_cols.empty()); // make sure we got them all
+#endif // _DEBUG
+			// go through the preceding columns, change the block rows; to avoid traversing all
+			// the preceding columns, transpose block pattern of L is maintained so that it can
+			// easily pick out the columns that require reordering (might still turn out unacceptable)
+
+			// if we do not do this but change it for the current column then the permutation is different for each column
+			// it could be manageable by storing the permutation as a sequence of swaps, each column removing a swap compared to the one on the left
+
+			// if we do not do this and do not change it for the current column then need to remember
+			// which pivots have not been drawn yet
+			// can have the list of pivots so far, which defines the order in which U needs to be
+			// traversed when updating the current column; seems very elaborate
+
+			// actually by not swapping the pointers to blocks and rather swapping the contents
+			// it's possible to maintain the sorted order of blocks in each column. their sizes
+			// are guaranteed to be the same (we choose the pivot so as to not change the block
+			// layout)
+
+			{
+				//_ASSERTE(!r_t_dest_col_L.block_list.empty() &&
+				//	r_t_dest_col_L.block_list.front().first == k);
+				// not guaranteed on input if the matrix does not have a full diagonal
+
+				std::vector<TColumn::TBlockEntry>::iterator p_block_it =
+					r_t_dest_col_L.block_list.begin() + n_pivot_index;
+					/*std::find(r_t_dest_col_L.block_list.begin(), r_t_dest_col_L.block_list.end(),
+					n_pivot_block, CCompareBlockRow());*/
+				_ASSERTE((*p_block_it).first == n_pivot_block);
+				_ASSERTE(p_block_it != r_t_dest_col_L.block_list.end());
+				// there must be n_pivot_block in there if it chose it for the pivot (there might
+				// not be block k if the matrix does not have a full diagonal)
+
+				_ASSERTE(CDebug::b_IsStrictlySortedSet(r_t_dest_col_L.block_list.begin(), r_t_dest_col_L.block_list.end()));
+
+				if(p_block_it != r_t_dest_col_L.block_list.begin()) { // do we actually swap anything?
+					if(/*(*p_block_it)*/r_t_dest_col_L.block_list.front().first == k) { // depends on whether the diagonal is present or not
+						std::swap(*p_block_it, r_t_dest_col_L.block_list.front()); // put the block at the beginning so that the pivot is at the beginning
+						(*p_block_it).first = n_pivot_block; // this is the former block k
+					} else {
+						std::rotate(r_t_dest_col_L.block_list.begin(), p_block_it, p_block_it + 1); // there is no block k
+						_ASSERTE(!col_pattern[k] && col_pattern[n_pivot_block]);
+						col_pattern[k].flip();
+						col_pattern[n_pivot_block].flip(); // !!
+						// the diagonal not present, nothing to swap with. just rotate the pivot to the front of the list
+					}
+					_ASSERTE(r_t_dest_col_L.block_list.front().first == n_pivot_block);
+					r_t_dest_col_L.block_list.front().first = k;
+				} else {
+					_ASSERTE(r_t_dest_col_L.block_list.front().first == n_pivot_block); // the first is the pivot
+					_ASSERTE(std::find_if(r_t_dest_col_L.block_list.begin(), r_t_dest_col_L.block_list.end(),
+						CFindBlockRow_Unordered(k)) == r_t_dest_col_L.block_list.end());
+					if(n_pivot_block != k) {
+						_ASSERTE(!col_pattern[k] && col_pattern[n_pivot_block]);
+						col_pattern[k].flip();
+						col_pattern[n_pivot_block].flip(); // !!
+					}
+					(*p_block_it).first = k;
+				}
+				// put the new pivot block to the beginning of this csc column, reassign its row index to be k
+				// this should not break the ordering of L
+
+				_ASSERTE(CDebug::b_IsStrictlySortedSet(r_t_dest_col_L.block_list.begin(), r_t_dest_col_L.block_list.end()));
+				_ASSERTE(!r_t_dest_col_L.block_list.empty() &&
+					r_t_dest_col_L.block_list.front().first == k); // make sure the first is still the diagonal block here
+			}
+			// change the block rows in the current column
+
+			//std::swap(dense_col.middleRows(n_col_k_org, n_col_k_width),
+			//	dense_col.middleRows(n_row_p_org, n_row_p_height)); // this actually works, but not on g++
+			dense_col.middleRows(n_col_k_org, n_col_k_width).swap(
+				dense_col.middleRows(n_row_p_org, n_row_p_height)); // this actually works, but not on g++
+			// swap the rows in the current column data so that the pivot data would be at row k
+		}
+		// permute the lower triangle so far
+
+		// note - the pivoting breaks block order in L and not even the dense column helps to sort it,
+		//        maybe then can allocate directly in the pooled storage and avoid the copy (and only keep
+		//        a dense index or better yet a pointer array that tells where each block is found)
+
+		size_t n_nnz_pivots; // can only be less than block size if doing full intrablock pivoting
+		DCBlockXd pivot_block(dense_col.middleRows(n_col_k_org, n_col_k_width)); // symmetric layout
+		if(!b_full_intrablock_pivoting) {
+			Eigen::PartialPivLU<Eigen::MatrixXd> pivot_LU(pivot_block); // factorize the pivot block (must be invertible)
+			pivot_block = pivot_LU.matrixLU(); // todo - use Eigen inplace LU to avoid copy (a new feature in the new Eigen)
+			// do LU, write the result back (could do inplace factorization in the new Eigen)
+
+			TPermVecMap rperm_map((ptrdiff_t*)p_row_perm + n_col_k_org, n_col_k_width);
+			rperm_map = pivot_LU.permutationP().indices().cast<ptrdiff_t>();
+			// write the block permutation to the global permutation vector
+
+			n_nnz_pivots = n_col_k_width; // partially pivoted LU is not rank revealing
+		} else {
+			Eigen::FullPivLU<Eigen::MatrixXd> pivot_LU(pivot_block); // factorize the pivot block (no requirements)
+			pivot_block = pivot_LU.matrixLU();
+			// do LU, write the result back (could do inplace factorization in the new Eigen)
+
+			n_nnz_pivots = pivot_LU.nonzeroPivots();
+			if(n_nnz_pivots != n_col_k_width && !b_had_empty_col) // ignore the case when the column was zero all along (not just the pivot)
+				b_had_deficient_pivots = true;
+			// get the number of the nonzero pivots (those are sorted first in the permutation)
+
+			TPermVecMap rperm_map((ptrdiff_t*)p_row_perm + n_col_k_org, n_col_k_width);
+			rperm_map = pivot_LU.permutationP().indices().cast<ptrdiff_t>();
+			TPermVecMap cperm_map((ptrdiff_t*)p_col_perm + n_col_k_org, n_col_k_width);
+			cperm_map = pivot_LU.permutationQ().indices().cast<ptrdiff_t>();
+			// write the block permutation to the global permutation vector
+
+			const Eigen::PermutationMatrix<Eigen::Dynamic> &Q = pivot_LU.permutationQ();
+			for(size_t i = 0, n = r_t_dest_col_U.block_list.size(); i < n; ++ i) { // all the nonzero blocks strictly above the pivot choose the block cols to the left of the current diagonal
+				const size_t n_row_i = r_t_dest_col_U.block_list[i].first;
+				_ASSERTE(n_row_i < k); // strictly upper
+				const size_t n_row_i_org = A_struct.m_block_cols_list[n_row_i].n_cumulative_width_sum;
+				const size_t n_row_i_height = A_struct.m_block_cols_list[n_row_i].n_width; // has a symmetric layout
+
+				DCBlockXd ik_block(dense_col.middleRows(n_row_i_org, n_row_i_height)); // a block in U
+				ik_block *= Q;
+			}
+			// repermute the blocks above the diagonal in the current block column
+		}
+		// factorize the pivot block without touching anything else; could restore if we failed, could pivot inside arbitrarily
+		// this works as a proof of concept for the block pivoting LU
+
+		/*double f_last = pivot_block(pivot_block.rows() - 1, pivot_block.cols() - 1);
+		_ASSERTE(!_isnan(f_last) && _finite(f_last));*/ // debug
+
+		_ASSERTE(!r_t_dest_col_L.block_list.empty() &&
+			r_t_dest_col_L.block_list.front().first == k); // make sure we're skipping the diagonal block here
+		for(size_t i = 1, n = r_t_dest_col_L.block_list.size(); i < n; ++ i) { // for all blocks in L, below block kk (start at 1 to skip the diag block)
+			const size_t n_row_i = r_t_dest_col_L.block_list[i].first;
+			const size_t n_row_i_org = A_struct.m_block_cols_list[n_row_i].n_cumulative_width_sum;
+			const size_t n_row_i_height = A_struct.m_block_cols_list[n_row_i].n_width; // has a symmetric layout
+
+			DCBlockXd ik_block(dense_col.middleRows(n_row_i_org, n_row_i_height));
+
+			if(b_full_intrablock_pivoting) {
+				TPermVecConstMap cperm_map((ptrdiff_t*)p_col_perm + n_col_k_org, n_col_k_width);
+				TPermMatrixConstMap Q(cperm_map);
+				if(n_nnz_pivots == n_col_k_width)
+					ik_block = (pivot_block.triangularView<Eigen::Upper>().solve<Eigen::OnTheRight>(ik_block * Q));
+				else {
+					_ASSERTE(n_nnz_pivots < n_col_k_width);
+					ik_block *= Q;
+					pivot_block.topLeftCorner(n_nnz_pivots,
+						n_nnz_pivots).triangularView<Eigen::Upper>().solveInPlace<Eigen::OnTheRight>(
+						ik_block.leftCols(n_nnz_pivots));
+					f_max_lower_rank_def = std::max(f_max_lower_rank_def,
+						ik_block.rightCols(n_col_k_width - n_nnz_pivots).lpNorm<Eigen::Infinity>());
+					ik_block.rightCols(n_col_k_width - n_nnz_pivots).setZero(); // could see what the norm of this is, if nonzero then need to a) fail or b) perform block row splicing (not sure if that just shifts the problem elsewhere)
+				}
+			} else
+				pivot_block.triangularView<Eigen::Upper>().solveInPlace<Eigen::OnTheRight>(ik_block);
+			// use <Eigen::OnTheRight> instead of transposing both the triangular and the solved matrix, seems less dodgy
+		}
+		// resolve the block column under the pivot block (no fill-in in here, just follows the structure)
+
+		if(b_full_intrablock_pivoting) {
+			TPermVecMap cperm_map((ptrdiff_t*)p_col_perm + n_col_k_org, n_col_k_width);
+			cperm_map.array() += n_col_k_org; // the intrablock column permutation has no effect on other columns, only row permutation does
+		}
+		// apply block offset to the column perm indices (won't be needed anymore)
+
+		for(size_t i = 0, n = r_t_dest_col_U.block_list.size(); i < n; ++ i) { // for all blocks in U part of this column
+			const size_t n_row_i = r_t_dest_col_U.block_list[i].first;
+
+			_ASSERTE(col_pattern[n_row_i]);
+			col_pattern[n_row_i].flip(); // unflip
+
+			const size_t n_row_i_org = A_struct.m_block_cols_list[n_row_i].n_cumulative_width_sum;
+			const size_t n_row_i_height = A_struct.m_block_cols_list[n_row_i].n_width; // has a symmetric layout
+
+			const DCBlockXd ik_block(dense_col.middleRows(n_row_i_org, n_row_i_height));
+
+			double *p_data = resultU.p_Get_DenseStorage(n_row_i_height * n_col_k_width);
+			_ASSERTE(!r_t_dest_col_U.block_list[i].second);
+			r_t_dest_col_U.block_list[i].second = p_data;
+			_TyMatrixXdRef t_dest(p_data, n_row_i_height, n_col_k_width);
+			t_dest = ik_block;
+		}
+		if(b_partial_interblock_pivoting) { // don't move this, want to free the memory now so that it could be potentially allocated to another column in this structure
+			std::vector<size_t> empty;
+			LT_block_pattern[block_row_perm[k]].swap(empty); // not k but block_row_perm[k]!
+			// won't pivot row k anymore, don't need to hold this array (so free the memory)
+		}
+		for(size_t i = 0, n = r_t_dest_col_L.block_list.size(); i < n; ++ i) { // for all blocks in L part of this column (the first one is the diag block)
+			const size_t n_row_i = r_t_dest_col_L.block_list[i].first;
+
+			_ASSERTE(col_pattern[n_row_i]); // note that U still does not contain the diag block so we are guaranteed to not flip it twice
+			col_pattern[n_row_i].flip(); // unflip
+
+			if(b_partial_interblock_pivoting && n_row_i > k)
+				LT_block_pattern[block_row_perm[n_row_i]].push_back(k); // t_odo - permute this to not have to permute the rows
+			// keep a transpose structure of L for the needs of pivoting
+
+			const size_t n_row_i_org = A_struct.m_block_cols_list[n_row_i].n_cumulative_width_sum;
+			const size_t n_row_i_height = A_struct.m_block_cols_list[n_row_i].n_width; // has a symmetric layout
+
+			const DCBlockXd ik_block(dense_col.middleRows(n_row_i_org, n_row_i_height));
+
+			double *p_data = resultL.p_Get_DenseStorage(n_row_i_height * n_col_k_width);
+			_ASSERTE(!r_t_dest_col_L.block_list[i].second);
+			r_t_dest_col_L.block_list[i].second = p_data;
+			_TyMatrixXdRef t_dest(p_data, n_row_i_height, n_col_k_width);
+			if(i)
+				t_dest = ik_block;
+			else {
+				_ASSERTE(n_row_i == k); // thats the diagonal block
+				t_dest = ik_block.triangularView<Eigen::UnitLower>();
+			}
+		}
+		// scatter the computed nonzero blocks to the dense storage (will copy the blocks into the pool in true sparse block version)
+		// unflip the nonzero array for the current column (only adds a constant cost to each nonzero
+		// produced, which ends up being much less than if we rezeroed the whole column every time)
+
+		_ASSERTE(CDebug::b_IsStrictlySortedSet(r_t_dest_col_L.block_list.begin(), r_t_dest_col_L.block_list.end()));
+		_ASSERTE(CDebug::b_IsStrictlySortedSet(r_t_dest_col_U.block_list.begin(), r_t_dest_col_U.block_list.end()));
+		// make sure they're both sorted or at least that U is and that the first element in L always corresponds to the pivot
+
+		_ASSERTE(r_t_dest_col_L.block_list.empty() || r_t_dest_col_U.block_list.empty() ||
+			r_t_dest_col_U.block_list.back().first < r_t_dest_col_L.block_list.front().first);
+		// make sure that the L and U do not overlap (except for the diagonal)
+
+		{
+			double *p_data = resultU.p_Get_DenseStorage(n_col_k_width * n_col_k_width);
+			_TyMatrixXdRef t_dest(p_data, n_col_k_width, n_col_k_width);
+
+			const DCBlockXd kk_block(dense_col.middleRows(n_col_k_org, n_col_k_width));
+			t_dest = kk_block.triangularView<Eigen::Upper>();
+
+			//t_dest = _TyConstMatrixXdRef(r_t_dest_col_L.block_list.front().second, n_col_k_width, n_col_k_width).triangularView<Eigen::Upper>();
+
+			//_TyMatrixXdRef(r_t_dest_col_L.block_list.front().second, n_col_k_width, n_col_k_width).triangularView<Eigen::StrictlyUpper>().setZero();
+			//_TyMatrixXdRef(r_t_dest_col_L.block_list.front().second, n_col_k_width, n_col_k_width).diagonal().setConstant(1.0);
+
+			r_t_dest_col_U.block_list.push_back(TColumn::TBlockEntry(k, p_data));
+		}
+		// now insert the diagonal entry in the U matrix, the whole time this column of U did not have it
+	}
+	// main LU loop
+
+	for(size_t k = 0, o = resultL.m_block_cols_list.size(); k < o; ++ k) { // loop over block columns
+		const TColumn &r_t_dest_col_L = resultL.m_block_cols_list[k];
+		const size_t n_col_k_org = r_t_dest_col_L.n_cumulative_width_sum;
+		const size_t n_col_k_width = r_t_dest_col_L.n_width;
+
+		_ASSERTE(!r_t_dest_col_L.block_list.empty() &&
+			r_t_dest_col_L.block_list.front().first == k); // make sure we're skipping the diagonal block here
+		for(size_t j = 1, m = r_t_dest_col_L.block_list.size(); j < m; ++ j) {
+			size_t n_row_j = r_t_dest_col_L.block_list[j].first;
+			_ASSERTE(n_row_j > k); // row > column
+			const size_t n_row_j_org = resultL.m_block_cols_list[n_row_j].n_cumulative_width_sum;
+			const size_t n_row_j_height = resultL.m_block_cols_list[n_row_j].n_width; // has a symmetric layout
+
+			TPermVecConstMap perm_map((ptrdiff_t*)p_row_perm + n_row_j_org, n_row_j_height);
+			TPermMatrixConstMap P(perm_map); // t_odo - figure out how to do a map to a perm matrix
+
+			_TyMatrixXdRef block_jk(r_t_dest_col_L.block_list[j].second, n_row_j_height, n_col_k_width);
+			block_jk = P * block_jk;
+		}
+		// reorder all block rows below the current block column diagonal (not the pivot)
+
+		// at this point, permutation for row bk will not be needed anymore because
+		// in the rest of the columns this is on or above the diagonal
+	}
+	// pivoting the diagonal block requires re-permuting the lower triangle. but since the factorization
+	// is right-looking, we can do this at the end, rather than repeatedly searching for blocks in the
+	// current block row
+
+	if(b_partial_interblock_pivoting) {
+		std::vector<size_t> &intrablock_row_perm_copy = block_row_perm; // reuse storage
+		intrablock_row_perm_copy.clear();
+		intrablock_row_perm_copy.insert(intrablock_row_perm_copy.end(),
+			p_row_perm, p_row_perm + A_struct.m_n_row_num);
+
+		for(size_t n_dest = 0, i = 0, n = block_row_invperm.size(); i < n; ++ i) { // loop over block perm
+			const TColumn &r_t_col_p = resultL.m_block_cols_list[block_row_invperm[i]];
+			const size_t n_row_p_org = r_t_col_p.n_cumulative_width_sum;
+			const size_t n_row_p_height = r_t_col_p.n_width;
+			for(size_t j = 0; j < n_row_p_height; ++ j, ++ n_dest)
+				p_row_perm[n_dest] = intrablock_row_perm_copy[n_row_p_org + j] + n_row_p_org;
+		}
+		// expand the block row permutation to elementwise permutation
+		// and compose the permutations to get the final one
+	}
+
+	if(b_had_deficient_pivots)
+		printf("warning: had rank-deficient pivots (max off-diag %g)\n", f_max_lower_rank_def); // put it to stdout to be able to see it in otder in the log
+	// debug
 
 	return true;
 }
@@ -9552,7 +11420,7 @@ void CUberBlockMatrix::InverseOf_Symmteric(const CUberBlockMatrix &r_A, bool b_u
 			size_t n_row_id = r_src_block.first;
 			const double *p_data = r_src_block.second;
 			size_t n_row_height = r_A.m_block_cols_list[n_row_id].n_width;
-			_TyMatrixXdRef src_block((double*)p_data, n_row_height, r_t_col.n_width);
+			_TyConstMatrixXdRef src_block(p_data, n_row_height, r_t_col.n_width);
 			// make a map of the source block
 
 			_ASSERTE(!b_upper_triangular_source || n_row_id == n_begin);
@@ -9599,7 +11467,7 @@ void CUberBlockMatrix::InverseOf_Symmteric(const CUberBlockMatrix &r_A, bool b_u
 						size_t n_row_height = r_A.m_block_cols_list[n_row_id].n_width;
 						// is symmetric
 
-						_TyMatrixXdRef fill_block((double*)p_data, n_row_height, r_t_col.n_width);
+						_TyConstMatrixXdRef fill_block(p_data, n_row_height, r_t_col.n_width);
 						// make a map
 
 						dense.block(n_row_org - n_first_col, n_dest_column_org,
@@ -10093,26 +11961,16 @@ bool CUberBlockMatrix::Load_MatrixMarket_Layout(const char *p_s_filename) // thr
 			// make sure it figures
 
 			for(int n_pass = 0;; ++ n_pass) {
-#if defined(_MSC_VER) && !defined(__MWERKS__) && _MSC_VER >= 1400
 				_TyRowConstIter p_row_it = std::upper_bound(m_block_rows_list.begin(),
 					m_block_rows_list.end(), n_rowi, CFindLowerRow());
-#else // _MSC_VER && !__MWERKS__ && _MSC_VER >= 1400
-				_TyRowConstIter p_row_it = std::upper_bound(m_block_rows_list.begin(),
-					m_block_rows_list.end(), n_rowi, _FindLowerRow);
-#endif // _MSC_VER && !__MWERKS__ && _MSC_VER >= 1400
 				_ASSERTE(p_row_it != m_block_rows_list.begin()); // should start with zero, n_rowi is nonnegative
 				-- p_row_it;
 				const TRow &r_t_row = *p_row_it;
 				_ASSERTE(r_t_row.n_cumulative_height_sum <= n_rowi &&
 					r_t_row.n_cumulative_height_sum + r_t_row.n_height > n_rowi); // make sure it's it
 				//
-#if defined(_MSC_VER) && !defined(__MWERKS__) && _MSC_VER >= 1400
 				_TyColumnIter p_col_it = std::upper_bound(m_block_cols_list.begin(),
 					m_block_cols_list.end(), n_coli, CFindLowerColumn()); // t_odo
-#else // _MSC_VER && !__MWERKS__ && _MSC_VER >= 1400
-				_TyColumnIter p_col_it = std::upper_bound(m_block_cols_list.begin(),
-					m_block_cols_list.end(), n_coli, _FindLowerColumn); // t_odo
-#endif // _MSC_VER && !__MWERKS__ && _MSC_VER >= 1400
 				_ASSERTE(p_col_it != m_block_cols_list.begin()); // should start with zero, n_rowi is nonnegative
 				-- p_col_it;
 				TColumn &r_t_col = *p_col_it;
@@ -10170,6 +12028,35 @@ bool CUberBlockMatrix::Load_MatrixMarket_Layout(const char *p_s_filename) // thr
 	CheckIntegrity(true);
 	// make sure the matrix is ok
 
+	bool b_ordered = !b_symmetric; // symmetric matrices are unordered because of the scatter to the lower triangle
+	if(b_ordered) {
+		size_t n_prev_off = 0;
+		for(size_t i = 0, n = m_block_cols_list.size(); i < n; ++ i) {
+			const std::vector<TColumn::TBlockEntry> &r_col = m_block_cols_list[i].block_list;
+			for(size_t j = 0, m = r_col.size(); j < m; ++ j) {
+				size_t n_off = m_data_pool.index_of(r_col[j].second);
+				// need an offset; the pages may not have monotonically increasing addresses
+
+				if(n_off < n_prev_off) {
+					b_ordered = false;
+					i = n - 1; // break out of the outer loop as well
+					break;
+				}
+				n_prev_off = n_off;
+			}
+		}
+	}
+	if(!b_ordered) {
+		try {
+			CUberBlockMatrix copy = *this;
+			Swap(copy);
+		} catch(std::bad_alloc&) {
+			// ignore the error, the matrix is loaded, just not ordered
+		}
+	}
+	// the matrix may have allocated the blocks in bad order, see if that
+	// is the case (it depends on the file)
+
 	return true;
 }
 
@@ -10200,7 +12087,7 @@ bool CUberBlockMatrix::Save_BlockLayout(const char *p_s_layout_filename) const
 		fprintf(p_fw, PRIsize " ", n_BlockColumn_Base(i));
 	fprintf(p_fw, PRIsize "\n", n_columns);
 	bool b_result = !ferror(p_fw);
-	fclose(p_fw);
+	b_result = !fclose(p_fw) && b_result;
 	// save the block layout
 
 	return b_result;
@@ -10308,9 +12195,7 @@ bool CUberBlockMatrix::Save_MatrixMarket(const char *p_s_filename,
 		fclose(p_fw);
 		return false;
 	}
-	fclose(p_fw);
-
-	return true;
+	return !fclose(p_fw);
 }
 
 #endif // __UBER_BLOCK_MATRIX_IO

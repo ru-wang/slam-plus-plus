@@ -17,6 +17,13 @@
  *	@date 2013-02-07
  */
 
+#if defined(_MSC_VER) && !defined(__MWERKS__)
+#pragma warning(disable: 4996)
+// get rid of VS warning "C4996: 'std::copy': Function call with parameters that may be
+// unsafe - this call relies on the caller to check that the passed values are correct"
+#endif // _MSC_VER && !__MWERKS__
+// VS 2015 requires this to be here, before the headers are included
+
 #include <math.h>
 #include <stdio.h>
 #include "csparse/cs.hpp"
@@ -694,6 +701,7 @@ extern void libmetis__genmmd(idx_t neqns, idx_t *xadj, idx_t *adjncy, idx_t *inv
 const size_t *CMatrixOrdering::p_BlockOrdering(const CUberBlockMatrix &r_A,
 	bool b_need_inverse /*= false*/, bool b_A_is_upper_triangular /*= true*/) // throw(std::bad_alloc)
 {
+	_ASSERTE(!r_A.b_Empty());
 	_ASSERTE(r_A.b_Square_BlockSquare());
 
 #ifdef __MATRIX_ORDERING_USE_MMD
@@ -2314,12 +2322,6 @@ size_t CMatrixOrdering::n_Find_BlockStructure_Subgraphs(std::vector<size_t> &r_v
  *								=== CMatrixTransposeSum ===
  */
 
-#if defined(_MSC_VER) && !defined(__MWERKS__)
-#pragma warning(disable: 4996)
-// get rid of VS warning "C4996: 'std::copy': Function call with parameters that may be
-// unsafe - this call relies on the caller to check that the passed values are correct"
-#endif // _MSC_VER && !__MWERKS__
-
 size_t CMatrixTransposeSum::n_ColumnLengths_AAT_Ref(size_t *p_column_lengths,
 	size_t n_length_num, const cs *p_matrix, bool b_AAT_with_diagonal /*= false*/) // throw(std::bad_alloc)
 {
@@ -2421,7 +2423,7 @@ size_t CMatrixTransposeSum::n_ColumnLengths_AATNoDiag(size_t *p_column_lengths, 
 		const size_t p2 = Ap[i + 1]; // don't modify, will become the next p1
 		_ASSERTE(CDebug::b_IsStrictlySortedSet(Ai + p1, Ai + p2)); // must be sorted
 		const csi *p_diag = std::lower_bound(Ai + p1, Ai + p2, csi(i)); // find the diagonal // in case the matrix is strictly upper, then this is a slight waste of time
-		if(p_diag != Ai + p2 && *p_diag == i) { // in case there is a diagonal element
+		if(p_diag != Ai + p2 && size_t(*p_diag) == i) { // in case there is a diagonal element
 			++ n_diag_nnz_num;
 			p_transpose_col_off[i] = p_diag - (Ai /*+ p1*/) + 1; // point to the first below-diagonal element
 		} else {
@@ -2681,7 +2683,7 @@ void CMatrixTransposeSum::AATNoDiag(size_t *p_column_ptrs, size_t n_column_ptr_n
 		const size_t p2 = Ap[i + 1]; // don't modify, will become the next p1
 		_ASSERTE(CDebug::b_IsStrictlySortedSet(Ai + p1, Ai + p2)); // must be sorted
 		const csi *p_diag = std::lower_bound(Ai + p1, Ai + p2, csi(i)); // find the diagonal // in case the matrix is strictly upper, then this is a slight waste of time
-		if(p_diag != Ai + p2 && *p_diag == i) { // in case there is a diagonal element
+		if(p_diag != Ai + p2 && size_t(*p_diag) == i) { // in case there is a diagonal element
 			++ n_diag_nnz_num;
 			p_transpose_col_off[i] = p_diag - (Ai /*+ p1*/) + 1; // point to the first below-diagonal element
 		} else {

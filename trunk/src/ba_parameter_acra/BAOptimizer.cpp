@@ -235,13 +235,13 @@ void CBAOptimizer::Optimize(size_t n_max_iteration_num /*= 5*/, double f_min_dx_
 {
 	m_p_optimizer->r_Solver().Optimize(n_max_iteration_num, f_min_dx_norm);
 
-	static size_t n_iteration = 0;
+	/*static size_t n_iteration = 0;
 	char p_s_filename[256];
 	sprintf(p_s_filename, "lambda_struct_dx_%05" _PRIsize ".tga", n_iteration);
 	++ n_iteration;
 	cs *p_bs = m_p_optimizer->r_Solver().r_Lambda().p_BlockStructure_to_Sparse();
 	Dump_SparseMatrix_SubsampleDx(p_s_filename, p_bs, m_p_optimizer->r_Solver().r_v_LastDx(), 640, true);
-	cs_spfree(p_bs);
+	cs_spfree(p_bs);*/
 }
 
 /*void CBAOptimizer::Add_CamVertex(size_t n_vertex_id, const Eigen::Matrix<double, 11, 1> &v_cam_state) // throw(srd::bad_alloc)
@@ -354,7 +354,7 @@ Eigen::Vector3d CBAOptimizer::v_XYZVertex_Global(size_t n_vertex_id) const
 #ifdef LANDMARKS_LOCAL
 	_ASSERTE(m_camera_ownerships.count(n_vertex_id)); // make sure this is owned by a camera and the next line does not in fact add a new record
 	size_t n_observing_camera_id = (*m_camera_ownerships.find(n_vertex_id)).second;
-	if(n_observing_camera_id == -1)
+	if(n_observing_camera_id == size_t(-1))
 		throw std::runtime_error("global vertices not permitted in local mode");
 	/*if(n_observing_camera_id == size_t(-1))
 		return v_LandmarkState_XYZ(n_vertex_id); // not much to do about it
@@ -422,7 +422,7 @@ void CBAOptimizer::Add_P2CSim3GEdge(size_t n_landmark_vertex_id, size_t n_cam_ve
 {
 #ifdef LANDMARKS_LOCAL
 	size_t n_owner_camera_id = (*m_camera_ownerships.find(n_landmark_vertex_id)).second;
-	if(n_owner_camera_id == -1)
+	if(n_owner_camera_id == size_t(-1))
 		throw std::runtime_error("global vertices not permitted in local mode");
 	if(n_cam_vertex_id == n_owner_camera_id) {
 		m_p_optimizer->r_System().r_Add_Edge(_TyObservationS(n_landmark_vertex_id, n_cam_vertex_id, // landmark, observing = owner
@@ -723,6 +723,9 @@ void CBAOptimizer::Show_Stats() const
 		printf("approximate condition number of the information matrix is %.10g (min diag %g, max diag %g)\n",
 			f_max_diag / f_min_diag, f_min_diag, f_max_diag);
 	}
+
+	return; // ommit the detailed results
+
 	cs *p_bs = m_p_optimizer->r_Solver().r_Lambda().p_BlockStructure_to_Sparse();
 	/*m_p_optimizer->r_Solver().r_Lambda().Rasterize("lambda_5.tga", 5);
 	m_p_optimizer->r_Solver().r_Lambda().Rasterize("lambda_3.tga", 3);
@@ -736,7 +739,7 @@ void CBAOptimizer::Show_Stats() const
 	//	"symmetric block matrix", "matrix coordinate real symmetric", 'U'); // save as symmetric, keep in mind that only the upper triangular is stored
 	// save some space
 	try {
-		printf("debug: trying to use Armadillo for eigenvalues\n");
+		printf("debug: trying to use ARPACK for eigenvalues\n");
 
 		cs *p_matrix_csc;
 		{
@@ -771,7 +774,7 @@ void CBAOptimizer::Show_Stats() const
 		printf("condition number of the information matrix is %.10g (min eig %g, max eig %g)\n",
 			f_max_eig / f_min_eig, f_min_eig, f_max_eig);
 	} catch(std::exception&) {
-		fprintf(stderr, "error: failed to calculate the condition number with Armadillo\n");
+		fprintf(stderr, "error: failed to calculate the condition number with ARPACK\n");
 	}
 }
 
@@ -843,8 +846,7 @@ bool CBAOptimizer::Dump_State_SE3(const char *p_s_filename) const
 		return false;
 	}
 
-	fclose(p_fw);
-	return true;
+	return !fclose(p_fw);
 }
 
 bool CBAOptimizer::Dump_Poses_SE3(const char *p_s_filename) const
@@ -863,8 +865,7 @@ bool CBAOptimizer::Dump_Poses_SE3(const char *p_s_filename) const
 		return false;
 	}
 
-	fclose(p_fw);
-	return true;
+	return !fclose(p_fw);
 }
 
 /**
@@ -1004,8 +1005,7 @@ bool CBAOptimizer::Dump_Graph_SE3(const char *p_s_filename) const
 		return false;
 	}
 
-	fclose(p_fw);
-	return true;
+	return !fclose(p_fw);
 }
 
 /*

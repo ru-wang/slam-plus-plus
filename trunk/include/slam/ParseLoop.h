@@ -22,6 +22,7 @@
  */
 
 #include <map>
+#include "TypeName.h"
 
 /** \addtogroup parser
  *	@{
@@ -246,7 +247,13 @@ protected:
 			const CParsedEdge &UNUSED(r_edge)/*, std::map<std::pair<size_t, size_t>, size_t> &UNUSED(r_edge_map)*/) // throw(std::runtime_error)
 		{
 			typedef CEdgeTraits<CParsedEdge> TEdgeType; // g++ doesn't like 'typename' here
-			throw std::runtime_error(TEdgeType::p_s_Reason());
+			std::string s_reason = TEdgeType::p_s_Reason();
+			s_reason += " (";
+			s_reason += s_TypeName<CParsedEdge>();
+			s_reason += " not present or forbidden in ";
+			s_reason += s_TypeName<TEdgeType>();
+			s_reason += ")";
+			throw std::runtime_error(s_reason);
 			// "CParseLoop encountered edge type that is not permitted by the configuration"
 		}
 	};
@@ -316,7 +323,13 @@ protected:
 		static inline void Do(CSystem &UNUSED(r_system), const CParsedVertex &UNUSED(r_vertex)) // throw(std::runtime_error)
 		{
 			typedef CVertexTraits<CParsedVertex> TVertexType; // g++ doesn't like 'typename' here
-			throw std::runtime_error(TVertexType::p_s_Reason());
+			std::string s_reason = TVertexType::p_s_Reason();
+			s_reason += " (";
+			s_reason += s_TypeName<CParsedVertex>();
+			s_reason += " not present or forbidden in ";
+			s_reason += s_TypeName<TVertexType>();
+			s_reason += ")";
+			throw std::runtime_error(s_reason);
 			// "CParseLoop encountered vertex type that is not permitted by the configuration"
 		}
 	};

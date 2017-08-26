@@ -19,6 +19,12 @@
  *	@date 2012
  *	@author -tHE SWINe-
  *	@brief the ÜberBlockMatrix base class
+ *
+ *	@date 2017-05-02
+ *
+ *	Changed the alignment rules to better accomodate new Eigen 3.3 features (increased
+ *	alignment for AVX instruction sets, no alignment for unaligned vectorization).
+ *
  */
 
 /** \addtogroup ubm
@@ -78,6 +84,24 @@
 #define __UBER_BLOCK_MATRIX_MULTIPLICATION_LINEAR
 
 /**
+ *	@def __UBER_BLOCK_MATRIX_MULTIPLICATION_GUSTAVSON
+ *	@brief uses another block matrix multiplication with constant time block
+ *		seeking, making the bookkeeping time lower (there is some constant
+ *		overhead, so probably not good for small matrices)
+ *	@note This takes precedence over \ref __UBER_BLOCK_MATRIX_MULTIPLICATION_LINEAR.
+ */
+//#define __UBER_BLOCK_MATRIX_MULTIPLICATION_GUSTAVSON
+
+/**
+ *	@def __UBER_BLOCK_MATRIX_LEGACY_FBS_GEMM
+ *	@brief if defined, the legacy decision hand-coded tree code is used instead
+ *		of the new-style fbs_ut::CWrap3<> one; if not defined, either the
+ *		\ref MultiplyToWith_TransposeSort_FBS() or \ref MultiplyToWith_AccumLookup_FBS()
+ *		variant is called from inside \ref MultiplyToWith_FBS()
+ */
+//#define __UBER_BLOCK_MATRIX_LEGACY_FBS_GEMM
+
+/**
  *	@def __UBER_BLOCK_MATRIX_HYBRID_AT_A
  *	@brief uses hybrid block matrix multiplication for (pre)multiplying
  *		the matrix by its transpose
@@ -98,8 +122,8 @@
 
 /**
  *	@def __UBER_BLOCK_MATRIX_ALIGN_BLOCK_MEMORY
- *	@brief aligns block memory to 16-bit boundaries in order to support SSE2
- *	@note This is forced in x64 evnironment.
+ *	@brief aligns block memory to 16 or 32-byte boundaries in order to support SSE or AVX
+ *	@note This also interacts with EIGEN_UNALIGNED_VECTORIZE.
  */
 //#define __UBER_BLOCK_MATRIX_ALIGN_BLOCK_MEMORY
 
@@ -188,10 +212,13 @@
 #include "eigen/Eigen/Cholesky" // dense Cholesky
 
 #if !defined(__UBER_BLOCK_MATRIX_ALIGN_BLOCK_MEMORY) && \
-	(defined(EIGEN_VECTORIZE) || defined(_M_X64) || defined(_M_AMD64) || \
-	defined(_M_IA64) || defined(__x86_64) || defined(__amd64) || defined(__ia64))
+	defined(EIGEN_VECTORIZE) && !defined(EIGEN_DONT_VECTORIZE) && \
+	(!defined(EIGEN_UNALIGNED_VECTORIZE) || EIGEN_UNALIGNED_VECTORIZE == 0)
+//	(defined(EIGEN_VECTORIZE) || defined(_M_X64) || defined(_M_AMD64) || \
+//	defined(_M_IA64) || defined(__x86_64) || defined(__amd64) || defined(__ia64))
 #define __UBER_BLOCK_MATRIX_ALIGN_BLOCK_MEMORY
-#endif // !__UBER_BLOCK_MATRIX_ALIGN_BLOCK_MEMORY && (EIGEN_VECTORIZE || _M_X64 || _M_AMD64 || _M_IA64 || __x86_64 || __amd64 || __ia64)
+#endif // !__UBER_BLOCK_MATRIX_ALIGN_BLOCK_MEMORY && EIGEN_VECTORIZE && !EIGEN_DONT_VECTORIZE && !EIGEN_UNALIGNED_VECTORIZE
+//&& (EIGEN_VECTORIZE || _M_X64 || _M_AMD64 || _M_IA64 || __x86_64 || __amd64 || __ia64)
 // force __UBER_BLOCK_MATRIX_ALIGN_BLOCK_MEMORY in x64,
 // also if EIGEN_VECTORIZE (practically if SSE2 is enabled in MSVC compiler settings)
 // this comes *after* eigen is included
@@ -239,6 +266,8 @@
 #define __forceinline inline
 #endif // !_MSC_VER || __MWERKS__
 
+class CGPU_BlockMatrix; // forward declaration
+
 /**
  *	@brief contains static assertion template for alignment check
  */
@@ -268,14 +297,23 @@ class CStaticAssert<false> {};
  *	@brief UberLame block matrix base class
  */
 class CUberBlockMatrix_Base {
+friend class ::CGPU_BlockMatrix;
 public:
 	/**
 	 *	@brief parameters, stored as enums
 	 */
 	enum {
 #ifdef __UBER_BLOCK_MATRIX_ALIGN_BLOCK_MEMORY
+#if EIGEN_VERSION_AT_LEAST(3, 3, 0)
+		pool_MemoryAlignment = EIGEN_IDEAL_MAX_ALIGN_BYTES, /**< @brief data storage memory alignment (in bytes) */
+		map_Alignment = (pool_MemoryAlignment == 8)? Eigen::Aligned8 :
+			(pool_MemoryAlignment == 32)? Eigen::Aligned32 :
+			(pool_MemoryAlignment == 64)? Eigen::Aligned64 :
+			(pool_MemoryAlignment == 128)? Eigen::Aligned128 :Eigen::Aligned16, /**< @brief alignment specification for aligned Eigen::Map */
+#else // EIGEN_VERSION_AT_LEAST(3, 3, 0)
 		pool_MemoryAlignment = 16, /**< @brief data storage memory alignment (in bytes) */
 		map_Alignment = Eigen::Aligned, /**< @brief alignment specification for aligned Eigen::Map */
+#endif // EIGEN_VERSION_AT_LEAST(3, 3, 0)
 #else // __UBER_BLOCK_MATRIX_ALIGN_BLOCK_MEMORY
 		pool_MemoryAlignment = 0, /**< @brief data storage memory alignment (in bytes) */
 		map_Alignment = Eigen::Unaligned, /**< @brief alignment specification for aligned Eigen::Map */
@@ -477,6 +515,72 @@ public:
 	// @todo - look into different sparse matrix representations (jagged diagonal, ...)
 
 	/**
+	 *	@brief equality comparison between row index in block entry and raw value
+	 *	@note This is intended to be used as a predicate for std::find_if() that
+	 *		can operate on unsorted arrays in intermediate matrices formed inside
+	 *		various algorithms. Note that the block matrices returned to the caller
+	 *		should always have the block entries sorted and std::lower_bound() is
+	 *		preferred. This is intended only for internal debugging.
+	 */
+	class CFindBlockRow_Unordered {
+	protected:
+		const size_t m_n_row_id; /**< @brief compared block row id */
+
+	public:
+		/**
+		 *	@brief default constructor
+		 *	@param[in] n_row_id is the compared block row id
+		 */
+		CFindBlockRow_Unordered(size_t n_row_id)
+			:m_n_row_id(n_row_id)
+		{}
+
+		/**
+		 *	@brief block entry row comparison operator
+		 *	@apram[in] r_t_block is const reference to a block entry
+		 *	@return Returns true if the block lies on the same block row
+		 *		as specified in the constructor, otherwise returns false.
+		 */
+		inline bool operator ()(const TColumn::TBlockEntry &r_t_block) const
+		{
+			return m_n_row_id == r_t_block.first;
+		}
+	};
+
+	/**
+	 *	@brief greater-than comparison between row index in block entry and raw value
+	 *	@note This is intended to be used as a predicate for std::find_if() that
+	 *		can operate on unsorted arrays in intermediate matrices formed inside
+	 *		various algorithms. Note that the block matrices returned to the caller
+	 *		should always have the block entries sorted and std::lower_bound() is
+	 *		preferred. This is intended only for internal debugging.
+	 */
+	class CFindGreaterBlockRow_Unordered {
+	protected:
+		const size_t m_n_row_id; /**< @brief compared block row id */
+
+	public:
+		/**
+		 *	@brief default constructor
+		 *	@param[in] n_row_id is the compared block row id
+		 */
+		CFindGreaterBlockRow_Unordered(size_t n_row_id)
+			:m_n_row_id(n_row_id)
+		{}
+
+		/**
+		 *	@brief block entry row comparison operator
+		 *	@apram[in] r_t_block is const reference to a block entry
+		 *	@return Returns true if the block lies on a greater row than
+		 *		specified in the constructor, otherwise returns false.
+		 */
+		inline bool operator ()(const TColumn::TBlockEntry &r_t_block) const
+		{
+			return m_n_row_id < r_t_block.first;
+		}
+	};
+
+	/**
 	 *	@brief comparison between row index in block entry and raw value
 	 *
 	 *	@note This is similar to CFindLowerRow, but operates on block entries
@@ -528,10 +632,6 @@ public:
 			return n_row_id < r_t_block.first;
 		}
 	};
-
-#if defined(_MSC_VER) && !defined(__MWERKS__) && _MSC_VER >= 1400
-	// MSVC 90 and up has predicate debugging;
-	// need to provide all kinds of predicates for that
 
 	/**
 	 *	@brief comparison between row height cumulative sum and raw value
@@ -630,91 +730,6 @@ public:
 			return n_column < r_t_column.n_cumulative_width_sum; // t_odo - why not >=? fix this.
 		}
 	};
-#else // _MSC_VER && !__MWERKS__ && _MSC_VER >= 1400
-	/**
-	 *	@brief comparison between row height cumulative sum and raw value
-	 *
-	 *	@param[in] r_t_row is row (only cumulative height sum is significant)
-	 *	@param[in] n_row is raw cumulative height sum value
-	 *
-	 *	@return Returns true if cumulative height sum of r_t_row is smaller than n_row,
-	 *		otherwise returns false.
-	 */
-	static inline bool FindLowerRow(const TRow &r_t_row, size_t n_row)
-	{
-		return r_t_row.n_cumulative_height_sum < n_row;
-	}
-
-	/**
-	 *	@brief comparison between row height cumulative sum and raw value
-	 *
-	 *	@param[in] n_row is raw cumulative height sum value
-	 *	@param[in] r_t_row is row (only cumulative height sum is significant)
-	 *
-	 *	@return Returns true if cumulative height sum of r_t_row is greater than n_row,
-	 *		otherwise returns false.
-	 */
-	static inline bool _FindLowerRow(size_t n_row, const TRow &r_t_row)
-	{
-		return n_row < r_t_row.n_cumulative_height_sum;
-	}
-
-	/**
-	 *	@brief comparison between column width cumulative sum and raw value
-	 *
-	 *	@param[in] r_t_column is column (only cumulative width sum is significant)
-	 *	@param[in] n_column is raw cumulative width sum value
-	 *
-	 *	@return Returns true if cumulative width sum of r_t_column is smaller than n_column,
-	 *		otherwise returns false.
-	 */
-	static inline bool FindLowerColumn(const TColumn &r_t_column, size_t n_column)
-	{
-		return r_t_column.n_cumulative_width_sum < n_column;
-	}
-
-	/**
-	 *	@brief comparison between column width cumulative sum and raw value
-	 *
-	 *	@param[in] n_column is raw cumulative width sum value
-	 *	@param[in] r_t_column is column (only cumulative width sum is significant)
-	 *
-	 *	@return Returns true if cumulative width sum of r_t_column is greater than n_column,
-	 *		otherwise returns false.
-	 */
-	static inline bool _FindLowerColumn(size_t n_column, const TColumn &r_t_column)
-	{
-		return n_column < r_t_column.n_cumulative_width_sum;
-	}
-
-	/**
-	 *	@brief comparison between row index in block entry and raw value
-	 *
-	 *	@param[in] r_t_block is block entry (only row index is significant)
-	 *	@param[in] n_row_id is (zero-based) row index
-	 *
-	 *	@return Returns true if row index of r_t_block is smaller than n_row_id,
-	 *		otherwise returns false.
-	 */
-	static inline bool CompareBlockRow(const TColumn::TBlockEntry &r_t_block, size_t n_row_id)
-	{
-		return r_t_block.first < n_row_id;
-	}
-
-	/**
-	 *	@brief comparison between row index in block entry and raw value
-	 *
-	 *	@param[in] n_row_id is (zero-based) row index
-	 *	@param[in] r_t_block is block entry (only row index is significant)
-	 *
-	 *	@return Returns true if row index of r_t_block is greater than n_row_id,
-	 *		otherwise returns false.
-	 */
-	static inline bool _CompareBlockRow(size_t n_row_id, const TColumn::TBlockEntry &r_t_block)
-	{
-		return n_row_id < r_t_block.first;
-	}
-#endif // _MSC_VER && !__MWERKS__ && _MSC_VER >= 1400
 
 #if defined(_DEBUG) && defined(__UBER_BLOCK_MATRIX_BUFFER_BOUNDS_CHECK)
 	/**
@@ -879,8 +894,7 @@ public:
 		CPoolType &m_r_pool; /**< @brief reference to the pool object */
 
 		/**
-		 *	@brief workarround for microsoft's shameful intellisense, which can't parse
-		 *		the '>' comparison of n_memory_align with zero inside a template arg
+		 *	@brief workarround for the '>' comparison of n_memory_align with zero inside a template arg
 		 */
 		enum {
 			alignment_Assert_Value = (n_memory_align > 0 && n_memory_align % sizeof(_Ty) == 0) /**< @brief value of the assert condition */
@@ -965,6 +979,14 @@ public:
 	public:
 		typedef forward_allocated_pool<T, _n_page_size_elems, 0> CPoolType; /**< @brief pool data type */
 		typedef typename CPoolType::_Ty _Ty; /**< @brief data type stored by the pool (double) */
+
+		/**
+		 *	@brief parameters, stored as enums
+		 */
+		enum {
+			n_memory_align = CPoolType::n_memory_alignment, /**< @brief pool memory alignment (bytes) */
+			n_memory_align_elem = n_memory_align / sizeof(_Ty) /**< @brief pool memory alignment (_Ty elements) */
+		};
 
 	protected:
 		CPoolType &m_r_pool; /**< @brief reference to the pool object */
@@ -1550,32 +1572,49 @@ public:
 
 			Check_Block_Alignment();
 			// that too
-		}
+		} else
+			Check_ModuleSettings(); // this is pretty cheap
 #endif // _DEBUG && !__UBER_BLOCK_MATRIX_DISABLE_INTEGRITY_CHECK
 	}
 
 	/**
-	 *	@brief checks matrix block alignment; available in release buildsas well
+	 *	@brief makes sure that the block matrix module was build with the same
+	 *		settings as the calling code
+	 *
+	 *	This is aimed towards checking for differences that would cause binary
+	 *	incompatibility, such as accessing data with different alignement and such.
+	 *
+	 *	If errors are detected, a message is also printed to stdout.
+	 *
+	 *	@param[in] n_pool_alignment is alignment of block data, in bytes
+	 *	@param[in] n_map_alignment is Eigen matrix alignment enum (e.g. \ref Eigen::Align or \ref Eigen::Align16)
+	 *	@param[in] b_debug_markers is debug markers flag
+	 *
+	 *	@return Returns true if no differences are detected, otherwise returns false.
 	 */
-	inline void Check_Block_Alignment() const
+	static bool Check_ModuleSettings(int n_pool_alignment, int n_map_alignment, bool b_debug_markers);
+
+	/**
+	 *	@brief makes sure that the block matrix module was build with the same
+	 *		settings as the calling code
+	 *
+	 *	This is aimed towards checking for differences that would cause binary
+	 *	incompatibility, such as accessing data with different alignement and such.
+	 *
+	 *	If errors are detected, a message is also printed to stderr.
+	 *
+	 *	@return Returns true if no differences are detected, otherwise returns false.
+	 */
+	static bool Check_ModuleSettings() // do not move the definition to a .cpp, it needs to stay in the header
 	{
-		// need ifdef, otherwise getting "potential mod by 0" warning
-#ifdef __UBER_BLOCK_MATRIX_ALIGN_BLOCK_MEMORY
-		if(!pool_MemoryAlignment)
-			return; // unaligned addresses allowed
-		for(size_t i = 0, n = m_block_cols_list.size(); i < n; ++ i) {
-			for(size_t j = 0, m = m_block_cols_list[i].block_list.size(); j < m; ++ j) {
-				double *p_block = m_block_cols_list[i].block_list[j].second;
-				if(ptrdiff_t(p_block) % pool_MemoryAlignment != 0) {
-					fprintf(stderr, "error: have a misaligned block at: 0x%08x\n",
-						(unsigned int)(ptrdiff_t(p_block) & 0xffffffffU));
-					//exit(-2);
-				}
-			}
-		}
-#else // __UBER_BLOCK_MATRIX_ALIGN_BLOCK_MEMORY
-		_ASSERTE(!pool_MemoryAlignment);
-#endif // __UBER_BLOCK_MATRIX_ALIGN_BLOCK_MEMORY
+		return Check_ModuleSettings(pool_MemoryAlignment, map_Alignment,
+#ifdef __UBER_BLOCK_MATRIX_BUFFER_BOUNDS_CHECK
+			true
+#else // __UBER_BLOCK_MATRIX_BUFFER_BOUNDS_CHECK
+			false
+#endif // __UBER_BLOCK_MATRIX_BUFFER_BOUNDS_CHECK
+			);
+		// perform the check with current settings
 	}
 
 	/**
@@ -1596,6 +1635,54 @@ public:
 		return alloc.p_Get_DenseStorage(n_element_num);
 		// use the allocator class, but only instantiate it as needed so it is possible to swap matrices
 	}
+
+	/**
+	 *	@brief checks matrix block alignment; available in release builds as well
+	 *	@return Returns true in case there are no alignment issues, otherwise returns false.
+	 *	@note This applies the alignment rules of the currently built module which might
+	 *		be different from how the SLAM++ base library was build, in case a build
+	 *		configuration mismatch occured.
+	 */
+	bool Check_Block_Alignment() const
+	{
+		bool b_result = Check_ModuleSettings();
+
+		if(!pool_MemoryAlignment)
+			return Check_Block_Alignment_ModuleCfg() && b_result; // unaligned addresses allowed
+
+		enum {
+			n_real_align = (pool_MemoryAlignment)? pool_MemoryAlignment : 1 // avoid "potential mod by 0" warning
+		};
+
+		int n_max_output = 0;
+		for(size_t i = 0, n = m_block_cols_list.size(); i < n; ++ i) {
+			for(size_t j = 0, m = m_block_cols_list[i].block_list.size(); j < m; ++ j) {
+				double *p_block = m_block_cols_list[i].block_list[j].second;
+				if(ptrdiff_t(p_block) % n_real_align != 0) {
+					fprintf(stderr, "error: have a misaligned block at: 0x%08x\n",
+						(unsigned int)(ptrdiff_t(p_block) & 0xffffffffU));
+					b_result = false;
+					if(++ n_max_output == 100) {
+						fprintf(stderr, "error: the number of misaligned blocks "
+							"exceeded %d; stopping the check\n", n_max_output);
+						break;
+					}
+				}
+			}
+		}
+
+		return b_result && Check_Block_Alignment_ModuleCfg();
+	}
+
+protected:
+	/**
+	 *	@brief checks matrix block alignment; available in release builds as well
+	 *	@return Returns true in case there are no alignment issues, otherwise returns false.
+	 *	@note This applies the alignment rules with which the SLAM++ base library was build
+	 *		that might be different from that of the currently built module, in case a build
+	 *		configuration mismatch occured.
+	 */
+	bool Check_Block_Alignment_ModuleCfg() const;
 };
 
 } // ~blockmatrix_detail

@@ -156,7 +156,7 @@
  *
  *	The multipool::CMultiPool::For_Each() makes use of the internal type id information and calls the function
  *	operator with the appropriate type. If different code paths are required for different types of vertices,
- *	it is possible to simplz overload this operator>
+ *	it is possible to simply overload this operator:
  *
  *	@code
  *	struct MyFunctionObject {
@@ -198,7 +198,9 @@
  *
  *	* If you know the type, use multipool::CMultiPool::r_At().
  *	* If you dont know the type and dont need it, use multipool::CMultiPool::operator[]() which returns an iterface.
- *		* Note that the interface does not have the same address as the object. If you need it, use <tt>r_Get()</tt>.
+ *		* Note that the interface does not have the same address as the object. If you need it, use <tt>r_Get()</tt>
+ *		  (e.g. \ref base_iface::CConstVertexFacade::r_Get(), \ref base_iface::CVertexFacade::r_Get(),
+ *		  \ref base_iface::CConstEdgeFacade::r_Get() or \ref base_iface::CEdgeFacade::r_Get()).
  *	* If you dont know the type but need it, use multipool::CMultiPool::For_Each() along with a function object.
  *
  *	All those, with the exception of <tt>r_Get()</tt> will also work in case there is only a single vertex / edge

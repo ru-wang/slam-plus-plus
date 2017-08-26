@@ -328,7 +328,8 @@ CPosDefBlockMatrix_InvProduct::CPosDefBlockMatrix_InvProduct(const CUberBlockMat
  *
  */
 
-std::vector<double> SpSym_Eigenvalues(const cs *p_matrix, size_t n_eig_num, bool b_smallest)
+std::vector<double> SpSym_Eigenvalues(const cs *p_matrix, size_t n_eig_num,
+	bool b_smallest, size_t n_max_iterations, double f_tolerance)
 {
 	/*size_t n_nnz = p_matrix->p[p_matrix->n], m = p_matrix->m, n = p_matrix->n;
 	std::vector<double> eig;
@@ -371,6 +372,9 @@ std::vector<double> SpSym_Eigenvalues(const cs *p_matrix, size_t n_eig_num, bool
 	srand(123456);
 	// want to be repeatable
 
+	size_t n_ritz_num = std::min(std::max(2 * n_eig_num + 1, size_t(20)), size_t(p_matrix->n));
+	// this seems to be the reasoning Matlab uses (about the twice + 1, and 20 at least)
+
 	if(b_smallest) { // otherwise runs twice
 		/*printf("=== R ===\n");
 #if defined(_WIN32) || defined(_WIN64)
@@ -380,7 +384,7 @@ std::vector<double> SpSym_Eigenvalues(const cs *p_matrix, size_t n_eig_num, bool
 #endif // _WIN32 || _WIN64
 		printf("=== ~R ===\n");*/
 
-		// todo - choose matrix decomposition
+		// t_odo - choose matrix decomposition
 
 		/*{
 			CPosDefSparseMatrix_InvProduct prod_chol(p_matrix, 0);
@@ -413,7 +417,7 @@ std::vector<double> SpSym_Eigenvalues(const cs *p_matrix, size_t n_eig_num, bool
 			} else
 				fprintf(stderr, "error: eigenvalues using CSparse LU did not converge\n");
 			// copy them to the output vector
-		}*/
+		}
 		{
 			CSymmetricSparseMatrix_InvProduct prod_ldlt(p_matrix, 0);
 			CSymEigsShiftSolver<CSymmetricSparseMatrix_InvProduct> solver(prod_ldlt, n_eig_num,
@@ -424,14 +428,14 @@ std::vector<double> SpSym_Eigenvalues(const cs *p_matrix, size_t n_eig_num, bool
 
 			Eigen::VectorXd ev = solver.v_Eigenvalues();
 			eig.resize(ev.rows());
-			/*if(ev.rows())*/ {
+			/ *if(ev.rows())* / {
 				Eigen::Map<Eigen::VectorXd, Eigen::DontAlign>(&eig[0], eig.size()) = ev;
 				//printf("debug: the smallest eigenvalue using Eigen LDLT: %.10g\n", eig.back());
-			} /*else
-				fprintf(stderr, "error: eigenvalues using Eigen LDLT did not converge\n");*/
+			} / *else
+				fprintf(stderr, "error: eigenvalues using Eigen LDLT did not converge\n");* /
 			// copy them to the output vector
 		}
-		/*{
+		{
 			CSquareSparseMatrix_InvProduct prod_eiglu(p_matrix, 0);
 			CSymEigsShiftSolver<CSquareSparseMatrix_InvProduct> solver(prod_eiglu, n_eig_num, 20); // use the inverse-shift mode
 			solver.Init();
@@ -464,12 +468,13 @@ std::vector<double> SpSym_Eigenvalues(const cs *p_matrix, size_t n_eig_num, bool
 			// copy them to the output vector
 		}*/
 
-		CSymmetricSparseMatrix_InvProduct prod_ldlt(p_matrix, 0);
+		CSymmetricSparseMatrix_InvProduct prod_ldlt(p_matrix, 0); // LDLT sparse, suitable for lambdas
 		//CGenSparseMatrix_InvProduct prod_qr(p_matrix, 0);
 		//CSquareSparseMatrix_InvProduct2 prod(p_matrix, 0);
-		CSymEigsShiftSolver<CSymmetricSparseMatrix_InvProduct> solver(prod_ldlt, n_eig_num, 20); // use the inverse-shift mode
+		CSymEigsShiftSolver<CSymmetricSparseMatrix_InvProduct> solver(prod_ldlt,
+			n_eig_num, n_ritz_num); // use the inverse-shift mode
 		solver.Init();
-		solver.Compute();
+		solver.Compute(n_max_iterations, f_tolerance);
 		// compute eigenvalues of a symmetric matrix
 
 		Eigen::VectorXd ev = solver.v_Eigenvalues();
@@ -479,9 +484,9 @@ std::vector<double> SpSym_Eigenvalues(const cs *p_matrix, size_t n_eig_num, bool
 		// copy them to the output vector
 	} else {
 		CSparseMatrixProduct prod(p_matrix);
-		CSymEigsSolver<CSparseMatrixProduct> solver(prod, n_eig_num, 20);
+		CSymEigsSolver<CSparseMatrixProduct> solver(prod, n_eig_num, n_ritz_num);
 		solver.Init();
-		solver.Compute();
+		solver.Compute(n_max_iterations, f_tolerance);
 		// compute eigenvalues of a symmetric matrix
 
 		Eigen::VectorXd ev = solver.v_Eigenvalues();
@@ -559,13 +564,14 @@ std::vector<double> SpSym_Eigenvalues(const cs *p_matrix, size_t n_eig_num, bool
  *	pos_def/JGD_Trefethen_Trefethen_500.mtx
  *	@endcode
  *
- *	Code compiled using VS2008 running on Opteron 2360 SE gives the following reults:
+ *	Code compiled using VS2008 running on Opteron 2360 SE gives the
+ *	following reults (for the largest magnitude eigenvalues tests):
  *
  *	@code
  *	CRC32 of the results: 0x6643fadd exact / 0x5d517729 rounded - with the original code
  *	CRC32 of the results: 0x6643fadd exact / 0x5d517729 rounded - with the optimized tridiagonal qr
  *	CRC32 of the results: 0x74f90197 exact / 0x5951f23b rounded - with (the unmodified) hessenberg qr
- *	CRC32 of the results: 0x7e63bf74 exact / 0x00c60dea rounded - when the optimized hessenberg qr
+ *	CRC32 of the results: 0x7e63bf74 exact / 0x00c60dea rounded - with the optimized hessenberg qr
  *		(introduced by negating the sine, the change is somewhere in Compute())
  *	@endcode
  *
@@ -672,8 +678,103 @@ protected:
 	typedef CCrc<uint16_t, 0xA001, 0xffff, 0xffff> CCrc_16; /**< CRC-16, as defined by ANSI (X3.28) */
 	typedef CCrc<uint32_t, 0xedb88320U, 0xffffffffU, 0xffffffffU> CCrc_32; /**< CRC-32, as defined by POSIX */
 
+	/**
+	 *	@brief Numerical Recipes' long generator (period 3.138 * 10^57)
+	 *	@tparam b_use_virtual_interface is common interface flag (default true)
+	 */
+	class CNRLongGenerator {
+	public:
+		/**
+		 *	@brief random number generator traits, stored as enum
+		 */
+		enum {
+			b_seedable = true, /**< @brief seed not ignored flag */
+			b_64bit_rand = true, /**< @brief 64-bit random number capability flag */
+			b_crypto_safe = false, /**< @brief cryptographically safe flag */
+			b_fast_floats = false /**< @brief fast (possibly lower quality) floating point random number generation flag */
+		};
+
+	protected:
+		uint64_t m_n_u; /**< @brief random generator state */
+		uint64_t m_n_v; /**< @brief random generator state */
+		uint64_t m_n_w; /**< @brief random generator state */
+
+	public:
+		/**
+		 *	@brief constructor; initializes the random generator
+		 */
+		CNRLongGenerator(uint64_t n_seed = 0)
+		{
+			Seed64(n_seed);
+		}
+
+		/**
+		 *	@copydoc CRandomGeneratorModel::Seed()
+		 */
+		void Seed(unsigned int n_seed)
+		{
+			Seed64(n_seed);
+		}
+
+		/**
+		 *	@copydoc CRandomGeneratorModel::Seed()
+		 */
+		void Seed64(uint64_t n_seed)
+		{
+			m_n_v = (uint64_t(0x38ecac5f) << 32) |	0xb3251641U; // 4101842887655102017LL
+			m_n_w = 1;
+			//_ASSERTE(n_seed != m_n_v); // can happen, don't want this to kill my process in the unlikely event
+			m_n_u = n_seed ^ m_n_v;
+			n_Rand64();
+			m_n_v = m_n_u;
+			n_Rand64();
+			m_n_w = m_n_v;
+			n_Rand64();
+		}
+
+		/**
+		 *	@brief generates a 64-bit unsigned random number
+		 *	@return Returns the generated random number.
+		 */
+		uint64_t n_Rand64()
+		{
+			m_n_u = m_n_u * ((uint64_t(0x27bb2ee6U) << 32) | 0x87b0b0fdU)/*2862933555777941757LL*/ +
+				((uint64_t(0x61c88646U) << 32) | 0x80b583bfU)/*7046029254386353087LL*/;
+			m_n_v ^= m_n_v >> 17;
+			m_n_v ^= m_n_v << 31;
+			m_n_v ^= m_n_v >> 8;
+			m_n_w = 4294957665U * (m_n_w & 0xffffffff) + (m_n_w >> 32);
+			uint64_t x = m_n_u ^ (m_n_u << 21);
+			x ^= x >> 35;
+			x ^= x << 4;
+			return (x + m_n_v) ^ m_n_w;
+		}
+
+		/**
+		 *	@brief generates a 32-bit unsigned random number
+		 *	@return Returns the generated random number.
+		 */
+		uint32_t n_Rand32()
+		{
+			return uint32_t(n_Rand64());
+		}
+
+		/**
+		 *	@copydoc CRandomGeneratorModel::f_Rand()
+		 */
+		double f_Rand()
+		{
+			int64_t n_rand = n_Rand64() >> 10; // msvc 6.0 does not implement conversion from uint64_t to double
+			while(n_rand > (int64_t(1) << 53)) // generates 54-bit numbers, but we're interested only in 1 + 53 zeroes or below
+				n_rand = n_Rand64() >> 10; // can try again, the samples are independent
+			return double(n_rand) * (1.0 / 9007199254740992.0); // n_rand is [0, 9007199254740992] inclusive
+			// more uniformly distributed floats
+			// the division is precise, 9007199254740992.0 is a power of two
+		}
+	};
+
 public:
-	static bool Run() // throw(std::bad_alloc)
+	static bool Run(bool b_largest_eigenvalues_benchmark = true) // throw(std::bad_alloc)
 	{
 		std::vector<std::string> matrix_list;
 		{
@@ -709,19 +810,23 @@ public:
 				fprintf(stderr, "warning: failed to load \'%s\'\n", ("data/bench_eigs/" + matrix_list[i]).c_str());
 				continue;
 			}
-			if(!sD.Load_MatrixMarket(("data/bench_eigs/" + matrix_list[i] + ".eigvals.mtx").c_str(), 1, false)) {
-				fprintf(stderr, "warning: failed to load \'%s\'\n", ("data/bench_eigs/" + matrix_list[i] + ".eigvals.mtx").c_str());
+			if(!sD.Load_MatrixMarket(("data/bench_eigs/" + matrix_list[i] +
+			   ((b_largest_eigenvalues_benchmark)? ".eigvals.mtx" : ".eigvals.sm.mtx")).c_str(), 1, false)) {
+				fprintf(stderr, "warning: failed to load \'%s\'\n", ("data/bench_eigs/" +
+					matrix_list[i] + ((b_largest_eigenvalues_benchmark)? ".eigvals.mtx" : ".eigvals.sm.mtx")).c_str());
 				continue;
 			}
-			if(!sV.Load_MatrixMarket(("data/bench_eigs/" + matrix_list[i] + ".eigvecs.mtx").c_str(), 1, false)) {
-				fprintf(stderr, "warning: failed to load \'%s\'\n", ("data/bench_eigs/" + matrix_list[i] + ".eigvecs.mtx").c_str());
+			if(!sV.Load_MatrixMarket(("data/bench_eigs/" + matrix_list[i] +
+			   ((b_largest_eigenvalues_benchmark)? ".eigvecs.mtx" : ".eigvecs.sm.mtx")).c_str(), 1, false)) {
+				fprintf(stderr, "warning: failed to load \'%s\'\n", ("data/bench_eigs/" +
+					matrix_list[i] + ((b_largest_eigenvalues_benchmark)? ".eigvecs.mtx" : ".eigvecs.sm.mtx")).c_str());
 				continue;
 			}
 			Eigen::VectorXd D(sD.n_Row_Num());
 			Eigen::MatrixXd V;
 			sD.Convert_to_Dense(D); // requires allocation by the caller
 			sV.Convert_to_Dense(V);
-			if(D.rows() != V.cols() || V.rows() != A.n_Column_Num() || !A.b_Square()) {
+			if(D.rows() != V.cols() || size_t(V.rows()) != A.n_Column_Num() || !A.b_Square()) {
 				fprintf(stderr, "warning: dimension mismatch in\'%s\'\n", ("data/bench_eigs/" + matrix_list[i]).c_str());
 				continue;
 			}
@@ -731,16 +836,82 @@ public:
 			// the eigenvalue calculation starts from a randomized vector, make sure the results are always the same
 
 			size_t n_eig_num = std::min(size_t(D.rows()), A.n_Column_Num() - 1); // somehow this solver cannot recover all of the eigenvalues
-			CBlockMatrixProduct prod(A);
-			CSymEigsSolver<CBlockMatrixProduct> solver(prod, n_eig_num, std::min(size_t(40), A.n_Column_Num()));
-			try {
-				solver.Init();
-				solver.Compute();
-			} catch(std::exception &r_exc) {
-				fprintf(stderr, "warning: eigensolver threw an exception: \'%s\'\n", r_exc.what());
-				continue;
+
+			Eigen::VectorXd v_eval;
+			Eigen::MatrixXd t_evec;
+			if(b_largest_eigenvalues_benchmark) {
+				CBlockMatrixProduct prod(A);
+				CSymEigsSolver<CBlockMatrixProduct> solver(prod, n_eig_num,
+					std::min(std::max(n_eig_num * 2 + 1, size_t(20)), A.n_Column_Num()));
+				try {
+					solver.Init();
+					solver.Compute();
+				} catch(std::exception &r_exc) {
+					fprintf(stderr, "warning: eigensolver threw an exception: \'%s\'\n", r_exc.what());
+					continue;
+				}
+				// calculate eigenvalues (note that the input matrix must be symmetric!)
+
+				v_eval = solver.v_Eigenvalues();
+				t_evec = solver.t_Eigenvectors(v_eval.rows());
+			} else {
+				cs *p_A;
+				if(!(p_A = A.p_Convert_to_Sparse())) {
+					fprintf(stderr, "warning: not enough memory to get elemwise sparse form\n");
+					continue;
+				}
+				CGenSparseMatrix_InvProduct prod(p_A, .0);
+				CSymEigsShiftSolver<CGenSparseMatrix_InvProduct> solver(prod, n_eig_num,
+					std::min(std::max(n_eig_num * 2 + 1, size_t(20)), A.n_Column_Num()));
+				try {
+					CNRLongGenerator rng(123456);
+					Eigen::VectorXd init_resid(A.n_Column_Num()); // explicit seeding doesn't seem to help greatly
+					do {
+						for(size_t j = 0, m = init_resid.rows(); j < m; ++ j)
+							init_resid(j) = rng.f_Rand() - .5;
+					} while(init_resid.norm() <= 1e-3);
+					// explicit init, use a better quality randomness than libc
+
+					solver.Init(init_resid);
+					if(!solver.Compute()) {
+						fprintf(stderr, "warning: inverse / shift mode eigensolver found no"
+							" eigenvalues, trying to reduce precision\n");
+
+						do {
+							for(size_t j = 0, m = init_resid.rows(); j < m; ++ j)
+								init_resid(j) = rng.f_Rand() - .5;
+						} while(init_resid.norm() <= 1e-3);
+						solver.Init(init_resid);
+
+						if(!solver.Compute(10000, 1e-5)) {
+							fprintf(stderr, "warning: inverse / shift mode eigensolver found no"
+								" eigenvalues, trying to reduce precision even more\n");
+
+							do {
+								for(size_t j = 0, m = init_resid.rows(); j < m; ++ j)
+									init_resid(j) = rng.f_Rand() - .5;
+							} while(init_resid.norm() <= 1e-3);
+							solver.Init(init_resid);
+
+							solver.Compute(10000, 1e-2);
+						}
+						// try to compute with lower tolerance
+					}
+				} catch(std::exception &r_exc) {
+					if(p_A)
+						cs_spfree(p_A);
+					fprintf(stderr, "warning: inverse / shift mode eigensolver"
+						" threw an exception: \'%s\'\n", r_exc.what());
+					continue;
+				}
+				if(p_A)
+					cs_spfree(p_A);
+				// calculate eigenvalues (note that the input matrix must be symmetric!)
+
+				v_eval = solver.v_Eigenvalues();
+				t_evec = solver.t_Eigenvectors(v_eval.rows());
 			}
-			// calculate eigenvalues (note that the input matrix must be symmetric!)
+			// get eigenvalues and eigenvectors
 
 			FlipSigns(D, V);
 
@@ -759,17 +930,23 @@ public:
 			}
 			// if there are multiple almost equal eigenvalues, the corresponding eigenvectors might be ordered differently
 
-			Eigen::VectorXd v_eval = solver.v_Eigenvalues();
-			// get eigenvalues
-
 			if(size_t(v_eval.rows()) < n_eig_num) {
 				fprintf(stderr, "warning: only " PRIsize " eigenvalues converged\n", size_t(v_eval.rows()));
 				if(!v_eval.rows())
 					continue;
-				/*D = D.head(v_eval.rows());
-				V = V.leftCols(v_eval.rows());*/ // scrambles the contents (Eigen bug?)
-				D.conservativeResize(v_eval.rows());
-				V.conservativeResize(V.rows(), v_eval.rows());
+				if(b_largest_eigenvalues_benchmark) {
+					/*D = D.head(v_eval.rows());
+					V = V.leftCols(v_eval.rows());*/ // scrambles the contents (Eigen bug?)
+					D.conservativeResize(v_eval.rows());
+					V.conservativeResize(V.rows(), v_eval.rows());
+				} else {
+					/*D = D.tail(v_eval.rows());
+					V = V.rightCols(v_eval.rows());*/ // scrambles the contents (Eigen bug?)
+					Eigen::VectorXd Dn = D.tail(v_eval.rows());
+					Eigen::MatrixXd Vn = V.rightCols(v_eval.rows());
+					D = Dn;
+					V = Vn;
+				}
 			}
 			// handle cases which did not converge
 
@@ -781,8 +958,6 @@ public:
 			}
 			// handle very small matrices
 
-			Eigen::MatrixXd t_evec = solver.t_Eigenvectors(v_eval.rows());
-
 			FlipSigns(v_eval, t_evec);
 
 			double f_eigvals_err = (v_eval - D).norm();
@@ -791,12 +966,14 @@ public:
 			// calculate errors
 
 			FILE *p_fw;
-			if((p_fw = fopen(("data/bench_eigs/" + matrix_list[i] + ".eigvecs_cpp.m").c_str(), "w"))) {
+			if((p_fw = fopen(("data/bench_eigs/" + matrix_list[i] +
+			   ((b_largest_eigenvalues_benchmark)? ".eigvecs_cpp.m" : ".eigvecs_cpp.sm.m")).c_str(), "w"))) {
 				CDebug::Print_DenseMatrix_in_MatlabFormat(p_fw,
 					t_evec, "V = ", ";\n", " %.15g");
 				fclose(p_fw);
 			}
-			if((p_fw = fopen(("data/bench_eigs/" + matrix_list[i] + ".eigvals_cpp.m").c_str(), "w"))) {
+			if((p_fw = fopen(("data/bench_eigs/" + matrix_list[i] +
+			   ((b_largest_eigenvalues_benchmark)? ".eigvals_cpp.m" : ".eigvals_cpp.sm.m")).c_str(), "w"))) {
 				CDebug::Print_DenseMatrix_in_MatlabFormat(p_fw,
 					v_eval, "D = ", ";\n", " %.15g");
 				fclose(p_fw);
@@ -804,7 +981,8 @@ public:
 			// write the eigenvalues / eigenvectors for a closer inspection in matlab
 
 			printf("eigenvalues residual: %.6e (%.6e), eigenvectors residual: %.6e (%.6e)\n",
-				f_eigvals_err, f_eigvals_err / D.norm(), f_eigvecs_err, f_eigvecs_err / V.norm());
+				f_eigvals_err, f_eigvals_err / std::max(D.norm(), 1.0),
+				f_eigvecs_err, f_eigvecs_err / std::max(V.norm(), 1.0));
 			// verbose
 
 			n_crc = CCrc_32::n_Crc(sizeof(double), &f_min_eigenvalue_delta, n_crc);
@@ -818,7 +996,8 @@ public:
 			sprintf(p_s_result, "%.8g %.8g %.8g %.8g %.8g", f_min_eigenvalue_delta,
 				f_eigvals_err, f_eigvals_err / D.norm(), f_eigvecs_err, f_eigvecs_err / V.norm());
 			n_crc_approx = CCrc_32::n_Crc(strlen(p_s_result) * sizeof(char), p_s_result, n_crc_approx);
-			// calculate CRC of the exact and rounded results
+			// calculate CRC of the exact and rounded results (here the rounding is
+			// performed in the most ad-hoc way possible by conversion to a string)
 		}
 
 		n_crc = CCrc_32::n_Finalize(n_crc);
@@ -901,7 +1080,9 @@ public:
 
 void Eigenvalues_UnitTest()
 {
-	CEigsUnitTest::Run();
+	CEigsUnitTest::Run(true);
+	printf("and now for the smallest eigenvalues ...\n");
+	CEigsUnitTest::Run(false);
 }
 
 #else // __EIGENVALUES_BUILD_UNIT_TESTS

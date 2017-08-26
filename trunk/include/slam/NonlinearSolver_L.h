@@ -829,6 +829,11 @@ protected:
 			return false; // nothing to solve (but no results need to be generated so it's ok)
 		// can't solve in such conditions
 
+		_ASSERTE(this->m_r_system.b_AllVertices_Covered());
+		// if not all vertices are covered then the system matrix will be rank deficient and this will fail
+		// this triggers typically if solving BA problems with incremental solve each N steps (the "proper"
+		// way is to use CONSISTENCY_MARKER and incremental solve period of SIZE_MAX).
+
 		// note that n_order_min can be possibly used in Refresh_Lambda()
 		// to minimize number of vertices that require update of hessian blocks
 		// note that it needs to be the one with permutation? or does it? // todo - try that after it works

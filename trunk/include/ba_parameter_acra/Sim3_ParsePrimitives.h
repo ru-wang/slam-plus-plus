@@ -94,6 +94,12 @@ struct TVertexCamSim3 : public CParserBase::CParseEntity {
 
 	/**
 	 *	@brief default constructor
+	 */
+	inline TVertexCamSim3()
+	{}
+
+	/**
+	 *	@brief constructor
 	 *
 	 *	@param[in] n_node_id is (zero-based) index of the node
 	 *	@param[in] p_x is x position
@@ -269,7 +275,7 @@ public:
 	}
 };
 
-struct TVertexInvDepth {
+struct TVertexInvDepth : public CParserBase::CParseEntity {
 	size_t n_vertex_id;
 	size_t n_camera_id;
 	Eigen::Vector3d v_position;
@@ -354,6 +360,9 @@ public:
 };
 
 struct TEdgeP2CSim3G : public CParserBase::TEdgeP2C3D {
+	inline TEdgeP2CSim3G()
+	{}
+
 	inline TEdgeP2CSim3G(size_t n_node_0, size_t n_node_1,
 		double f_delta_x, double f_delta_y, const double *p_upper_matrix_2x2)
 		:CParserBase::TEdgeP2C3D(n_node_0, n_node_1, f_delta_x, f_delta_y, p_upper_matrix_2x2)

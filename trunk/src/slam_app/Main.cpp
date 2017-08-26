@@ -43,8 +43,11 @@ int main(int n_arg_num, const char **p_arg_list)
 {
 #if (defined(_WIN32) || defined(_WIN64)) && defined(__PIMP_MY_WINDOW)
 	{
-		system("title SLAM ++\n");
-		HWND h_console = FindWindow(0, "SLAM ++");
+		char p_s_title[256];
+		sprintf(p_s_title, "title slampp%04x", GetCurrentProcessId()); // use unique id
+		system(p_s_title);
+		HWND h_console = FindWindow(0, p_s_title + /*strlen("title ")*/6);
+		system("title SLAM++\n");
 		int n_all_mons_width = GetSystemMetrics(SM_CXVIRTUALSCREEN);
 		int n_all_mons_height = GetSystemMetrics(SM_CYVIRTUALSCREEN);
 		int n_pri_mon_width = GetSystemMetrics(SM_CXSCREEN);
@@ -52,13 +55,19 @@ int main(int n_arg_num, const char **p_arg_list)
 		if(n_all_mons_width > n_pri_mon_width + n_pri_mon_width / 2) {
 			RECT t_rect;
 			GetWindowRect(h_console, &t_rect);
-			if(t_rect.left < n_pri_mon_width) // running a batch job? don't float away
+			int n_pri_mon_org = GetSystemMetrics(SM_XVIRTUALSCREEN); // handle situations where the coordinates do not start at (0, 0)
+			if(n_pri_mon_org >= 0 && t_rect.left - n_pri_mon_org < n_pri_mon_width) // running a batch job? don't float away
 				SetWindowPos(h_console, HWND_TOP, t_rect.left + n_pri_mon_width, t_rect.top, 0, 0, SWP_NOSIZE);
+			else if(n_pri_mon_org < 0 && t_rect.left - n_pri_mon_width > n_pri_mon_org) // running a batch job? don't float away
+				SetWindowPos(h_console, HWND_TOP, t_rect.left - n_pri_mon_width, t_rect.top, 0, 0, SWP_NOSIZE);
 		} else if(n_all_mons_height > n_pri_mon_height + n_pri_mon_height / 2) {
 			RECT t_rect;
 			GetWindowRect(h_console, &t_rect);
-			if(t_rect.top < n_pri_mon_height) // running a batch job? don't float away
+			int n_pri_mon_org = GetSystemMetrics(SM_YVIRTUALSCREEN); // handle situations where the coordinates do not start at (0, 0)
+			if(n_pri_mon_org >= 0 && t_rect.top - n_pri_mon_org < n_pri_mon_height) // running a batch job? don't float away
 				SetWindowPos(h_console, HWND_TOP, t_rect.left, t_rect.top + n_pri_mon_height, 0, 0, SWP_NOSIZE);
+			else if(n_pri_mon_org < 0 && t_rect.top - n_pri_mon_height > n_pri_mon_org) // running a batch job? don't float away
+				SetWindowPos(h_console, HWND_TOP, t_rect.left, t_rect.top - n_pri_mon_height, 0, 0, SWP_NOSIZE);
 		}
 	}
 	// windows hack - make the console window appear on the secondary monitor
@@ -106,6 +115,14 @@ int main(int n_arg_num, const char **p_arg_list)
 			int(t_cmd_args.n_nonlinear_solve_each_n_steps),
 			p_s_Number_Suffix(t_cmd_args.n_nonlinear_solve_each_n_steps));
 	}
+	if(t_cmd_args.n_solver_choice != nlsolver_LambdaDL) {
+		if(t_cmd_args.b_dogleg_all_batch)
+			fprintf(stderr, "warning: dogleg solver not selected, --dogleg-all-batch ignored\n");
+		if(t_cmd_args.f_dogleg_step_size != -1)
+			fprintf(stderr, "warning: dogleg solver not selected, --dogleg-step-size ignored\n");
+		if(t_cmd_args.f_dogleg_step_threshold != -1)
+			fprintf(stderr, "warning: dogleg solver not selected, --dogleg-step-threshold ignored\n");
+	}
 	// check inputs
 
 	if(t_cmd_args.b_show_commandline) {
@@ -143,7 +160,7 @@ int main(int n_arg_num, const char **p_arg_list)
 			fprintf(stderr, "error: --pose-only flag detected, but the system has landmarks (flag cleared)\n");
 			t_cmd_args.b_pose_only = false;
 		} else if(!t_cmd_args.b_pose_only && !peek.b_has_landmark && !peek.b_has_ba && !peek.b_has_ba_stereo && !peek.b_has_ba_intrinsics) { // BA implies landmarks
-			fprintf(stderr, "warning: the system doesn't seem to have landmarks"
+			fprintf(stderr, "warning: the system does not seem to have landmarks"
 				" and --pose-only flag not present: could run faster\n");
 		}
 	}
@@ -258,6 +275,7 @@ int main(int n_arg_num, const char **p_arg_list)
 }
 
 #include "slam/BaseTypes.h" // to display some of the flags
+#include "slam/BlockMatrixBase.h"
 
 /**
  *	@brief prints all the important compiler / optimization switches this app was built with
@@ -302,21 +320,79 @@ void DisplaySwitches()
 #endif // __USE_CXSPARSE
 #endif // __USE_CHOLMOD
 
+	const char *p_stacked_fmt[] = {"%s", ", %s", ",\n%s"},
+		*p_stacked_fmtB[] = {"%s=%d", ", %s=%d", ",\n%s=%d"};
+	const int n_stacking_cols = 3;
+	int n_stacked_fmt = 0; 
+#define STACKED_FMT (p_stacked_fmt[(++ n_stacked_fmt - 1)? ((n_stacked_fmt - 1) % n_stacking_cols)? 1 : 2 : 0])
+#define STACKED_FMTB (p_stacked_fmtB[(++ n_stacked_fmt - 1)? ((n_stacked_fmt - 1) % n_stacking_cols)? 1 : 2 : 0])
+	// utility for stacking tokens into simple paragraphs
+
 #ifdef GPU_BLAS
 	printf("%s\n", "GPU_BLAS");
 #endif // GPU_BLAS
+
+#define MKSTRING(a) EXPANDSTRING(a)
+#define EXPANDSTRING(a) #a
+	printf(STACKED_FMT, "EIGEN_" MKSTRING(EIGEN_WORLD_VERSION) "." MKSTRING(EIGEN_MAJOR_VERSION)
+		"." MKSTRING(EIGEN_MINOR_VERSION));
+	// always print Eigen version, now there are two to choose from
+
 #ifdef EIGEN_VECTORIZE
-	printf("%s\n", "EIGEN_VECTORIZE");
+	printf(STACKED_FMT, "EIGEN_VECTORIZE");
 #endif // EIGEN_VECTORIZE
+#ifdef EIGEN_UNALIGNED_VECTORIZE
+	printf(STACKED_FMTB, "EIGEN_UNALIGNED_VECTORIZE", int(EIGEN_UNALIGNED_VECTORIZE));
+#endif // EIGEN_UNALIGNED_VECTORIZE
 #ifdef EIGEN_VECTORIZE_SSE
-	printf("%s\n", "EIGEN_VECTORIZE_SSE");
+	printf(STACKED_FMT, "EIGEN_VECTORIZE_SSE");
 #endif // EIGEN_VECTORIZE_SSE
 #ifdef EIGEN_VECTORIZE_SSE2
-	printf("%s\n", "EIGEN_VECTORIZE_SSE2");
+	printf(STACKED_FMT, "EIGEN_VECTORIZE_SSE2");
 #endif // EIGEN_VECTORIZE_SSE2
 #ifdef EIGEN_VECTORIZE_SSE3
-	printf("%s\n", "EIGEN_VECTORIZE_SSE3");
+	printf(STACKED_FMT, "EIGEN_VECTORIZE_SSE3");
 #endif // EIGEN_VECTORIZE_SSE3
+#ifdef EIGEN_VECTORIZE_SSSE3
+	printf(STACKED_FMT, "EIGEN_VECTORIZE_SSSE3");
+#endif // EIGEN_VECTORIZE_SSSE3
+#ifdef EIGEN_VECTORIZE_SSE4_1
+	printf(STACKED_FMT, "EIGEN_VECTORIZE_SSE4_1");
+#endif // EIGEN_VECTORIZE_SSE4_1
+#ifdef EIGEN_VECTORIZE_SSE4_2
+	printf(STACKED_FMT, "EIGEN_VECTORIZE_SSE4_2");
+#endif // EIGEN_VECTORIZE_SSE4_2
+#ifdef EIGEN_VECTORIZE_FMA
+	printf(STACKED_FMT, "EIGEN_VECTORIZE_FMA");
+#endif // EIGEN_VECTORIZE_FMA
+#ifdef EIGEN_VECTORIZE_AVX
+	printf(STACKED_FMT, "EIGEN_VECTORIZE_AVX");
+#endif // EIGEN_VECTORIZE_AVX
+#ifdef EIGEN_VECTORIZE_AVX2
+	printf(STACKED_FMT, "EIGEN_VECTORIZE_AVX2");
+#endif // EIGEN_VECTORIZE_AVX2
+#ifdef EIGEN_VECTORIZE_AVX512
+	printf(STACKED_FMT, "EIGEN_VECTORIZE_AVX512");
+#endif // EIGEN_VECTORIZE_AVX512
+#ifdef EIGEN_VECTORIZE_AVX512DQ
+	printf(STACKED_FMT, "EIGEN_VECTORIZE_AVX512DQ");
+#endif // EIGEN_VECTORIZE_AVX512DQ
+#ifdef EIGEN_VECTORIZE_NEON
+	printf(STACKED_FMT, "EIGEN_VECTORIZE_NEON");
+#endif // EIGEN_VECTORIZE_NEON
+	if(n_stacked_fmt)
+		printf("\n");
+	// print Eigen flags stacked
+
+#ifdef __DISABLE_GPU
+	printf("%s\n", "__DISABLE_GPU");
+#endif // __DISABLE_GPU
+#ifdef __SCHUR_USE_DENSE_SOLVER
+	printf("%s\n", "__SCHUR_USE_DENSE_SOLVER");
+#endif // __SCHUR_USE_DENSE_SOLVER
+#ifdef __SCHUR_DENSE_SOLVER_USE_GPU
+	printf("%s\n", "__SCHUR_DENSE_SOLVER_USE_GPU");
+#endif // __SCHUR_DENSE_SOLVER_USE_GPU
 
 #ifdef __BLOCK_BENCH_DUMP_MATRIX_IMAGES
 	printf("%s\n", "__BLOCK_BENCH_DUMP_MATRIX_IMAGES");
@@ -364,10 +440,18 @@ void DisplaySwitches()
 #ifdef __UBER_BLOCK_MATRIX_MULTIPLICATION_PREALLOCATES_BLOCK_LISTS
 	printf("%s\n", "__UBER_BLOCK_MATRIX_MULTIPLICATION_PREALLOCATES_BLOCK_LISTS");
 #endif // __UBER_BLOCK_MATRIX_MULTIPLICATION_PREALLOCATES_BLOCK_LISTS
+	printf("CUberBlockMatrix::map_Alignment = %d (%d, %d)\n", CUberBlockMatrix::map_Alignment,
+		CUberBlockMatrix::pool_MemoryAlignment, CUberBlockMatrix::_TyDenseAllocator::n_memory_align);
+#endif // 0
+#ifdef __UBER_BLOCK_MATRIX_MULTIPLICATION_GUSTAVSON
+	printf("%s\n", "__UBER_BLOCK_MATRIX_MULTIPLICATION_GUSTAVSON"); // this one is new (Q2 2017)
+#endif // __UBER_BLOCK_MATRIX_MULTIPLICATION_GUSTAVSON
+#ifdef __UBER_BLOCK_MATRIX_LEGACY_FBS_GEMM
+	printf("%s\n", "__UBER_BLOCK_MATRIX_LEGACY_FBS_GEMM"); // this one is new (Q2 2017)
+#endif // __UBER_BLOCK_MATRIX_LEGACY_FBS_GEMM
 #ifdef __UBER_BLOCK_MATRIX_ALIGN_BLOCK_MEMORY
 	printf("%s\n", "__UBER_BLOCK_MATRIX_ALIGN_BLOCK_MEMORY");
 #endif // __UBER_BLOCK_MATRIX_ALIGN_BLOCK_MEMORY
-#endif // 0
 
 #ifdef __SLAM_COUNT_ITERATIONS_AS_VERTICES
 	printf("%s\n", "__SLAM_COUNT_ITERATIONS_AS_VERTICES");
@@ -421,6 +505,9 @@ void DisplaySwitches()
 #ifdef __BASE_TYPES_ALLOW_CONST_VERTICES
 	printf("%s\n", "__BASE_TYPES_ALLOW_CONST_VERTICES");
 #endif // __BASE_TYPES_ALLOW_CONST_VERTICES
+#ifdef __SLAM_APP_USE_CONSTANT_VERTICES
+	printf("%s\n", "__SLAM_APP_USE_CONSTANT_VERTICES");
+#endif // __SLAM_APP_USE_CONSTANT_VERTICES
 #ifdef __GRAPH_TYPES_ALIGN_OPERATOR_NEW
 #if defined(_MSC_VER) && !defined(__MWERKS__)
 #define MAKESTRING2(x) #x // msvc fails with a missing argument error when using double stringification
@@ -516,20 +603,21 @@ void PrintHelp()
 		"\n"
 		"This generates initial.txt and initial.tga, a description and image of the\n"
 		"system before the final optimization, and solution.txt and solution.tga, a\n"
-		"description and image of the final optimized system (unless --no-bitmaps\n"
-		"is specified).\n"
+		"description and image of the final optimized system (unless --no-solution\n"
+		"or --no-bitmaps are specified, respectively).\n"
 		"\n"
 		"--help|-h         displays this help screen\n"
 		"--verbose|-v      displays verbose output while running (may slow down,\n"
 		"                  especially in windows and if running incrementally)\n"
 		"--silent|-s       suppresses displaying verbose output\n"
-		"--no-show|-ns     doesn't show output image (windows only)\n"
-		"--no-commandline|-nc    doesn't echo command line\n"
-		"--no-flags|-nf    doesn't show compiler flags\n"
-		"--no-detailed-timing    doesn't show detailed timing breakup (use this, you'll\n"
-		"                  get confused)\n"
-		"--no-bitmaps|-nb  doesn't write bitmaps initial.tga and solution.tga (neither\n"
-		"                  the text files)\n"
+		"--no-show|-ns     does not show output image (windows only)\n"
+		"--no-commandline|-nc    does not echo command line\n"
+		"--no-flags|-nf    does not show compiler flags\n"
+		"--no-detailed-timing|-ndt    does not show detailed timing breakup (use this, lest\n"
+		"                  you will get confused)\n"
+		"--no-bitmaps|-nb  does not write bitmaps initial.tga and solution.tga (does not\n"
+		"                  affect the text files)\n"
+		"--no-solution|-ns does not write text files initial.txt and solution.txt\n"
 		"--xz-plots|-xz    turns bitmaps initial.tga and solution.tga into the X-Z plane\n"
 		"--dump-system-matrix|-dsm    writes system matrix as system.mtx (matrix market)\n"
 		"                  and system.bla (block layout) before optimization\n"
@@ -540,7 +628,7 @@ void PrintHelp()
 		"--a-solver|-A     uses A solver\n"
 		"--lambda|-,\\      uses lambda solver (default, preferred batch solver)\n"
  		"--lambda-lm|-,\\lm uses lambda solver with Levenberg Marquardt (default for BA)\n"
- 		//"--lambda-dl|-,\\dl uses lambda solver with Dogleg and fluid relinearization\n"
+ 		"--lambda-dl|-,\\dl uses lambda solver with Dogleg and fluid relinearization\n"
 		"--l-solver|-L     uses L solver\n"
 		"--fast-l|-fL      uses the new fast L solver (preferred incremental solver)\n"
 		"--use-schur|-us   uses Schur complement to accelerate linear solving\n"
@@ -566,10 +654,17 @@ void PrintHelp()
 		"                  matrix benchmarks (benchmark-name is name of a folder with\n"
 		"                  UFLSMC benchmark, benchmark-type is one of alloc, factor, all)\n"
 		"--run-matrix-unit-tests|-rmut    runs block matrix unit tests\n"
-		"--omp-set-num-threads <N> sets number of threads to N (default is to use as many\n"
-		"                  threads as there are CPU cores)\n"
-		"--omp-set-dynamic <N> enables dynamic adjustment of the number of threads is N is\n"
-		"                  nonzero, disables if zero (disabled by default)\n");
+		"--omp-set-num-threads <N>    sets number of threads to N (default is to use as\n"
+		"                  many threads as there are CPU cores)\n"
+		"--omp-set-dynamic <N>    enables dynamic adjustment of the number of threads is N\n"
+		"                  is nonzero, disables if zero (disabled by default)\n"
+		"--dogleg-step-size|-dlss <f>    sets the initial dogleg solver step size (default 2)\n"
+		"--dogleg-all-batch|-dlabat    instructs the dogleg solver (disabled by default)\n"
+		//"--dogleg-step-threshold|-dlst <f>    sets the dogleg solver step threshold\n" // unsupported at the moment
+		"--iBA-save-intermediates|-iBAsi    enables saving of intermediate solutions at\n"
+		"                  every step in incremental BA (disabled by default)\n"
+		"--iBA-save-matrices|-iBAsm    enables saving of system matrices at every step in\n"
+		"                  incremental BA (disabled by default)\n");
 }
 
 void TCommandLineArgs::Defaults()
@@ -578,6 +673,7 @@ void TCommandLineArgs::Defaults()
 	// solver selection
 
 	b_write_bitmaps = true;
+	b_write_solution = true;
 	b_xz_plots = false;
 	b_write_system_matrix = false;
 	b_no_show = false;
@@ -618,6 +714,15 @@ void TCommandLineArgs::Defaults()
 	b_omp_dynamic = false;
 
 	b_do_marginals = false;
+
+	f_dogleg_step_size = -1;
+	f_dogleg_step_threshold = -1;
+	// "not set"
+
+	b_dogleg_all_batch = false;
+
+	b_inc_BA_save_intermediates = false;
+	b_inc_BA_save_sysmats = false;
 }
 
 bool TCommandLineArgs::Parse(int n_arg_num, const char **p_arg_list)
@@ -643,8 +748,8 @@ bool TCommandLineArgs::Parse(int n_arg_num, const char **p_arg_list)
 			n_solver_choice = nlsolver_Lambda;
 		else if(!strcmp(p_arg_list[i], "--lambda-lm") || !strcmp(p_arg_list[i], "-,\\lm"))
 			n_solver_choice = nlsolver_LambdaLM;
-		//else if(!strcmp(p_arg_list[i], "--lambda-dl") || !strcmp(p_arg_list[i], "-,\\dl"))
-		//	n_solver_choice = nlsolver_LambdaDL;
+		else if(!strcmp(p_arg_list[i], "--lambda-dl") || !strcmp(p_arg_list[i], "-,\\dl"))
+			n_solver_choice = nlsolver_LambdaDL;
 		else if(!strcmp(p_arg_list[i], "--no-flags") || !strcmp(p_arg_list[i], "-nf"))
 			b_show_flags = false;
 		else if(!strcmp(p_arg_list[i], "--run-matrix-unit-tests") || !strcmp(p_arg_list[i], "-rmut"))
@@ -658,7 +763,9 @@ bool TCommandLineArgs::Parse(int n_arg_num, const char **p_arg_list)
 		else if(!strcmp(p_arg_list[i], "--no-bitmaps") || !strcmp(p_arg_list[i], "-nb")) {
 			b_write_bitmaps = false;
 			b_no_show = true; // no bitmaps ... what can it show?
-		} else if(!strcmp(p_arg_list[i], "--xz-plots") || !strcmp(p_arg_list[i], "-xz"))
+		} else if(!strcmp(p_arg_list[i], "--no-solution") || !strcmp(p_arg_list[i], "-ns"))
+			b_write_solution = false;
+		else if(!strcmp(p_arg_list[i], "--xz-plots") || !strcmp(p_arg_list[i], "-xz"))
 			b_xz_plots = true;
 		else if(!strcmp(p_arg_list[i], "--pose-only") || !strcmp(p_arg_list[i], "-po"))
 			b_pose_only = true;
@@ -668,6 +775,12 @@ bool TCommandLineArgs::Parse(int n_arg_num, const char **p_arg_list)
 			n_solver_choice = nlsolver_L;
 		else if(!strcmp(p_arg_list[i], "--fast-l") || !strcmp(p_arg_list[i], "-fL"))
 			n_solver_choice = nlsolver_FastL;
+		else if(!strcmp(p_arg_list[i], "--iBA-save-intermediates") || !strcmp(p_arg_list[i], "-iBAsi"))
+			b_inc_BA_save_intermediates = true;
+		else if(!strcmp(p_arg_list[i], "--iBA-save-matrices") || !strcmp(p_arg_list[i], "-iBAsm"))
+			b_inc_BA_save_sysmats = true;
+		else if(!strcmp(p_arg_list[i], "--dogleg-all-batch") || !strcmp(p_arg_list[i], "-dlabat"))
+			b_dogleg_all_batch = true;
 		else if(i + 1 == n_arg_num) {
 			fprintf(stderr, "error: argument \'%s\': missing value or an unknown argument\n", p_arg_list[i]);
 			return false;
@@ -687,6 +800,10 @@ bool TCommandLineArgs::Parse(int n_arg_num, const char **p_arg_list)
 			n_max_final_optimization_iteration_num = atol(p_arg_list[++ i]);
 		else if(!strcmp(p_arg_list[i], "--final-nonlinear-solve-error-thresh") || !strcmp(p_arg_list[i], "-fnset"))
 			f_final_optimization_threshold = atof(p_arg_list[++ i]);
+		else if(!strcmp(p_arg_list[i], "--dogleg-step-size") || !strcmp(p_arg_list[i], "-dlss"))
+			f_dogleg_step_size = atof(p_arg_list[++ i]);
+		else if(!strcmp(p_arg_list[i], "--dogleg-step-threshold") || !strcmp(p_arg_list[i], "-dlst"))
+			f_dogleg_step_threshold = atof(p_arg_list[++ i]);
 		else if(!strcmp(p_arg_list[i], "--omp-set-num-threads"))
 			n_omp_threads = atol(p_arg_list[++ i]);
 		else if(!strcmp(p_arg_list[i], "--omp-set-dynamic"))

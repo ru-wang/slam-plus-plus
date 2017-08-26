@@ -327,7 +327,7 @@ typedef CTupleBase<CTypelistEnd> CEmptyTupleBase; /**< @brief empty base tuple i
  *	@brief tuple implementation
  *	@note The namespace is only a hack to make Doxygen not show the long type names in the class list.
  */
-namespace tuple {
+namespace spp_tuple { // not "tuple" to avoid collision with std::tuple
 
 /**
  *	@brief tuple class
@@ -870,9 +870,9 @@ public:
 	typedef typename CTypelistItemAt<typename _TyTuple::_TyList, n_index>::_TyResult _TyResult; /**< @brief type of the selected tuple element */
 };
 
-} // ~tuple
+} // ~spp_tuple
 
-using namespace tuple; // the namespace is only a hack to make Doxygen not show the long type names in the class list
+using namespace spp_tuple; // the namespace is only a hack to make Doxygen not show the long type names in the class list
 
 // inject a specialization of swap() in the std namespace
 namespace std {

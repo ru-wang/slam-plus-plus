@@ -25,11 +25,11 @@
 #include "slam/ConfigSolvers.h" // need solver types for commandline parser
 
 /**
- *	@mainpage SLAM ++
+ *	@mainpage SLAM++
  *
  *  @section intro_sec Introduction
  *
- *	SLAM ++ is a fast nonlinear optimization package for solving sparse graph problems.
+ *	SLAM++ is a fast nonlinear optimization package for solving sparse graph problems.
  *	It is very fast in both batch and incremental modes and offers highly efficient marginal
  *	covariance recovery.
  *
@@ -51,7 +51,7 @@
  *	One interesting option is to specify the default linear solver. Supernodal CHOLMOD or block Cholesky are
  *	the fastest, CSparse is slightly slower and simplical CHOLMOD is the slowest.
  *	Another option is to enable GPU acceleration support, which currently applies to the Schur complement
- *	solver only (specify <tt>-us</tt> when running SLAM ++; requires CUDA and CULA toolkits).
+ *	solver only (specify <tt>-us</tt> when running SLAM++; requires CUDA and CULA toolkits).
  *
  *	On Mac, you might want to configure your C and C++ compilers to be the GNU ones (e.g. from the
  *	MacPorts project) rather than Clang which does not support OpenMP nowadays and your code will be
@@ -74,10 +74,19 @@
  *
  *	This seemed to work on Ubuntu (x64 or x86 alike), and on Mac.
  *
- *	In case you are working on Windows, rather than generating a new Visual Studio workspace,
- *	there is a pre-configured workspace inside the <tt>build</tt> folder in the source code
- *	distribution. CMake does not support having both x86 and x64 targets at the same time
- *	and there are also some aliasing issues in building Eigen's BLAS and LAPACK in Windows.
+ *	In case you are working on Windows, there is a pre-configured workspace inside
+ *	the <tt>build15</tt> folder in the source code distribution. In the previous CMake
+ *	versions, there were varius issues with Windows. Since CMake 3.x, you can easily
+ *	generate Visual Studio workspace using cmake-gui, that will work just as well.
+ *	It only does not have project grouping, which is a very minor cosmetic issue.
+ *	We tested this with Visual Studio 2008, 2012, 2013, 2015 and 2017.
+ *
+ *	There is an internal compiler error in Visual Studio 2012 if Eigen complex BLAS
+ *	is enabled (added an extra CMake option to enable it, as it is usually not needed).
+ *
+ *	If you have trouble building or during your development, you can visit
+ *	<a href="https://sourceforge.net/p/slam-plus-plus/wiki/Bug%20Atlas" onclick="window.open(this.href); return false;">bug atlas</a>
+ *	to see descriptions of the commonly observed errors and ways to fix them.
  *
  *	You should now be able to run by typing:
  *
@@ -98,20 +107,21 @@
  *	<div class="line">																							</div>
  *	<div class="line">This generates initial.txt and initial.tga, a description and image of the				</div>
  *	<div class="line">system before the final optimization, and solution.txt and solution.tga, a				</div>
- *	<div class="line">description and image of the final optimized system (unless --no-bitmaps					</div>
- *	<div class="line">is specified).																			</div>
+ *	<div class="line">description and image of the final optimized system (unless --no-solution					</div>
+ *	<div class="line">or --no-bitmaps are specified, respectively).												</div>
  *	<div class="line">																							</div>
  *	<div class="line">--help|-h         displays this help screen												</div>
  *	<div class="line">--verbose|-v      displays verbose output while running (may slow down,					</div>
  *	<div class="line">                  especially in windows and if running incrementally)						</div>
  *	<div class="line">--silent|-s       suppresses displaying verbose output									</div>
- *	<div class="line">--no-show|-ns     doesn't show output image (windows only)								</div>
- *	<div class="line">--no-commandline|-nc    doesn't echo command line											</div>
- *	<div class="line">--no-flags|-nf    doesn't show compiler flags												</div>
- *	<div class="line">--no-detailed-timing    doesn't show detailed timing breakup (use this, you'll			</div>
- *	<div class="line">                  get confused)															</div>
- *	<div class="line">--no-bitmaps|-nb  doesn't write bitmaps initial.tga and solution.tga (neither				</div>
- *	<div class="line">                  the text files)															</div>
+ *	<div class="line">--no-show|-ns     does not show output image (windows only)								</div>
+ *	<div class="line">--no-commandline|-nc    does not echo command line										</div>
+ *	<div class="line">--no-flags|-nf    does not show compiler flags											</div>
+ *	<div class="line">--no-detailed-timing|-ndt    does not show detailed timing breakup (use this, lest		</div>
+ *	<div class="line">                  you will get confused)													</div>
+ *	<div class="line">--no-bitmaps|-nb  does not write bitmaps initial.tga and solution.tga (does not			</div>
+ *	<div class="line">                  affect the text files)													</div>
+ *	<div class="line">--no-solution|-ns does not write text files initial.txt and solution.txt					</div>
  *	<div class="line">--xz-plots|-xz    turns bitmaps initial.tga and solution.tga into the X-Z plane			</div>
  *	<div class="line">--dump-system-matrix|-dsm    writes system matrix as system.mtx (matrix market)			</div>
  *	<div class="line">                  and system.bla (block layout) before optimization						</div>
@@ -148,10 +158,16 @@
  *	<div class="line">                  matrix benchmarks (benchmark-name is name of a folder with				</div>
  *	<div class="line">                  UFLSMC benchmark, benchmark-type is one of alloc, factor, all)			</div>
  *	<div class="line">--run-matrix-unit-tests|-rmut    runs block matrix unit tests								</div>
- *	<div class="line">--omp-set-num-threads &lt;N&gt; sets number of threads to N (default is to use as many	</div>
+ *	<div class="line">--omp-set-num-threads &lt;N&gt;    sets number of threads to N (default is to use as many	</div>
  *	<div class="line">                  threads as there are CPU cores)											</div>
- *	<div class="line">--omp-set-dynamic &lt;N&gt; enables dynamic adjustment of the number of threads is N is	</div>
+ *	<div class="line">--omp-set-dynamic &lt;N&gt;    enables dynamic adjustment of the number of threads is N is	</div>
  *	<div class="line">                  nonzero, disables if zero (disabled by default)							</div>
+ *	<div class="line">--dogleg-step-size|-dlss <f>    sets the initial dogleg solver step size (default 2)		</div>
+ *	<div class="line">--dogleg-all-batch|-dlabat    instructs the dogleg solver (disabled by default)			</div>
+ *	<div class="line">--iBA-save-intermediates|-iBAsi	enables saving of intermediate solutions at				</div>
+ *	<div class="line">                  every step in incremental BA (disabled by default)						</div>
+ *	<div class="line">--iBA-save-matrices|-iBAsm	enables saving of system matrices at every step in			</div>
+ *	<div class="line">                  incremental BA (disabled by default)									</div>
  *	</div>
  *	\endhtmlonly
  *
@@ -707,6 +723,8 @@
  *	like), it works. It is retained for backward compatibility. However, if implementing
  *	new 3D solver, derivatives based on SE(3) and se(3) should be used (this feature will
  *	be aviailable in SLAM++ 3.0).
+ *
+ *	To represent a coordinate frame in SE(3), one can use \ref C3DJacobians::TSE3.
  */
 
 /**
@@ -722,6 +740,72 @@
  *	\ref include/slam/Sim3_Types.h.
  *
  *	There is also a description of \ref rot3d.
+ *
+ *	To represent a coordinate frame in Sim(3), one can use \ref CSim3Jacobians::TSim3.
+ *	Note that it is similar to the representation used in the TooN library by Tom Drummond
+ *	and is slightly different from Hauke Strasdat's Sophus library. The following simple test
+ *	can be used for disambiguating the representations:
+ *
+ *	@code
+ *	Eigen::Matrix4d T;
+ *	T <<  0.6928,       0,  0.4000,  2.0000,
+ *			   0,  0.8000,       0,  2.0000,
+ *		 -0.4000,       0,  0.6928,  2.0000,
+ *			   0,       0,       0,  1.0000;
+ *	// a pose as a matrix; note that the rotation part has scale equal to 0.8
+ *
+ *	Eigen::Vector7d v_tRs;
+ *	v_tRs.head<3>() = T.topRightCorner<3, 1>(); // translation
+ *	v_tRs(6) = T.topLeftCorner<3, 3>().norm() / sqrt(3.0); // scale
+ *	Eigen::Vector3d v_rot;
+ *	C3DJacobians::Quat_to_AxisAngle(Eigen::Quaterniond(T.topLeftCorner<3, 3>() / v_tRs(6)).normalized(),
+ *		v_rot); // rotation
+ *	v_tRs.segment<3>(3) = v_rot;
+ *	// convert the pose to a translation-rotation-scale vector
+ *
+ *	std::cout << "T =" << std::endl << T << std::endl << std::endl;
+ *	std::cout << "v_tRs =" << std::endl << v_tRs << std::endl << std::endl;
+ *
+ *	CSim3Jacobians::TSim3 t_sim3(v_tRs, CSim3Jacobians::TSim3::from_tRs_vector);
+ *	Eigen::Vector7d v_log = t_sim3.v_Log();
+ *	// calculate the logarithmic map
+ *
+ *	std::cout << "v_log =" << std::endl << v_log << std::endl;
+ *	@endcode
+ *
+ *	In SLAM++, it gives the following result:
+ *
+ *	@code
+ *	T =
+ *	    0.6928      0       0.4      2
+ *			 0    0.8         0      2
+ *		  -0.4      0    0.6928      2
+ *			 0      0         0      1
+ *
+ *	v_tRs =
+ *			   2
+ *			   2
+ *			   2
+ *			   0
+ *		0.523608
+ *			   0
+ *		0.799988
+ *
+ *	v_log =
+ *		  1.62293
+ *		  2.23145
+ *		  2.74863
+ *				0
+ *		 0.523608
+ *				0
+ *		-0.223158
+ *	@endcode
+ *
+ *	Where <tt>T</tt> is a transformation matrix in Sim(3), <tt>v_tRs</tt> is a 7D vector
+ *	containing translation (3D), rotation as axis-angle (3D) and scle (1D). Finally,
+ *	<tt>v_log</tt> is the corresponding element of \f$\mathfrak{sim}(3)\f$ obtained using
+ *	the logarithmic map.
+ *
  */
 
 /**
@@ -733,6 +817,11 @@
  *	The matching observation function is \ref CEdgeP2C3D.
  *
  *	There is a description of \ref rot3d.
+ */
+
+/**
+ *	@defgroup geom Geometry
+ *	@brief Utilities for geometric calculations in 3D.
  */
 
 /**
@@ -909,15 +998,6 @@ struct TDatasetPeeker : public CParserBase::CParserAdaptor {
 	 *	@brief appends the system with a projection measurement
 	 *	@param[in] r_t_edge is the measurement to be appended
 	 */
-	virtual void AppendSystem(const CParserBase::TEdgeC2CE &UNUSED(r_t_edge))
-	{
-		b_has_ba = true;
-	}
-
-	/**
-	 *	@brief appends the system with a projection measurement
-	 *	@param[in] r_t_edge is the measurement to be appended
-	 */
 	virtual void AppendSystem(const CParserBase::TEdgeP2CI3D &UNUSED(r_t_edge))
 	{
 		b_has_ba_intrinsics = true;
@@ -972,6 +1052,48 @@ struct TDatasetPeeker : public CParserBase::CParserAdaptor {
 
 //#include "slam/Marginals.h"
 //#include "slam/IncrementalPolicy.h"
+
+#include "slam_app/IncBAParsePrimitives.h" // a very small header, includes nothing
+
+template <class CParseLoopType>
+class CParseLoopTraits {
+public:
+	enum {
+		b_saves_incremental_solutions = false
+	};
+};
+
+template <class CSystem, class CNonlinearSolver, template <class> class CEdgeTraits,
+	template <class> class CVertexTraits>
+class CParseLoopTraits<CParseLoop_ConsistencyMarker<CSystem,
+	CNonlinearSolver, CEdgeTraits, CVertexTraits> > {
+public:
+	enum {
+		b_saves_incremental_solutions = true
+	};
+};
+
+template <class CNonlinearSolverType>
+class CNonlinearSolverDogLegTraits {
+public:
+	enum {
+		b_is_dogleg_solver = false
+	};
+};
+
+#if defined(__SE_TYPES_SUPPORT_LAMBDA_SOLVERS) && defined(__NONLINEAR_BLOCKY_SOLVER_LAMBDA_DOGLEG_INCLUDED)
+
+template <class CSystem, class CLinearSolver,
+	class CAMatrixBlockSizes, class CLambdaMatrixBlockSizes>
+class CNonlinearSolverDogLegTraits<CNonlinearSolver_Lambda_DL<CSystem,
+	CLinearSolver, CAMatrixBlockSizes, CLambdaMatrixBlockSizes> > {
+public:
+	enum {
+		b_is_dogleg_solver = true
+	};
+};
+
+#endif // __SE_TYPES_SUPPORT_LAMBDA_SOLVERS && __SE_TYPES_SUPPORT_LAMBDA_SOLVERS
 
 /**
  *	@brief a helper template for running tests with given type configuration (to avoid repeating the same code)
@@ -1123,78 +1245,94 @@ public:
 	};
 
 	/**
-	 *	@brief utility for saving the system matrix
+	 *	@brief saves the system matrix
 	 *
-	 *	@tparam CSolverType is specialized nonlinear solver type
 	 *	@tparam b_can_dump is solver dump capability flag (extracted from solver traits)
+	 *	@tparam CSolverType is specialized nonlinear solver type
+	 *
+	 *	@param[in] r_solver is solver to save the matrix
+	 *	@param[in] p_s_name is output file name (will be saved in matrix market format)
+	 *
+	 *	@return Returns true on success, false on failure.
 	 */
-	template <class CSolverType, const bool b_can_dump>
-	class CDumpSystemMatrix {
-	public:
-		/**
-		 *	@brief saves the system matrix
-		 *
-		 *	@param[in] r_solver is solver to save the matrix
-		 *	@param[in] p_s_name is output file name (will be saved in matrix market format)
-		 *
-		 *	@return Returns true on success, false on failure.
-		 */
-		static bool Dump(const CSolverType &r_solver, const char *p_s_name = "system.mtx")
-		{
-			return r_solver.Save_SystemMatrix_MM(p_s_name);
-		}
-	};
+	template <const bool b_can_dump, class CSolverType>
+	static typename CEnableIf<b_can_dump, bool>::T DumpSystemMatrix(const CSolverType &r_solver,
+		const char *p_s_name = "system.mtx")
+	{
+		return r_solver.Save_SystemMatrix_MM(p_s_name);
+	}
 
 	/**
-	 *	@brief utility for saving the system matrix (specialization
-	 *		for solvers that do not support system matrix saving)
+	 *	@brief saves the system matrix (this only writes a warning that it cant save)
+	 *
+	 *	@tparam b_can_dump is solver dump capability flag (extracted from solver traits)
 	 *	@tparam CSolverType is specialized nonlinear solver type
+	 *
+	 *	@param[in] r_solver is solver to save the matrix
+	 *	@param[in] p_s_name is output file name (would be saved in matrix market format)
+	 *
+	 *	@return Returns false.
 	 */
-	template <class CSolverType>
-	class CDumpSystemMatrix<CSolverType, false> {
-	public:
-		/**
-		 *	@brief saves the system matrix (this only writes a warning that it cant save)
-		 *
-		 *	@param[in] r_solver is solver to save the matrix
-		 *	@param[in] p_s_name is output file name (will be saved in matrix market format)
-		 *
-		 *	@return Returns false.
-		 */
-		static bool Dump(const CSolverType &r_solver, const char *p_s_name = "system.mtx")
-		{
-			fprintf(stderr, "warning: the selected solver cannot save the system matrix\n");
-			return false;
-		}
-	};
+	template <const bool b_can_dump, class CSolverType>
+	static typename CEnableIf<!b_can_dump, bool>::T DumpSystemMatrix(const CSolverType &r_solver,
+		const char *p_s_name = "system.mtx")
+	{
+		fprintf(stderr, "warning: the selected solver cannot save the system matrix\n");
+		return false;
+	}
+
+	template <const bool b_is_dogleg, class CSolverType, class TRunConfig>
+	static typename CEnableIf<b_is_dogleg>::T
+		Additional_SolverConfig(CSolverType &r_solver, const TRunConfig &r_t_args)
+	{
+		r_solver.Set_AllBatch(r_t_args.b_dogleg_all_batch);
+		if(r_t_args.f_dogleg_step_size != -1)
+			r_solver.Set_StepSize(r_t_args.f_dogleg_step_size);
+		if(r_t_args.f_dogleg_step_threshold != -1)
+			fprintf(stderr, "warning: value of dogleg step threshold (-dlst) ignored\n"); // the "normal" -fnset threshold is currently used instead
+	}
+
+	template <const bool b_is_dogleg, class CSolverType, class TRunConfig>
+	static typename CEnableIf<!b_is_dogleg>::T
+		Additional_SolverConfig(CSolverType &UNUSED(r_solver), const TRunConfig &r_t_args)
+	{
+		if(r_t_args.b_dogleg_all_batch)
+			fprintf(stderr, "warning: value of dogleg all-batch flag (-dlabat) ignored\n");
+		if(r_t_args.f_dogleg_step_size != -1)
+			fprintf(stderr, "warning: value of dogleg step size (-dlss) ignored\n");
+		if(r_t_args.f_dogleg_step_threshold != -1)
+			fprintf(stderr, "warning: value of dogleg step threshold (-dlst) ignored\n"); // the "normal" -fnset threshold is currently used instead
+		// this is used with a solver other than dogleg
+	}
+
+	template <const bool b_can_save_intermediates, class CParseLoopType_, class TRunConfig>
+	static typename CEnableIf<b_can_save_intermediates>::T
+		Additional_ParseLoopConfig(CParseLoopType_ &r_ploop, const TRunConfig &r_t_args)
+	{
+		r_ploop.Enable_Save_Solutions(r_t_args.b_inc_BA_save_intermediates);
+		r_ploop.Enable_Save_SysMatrices(r_t_args.b_inc_BA_save_sysmats);
+	}
+
+	template <const bool b_can_save_intermediates, class CParseLoopType_, class TRunConfig>
+	static typename CEnableIf<!b_can_save_intermediates>::T
+		Additional_ParseLoopConfig(CParseLoopType_ &UNUSED(r_ploop), const TRunConfig &r_t_args)
+	{
+		if(r_t_args.b_inc_BA_save_intermediates)
+			fprintf(stderr, "warning: saving intermediates (-iBAsi) not supported in the current setup\n");
+		if(r_t_args.b_inc_BA_save_sysmats)
+			fprintf(stderr, "warning: saving matrices (-iBAsm) not supported in the current setup\n");
+		// this is used with a different parse loop type, will not save anything
+	}
 
 public:
 	/**
 	 *	@brief runs optimization of system stored in a file, measures timing
-	 *
-	 *	@param[in] p_s_input_file is the name of input file
-	 *	@param[in] n_max_lines_to_process is limit of parsed lines (0 means unlimited)
-	 *	@param[in] t_incremental_cfg is incremental solving configuration
-	 *	@param[in] n_max_final_optimization_iteration_num is maximal number of iterations
-	 *		spent in calculating nonlinear solution to the system at the end
-	 *	@param[in] f_final_optimization_threshold is error threshold for early stopping
-	 *		the final calculation of nonlinear solution to the system
-	 *	@param[in] t_marginals_cfg is marginal covariance calculation config
-	 *	@param[in] b_verbose is verbosity flag
-	 *	@param[in] b_use_schur is Schur complement flag
-	 *	@param[in] b_show_detailed_timing is detailed timing flag
-	 *	@param[in] b_write_bitmaps is flag for writing (2D) bitmaps of the initial and the optimized system
-	 *	@param[in] b_xz_plots is flag for writing 3D bitmaps of the initial and the optimized system
-	 *	@param[in] b_write_system_matrix is flag for writing the system matrix (at unspecified state; this is solver dependent)
-	 *
+	 *	@tparam TRunConfig is command-line arguments type (avoids forward declaration)
+	 *	@param[in] r_t_args is a structure containing command-line arguments
 	 *	@return Returns true on success, false on failure.
 	 */
-	static inline bool Run_and_Shout(const char *p_s_input_file,
-		size_t n_max_lines_to_process, TIncrementalSolveSetting t_incremental_cfg,
-		size_t n_max_final_optimization_iteration_num, double f_final_optimization_threshold,
-		TMarginalsComputationPolicy t_marginals_cfg, bool b_verbose, bool b_use_schur,
-		bool b_show_detailed_timing, bool b_write_bitmaps, bool b_xz_plots,
-		bool b_write_system_matrix)
+	template <class TRunConfig>
+	static inline bool Run_and_Shout(const TRunConfig &r_t_args)
 	{
 		CSystemType system;
 
@@ -1219,18 +1357,46 @@ public:
 		_ASSERTE(((b_can_get_A)? 1 : 0) + ((b_can_get_Lambda)? 1 : 0) + ((b_can_get_R)? 1 : 0) <= 1);
 		// see whether the solver can dump a matrix
 
+		TIncrementalSolveSetting t_incremental_cfg(solve::linear,
+			frequency::Every(r_t_args.n_linear_solve_each_n_steps),
+			solve::nonlinear, frequency::Every(r_t_args.n_nonlinear_solve_each_n_steps),
+			r_t_args.n_max_nonlinear_solve_iteration_num,
+			r_t_args.f_nonlinear_solve_error_threshold);
+		// t_odo - assemble this earlier, simplify Run_and_Shout() arglist
+
+		TMarginalsComputationPolicy t_marginals_cfg((r_t_args.b_do_marginals)?
+			marginals::do_calculate : marginals::do_not_calculate,
+			frequency::Every((r_t_args.n_nonlinear_solve_each_n_steps)?
+			r_t_args.n_nonlinear_solve_each_n_steps : r_t_args.n_linear_solve_each_n_steps),
+			EBlockMatrixPart(mpart_Diagonal | mpart_LastColumn),
+			EBlockMatrixPart(mpart_Diagonal | mpart_LastColumn), mpart_Nothing);
+		// enable marginals, set the same freq as solver and set mpart_Diagonal | mpart_LastColumn
+		// for both increment / relin, and nothing for miss
+
 		CSpecializedNonlinearSolverType nonlinear_solver(system, t_incremental_cfg,
-			t_marginals_cfg, b_verbose, linear_solver, b_use_schur);
+			t_marginals_cfg, r_t_args.b_verbose, linear_solver, r_t_args.b_use_schur);
 		// prepare nonlinear solver
+
+		enum {
+			b_is_dogleg_solver = CNonlinearSolverDogLegTraits<CSpecializedNonlinearSolverType>::b_is_dogleg_solver
+		};
+		Additional_SolverConfig<b_is_dogleg_solver>(nonlinear_solver, r_t_args);
+		// call Set_AllBatch(), Set_UpdateThreshold(), Set_StepSize(), according to the parameters
 
 		typedef CParseLoopType<CSystemType, CSpecializedNonlinearSolverType,
 			CEdgeTraitsType, CVertexTraitsType> CSpecializedParseLoop;
 		CSpecializedParseLoop parse_loop(system, nonlinear_solver);
 		// prepare parse loop
 
-		if(b_verbose && b_use_schur)
+		enum {
+			b_parse_loop_can_save = CParseLoopTraits<CSpecializedParseLoop>::b_saves_incremental_solutions
+		};
+		Additional_ParseLoopConfig<b_parse_loop_can_save>(parse_loop, r_t_args);
+		// call Enable_Save_Solutions(), Enable_Save_SysMatrices() if set and if requested from commandline
+
+		if(r_t_args.b_verbose && r_t_args.b_use_schur)
 			printf("using Schur complement\n");
-		if(b_verbose && t_marginals_cfg.b_calculate) {
+		if(r_t_args.b_verbose && t_marginals_cfg.b_calculate) {
 			printf("marginals will be calculated (inc: 0x%x, relin: 0x%x, miss: 0x%x)\n",
 				t_marginals_cfg.n_incremental_policy, t_marginals_cfg.n_relinearize_policy,
 				t_marginals_cfg.n_cache_miss_policy);
@@ -1245,18 +1411,18 @@ public:
 		//printf("n_max_lines_to_process = %d\n", int(n_max_lines_to_process)); // debug
 		//CParser p;
 		CParserTemplate<CSpecializedParseLoop, CParsedPrimitives> p;
-		if(!p.Parse(p_s_input_file, parse_loop, n_max_lines_to_process)) {
+		if(!p.Parse(r_t_args.p_s_input_file, parse_loop, r_t_args.n_max_lines_to_process)) {
 			fprintf(stderr, "error: failed to parse input file\n");
 			return false;
 		}
 		// run the parser, solver incremental function is called
 
 		if(!t_incremental_cfg.t_linear_freq.n_period && !t_incremental_cfg.t_nonlinear_freq.n_period) {
-			if(b_show_detailed_timing) {
+			if(r_t_args.b_show_detailed_timing) {
 				double f_error = nonlinear_solver.f_Chi_Squared_Error_Denorm();
 				printf("initial denormalized chi2 error: %.2f\n", f_error);
 			}
-			if(b_verbose)
+			if(r_t_args.b_verbose)
 				fprintf(stderr, "warning: running in batch mode. ignoring time spent in parser\n");
 			t.ResetTimer();
 		}
@@ -1264,24 +1430,28 @@ public:
 		// spent in parser (because no computation was done)
 
 		double f_time_initial_save_start = t.f_Time();
-		if(b_write_bitmaps) {
-			if(b_xz_plots)
+		if(r_t_args.b_write_bitmaps) {
+			if(r_t_args.b_xz_plots)
 				system.Plot3D("initial.tga");
 			else
 				system.Plot2D("initial.tga");
-			system.Dump("initial.txt");
-			// save the initial configuration to a file
 
 			/*double f_error = nonlinear_solver.f_Chi_Squared_Error_Denorm();
 			printf("denormalized initial chi2 error: %.2lf\n", f_error);*/
 			// need to calculate jacobians & errors first, don't do it ...
 		}
-		if(b_write_system_matrix) {
+		if(r_t_args.b_write_solution) {
+			system.Dump("initial.txt");
+			if(CSystemType::have_ConstVertices && !system.r_ConstVertex_Pool().b_Empty())
+				system.Dump("initial_const.txt", true);
+			// save the initial configuration to a file
+		}
+		if(r_t_args.b_write_system_matrix) {
 			nonlinear_solver.Optimize(0);
 			// force the solver to build the matrices (will do the marginals as well
 			// though but this is only for debugging anyways)
 
-			CDumpSystemMatrix<CSpecializedNonlinearSolverType, b_solver_can_save>::Dump(nonlinear_solver);
+			DumpSystemMatrix<b_solver_can_save>(nonlinear_solver);
 			// calls solver.Save_SystemMatrix_MM("system.mtx"); but only if the solver supports it
 
 			CDumpSystemMatrix_SparsityPattern<CSpecializedNonlinearSolverType,
@@ -1290,8 +1460,10 @@ public:
 		}
 		double f_time_initial_save_end = t.f_Time();
 
-		if(!t_incremental_cfg.t_linear_freq.n_period && !t_incremental_cfg.t_nonlinear_freq.n_period)
-			nonlinear_solver.Optimize(n_max_final_optimization_iteration_num, f_final_optimization_threshold);
+		if(!t_incremental_cfg.t_linear_freq.n_period && !t_incremental_cfg.t_nonlinear_freq.n_period) {
+			nonlinear_solver.Optimize(r_t_args.n_max_final_optimization_iteration_num,
+				r_t_args.f_final_optimization_threshold);
+		}
 		// perform the final optimization (only in batch)
 
 		double f_time = t.f_Time() - (f_time_initial_save_end - f_time_initial_save_start); // don't count saving of the initial system state (rasterizing the image takes some time)
@@ -1299,7 +1471,7 @@ public:
 		//printf("time / 1.6 = " PRItimeprecise "\n", PRItimeparams(f_time / 1.6));
 		// display time it took
 
-		if(b_show_detailed_timing) {
+		if(r_t_args.b_show_detailed_timing) {
 			nonlinear_solver.Dump(f_time);
 			double f_error = nonlinear_solver.f_Chi_Squared_Error_Denorm();
 			printf("denormalized chi2 error: %.2f\n", f_error);
@@ -1315,13 +1487,13 @@ public:
 		CMarginals::Marginals_Test(R, 3);
 		// test the marginals*/
 
-		if(b_write_bitmaps) {
+		if(r_t_args.b_write_bitmaps) {
 			/*if(!nonlinear_solver.Dump_SystemMatrix("system_matrix.tga", 5) &&
 			   !nonlinear_solver.Dump_SystemMatrix("system_matrix.tga", 4) &&
 			   !nonlinear_solver.Dump_SystemMatrix("system_matrix.tga", 3) &&
 			   !nonlinear_solver.Dump_SystemMatrix("system_matrix.tga", 2))
 				fprintf(stderr, "error: failed to dump system matrix image\n");*/
-			if(b_xz_plots) {
+			if(r_t_args.b_xz_plots) {
 				system.Plot3D("solution.tga");
 				system.Plot3D("solution_print.tga", 2048, 2048, 10, 3, 7, 1, true, false, 10); // print size images
 				system.Plot3D("solution_print_landmarks.tga", 2048, 2048, 10, 3, 7, 1, true, false, 10, true); // print size images
@@ -1332,10 +1504,14 @@ public:
 				system.Plot2D("solution_print_landmarks.tga", 2048, 2048, 10, 3, 7, 1, true, false, 10, true); // print size images
 				system.Plot2D("solution_print_noticks.tga", 2048, 2048, 0, 0, 7, 1, true, false, 4); // print size images
 			}
-			system.Dump("solution.txt");
 			//nonlinear_solver.Save_SystemMatrix_MM("system_optimized.mtx");
 		}
-		// save the solution to a file
+		if(r_t_args.b_write_solution) {
+			system.Dump("solution.txt");
+			if(CSystemType::have_ConstVertices && !system.r_ConstVertex_Pool().b_Empty())
+				system.Dump("solution_const.txt", true);
+			// save the solution to a file
+		}
 
 		return true;
 	}
@@ -1394,10 +1570,20 @@ public:
 		bmb.ShowResults();
 		char p_s_outfile[256];
 #ifdef __BLOCK_BENCH_CHOLESKY_USE_AMD
-		sprintf(p_s_outfile, "%s_%d_AMD.csv", p_s_bench_name, n_block_size);
+		sprintf(p_s_outfile, "%s_%d_AMD", p_s_bench_name, n_block_size);
 #else // __BLOCK_BENCH_CHOLESKY_USE_AMD
-		sprintf(p_s_outfile, "%s_%d.csv", p_s_bench_name, n_block_size);
+		sprintf(p_s_outfile, "%s_%d", p_s_bench_name, n_block_size);
 #endif // __BLOCK_BENCH_CHOLESKY_USE_AMD
+
+		for(char *p_char = p_s_outfile; *p_char; ++ p_char) {
+			if(strchr("/\\?:@.^;\"\'", *p_char))
+				*p_char = '_';
+		}
+		// replace special characters that should not appear in paths
+
+		strcat(p_s_outfile, ".csv");
+		// after replacement, to keep the dot
+
 		if(!bmb.Save_ResultSheet(p_s_outfile))
 			fprintf(stderr, "error: i/o error while writing results\n");
 #ifdef __BLOCK_BENCH_CHOLESKY_USE_AMD
@@ -1459,6 +1645,7 @@ void DisplaySwitches();
 struct TCommandLineArgs {
 	ENonlinearSolverType n_solver_choice; /**< @brief nonlinear solver selector */
 	bool b_write_bitmaps; /**< @brief bitmaps write flag */
+	bool b_write_solution; /**< @brief initial / solution write flag */
 	bool b_xz_plots; /**< @brief x-z bitmaps orientation flag */
 	bool b_write_system_matrix; /**< @brief matrix write flag */
 	bool b_no_show; /**< @brief bitmaps show flag (only on windows) */
@@ -1490,6 +1677,11 @@ struct TCommandLineArgs {
 	size_t n_omp_threads; /**< @brief OpenMP number of threads override */
 	bool b_omp_dynamic; /**< @brief OpenMP dynamic scheduling override enable flag */
 	bool b_do_marginals; /**< @brief marginal covariance calculation enable flag */
+	double f_dogleg_step_size; /**< @brief dogleg solver step size */
+	double f_dogleg_step_threshold; /**< @brief dogleg solver step threshold */
+	bool b_dogleg_all_batch; /**< dogleg solver all batch flag */
+	bool b_inc_BA_save_intermediates; /**< @brief in incremental BA, save intermediate solutions (and marginals if enabled) at every step */
+	bool b_inc_BA_save_sysmats; /**< @brief in incremental BA, save system matrices at every step */
 
 	/**
 	 *	@brief selects default values for commandline args
@@ -1524,26 +1716,8 @@ struct TCommandLineArgs {
 		class CParsedPrimitives>
 	inline bool Run() // throw(std::runtime_error, std::bad_alloc)
 	{
-		TIncrementalSolveSetting t_incremental_cfg(solve::linear, frequency::Every(n_linear_solve_each_n_steps),
-			solve::nonlinear, frequency::Every(n_nonlinear_solve_each_n_steps), n_max_nonlinear_solve_iteration_num,
-			f_nonlinear_solve_error_threshold);
-		// todo - assemble this earlier, simplify Run_and_Shout() arglist
-
-		TMarginalsComputationPolicy t_marginals_cfg((b_do_marginals)?
-			marginals::do_calculate : marginals::do_not_calculate,
-			frequency::Every((n_nonlinear_solve_each_n_steps)?
-			n_nonlinear_solve_each_n_steps : n_linear_solve_each_n_steps),
-			EBlockMatrixPart(mpart_Diagonal | mpart_LastColumn),
-			EBlockMatrixPart(mpart_Diagonal | mpart_LastColumn), mpart_Nothing);
-		// enable marginals, set the same freq as solver and set mpart_Diagonal | mpart_LastColumn
-		// for both increment / relin, and nothing for miss
-
 		return CTester<CSystemType, CNonlinearSolverType, CEdgeTraitsType,
-			CVertexTraitsType, CParseLoopType, CParsedPrimitives>::Run_and_Shout(
-			p_s_input_file, n_max_lines_to_process, t_incremental_cfg,
-			n_max_final_optimization_iteration_num,
-			f_final_optimization_threshold, t_marginals_cfg, b_verbose, b_use_schur,
-			b_show_detailed_timing, b_write_bitmaps, b_xz_plots, b_write_system_matrix);
+			CVertexTraitsType, CParseLoopType, CParsedPrimitives>::Run_and_Shout(*this);
 		// run with parameters
 	}
 };

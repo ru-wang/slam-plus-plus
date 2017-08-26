@@ -15,7 +15,7 @@
 #define __BITMAP_STRUCTURE_INCLUDED
 
 /**
- *	@file Bitmap.h
+ *	@file slam/Bitmap.h
  *	@date 2011
  *	@author -tHE SWINe-
  *	@brief a simple, easy to use bitmap class

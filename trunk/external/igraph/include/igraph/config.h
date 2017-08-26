@@ -168,12 +168,13 @@
 
 #define strcasecmp _stricmp
 
+#if _MSC_VER < 1900
+#define snprintf igraph_i_snprintf
 #define isnan _isnan
+#endif // _MSC_VER < 1900
 #define finite _finite
 #define hypot _hypot
 #include <float.h>
-
-#define snprintf igraph_i_snprintf
 
 /* To turn off some warnings about fscanf, strcpy etc */
 #define _CRT_SECURE_NO_WARNINGS 1
