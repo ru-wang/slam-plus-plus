@@ -39,8 +39,12 @@ int n_Run_ROCV_Solver(const TCommandLineArgs &t_args) // throw(std::runtime_erro
 		CEdgeConstVelocity3D<>, CEdgeLandmark3DPrior)) TEdgeTypelist_ROCV;
 	// define types of vertices, edges
 
-	typedef CFlatSystem<CBaseVertex, TVertexTypelist_ROCV, CBaseEdge,
-		TEdgeTypelist_ROCV, CNullUnaryFactorFactory> CSystemType;
+	typedef CFlatSystem<CBaseVertex, TVertexTypelist_ROCV,
+		CBaseEdge, TEdgeTypelist_ROCV, CNullUnaryFactorFactory
+#ifdef __SLAM_APP_USE_CONSTANT_VERTICES
+		, CBaseVertex, TVertexTypelist_ROCV
+#endif // __SLAM_APP_USE_CONSTANT_VERTICES
+		> CSystemType;
 	// make a system permitting ROCV vertex and edge types
 
 	typedef CSolverCaller<CSystemType, CROCVEdgeTraits,

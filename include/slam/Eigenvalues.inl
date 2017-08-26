@@ -500,8 +500,13 @@ void CTridiagEigsSolver<CScalar>::Compute(const Eigen::Ref<const _TyMatrix> &r_A
 		while(n_start > 0 && sub_diag(n_start - 1) != 0)
 			-- n_start;
 
+#if EIGEN_WORLD_VERSION == 3 && EIGEN_MAJOR_VERSION == 2 && EIGEN_MINOR_VERSION > 4
+		Eigen::internal::tridiagonal_qr_step/*<Eigen::ColMajor>*/(m_v_eval.data(),
+			sub_diag.data(), n_start, n_end, m_v_evec.data(), n);
+#else // EIGEN_WORLD_VERSION == 3 && EIGEN_MAJOR_VERSION == 2 && EIGEN_MINOR_VERSION > 4
 		Eigen::internal::tridiagonal_qr_step<Eigen::ColMajor>(m_v_eval.data(),
 			sub_diag.data(), n_start, n_end, m_v_evec.data(), n);
+#endif // EIGEN_WORLD_VERSION == 3 && EIGEN_MAJOR_VERSION == 2 && EIGEN_MINOR_VERSION > 4
 	}
 
 	m_n = n; // now computed
@@ -525,13 +530,15 @@ template <class COpType, int _n_sort_type, bool _b_ascending_sort>
 template <class Derived0>
 void CSymEigsSolver<COpType, _n_sort_type, _b_ascending_sort>::Init(const Eigen::MatrixBase<Derived0> &r_v_init_resid) // throw(std::bad_alloc)
 {
-	// Reset all matrices/vectors to zero
+	_ASSERTE(r_v_init_resid.rows() == m_n && r_v_init_resid.cols() == 1);
+
 	m_t_fac_V.resize(m_n, m_n_ritz_num);
 	m_t_fac_H.resize(m_n_ritz_num, m_n_ritz_num);
 	m_v_fac_f.resize(m_n);
 	m_v_ritz_val.resize(m_n_ritz_num);
 	m_t_ritz_vec.resize(m_n_ritz_num, m_n_eigs_num);
 	m_ritz_conv.resize(m_n_eigs_num);
+	// reset all matrices/vectors to zero
 
 	m_t_fac_V.setZero();
 	m_t_fac_H.setZero();
@@ -589,7 +596,11 @@ size_t CSymEigsSolver<COpType, _n_sort_type, _b_ascending_sort>::Compute(size_t
 			break;
 		}
 
-		Restart(n_Adjusted_Eigenvalue_Num(n_converged_num));
+		try {
+			Restart(n_Adjusted_Eigenvalue_Num(n_converged_num));
+		} catch(std::runtime_error&) {
+			break; // CTridiagEigsSolver in Get_RitzPairs() failed to converge; will have to do with the eigs we have discovered so far
+		}
 		++ m_n_restart_num;
 	}
 	// restarted Arnoldi iteration
@@ -693,7 +704,7 @@ void CSymEigsSolver<COpType, _n_sort_type, _b_ascending_sort>::Factorize(size_t 
 }
 
 template <class COpType, int _n_sort_type, bool _b_ascending_sort>
-void CSymEigsSolver<COpType, _n_sort_type, _b_ascending_sort>::Restart(size_t n_start) // throw(std::bad_alloc)
+void CSymEigsSolver<COpType, _n_sort_type, _b_ascending_sort>::Restart(size_t n_start) // throw(std::bad_alloc, std::runtime_error)
 {
 	if(n_start >= m_n_ritz_num)
 		return;

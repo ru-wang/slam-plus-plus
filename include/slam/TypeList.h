@@ -53,52 +53,23 @@
 // force __TYPE_LIST_OMIT_OPS for earlier than MSVC 2008
 
 #include "Integer.h" // _ASSERTE(), UNUSED()
+#include "TypeName.h"
 
-#if defined(_MSC_VER) && !defined(__MWERKS__) && _MSC_VER <= 1200
-#include <typeinfo>
-#endif // _MSC_VER) && !__MWERKS__ && _MSC_VER <= 1200
-#include <string.h>
-#include <string>
-// for s_TypeName()
+#if defined(_MSC_VER) && !defined(__MWERKS__) && _MSC_VER >= 1900
+#define TYPELIST_H_PUSHED_WARNING_STATE
+#pragma warning(push)
+#pragma warning(disable: 4503)
+#endif // _MSC_VER) && !__MWERKS__ && _MSC_VER >= 1900
+// get rid of VS 2015 warning C4503: '__LINE__Var': decorated name length exceeded, name was truncated
 
 /**
- *	@brief gets user readable (demangled) type name
- *
- *	This is using the __PRETTY_FUNCTION__ hack and requires some string processing.
- *	Rather than writing some const string class, this is simply using std::string
- *	with a bit larger runtime cost. It's ok here, it is only intended for debugging.
- *
- *	@tparam T is type to get the name of
- *	@return Returns the type name of <tt>T</tt>.
- *	@note This function throws std::bad_alloc.
+ *	@brief namespace with internal typelists implementation and helper objects
  */
-template <class T>
-std::string s_TypeName() // throw(std::bad_alloc) // do not rename it, will break the code for MSVC
-{
-#if defined(_MSC_VER) && !defined(__MWERKS__)
-#if _MSC_VER <= 1200
-	return typeid(T).name(); // returns mangled names in newer compilers!
-#else // _MSC_VER <= 1200
-	const char *p = __FUNCSIG__;
-	std::string str = strstr(p, "s_TypeName<") + 11/*strlen("s_TypeName<")*/;
-	str.erase(str.find_last_of(">"), std::string::npos);
-	return str;
-#endif // _MSC_VER <= 1200
-#else // _MSC_VER) && !__MWERKS__
-	const char *p = __PRETTY_FUNCTION__, *w;
-	std::string str;
-	if((w = strstr(p, "T = ")))
-		str = w + 4;
-	else if((w = strstr(p, "= ")))
-		str = w + 2;
-	else if((w = strstr(p, "=")))
-		str = w + 1;
-	else
-		return p; // not sure how to trim it, return the whole thing
-	str.erase(str.end() - 1);
-	return str;
-#endif // _MSC_VER) && !__MWERKS__
-}
+namespace tl_detail {
+
+// currently empty; some objects were migrated to another ns; the ns itself was retained
+
+} // ~tl_detail
 
 /**
  *	@brief typelist template
@@ -1480,6 +1451,23 @@ public:
 };
 
 /**
+ *	@brief gets a typelist without an item at a specified position
+ *
+ *	@tparam CList is input typelist
+ *	@tparam n_index is zero-based index of the item to be erased
+ */
+template <class CList, const int n_index>
+class CTypelistErase {
+protected:
+	typedef CSplitTypelist<CList, n_index> _TySplit; /**< @brief first split of the list */
+	typedef typename _TySplit::_TyFirst _TyHead; /**< @brief the list before the erased item */
+	typedef typename CSplitTypelist<typename _TySplit::_TySecond, 1>::_TySecond _TyTail; /**< @brief the list after the erased item */
+
+public:
+	typedef typename CConcatTypelist<_TyHead, _TyTail>::_TyResult _TyResult; /**< @brief the result */
+};
+
+/**
  *	@brief concatenates a list of typelists
  *	@tparam CListOfLists is a list of typelists (a 2D jagged list) to be concatenated
  */
@@ -1875,9 +1863,6 @@ public:
 	}
 };
 
-/**
- *	@brief namespace with internal typelists implementation and helper objects
- */
 namespace tl_detail {
 
 /**
@@ -2508,5 +2493,9 @@ public:
 };
 
 #endif // !__TYPE_LIST_OMIT_OPS
+
+#ifdef TYPELIST_H_PUSHED_WARNING_STATE
+#pragma warning(pop)
+#endif // TYPELIST_H_PUSHED_WARNING_STATE
 
 #endif // !__TYPE_LIST_INCLUDED

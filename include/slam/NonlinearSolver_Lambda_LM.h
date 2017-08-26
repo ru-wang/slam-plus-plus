@@ -28,6 +28,8 @@
 #include "slam/NonlinearSolver_Base.h"
 #include "slam/NonlinearSolver_Lambda_Base.h" // the utils will suffice
 
+#include "slam/BAMarginals.h" // CSchurComplement_Marginals
+
 extern int n_dummy_param;
 // governs the thresholding of dx (a negative value is the power of 10 to threshold by)
 
@@ -230,8 +232,9 @@ public:
 		for(size_t i = n_first_vertex; i < n_last_vertex; ++ i) {
 			size_t n_last = r_lambda.n_BlockColumn_Block_Num(i) - 1;
 			CUberBlockMatrix::_TyMatrixXdRef block = r_lambda.t_Block_AtColumn(i, n_last);
-			for(size_t j = 0, m = block.rows(); j < m; ++ j) // could use unroll (but wouldn't be able to use SSE anyway)
-				block(j, j) += f_alpha;
+			//for(size_t j = 0, m = block.rows(); j < m; ++ j) // could use unroll (but wouldn't be able to use SSE anyway)
+			//	block(j, j) += f_alpha;
+			block.diagonal().array() += f_alpha;
 		}
 	}
 };
@@ -282,8 +285,9 @@ public:
 		for(size_t i = n_first_vertex; i < n_last_vertex; ++ i) {
 			size_t n_last = r_lambda.n_BlockColumn_Block_Num(i) - 1;
 			CUberBlockMatrix::_TyMatrixXdRef block = r_lambda.t_Block_AtColumn(i, n_last);
-			for(size_t j = 0, m = block.rows(); j < m; ++ j) // could use unroll (but wouldn't be able to use SSE anyway)
-				block(j, j) += f_alpha;
+			//for(size_t j = 0, m = block.rows(); j < m; ++ j) // could use unroll (but wouldn't be able to use SSE anyway)
+			//	block(j, j) += f_alpha;
+			block.diagonal().array() += f_alpha;
 		}
 	}
 };
@@ -376,7 +380,7 @@ protected:
 	// solver data
 
 	size_t m_n_iteration_num; /**< @brief number of linear solver iterations */
-	double m_f_chi2_time; /**< @brief time spent in Choleski() section */
+	double m_f_chi2_time; /**< @brief time spent in calculating chi2 */
 	double m_f_lambda_time; /**< @brief time spent updating lambda */
 	double m_f_rhs_time; /**< @brief time spent in right-hand-side calculation */
 	double m_f_linsolve_time; /**< @brief time spent in luinear solving (Cholesky / Schur) */
@@ -389,6 +393,19 @@ protected:
 	double m_f_incmarginals_time; /**< @brief time spent in calculating marginal covariances (update) */
 	size_t m_n_incmarginals_num; /**< @brief number of times the marginals update ran instead of batch recalculation */
 	// statistics
+
+	typedef typename CLinearSolver_Schur<CLinearSolver, CAMatrixBlockSizes, CSystem>::_TyGOH _TyGOH; /**< @brief guided Schur ordering helper */
+
+	typedef typename _TyGOH::template CBlockSizes<_TyLambdaMatrixBlockSizes> _TySchurBlockSize_Helper;
+	typedef typename _TySchurBlockSize_Helper::_TyDBlockSizes _TyDBlockSizes; /**< @brief diagonal (landmark) matrix block sizes */
+	typedef typename _TySchurBlockSize_Helper::_TySchurBlockSizes _TySchurBlockSizes; /**< @brief Schur complement (RCS) matrix block sizes */
+	typedef typename _TySchurBlockSize_Helper::_TyUBlockSizes _TyUBlockSizes; /**< @brief upper off-diagonal submatrix block sizes */
+	typedef typename _TySchurBlockSize_Helper::_TyVBlockSizes _TyVBlockSizes; /**< @brief lower off-diagonal submatrix block sizes */
+	typedef typename _TySchurBlockSize_Helper::_TyOffDiagBlockSizes _TyOffDiagBlockSizes; /**< @brief off-diagonal submatrix block sizes */
+
+	typedef CSchurComplement_Marginals<_TySchurBlockSizes, _TyUBlockSizes, _TyVBlockSizes, _TyDBlockSizes> CMargsHelper;
+
+	CMargsHelper m_margs; /**< @brief Schur marginals helper object */
 
 public:
 	/**
@@ -534,6 +551,8 @@ public:
 		double f_all_time = f_parallel_time + m_f_chi2_time + m_f_linsolve_time -
 			m_f_norm_time + m_f_damping_time + m_f_dampingupd_time + m_f_sysupdate_time +
 			m_f_extra_chol_time + m_f_marginals_time + m_f_incmarginals_time;
+		if(f_total_time < 0)
+			printf("solver took %f seconds in total\n", f_all_time);
 		printf("solver spent %f seconds in parallelizable section (updating lambda; disparity %g seconds)\n",
 			f_parallel_time, (f_total_time > 0)? f_total_time - f_all_time : 0);
 		printf("out of which:\n");
@@ -547,6 +566,7 @@ public:
 				m_f_extra_chol_time + m_f_marginals_time + m_f_incmarginals_time,
 				m_f_extra_chol_time, m_f_marginals_time,
 				m_f_incmarginals_time, m_n_incmarginals_num);
+			m_margs.Dump();
 		}
 		printf("solver spent %f seconds in serial section\n", f_all_time -
 			f_parallel_time - (m_f_extra_chol_time + m_f_marginals_time + m_f_incmarginals_time));
@@ -750,6 +770,24 @@ public:
 	}
 
 	/**
+	 *	@brief norify the solver of linearization point update (e.g. change in robust
+	 *		function parameters, external change to the current estimate, ...)
+	 *
+	 *	@param[in] n_first_changing_edge is zero-based index of the first edge being changed
+	 *	@param[in] n_first_changing_vertex is zero-based index of the first vertex being changed
+	 */
+	void Notify_LinearizationChange(size_t UNUSED(n_first_changing_edge) = 0,
+		size_t UNUSED(n_first_changing_vertex) = 0)
+	{
+		_ASSERTE(!n_first_changing_edge || n_first_changing_edge < this->m_r_system.r_Edge_Pool().n_Size());
+		_ASSERTE(!n_first_changing_vertex || n_first_changing_vertex < this->m_r_system.r_Vertex_Pool().n_Size());
+		// make sure those are valid indices
+
+		m_b_system_dirty = true;
+		// mark the system matrix as dirty, to force relinearization in the next step
+	}
+
+	/**
 	 *	@brief final optimization function
 	 *
 	 *	@param[in] n_max_iteration_num is the maximal number of iterations
@@ -771,6 +809,11 @@ public:
 		if(!n_measurements_size)
 			return; // nothing to solve (but no results need to be generated so it's ok)
 		// can't solve in such conditions
+
+		_ASSERTE(this->m_r_system.b_AllVertices_Covered());
+		// if not all vertices are covered then the system matrix will be rank deficient and this will fail
+		// this triggers typically if solving BA problems with incremental solve each N steps (the "proper"
+		// way is to use CONSISTENCY_MARKER and incremental solve period of SIZE_MAX).
 
 #ifdef __NONLINEAR_SOLVER_LAMBDA_DUMP_DIFFERENCE_MATRICES
 		CUberBlockMatrix lambda_prev = m_lambda;
@@ -859,6 +902,8 @@ public:
 		timer.Accum_DiffSample(m_f_chi2_time);
 
 		if(this->m_b_verbose) {
+			printf("initial chi2: %f\n", f_last_error);
+
 			size_t n_sys_size = this->m_r_system.n_Allocation_Size();
 			size_t n_rp_size = m_reduction_plan.n_Allocation_Size();
 			size_t n_lam_size = m_lambda.n_Allocation_Size();
@@ -1057,7 +1102,7 @@ public:
 
 				if(fail > 0) {
 					-- fail;
-					n_max_iteration_num ++;
+					++ n_max_iteration_num;
 				}
 				// increase the number of iterations, up to a certain limit
 			} else {
@@ -1111,112 +1156,316 @@ public:
 
 			//this->m_linear_solver.Factorize_PosDef_Blocky(R, m_lambda, std::vector<size_t>()); // dense as well, no ordering inside
 
-			if(this->m_b_verbose && b_batch)
-				printf("calculating fill-reducing ordering\n");
-
 #if 0 && defined(_DEBUG)
 			AssertDamping(0);
 #endif // _DEBUG
 
-			CMatrixOrdering mord;
-			if((this->m_marginals.b_CanUpdate() && (this->m_t_marginals_config.n_incremental_policy &
-			   mpart_LastColumn) == mpart_LastColumn) || // can tell for sure if incremental is going to be used
-			   (this->m_t_marginals_config.n_relinearize_policy & mpart_LastColumn) == mpart_LastColumn) { // never know if we fallback to batch, though
-				CLastElementOrderingConstraint leoc;
-				mord.p_BlockOrdering(m_lambda, leoc.p_Get(m_lambda.n_BlockColumn_Num()),
-					m_lambda.n_BlockColumn_Num(), true); // constrain the last column to be the last column (a quick fix) // todo - handle this properly, will be unable to constrain like this in fast R (well, actually ...) // todo - see what is this doing to the speed
-			} else
-				mord.p_BlockOrdering(m_lambda, true); // unconstrained; the last column may be anywhere (could reuse R from the linear solver here - relevant also in batch (e.g. on venice))
-			const size_t *p_order = mord.p_Get_InverseOrdering();
-			{
-				CUberBlockMatrix lambda_perm; // not needed afterwards
-
+			if(this->m_b_use_schur &&
+			   this->m_t_marginals_config.n_relinearize_policy == mpart_Diagonal) {
 				if(this->m_b_verbose && b_batch)
-					printf("forming lambda perm\n");
+					printf("calculating Schur ordering\n");
 
-				m_lambda.Permute_UpperTriangular_To(lambda_perm, p_order, mord.n_Ordering_Size(), true);
-
-				if(this->m_b_verbose && b_batch)
-					printf("calculating Cholesky\n");
-
-				if(!R.CholeskyOf_FBS<_TyLambdaMatrixBlockSizes>(lambda_perm))
-					throw std::runtime_error("fatal error: R.CholeskyOf_FBS<_TyLambdaMatrixBlockSizes>(lambda_perm) failed");
-				// note that now the marginals are calculated with ordering: need to count with that, otherwise those are useless!
-
-				if(this->m_b_verbose && b_batch)
-					printf("memory_use(R: %.2f MB)\n", R.n_Allocation_Size() / 1048576.0);
-				// verbose
-			}
-			if(this->m_b_verbose && b_batch)
-				printf("calculating marginals (%s)\n", (this->m_marginals.b_CanUpdate())? "incrementally" : "batch");
-
-			// todo - reuse what the linear solver calculated, if we have it (not if schur, )
-			// todo - think of what happens if using schur ... have to accelerate the dense margs differently
-			//		probably the whole mindset of having R is wrong, it would be much better to leave
-			//		it up to the linear solver to solve for the columns
-
-			/*printf("debug: matrix size: " PRIsize " / " PRIsize " (" PRIsize " nnz)\n",
-				lambda_perm.n_BlockColumn_Num(), lambda_perm.n_Column_Num(), lambda_perm.n_NonZero_Num());
-			float f_avg_block_size = float(lambda_perm.n_Column_Num()) / lambda_perm.n_BlockColumn_Num();
-			printf("debug: diagonal nnz: " PRIsize "\n", size_t(lambda_perm.n_BlockColumn_Num() *
-				(f_avg_block_size * f_avg_block_size)));
-			printf("debug: factor size: " PRIsize " / " PRIsize " (" PRIsize " nnz)\n",
-				R.n_BlockColumn_Num(), R.n_Column_Num(), R.n_NonZero_Num());*/
-			// see how much we compute, compared to g2o
-
-			timer.Accum_DiffSample(m_f_extra_chol_time);
-
-			size_t n_add_edge_num = this->m_r_system.r_Edge_Pool().n_Size() - this->m_marginals.n_Edge_Num();
-			bool b_incremental = this->m_marginals.b_CanUpdate() && CMarginals::b_PreferIncremental(this->m_r_system,
-				this->m_marginals.r_SparseMatrix(), m_lambda, R, mord, this->m_marginals.n_Edge_Num(),
-				this->m_t_marginals_config.n_incremental_policy);
-//#ifdef __SE_TYPES_SUPPORT_L_SOLVERS
-			if(b_incremental) { // otherwise just update what we have
-				CUberBlockMatrix &r_m = const_cast<CUberBlockMatrix&>(this->m_marginals.r_SparseMatrix()); // watch out, need to call Swap_SparseMatrix() afterwards
-				if(!CMarginals::Update_BlockDiagonalMarginals_FBS<false>(this->m_r_system, r_m, m_lambda,
-				   R, mord, this->m_marginals.n_Edge_Num(), this->m_t_marginals_config.n_incremental_policy)) {
-#ifdef _DEBUG
-					fprintf(stderr, "warning: Update_BlockDiagonalMarginals_FBS() had a numerical issue:"
-						" restarting with Calculate_DenseMarginals_Recurrent_FBS() instead\n");
-#endif // _DEBUG
-					b_incremental = false;
-					// failed, will enter the batch branch below, that will not have a numerical issue
-				} else {
-					this->m_marginals.Swap_SparseMatrix(r_m); // now the marginals know that the matrix changed
-
-					timer.Accum_DiffSample(m_f_incmarginals_time);
-					++ m_n_incmarginals_num;
+				size_t p_vertex_dimensions[_TyGOH::n_vertex_group_num];
+				if(!_TyGOH::b_can_use_simple_ordering) {
+					_TyGOH::Get_VertexDimensions(p_vertex_dimensions,
+						sizeof(p_vertex_dimensions) / sizeof(p_vertex_dimensions[0]));
 				}
-			}
-/*#else // __SE_TYPES_SUPPORT_L_SOLVERS
-#pragma message("warning: the fast incremental marginals not available: __SE_TYPES_SUPPORT_L_SOLVERS not defined")
-			b_incremental = false;
-#endif // __SE_TYPES_SUPPORT_L_SOLVERS*/
-			if(!b_incremental) { // if need batch marginals
-				CUberBlockMatrix margs_ordered;
-				CMarginals::Calculate_DenseMarginals_Recurrent_FBS<_TyLambdaMatrixBlockSizes>(margs_ordered, R,
-					mord, this->m_t_marginals_config.n_relinearize_policy, false);
-				// calculate the thing
+				// gather dimensions of partite vertex types
 
+				size_t p_vertex_dimension_sum[_TyGOH::n_vertex_group_num] = {0};
+				// sum of dimensions of all the vertex types
+
+				std::vector<size_t> p_vertex_type_indices[_TyGOH::n_vertex_group_num]; // the first list is for the non-partite vertices, if there are any
+				// the same size as p_vertex_dimensions, except that they are ordered in the opposite direction
+
+				std::vector<size_t> schur_ordering, new_rcs_vertices;
+				size_t n_landmark_group_id = 0, n_matrix_cut = 0;
+				for(size_t i = 0, n = m_lambda.n_BlockColumn_Num(); i < n; ++ i) {
+					size_t n_dim = m_lambda.n_BlockColumn_Column_Num(i);
+					if(_TyGOH::b_can_use_simple_ordering) {
+						enum {
+							n_landmark_dim = _TyGOH::n_smallest_vertex_dim,
+							n_pose_dim = _TyGOH::n_greatest_vertex_dim
+						};
+						if(n_dim == n_landmark_dim)
+							schur_ordering.push_back(i); // this will be in the diagonal part
+						else
+							new_rcs_vertices.push_back(i); // this will be in the RCS part
+						// simple case
+					} else {
+						size_t n_group = _TyGOH::n_Vertex_GroupIndex(n_dim);
+						p_vertex_dimension_sum[n_group] += n_dim;
+						if(n_landmark_group_id == n_group)
+							schur_ordering.push_back(i); // this will be in the diagonal part
+						else
+							new_rcs_vertices.push_back(i); // this will be in the RCS part
+						// case with groups
+					}
+				}
+				// for all new vertices
+
+				if(!_TyGOH::b_can_use_simple_ordering) {
+					size_t n_best_group_size = p_vertex_dimension_sum[n_landmark_group_id];
+					size_t n_best_group_id = n_landmark_group_id;
+					for(int i = _TyGOH::b_have_nonpartite_vertex_types; i < _TyGOH::n_vertex_group_num; ++ i) {
+						if(n_best_group_size < p_vertex_dimension_sum[i]) {
+							n_best_group_size = p_vertex_dimension_sum[i];
+							n_best_group_id = i;
+						}
+					}
+					if(n_best_group_id != n_landmark_group_id) {
+						//throw std::runtime_error("not implemented");
+						fprintf(stderr, "warning: using untested SC reordering branch\n"); // just so that we know that this takes place // todo - test this (will probably need a special graph to do that)
+
+						//b_reordering_needed = true;
+						n_landmark_group_id = n_best_group_id;
+
+						n_matrix_cut = 0;
+						schur_ordering.clear();
+						new_rcs_vertices.clear();
+						for(size_t i = 0, n = m_lambda.n_BlockColumn_Num(); i < n; ++ i) {
+							size_t n_dim = m_lambda.n_BlockColumn_Column_Num(i);
+							size_t n_group = _TyGOH::n_Vertex_GroupIndex(n_dim);
+							if(n_landmark_group_id == n_group)
+								schur_ordering.push_back(i); // this will be in the diagonal part
+							else
+								new_rcs_vertices.push_back(i); // this will be in the RCS part
+							// case with groups
+						}
+						// reorder all vertices
+					}
+				}
+				// see if reordering is needed
+
+				schur_ordering.insert(schur_ordering.begin(),
+					new_rcs_vertices.begin(), new_rcs_vertices.end());
+				n_matrix_cut = new_rcs_vertices.size();
+				// finalize the SC ordering
+
+				CMatrixOrdering mord_sc;
+				const size_t *p_schur_order = mord_sc.p_InvertOrdering(&schur_ordering.front(),
+					schur_ordering.size());
+				const size_t n_cut = n_matrix_cut, n_size = schur_ordering.size();
+				// invert the ordering
+
+				CUberBlockMatrix lambda_perm;
+				m_lambda.Permute_UpperTriangular_To(lambda_perm, p_schur_order, n_size, true);
+				// permute lambda
+
+				CUberBlockMatrix SC, minus_Dinv, newU;
 				{
-					CUberBlockMatrix empty;
-					R.Swap(empty);
+					CUberBlockMatrix /*newU,*/ newV, newD;
+					CUberBlockMatrix &newA = SC; // will calculate that inplace
+					lambda_perm.SliceTo(newA, 0, n_cut, 0, n_cut, false); // copy!! don't destroy lambda
+					lambda_perm.SliceTo(newU, 0, n_cut, n_cut, n_size, false); // do not share data, will need to output this even after lambda perm perishes
+					lambda_perm.SliceTo(newD, n_cut, n_size, n_cut, n_size, true);
+					newV.TransposeOf(newU);
+					// get the news (could calculate them by addition in case we choose to abandon lambda altogether)
+
+					_ASSERTE(newD.b_BlockDiagonal()); // make sure it is block diagonal
+					// the algorithms below wont work if D isnt a diagonal matrix
+
+					CUberBlockMatrix &minus_newDinv = minus_Dinv;
+					minus_newDinv.InverseOf_Symmteric_FBS<_TyDBlockSizes>(newD); // batch inverse, dont reuse incremental!
+					minus_newDinv.Scale(-1);
+
+					CUberBlockMatrix minus_newU_newDinv, minus_newU_newDinv_newV;
+					minus_newU_newDinv.ProductOf_FBS<_TyUBlockSizes, _TyDBlockSizes>(newU, minus_newDinv);
+					minus_newU_newDinv_newV.ProductOf_FBS<_TyUBlockSizes, _TyVBlockSizes>(minus_newU_newDinv, newV, true);
+
+					CUberBlockMatrix &newSC_ref = newA;
+					minus_newU_newDinv_newV.AddTo_FBS<_TySchurBlockSizes>(newSC_ref);
+					// calculate batch SC
 				}
-				// delete R, don't need it and it eats a lot of memory
 
-				if(this->m_b_verbose && b_batch)
-					printf("reordering the marginals\n");
+				const CUberBlockMatrix &U = newU;
 
-				CUberBlockMatrix &r_m = const_cast<CUberBlockMatrix&>(this->m_marginals.r_SparseMatrix()); // watch out, need to call Swap_SparseMatrix() afterwards
-				margs_ordered.Permute_UpperTriangular_To(r_m, mord.p_Get_Ordering(),
-					mord.n_Ordering_Size(), false); // no share! the original will be deleted
-				this->m_marginals.Swap_SparseMatrix(r_m); // now the marginals know that the matrix changed
-				// take care of having the correct permutation there
+				CUberBlockMatrix S, SC_perm;
+				CMatrixOrdering SC_mord;
+				SC_mord.p_BlockOrdering(SC, true);
+				SC.Permute_UpperTriangular_To(SC_perm, SC_mord.p_Get_InverseOrdering(),
+					SC_mord.n_Ordering_Size(), true);
+				bool b_Chol_succeded = S.CholeskyOf_FBS<_TySchurBlockSizes>(SC_perm);
+				if(!b_Chol_succeded) {
+					fprintf(stderr, "error: S.CholeskyOf_FBS<_TyLambdaMatrixBlockSizes>(SC_perm) "
+						"failed; trying modified Cholesky\n");
+					// can fail once
 
-				this->m_marginals.EnableUpdate();
-				// now the marginals are current and can be updated until the linearization point is changed again
+					{
+						CUberBlockMatrix SC_perm_copy = SC_perm;
+						SC_perm.Swap(SC_perm_copy);
+					}
+					for(size_t i = 0, n = SC_perm.n_BlockColumn_Num(); i < n; ++ i) {
+						size_t m = SC_perm.n_BlockColumn_Block_Num(i);
+						_ASSERTE(SC_perm.n_Block_Row(i, m - 1) == i); // make sure the last block is always diagonal
+						//CUberBlockMatrix::_TyMatrixXdRef t_block = SC_perm.t_Block_AtColumn(i, m - 1);
+						SC_perm.t_Block_AtColumn(i, m - 1).diagonal().array() += 1.0;
+					}
+					// increase the diagonal a bit (a mock-up modified chol; the marginals will be off but we can do the timing)
+				}
+				if(!b_Chol_succeded && !S.CholeskyOf_FBS<_TySchurBlockSizes>(SC_perm))
+					throw std::runtime_error("fatal error: S.CholeskyOf_FBS<_TyLambdaMatrixBlockSizes>(SC_perm) failed");
+				else {
+					if(!b_Chol_succeded) {
+						fprintf(stderr, "debug: modified Cholesky passed\n");
+						fflush(stderr);
+					}
+					// debug
+
+					timer.Accum_DiffSample(m_f_extra_chol_time);
+
+					CUberBlockMatrix minus_U_Dinv;
+					minus_U_Dinv.ProductOf_FBS<_TyUBlockSizes, _TyDBlockSizes>(U, minus_Dinv);
+					// todo - see if we can recover this from the linear solver (in case we are relinearizing just above, will throw it away though)
+
+					double f_UDinv_time = 0;
+					timer.Accum_DiffSample(f_UDinv_time);
+					m_f_extra_chol_time/*m_f_UDinv_time*/ += f_UDinv_time; // no UDinv here, just account it to xchol
+
+					CUberBlockMatrix margs_cams, margs_all;
+					m_margs.Schur_Marginals(margs_cams, true, margs_all, S, SC_mord, minus_Dinv, minus_U_Dinv, true);
+					if(m_margs.b_Verbose())
+						printf("\tcalculating UDinv took %f sec\n", f_UDinv_time); // add to the verbose
+
+					margs_cams.ExtendTo(m_lambda.n_Row_Num(), m_lambda.n_Column_Num());
+					margs_all.ExtendTopLeftTo(m_lambda.n_Row_Num(), m_lambda.n_Column_Num());
+
+					/*margs_cams.Rasterize("scmargs_00_cams.tga");
+					margs_all.Rasterize("scmargs_01_pts.tga");*/
+
+					margs_cams.AddTo(margs_all); // no need for FBS, there is no overlap, will only copy the blocks
+
+					//margs_all.Rasterize("scmargs_02_all.tga");
+
+					CUberBlockMatrix &r_m = const_cast<CUberBlockMatrix&>(this->m_marginals.r_SparseMatrix()); // watch out, need to call Swap_SparseMatrix() afterwards
+					margs_all.Permute_UpperTriangular_To(r_m, &schur_ordering[0],
+						schur_ordering.size(), false); // no share! the original will be deleted
+					this->m_marginals.Swap_SparseMatrix(r_m); // now the marginals know that the matrix changed
+					// take care of having the correct permutation there
+
+					//r_m.Rasterize("scmargs_03_unperm.tga");
+
+					this->m_marginals.EnableUpdate();
+					// now the marginals are current and can be updated until the linearization point is changed again
+				}
+
+				this->m_marginals.Set_Edge_Num(this->m_r_system.r_Edge_Pool().n_Size());
+				// now all those edges are in the marginals
 
 				timer.Accum_DiffSample(m_f_marginals_time);
+			} else {
+				if(this->m_b_use_schur) {
+					_ASSERTE(this->m_t_marginals_config.n_relinearize_policy != mpart_Diagonal); // that's why we're in this branch
+					static bool b_warned = false;
+					if(!b_warned) {
+						b_warned = true;
+						fprintf(stderr, "warning: could use fast Schur marginals but at the"
+							" moment those only implement recovery of mpart_Diagonal\n");
+					}
+				}
+				if(this->m_b_verbose && b_batch)
+					printf("calculating fill-reducing ordering\n");
+
+				CMatrixOrdering mord;
+				if((this->m_marginals.b_CanUpdate() && (this->m_t_marginals_config.n_incremental_policy &
+				   mpart_LastColumn) == mpart_LastColumn) || // can tell for sure if incremental is going to be used
+				   (this->m_t_marginals_config.n_relinearize_policy & mpart_LastColumn) == mpart_LastColumn) { // never know if we fallback to batch, though
+					CLastElementOrderingConstraint leoc;
+					mord.p_BlockOrdering(m_lambda, leoc.p_Get(m_lambda.n_BlockColumn_Num()),
+						m_lambda.n_BlockColumn_Num(), true); // constrain the last column to be the last column (a quick fix) // todo - handle this properly, will be unable to constrain like this in fast R (well, actually ...) // todo - see what is this doing to the speed
+				} else
+					mord.p_BlockOrdering(m_lambda, true); // unconstrained; the last column may be anywhere (could reuse R from the linear solver here - relevant also in batch (e.g. on venice))
+				const size_t *p_order = mord.p_Get_InverseOrdering();
+				{
+					CUberBlockMatrix lambda_perm; // not needed afterwards
+
+					if(this->m_b_verbose && b_batch)
+						printf("forming lambda perm\n");
+
+					m_lambda.Permute_UpperTriangular_To(lambda_perm, p_order, mord.n_Ordering_Size(), true);
+
+					if(this->m_b_verbose && b_batch)
+						printf("calculating Cholesky\n");
+
+					if(!R.CholeskyOf_FBS<_TyLambdaMatrixBlockSizes>(lambda_perm))
+						throw std::runtime_error("fatal error: R.CholeskyOf_FBS<_TyLambdaMatrixBlockSizes>(lambda_perm) failed");
+					// note that now the marginals are calculated with ordering: need to count with that, otherwise those are useless!
+
+					if(this->m_b_verbose && b_batch)
+						printf("memory_use(R: %.2f MB)\n", R.n_Allocation_Size() / 1048576.0);
+					// verbose
+				}
+				if(this->m_b_verbose && b_batch)
+					printf("calculating marginals (%s)\n", (this->m_marginals.b_CanUpdate())? "incrementally" : "batch");
+
+				// todo - reuse what the linear solver calculated, if we have it (not if schur, )
+				// todo - think of what happens if using schur ... have to accelerate the dense margs differently
+				//		probably the whole mindset of having R is wrong, it would be much better to leave
+				//		it up to the linear solver to solve for the columns
+
+				/*printf("debug: matrix size: " PRIsize " / " PRIsize " (" PRIsize " nnz)\n",
+					lambda_perm.n_BlockColumn_Num(), lambda_perm.n_Column_Num(), lambda_perm.n_NonZero_Num());
+				float f_avg_block_size = float(lambda_perm.n_Column_Num()) / lambda_perm.n_BlockColumn_Num();
+				printf("debug: diagonal nnz: " PRIsize "\n", size_t(lambda_perm.n_BlockColumn_Num() *
+					(f_avg_block_size * f_avg_block_size)));
+				printf("debug: factor size: " PRIsize " / " PRIsize " (" PRIsize " nnz)\n",
+					R.n_BlockColumn_Num(), R.n_Column_Num(), R.n_NonZero_Num());*/
+				// see how much we compute, compared to g2o
+
+				timer.Accum_DiffSample(m_f_extra_chol_time);
+
+				size_t n_add_edge_num = this->m_r_system.r_Edge_Pool().n_Size() - this->m_marginals.n_Edge_Num();
+				bool b_incremental = this->m_marginals.b_CanUpdate() && CMarginals::b_PreferIncremental(this->m_r_system,
+					this->m_marginals.r_SparseMatrix(), m_lambda, R, mord, this->m_marginals.n_Edge_Num(),
+					this->m_t_marginals_config.n_incremental_policy);
+//#ifdef __SE_TYPES_SUPPORT_L_SOLVERS
+				if(b_incremental) { // otherwise just update what we have
+					CUberBlockMatrix &r_m = const_cast<CUberBlockMatrix&>(this->m_marginals.r_SparseMatrix()); // watch out, need to call Swap_SparseMatrix() afterwards
+					if(!CMarginals::Update_BlockDiagonalMarginals_FBS<false>(this->m_r_system, r_m, m_lambda,
+					   R, mord, this->m_marginals.n_Edge_Num(), this->m_t_marginals_config.n_incremental_policy)) {
+#ifdef _DEBUG
+						fprintf(stderr, "warning: Update_BlockDiagonalMarginals_FBS() had a numerical issue:"
+							" restarting with Calculate_DenseMarginals_Recurrent_FBS() instead\n");
+#endif // _DEBUG
+						b_incremental = false;
+						// failed, will enter the batch branch below, that will not have a numerical issue
+					} else {
+						this->m_marginals.Swap_SparseMatrix(r_m); // now the marginals know that the matrix changed
+
+						timer.Accum_DiffSample(m_f_incmarginals_time);
+						++ m_n_incmarginals_num;
+					}
+				}
+/*#else // __SE_TYPES_SUPPORT_L_SOLVERS
+#pragma message("warning: the fast incremental marginals not available: __SE_TYPES_SUPPORT_L_SOLVERS not defined")
+				b_incremental = false;
+#endif // __SE_TYPES_SUPPORT_L_SOLVERS*/
+				if(!b_incremental) { // if need batch marginals
+					CUberBlockMatrix margs_ordered;
+					CMarginals::Calculate_DenseMarginals_Recurrent_FBS<_TyLambdaMatrixBlockSizes>(margs_ordered, R,
+						mord, this->m_t_marginals_config.n_relinearize_policy, false);
+					// calculate the thing
+
+					{
+						CUberBlockMatrix empty;
+						R.Swap(empty);
+					}
+					// delete R, don't need it and it eats a lot of memory
+
+					if(this->m_b_verbose && b_batch)
+						printf("reordering the marginals\n");
+
+					CUberBlockMatrix &r_m = const_cast<CUberBlockMatrix&>(this->m_marginals.r_SparseMatrix()); // watch out, need to call Swap_SparseMatrix() afterwards
+					margs_ordered.Permute_UpperTriangular_To(r_m, mord.p_Get_Ordering(),
+						mord.n_Ordering_Size(), false); // no share! the original will be deleted
+					this->m_marginals.Swap_SparseMatrix(r_m); // now the marginals know that the matrix changed
+					// take care of having the correct permutation there
+
+					this->m_marginals.EnableUpdate();
+					// now the marginals are current and can be updated until the linearization point is changed again
+
+					timer.Accum_DiffSample(m_f_marginals_time);
+				}
 			}
 
 			this->m_marginals.Set_Edge_Num(this->m_r_system.r_Edge_Pool().n_Size());

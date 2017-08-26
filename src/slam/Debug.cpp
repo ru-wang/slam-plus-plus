@@ -20,6 +20,10 @@
 #include "slam/Debug.h"
 #include <csparse/cs.hpp>
 #include "slam/Tga.h"
+#include "slam/Parser.h"
+#include "slam/BlockMatrix.h"
+#include <math.h>
+#include <cmath>
 
 /*
  *								=== globals ===
@@ -42,7 +46,8 @@ bool _finite(double x)
 	std::transform(p_s_str, p_s_str + l, p_s_str, tolower);
 	return !strstr(p_s_str, "nan") && !strstr(p_s_str, "ind") && !strstr(p_s_str, "inf"); // https://en.wikipedia.org/wiki/NaN#Display
 #else // __FAST_MATH__
-	return isfinite(x); // math.h, should work
+	//return isfinite(x); // math.h, did not work in some later versions of g++
+	return std::isfinite(x); // cmath, should work
 #endif // __FAST_MATH__
 }
 
@@ -57,7 +62,8 @@ bool _isnan(double x)
 	std::transform(p_s_str, p_s_str + l, p_s_str, tolower);
 	return strstr(p_s_str, "nan") != 0 || strstr(p_s_str, "ind") != 0; // https://en.wikipedia.org/wiki/NaN#Display
 #else // __FAST_MATH__
-	return isnan(x); // math.h, should work
+	//return isnan(x); // math.h, should work
+	return std::isnan(x); // cmath, should work
 #endif // __FAST_MATH__
 }
 
@@ -549,7 +555,7 @@ bool CDebug::Dump_SparseMatrix_Subsample(const char *p_s_filename, const cs *A,
 
 #ifdef BITMAP_SUBSAMPLE_DUMP_ROW_MAJOR_ACCESS
 					size_t n_y = size_t(n_col * f_scale);
-					size_t n_x = size_t(n_row * f_scale); // tranposed
+					size_t n_x = size_t(n_row * f_scale); // transposed
 #else // BITMAP_SUBSAMPLE_DUMP_ROW_MAJOR_ACCESS
 					size_t n_x = size_t(n_col * f_scale);
 					size_t n_y = size_t(n_row * f_scale);
@@ -781,7 +787,7 @@ bool CDebug::Dump_SparseMatrix_Subsample_AA(const char *p_s_filename, const cs *
 	TBmp *p_bitmap;
 
 #ifdef BITMAP_SUBSAMPLE_DUMP_ROW_MAJOR_ACCESS
-	if(!(p_bitmap = TBmp::p_Alloc(int(mb), int(nb)))) // tranposed
+	if(!(p_bitmap = TBmp::p_Alloc(int(mb), int(nb)))) // transposed
 		return false;
 #else // BITMAP_SUBSAMPLE_DUMP_ROW_MAJOR_ACCESS
 	if(!(p_bitmap = TBmp::p_Alloc(int(nb), int(mb))))
@@ -819,7 +825,7 @@ bool CDebug::Dump_SparseMatrix_Subsample_AA(const char *p_s_filename, const cs *
 
 #ifdef BITMAP_SUBSAMPLE_DUMP_ROW_MAJOR_ACCESS
 					float f_y = float(n_col * f_scale);
-					float f_x = float(n_row * f_scale); // tranposed
+					float f_x = float(n_row * f_scale); // transposed
 #else // BITMAP_SUBSAMPLE_DUMP_ROW_MAJOR_ACCESS
 					float f_x = float(n_col * f_scale);
 					float f_y = float(n_row * f_scale);
@@ -910,7 +916,7 @@ bool CDebug::Dump_SparseMatrix_Subsample_AA(const char *p_s_filename, const cs *
 					if(f_value != 0) {
 #ifdef BITMAP_SUBSAMPLE_DUMP_ROW_MAJOR_ACCESS
 						float f_y = float(n_col * f_scale);
-						float f_x = float(n_row * f_scale); // tranposed
+						float f_x = float(n_row * f_scale); // transposed
 #else // BITMAP_SUBSAMPLE_DUMP_ROW_MAJOR_ACCESS
 						float f_x = float(n_col * f_scale);
 						float f_y = float(n_row * f_scale);
@@ -1201,11 +1207,11 @@ void CDebug::Print_DenseVector_in_MatlabFormat(FILE *p_fw, const double *b,
 		fprintf(p_fw, "%s", p_s_prefix);
 	if(n_vector_length) {
 		if(fabs(f_scale * b[0]) > 1)
-			fprintf(p_fw, "1e%+d * [%f", n_log10, f_scale * b[0]);
+			fprintf(p_fw, "1e%+d * [%.15f", n_log10, f_scale * b[0]);
 		else
-			fprintf(p_fw, "1e%+d * [%g", n_log10, f_scale * b[0]);
+			fprintf(p_fw, "1e%+d * [%.15g", n_log10, f_scale * b[0]);
 		for(size_t i = 1; i < n_vector_length; ++ i)
-			fprintf(p_fw, (fabs(f_scale * b[i]) > 1)? " %f" : " %g", f_scale * b[i]);
+			fprintf(p_fw, (fabs(f_scale * b[i]) > 1)? " %.15f" : " %.15g", f_scale * b[i]);
 		fprintf(p_fw, "]");
 	} else
 		fprintf(p_fw, "[ ]");
@@ -1214,6 +1220,298 @@ void CDebug::Print_DenseVector_in_MatlabFormat(FILE *p_fw, const double *b,
 	// print with scale
 }
 
+#if (defined(_M_X64) || defined(_M_AMD64) || defined(_M_IA64) || defined(__x86_64) || defined(__amd64) || defined(__ia64) || \
+    defined(_M_I86) || defined(_M_IX86) || defined(__X86__) || defined(_X86_) || defined(__IA32__) || defined(__i386)) && \
+	1 // in case the below include is not found or _mm_clflush() or _mm_mfence() are undefined, switch to 0. this will only affect some debugging / performance profiling functionality
+
+#include <emmintrin.h>
+
+void CDebug::Evict_Buffer(const void *p_begin, size_t n_size)
+{
+	if(!p_begin)
+		return;
+
+	for(intptr_t n_addr = intptr_t(p_begin), n_end =
+	   intptr_t(p_begin) + n_size; n_addr != n_end; ++ n_addr) {
+		_mm_clflush((const void*)n_addr);
+		// flush the corresponding cache line
+	}
+
+	_mm_mfence();
+	// memory fence; force all operations to complete before going on
+}
+
+#else // (x86 || x64) && 1
+
+//#pragma message "warning: emmintrin.h likely not present, evict semantics will not be available"
+
+void CDebug::Evict_Buffer(const void *UNUSED(p_begin), size_t UNUSED(n_size))
+{
+	// we're not on x86, can't use _mm_*() intrinsics
+	// this is needed if building e.g. for ARM
+}
+
+#endif // (x86 || x64) && 1
+
+void CDebug::Evict(const cs *p_mat)
+{
+	if(CS_TRIPLET(p_mat))
+		Evict_Buffer(p_mat->p, sizeof(csi) * p_mat->nzmax);
+	else
+		Evict_Buffer(p_mat->p, sizeof(csi) * (p_mat->n + 1));
+	Evict_Buffer(p_mat->i, sizeof(csi) * p_mat->nzmax);
+	Evict_Buffer(p_mat->x, sizeof(double) * p_mat->nzmax);
+	// evict the internal buffers
+
+	Evict_Buffer(p_mat, sizeof(cs));
+	// evict the structure
+}
+
+void CDebug::Evict(const CUberBlockMatrix &r_mat)
+{
+	CUBM_EvictUtil<blockmatrix_detail::CUberBlockMatrix_Base>::EvictMembers(r_mat);
+	// evict the internal vectors
+
+	Evict_Buffer(&r_mat, sizeof(r_mat));
+	// evict the structure
+}
+
+void CDebug::Swamp_Cache(size_t n_buffer_size /*= 100 * 1048576*/) // throw(std::bad_alloc)
+{
+	std::vector<uint8_t> buffer(n_buffer_size);
+	for(size_t i = 0; i < n_buffer_size; ++ i)
+		buffer[i] = uint8_t(n_SetBit_Num(i));
+	// alloc a large buffer and fill it using nontrivial
+	// ops, so that cache would not be bypassed by DMA as
+	// e.g. for memset or memcpy
+}
+
 /*
  *								=== ~CDebug ===
+ */
+
+/*
+ *								=== CSparseMatrixMemInfo ===
+ */
+
+uint64_t CSparseMatrixMemInfo::n_Allocation_Size(const cs *p_matrix)
+{
+	if(!p_matrix)
+		return 0;
+	if(p_matrix->nz <= 0) {
+		return sizeof(cs) + (p_matrix->n + 1) * sizeof(csi) + p_matrix->p[p_matrix->n] *
+			((p_matrix->x)? sizeof(double) + sizeof(csi) : sizeof(csi));
+	} else {
+		return sizeof(cs) + p_matrix->nzmax * ((p_matrix->x)? sizeof(double) +
+			2 * sizeof(csi) : 2 * sizeof(csi));
+	}
+}
+
+bool CSparseMatrixMemInfo::Peek_MatrixMarket_Header(const char *p_s_filename,
+	CSparseMatrixMemInfo::TMMHeader &r_t_header)
+{
+	bool b_symmetric = false, b_binary = false;
+	bool b_had_specifier = false;
+	bool b_had_header = false;
+	size_t n_rows, n_cols, n_nnz = -1, n_read_nnz = 0, n_full_nnz = 0;
+
+	FILE *p_fr;
+	if(!(p_fr = fopen(p_s_filename, "r")))
+		return false;
+	// open the matrix market file
+
+	try {
+		std::string s_line;
+		while(!feof(p_fr)) {
+			if(!CParserBase::ReadLine(s_line, p_fr)) {
+				fclose(p_fr);
+				return false;
+			}
+			// read a single line
+
+			size_t n_pos;
+			if(!b_had_specifier && (n_pos = s_line.find("%%MatrixMarket")) != std::string::npos) {
+				s_line.erase(0, n_pos + strlen("%%MatrixMarket"));
+				// get rid of header
+
+				b_binary = s_line.find("pattern") != std::string::npos;
+				if(s_line.find("matrix") == std::string::npos ||
+				   s_line.find("coordinate") == std::string::npos ||
+				   (s_line.find("real") == std::string::npos &&
+				   s_line.find("integer") == std::string::npos &&
+				   !b_binary)) // integer matrices are not real, but have values and are loadable
+					return false;
+				// must be matrix coordinate real
+
+				if(s_line.find("general") != std::string::npos)
+					b_symmetric = false;
+				else if(s_line.find("symmetric") != std::string::npos)
+					b_symmetric = true;
+				else {
+					b_symmetric = false;
+					/*//fclose(p_fr);
+					return false;*/ // or assume general
+				}
+				// either general or symmetric
+
+				b_had_specifier = true;
+				continue;
+			}
+			if((n_pos = s_line.find('%')) != std::string::npos)
+				s_line.erase(n_pos);
+			CParserBase::TrimSpace(s_line);
+			if(s_line.empty())
+				continue;
+			// trim comments, skip empty lines
+
+			if(!b_had_header) {
+				if(!b_had_specifier) {
+					fclose(p_fr);
+					return false;
+				}
+				// specifier must come before header
+
+#if defined(_MSC_VER) && !defined(__MWERKS__) && _MSC_VER >= 1400
+				if(sscanf_s(s_line.c_str(), PRIsize " " PRIsize " " PRIsize,
+				   &n_rows, &n_cols, &n_nnz) != 3) {
+#else //_MSC_VER && !__MWERKS__ && _MSC_VER >= 1400
+				if(sscanf(s_line.c_str(), PRIsize " " PRIsize " " PRIsize,
+				   &n_rows, &n_cols, &n_nnz) != 3) {
+#endif //_MSC_VER && !__MWERKS__ && _MSC_VER >= 1400
+					fclose(p_fr);
+					return false;
+				}
+				// read header
+
+				if(n_rows <= SIZE_MAX / std::max(size_t(1), n_cols) && n_nnz > n_rows * n_cols) {
+					fclose(p_fr);
+					return false;
+				}
+				// sanity check (may also fail on big matrices)
+
+				b_had_header = true;
+				break;
+			}
+		}
+		if(!b_had_header) {
+			fclose(p_fr);
+			return false;
+		}
+		if(b_symmetric) {
+			_ASSERTE(b_had_header && b_had_specifier);
+			while(!feof(p_fr)) { // only elements follow
+				if(!CParserBase::ReadLine(s_line, p_fr)) {
+					fclose(p_fr);
+					return false;
+				}
+				// read a single line
+
+				CParserBase::TrimSpace(s_line);
+				if(s_line.empty() || s_line[0] == '%') // only handles comments at the beginning of the line; comments at the end will simply be ignored 
+					continue;
+				// trim comments, skip empty lines
+
+				double f_value;
+				size_t n_rowi, n_coli;
+				do {
+					const char *b = s_line.c_str();
+					_ASSERTE(*b && !isspace(uint8_t(*b))); // not empty and not space
+					for(n_rowi = 0; *b && isdigit(uint8_t(*b)); ++ b) // ignores overflows
+						n_rowi = 10 * n_rowi + *b - '0';
+					// parse the first number
+
+					if(!*b || !isspace(uint8_t(*b))) {
+						fclose(p_fr);
+						return false;
+					}
+					++ b; // skip the first space
+					while(*b && isspace(uint8_t(*b)))
+						++ b;
+					if(!*b || !isdigit(uint8_t(*b))) {
+						fclose(p_fr);
+						return false;
+					}
+					// skip space to the second number
+
+					for(n_coli = 0; *b && isdigit(uint8_t(*b)); ++ b) // ignores overflows
+						n_coli = 10 * n_coli + *b - '0';
+					// parse the second number
+
+					if(!*b) {
+						f_value = 1; // a binary matrix?
+						break;
+					}
+					if(!isspace(uint8_t(*b))) {
+						fclose(p_fr);
+						return false; // bad character
+					}
+					++ b; // skip the first space
+					while(*b && isspace(uint8_t(*b)))
+						++ b;
+					_ASSERTE(*b); // there must be something since the string sure does not end with space (called TrimSpace() above)
+					// skip space to the value
+
+					f_value = 1;//atof(b); // don't care about the values here
+				} while(0);
+				// read a triplet
+
+				-- n_rowi;
+				-- n_coli;
+				// indices are 1-based, i.e. a(1,1) is the first element
+
+				if(n_rowi >= n_rows || n_coli >= n_cols || n_read_nnz >= n_nnz) {
+					fclose(p_fr);
+					return false;
+				}
+				// make sure it figures
+
+				_ASSERTE(b_symmetric);
+				n_full_nnz += (n_rowi != n_coli)? 2 : 1;
+				++ n_read_nnz;
+				// append the nonzero
+			}
+			// read the file line by line
+
+			if(ferror(p_fr) || !b_had_header || n_read_nnz != n_nnz) {
+				fclose(p_fr);
+				return false;
+			}
+			// make sure no i/o errors occurred, and that the entire matrix was read
+		}
+		// in case the matrix is symmetric, need to read the indices to see which ones are at the
+		// diagonal; does not actually store them, just goes through them quickly; the floats are
+		// not parsed
+
+		fclose(p_fr);
+	} catch(std::bad_alloc&) {
+		fclose(p_fr);
+		return false;
+	}
+
+	r_t_header.b_binary = b_binary;
+	r_t_header.b_symmetric = b_symmetric;
+	r_t_header.n_nnz = n_nnz;
+	r_t_header.n_rows = n_rows;
+	r_t_header.n_cols = n_cols;
+
+	if(!b_symmetric)
+		r_t_header.n_full_nnz = n_nnz;
+	else
+		r_t_header.n_full_nnz = n_full_nnz;
+
+	return true;
+}
+
+uint64_t CSparseMatrixMemInfo::n_Peek_MatrixMarket_SizeInMemory(const char *p_s_filename)
+{
+	TMMHeader t_header;
+	if(!Peek_MatrixMarket_Header(p_s_filename, t_header))
+		return uint64_t(-1);
+
+	cs spmat = {0, 0, 0, 0, 0, 0, 0}; // put all to avoid -Wmissing-field-initializers
+	return t_header.n_AllocationSize_CSC(sizeof(*spmat.p), sizeof(*spmat.x));
+}
+
+/*
+ *								=== ~CSparseMatrixMemInfo ===
  */

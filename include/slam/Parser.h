@@ -461,6 +461,12 @@ public:
 
 		/**
 		 *	@brief default constructor
+		 */
+		inline TVertexXYZ()
+		{}
+
+		/**
+		 *	@brief constructor
 		 *
 		 *	@param[in] n_node_id is (zero-based) index of the node
 		 *	@param[in] f_x is x position
@@ -471,10 +477,8 @@ public:
 		 */
 		inline TVertexXYZ(int n_node_id, double f_x, double f_y, double f_z)
 			:m_n_id(n_node_id)
-
 		{
-			m_v_position << f_x, f_y, f_z;
-			// no constructor for 3-valued vector
+			m_v_position << f_x, f_y, f_z; // no constructor for 3-valued vector
 		}
 
 		EIGEN_MAKE_ALIGNED_OPERATOR_NEW
@@ -626,6 +630,12 @@ public:
 
 		/**
 		 *	@brief default constructor
+		 */
+		inline TEdgeP2C3D()
+		{}
+
+		/**
+		 *	@brief constructor
 		 *
 		 *	@param[in] n_node_0 is (zero-based) index of the 3D point
 		 *	@param[in] n_node_1 is (zero-based) index of the camera vertex
@@ -648,9 +658,8 @@ public:
 			m_v_delta << f_delta_x, f_delta_y;
 			// no constructor for 2-valued vector
 
-			m_t_inv_sigma <<
-							p_upper_matrix_2x2[0], p_upper_matrix_2x2[1],
-							p_upper_matrix_2x2[1], p_upper_matrix_2x2[2];
+			m_t_inv_sigma << p_upper_matrix_2x2[0], p_upper_matrix_2x2[1],
+							 p_upper_matrix_2x2[1], p_upper_matrix_2x2[2];
 			// fill the matrix
 		}
 
@@ -746,60 +755,60 @@ public:
 		EIGEN_MAKE_ALIGNED_OPERATOR_NEW
 	};
 
-	/**
-	 *	@brief Camera-to-Camera Epipolar constraint edge (C2CE)
-	 *
-	 *	This edge represents epipolar constraint
-	 *	between two 2D images \f$p0,p1\f$ of a 3D point:
-	 *	\f{equation}{ p1^T * F * p0 = 0 \f}
-	 *	where F is a fundamental matrix: \f$F = K2 * E * K1 \f$, \f$E = [t]_x * R \f$,
-	 *	\f$K\f$ is as calibration matrix, and \f$[R|t]\f$
-	 *	is a relative translation between cameras.
-	 */
-	struct TEdgeC2CE : public CParseEntity {
-		size_t m_n_node_0; /**< @brief (zero-based) index of the camera 0 */
-		size_t m_n_node_1; /**< @brief (zero-based) index of the camera 1 */
-		Eigen::Matrix<double, 4, 1> m_v_delta; /**< @brief delta measurement (also called "z") - 2d corresponding points */
-		Eigen::Matrix<double, 4, 4> m_t_inv_sigma; /**< @brief inverse sigma matrix, elements are not square roots */
-
-		/**
-		 *	@brief default constructor
-		 *
-		 *	@param[in] n_node_0 is (zero-based) index of the camera 0
-		 *	@param[in] n_node_1 is (zero-based) index of the camera 1
-		 *	@param[in] f_delta_x0 is delta x position of a corresponding point in camera 0
-		 *	@param[in] f_delta_y0 is delta y position of a corresponding point in camera 0
-		 *	@param[in] f_delta_x1 is delta x position of a corresponding point in camera 1
-		 *	@param[in] f_delta_y1 is delta y position of a corresponding point in camera 1
-		 *	@param[in] p_upper_matrix_4x4 is row-major upper triangular and diagonal 4x4 matrix,
-		 *		elements are not square roots
-		 *
-		 *	The matrix is stored row by row from top to bottom,
-		 *	with left to right column order. Example:
-		 *	@code
-		 *	|0 1 2 3|
-		 *	|  4 5 6|
-		 *	|    7 8|
-		 *	|      9|
-		 *	@endcode
-		 */
-		inline TEdgeC2CE(size_t n_node_0, size_t n_node_1,
-			double f_delta_x0, double f_delta_y0, double f_delta_x1, double f_delta_y1, const double *p_upper_matrix_4x4)
-			:m_n_node_0(n_node_0), m_n_node_1(n_node_1)
-		{
-			m_v_delta << f_delta_x0, f_delta_y0, f_delta_x1, f_delta_y1;
-			// no constructor for 2-valued vector
-
-			m_t_inv_sigma <<
-					p_upper_matrix_4x4[0], p_upper_matrix_4x4[1], p_upper_matrix_4x4[2], p_upper_matrix_4x4[3],
-					p_upper_matrix_4x4[1], p_upper_matrix_4x4[4], p_upper_matrix_4x4[5], p_upper_matrix_4x4[6],
-					p_upper_matrix_4x4[2], p_upper_matrix_4x4[3], p_upper_matrix_4x4[7], p_upper_matrix_4x4[8],
-					p_upper_matrix_4x4[3], p_upper_matrix_4x4[6], p_upper_matrix_4x4[8], p_upper_matrix_4x4[9];
-			// fill the matrix
-		}
-
-		EIGEN_MAKE_ALIGNED_OPERATOR_NEW
-	};
+//	/**
+//	 *	@brief Camera-to-Camera Epipolar constraint edge (C2CE)
+//	 *
+//	 *	This edge represents epipolar constraint
+//	 *	between two 2D images \f$p0,p1\f$ of a 3D point:
+//	 *	\f{equation}{ p1^T * F * p0 = 0 \f}
+//	 *	where F is a fundamental matrix: \f$F = K2 * E * K1 \f$, \f$E = [t]_x * R \f$,
+//	 *	\f$K\f$ is as calibration matrix, and \f$[R|t]\f$
+//	 *	is a relative translation between cameras.
+//	 */
+//	struct TEdgeC2CE : public CParseEntity {
+//		size_t m_n_node_0; /**< @brief (zero-based) index of the camera 0 */
+//		size_t m_n_node_1; /**< @brief (zero-based) index of the camera 1 */
+//		Eigen::Matrix<double, 4, 1> m_v_delta; /**< @brief delta measurement (also called "z") - 2d corresponding points */
+//		Eigen::Matrix<double, 4, 4> m_t_inv_sigma; /**< @brief inverse sigma matrix, elements are not square roots */
+//
+//		/**
+//		 *	@brief default constructor
+//		 *
+//		 *	@param[in] n_node_0 is (zero-based) index of the camera 0
+//		 *	@param[in] n_node_1 is (zero-based) index of the camera 1
+//		 *	@param[in] f_delta_x0 is delta x position of a corresponding point in camera 0
+//		 *	@param[in] f_delta_y0 is delta y position of a corresponding point in camera 0
+//		 *	@param[in] f_delta_x1 is delta x position of a corresponding point in camera 1
+//		 *	@param[in] f_delta_y1 is delta y position of a corresponding point in camera 1
+//		 *	@param[in] p_upper_matrix_4x4 is row-major upper triangular and diagonal 4x4 matrix,
+//		 *		elements are not square roots
+//		 *
+//		 *	The matrix is stored row by row from top to bottom,
+//		 *	with left to right column order. Example:
+//		 *	@code
+//		 *	|0 1 2 3|
+//		 *	|  4 5 6|
+//		 *	|    7 8|
+//		 *	|      9|
+//		 *	@endcode
+//		 */
+//		inline TEdgeC2CE(size_t n_node_0, size_t n_node_1,
+//			double f_delta_x0, double f_delta_y0, double f_delta_x1, double f_delta_y1, const double *p_upper_matrix_4x4)
+//			:m_n_node_0(n_node_0), m_n_node_1(n_node_1)
+//		{
+//			m_v_delta << f_delta_x0, f_delta_y0, f_delta_x1, f_delta_y1;
+//			// no constructor for 2-valued vector
+//
+//			m_t_inv_sigma <<
+//					p_upper_matrix_4x4[0], p_upper_matrix_4x4[1], p_upper_matrix_4x4[2], p_upper_matrix_4x4[3],
+//					p_upper_matrix_4x4[1], p_upper_matrix_4x4[4], p_upper_matrix_4x4[5], p_upper_matrix_4x4[6],
+//					p_upper_matrix_4x4[2], p_upper_matrix_4x4[3], p_upper_matrix_4x4[7], p_upper_matrix_4x4[8],
+//					p_upper_matrix_4x4[3], p_upper_matrix_4x4[6], p_upper_matrix_4x4[8], p_upper_matrix_4x4[9];
+//			// fill the matrix
+//		}
+//
+//		EIGEN_MAKE_ALIGNED_OPERATOR_NEW
+//	};
 
 	/**
 	 *	@brief ground truth vertex measurement class ("ROCV:RECEIVER_GT" in the datafile)
@@ -986,11 +995,11 @@ public:
 		 */
 		virtual void AppendSystem(const TEdgeP2CI3D &r_t_edge) = 0;
 
-		/**
-		 *	@brief appends the system with an camera+intrinsics measurement
-		 *	@param[in] r_t_edge is the measurement to be appended
-		 */
-		virtual void AppendSystem(const TEdgeC2CE &r_t_edge) = 0;
+//		/**
+//		 *	@brief appends the system with an camera+intrinsics measurement
+//		 *	@param[in] r_t_edge is the measurement to be appended
+//		 */
+//		virtual void AppendSystem(const TEdgeC2CE &r_t_edge) = 0;
 
 		/**
 		 *	@brief appends the system with an camera measurement
@@ -1254,8 +1263,11 @@ public:
 				// read the token (separated by space; otherwise the entire line is a token)
 				// and remove the token from the line
 
-				if(b_ignore_case)
-					std::for_each(s_token.begin(), s_token.end(), toupper);
+				if(b_ignore_case) {
+					for(std::string::iterator b = s_token.begin(), e = s_token.end(); b != e; ++ b)
+						*b = toupper(*b);
+					//std::transform(s_token.begin(), s_token.end(), s_token.begin(), toupper); // g++4.8 contains overloads of toupper and is not able to specialize this due to ambiguity
+				}
 				// map is case sensitive, if there is dataset with lowercase tokens, it needs to be fixed
 
 				std::map<std::string, int>::const_iterator p_tok_it;

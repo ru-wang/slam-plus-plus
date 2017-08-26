@@ -575,6 +575,12 @@ public:
 
 	/**
 	 *	@brief calculates matrix norm
+	 *	@return Returns L-inf norm of this matrix.
+	 */
+	double f_LInfNorm() const;
+
+	/**
+	 *	@brief calculates matrix norm
 	 *	@return Returns L2 norm of this matrix.
 	 */
 	inline double f_Norm() const
@@ -1405,6 +1411,48 @@ public:
 #endif // __UBER_BLOCK_MATRIX_FIXED_BLOCK_SIZE_OPS
 
 	/**
+	 *	@brief calculates multiplication of a symmetric matrix by vector
+	 *
+	 *	@param[out] p_dest_vector is destination vector, must be allocated, and
+	 *		if only the multiplication is required, it must also be cleared
+	 *	@param[in] n_dest_size is number of elements in p_dest_vector
+	 *		(for debugging purposes only; must equal matrix columns)
+	 *	@param[in] p_src_vector is source vector (must not equal p_dest_vector
+	 *		in this implementation)
+	 *	@param[in] n_src_size is number of elements in p_src_vector
+	 *		(for debugging purposes only; must equal matrix rows)
+	 *
+	 *	@note This calculates \f$p\_dest\_vector = p\_dest\_vector + p\_src\_vector \cdot this\f$
+	 *		which is the same as \f$p\_dest\_vector + (this \cdot p\_src\_vector^T)^T\f$. The order
+	 *		does not matter.
+	 *	@note This requires the matrix to have symmetric layout.
+	 */
+	void SymmetricMultiply_Add(double *p_dest_vector, size_t UNUSED(n_dest_size),
+		const double *p_src_vector, size_t UNUSED(n_src_size), bool b_use_upper_triangle = true) const;
+
+	/**
+	 *	@brief calculates multiplication of a symmetric matrix by vector, with explicitly
+	 *		using only one triangle of the diagonal blocks (upper or lower, based on the
+	 *		value of the last argument)
+	 *
+	 *	@param[out] p_dest_vector is destination vector, must be allocated, and
+	 *		if only the multiplication is required, it must also be cleared
+	 *	@param[in] n_dest_size is number of elements in p_dest_vector
+	 *		(for debugging purposes only; must equal matrix columns)
+	 *	@param[in] p_src_vector is source vector (must not equal p_dest_vector
+	 *		in this implementation)
+	 *	@param[in] n_src_size is number of elements in p_src_vector
+	 *		(for debugging purposes only; must equal matrix rows)
+	 *
+	 *	@note This calculates \f$p\_dest\_vector = p\_dest\_vector + p\_src\_vector \cdot this\f$
+	 *		which is the same as \f$p\_dest\_vector + (this \cdot p\_src\_vector^T)^T\f$. The order
+	 *		does not matter.
+	 *	@note This requires the matrix to have symmetric layout.
+	 */
+	void SymmetricMultiply_Add_ExpDiag(double *p_dest_vector, size_t UNUSED(n_dest_size),
+		const double *p_src_vector, size_t UNUSED(n_src_size), bool b_use_upper_triangle = true) const;
+
+	/**
 	 *	@brief calculates numbers of nonzeros in each column of \f$A+A^T\f$ where A is block structure of this matrix
 	 *
 	 *	@tparam b_upper_triangular is upper-triangular input flag (the presence of the diagonal
@@ -1529,7 +1577,7 @@ public:
 	 *		If needed, more space is added automatically.
 	 *	@note The resulting matrix is binary, and unless p_alloc contains array for values,
 	 *		no element values are generated.
-	 *	@note This function throws std::bad_alloc. In case it throws, p_alloc is not modified. 
+	 *	@note This function throws std::bad_alloc. In case it throws, p_alloc is not modified.
 	 */
 	cs *p_BlockStructure_SumWithSelfTransposeNoDiag_to_Sparse(cs *p_alloc = 0) const; // throw(std::bad_alloc)
 
@@ -1642,7 +1690,7 @@ public:
 	 *		If needed, more space is added automatically.
 	 *	@note The resulting matrix is binary, and unless p_alloc contains array for values,
 	 *		no element values are generated.
-	 *	@note This function throws std::bad_alloc. In case it throws, p_alloc is not modified. 
+	 *	@note This function throws std::bad_alloc. In case it throws, p_alloc is not modified.
 	 */
 	cs *p_BlockStructure_SumWithSelfTransposeNoDiag_to_Sparse32(cs *p_alloc = 0) const; // throw(std::bad_alloc)
 
@@ -1973,7 +2021,7 @@ public:
 		size_t UNUSED(n_ordering_size), bool b_share_data = false) const; // throw(std::bad_alloc)
 
 	/**
-	 *	@brief creates a triangular view of another matrix
+	 *	@brief creates a (block) triangular view of another matrix
 	 *
 	 *	Use as follows:
 	 *	@code
@@ -2001,7 +2049,8 @@ public:
 	 *	// get a view of only the three diagonals of M
 	 *	@endcode
 	 *
-	 *	@param[in] r_src is matrix to create a view of (must be square, with symmetric layout)
+	 *	@param[in] r_src is matrix to create a view of (must be square, with symmetric layout;
+	 *		this does not work inplace)
 	 *	@param[in] b_upper_triangular is upper triangular flag (if set, the upper triangle
 	 *		is viewed; if cleared, the lower triangle is viewed)
 	 *	@param[in] b_share_data is data sharing flag (if set, a shallow copy is made (default);
@@ -2019,6 +2068,21 @@ public:
 		bool b_share_data = true, int n_block_diag_offset = 0); // throw(std::bad_alloc)
 
 	/**
+	 *	@brief views the matrix with a tolerance on the individual blocks
+	 *
+	 *	@param[in] r_src is matrix to create a view of
+	 *	@param[in] f_tol is tolerance (default zero)
+	 *	@param[in] b_use_abs_max is infinity norm flag (if set, absolute maximum is used,
+	 *		otherwise L2 norm is used)
+	 *	@param[in] b_share_data is data sharing flag (if set, a shallow copy is made (default);
+	 *		if cleared, the data is copied and the input matrix can be changed or deleted)
+	 *
+	 *	@note This function throws std::bad_alloc.
+	 */
+	void ToleranceViewOf(const CUberBlockMatrix &r_src, double f_tol = 0,
+		bool b_use_abs_max = true, bool b_share_data = true); // throw(std::bad_alloc)
+
+	/**
 	 *	@brief creates a view of a full matrix from another (triangular) matrix
 	 *
 	 *	@param[in] r_src is matrix to create a view of (must be square, with symmetric layout)
@@ -2029,10 +2093,35 @@ public:
 	 *
 	 *	@note Since this is a real matrix, this is a self-transpose rather than self-adjoint
 	 *		but that term is rarely used in the literature.
+	 *	@note This assumes the diagonal blocks to be symmetric and leaves them intact.
+	 *		In case they are not symmetric, the resulting matrix will not be symmetric
+	 *		either. To guarantee symmetry, use \ref SelfAdjointView_ExpDiag_Of().
 	 *	@note This can also work inplace but the matrix already needs to be triangular.
 	 *	@note This function throws std::bad_alloc.
 	 */
 	void SelfAdjointViewOf(const CUberBlockMatrix &r_src, bool b_upper_triangular,
+		bool b_share_data = true); // throw(std::bad_alloc)
+
+	/**
+	 *	@brief creates a view of a full matrix from another (triangular) matrix while
+	 *		explicitly making self-adjoint views of the diagonal blocks
+	 *
+	 *	@param[in] r_src is matrix to create a view of (must be square, with symmetric layout)
+	 *	@param[in] b_upper_triangular is upper triangular flag (if set, the upper triangle
+	 *		is transposed to lower; if cleared, the lower triangle is transposed to upper)
+	 *	@param[in] b_share_data is data sharing flag (if set, a shallow copy is made (default);
+	 *		if cleared, the data is copied and the input matrix can be changed or deleted)
+	 *
+	 *	@note Since this is a real matrix, this is a self-transpose rather than self-adjoint
+	 *		but that term is rarely used in the literature.
+	 *	@note This assumes the diagonal blocks to be assymmetric and uses
+	 *		\ref Eigen::MatrixBase::selfadjointView() to explicitly make them symmetric.
+	 *		In case they are already symmetric, then this just runs slower. If speed is
+	 *		required, use \ref SelfAdjointViewOf().
+	 *	@note This can also work inplace but the matrix already needs to be triangular.
+	 *	@note This function throws std::bad_alloc.
+	 */
+	void SelfAdjointView_ExpDiag_Of(const CUberBlockMatrix &r_src, bool b_upper_triangular,
 		bool b_share_data = true); // throw(std::bad_alloc)
 
 	/**
@@ -2567,11 +2656,10 @@ public:
 	 *	@return Returns true on success, false on failure (incompatible layout).
 	 *
 	 *	@note This function throws std::bad_alloc.
+	 *	@note This calls one of \ref MultiplyToWith_LogLookup(), \ref MultiplyToWith_TransposeSort()
+	 *		or \ref MultiplyToWith_AccumLookup() based on the configuration (via preprocessor macros).
 	 */
-	inline bool ProductOf(const CUberBlockMatrix &r_A, const CUberBlockMatrix &r_B) // throw(std::bad_alloc)
-	{
-		return r_A.MultiplyToWith(*this, r_B);
-	}
+	inline bool ProductOf(const CUberBlockMatrix &r_A, const CUberBlockMatrix &r_B); // throw(std::bad_alloc)
 
 	/**
 	 *	@brief performs matrix multiplication
@@ -2587,11 +2675,11 @@ public:
 	 *	@return Returns true on success, false on failure (incompatible layout).
 	 *
 	 *	@note This function throws std::bad_alloc.
+	 *	@note This calls one of \ref MultiplyToWith_LogLookup(), \ref MultiplyToWith_TransposeSort()
+	 *		or \ref MultiplyToWith_AccumLookup() based on the configuration (via preprocessor macros).
 	 */
-	inline bool ProductOf(const CUberBlockMatrix &r_A, const CUberBlockMatrix &r_B, bool b_upper_diag_only) // throw(std::bad_alloc)
-	{
-		return r_A.MultiplyToWith(*this, r_B, b_upper_diag_only);
-	}
+	inline bool ProductOf(const CUberBlockMatrix &r_A, const CUberBlockMatrix &r_B,
+		bool b_upper_diag_only); // throw(std::bad_alloc)
 
 #ifdef __UBER_BLOCK_MATRIX_FIXED_BLOCK_SIZE_OPS
 
@@ -2720,8 +2808,10 @@ public:
 	 *	@return Returns true on success, false on failure (incompatible layout).
 	 *
 	 *	@note This function throws std::bad_alloc.
+	 *	@note This calls one of \ref MultiplyToWith_LogLookup(), \ref MultiplyToWith_TransposeSort()
+	 *		or \ref MultiplyToWith_AccumLookup() based on the configuration (via preprocessor macros).
 	 */
-	bool MultiplyToWith(CUberBlockMatrix &r_dest, const CUberBlockMatrix &r_other) const; // throw(std::bad_alloc)
+	inline bool MultiplyToWith(CUberBlockMatrix &r_dest, const CUberBlockMatrix &r_other) const; // throw(std::bad_alloc)
 
 	/**
 	 *	@brief performs matrix multiplication
@@ -2731,14 +2821,108 @@ public:
 	 *	@param[in] r_dest is the destination matrix (will be overwritten)
 	 *	@param[in] r_other is the right-side matrix
 	 *	@param[in] b_upper_diag_only is upper-triangular flag (if set, only the upper-triangular
-	 *		part of the product is calculated; otherwise MultiplyToWith() without the third
-	 *		argument is faster and gives identical result)
+	 *		part of the product is calculated)
+	 *
+	 *	@return Returns true on success, false on failure (incompatible layout).
+	 *
+	 *	@note This function throws std::bad_alloc.
+	 *	@note This calls one of \ref MultiplyToWith_LogLookup(), \ref MultiplyToWith_TransposeSort()
+	 *		or \ref MultiplyToWith_AccumLookup() based on the configuration (via preprocessor macros).
+	 */
+	inline bool MultiplyToWith(CUberBlockMatrix &r_dest, const CUberBlockMatrix &r_other,
+		bool b_upper_diag_only) const; // throw(std::bad_alloc)
+
+	/**
+	 *	@brief performs matrix multiplication using logarithmic time lookup for blocks
+	 *
+	 *	\f$r\_dest = this \cdot r\_other\f$
+	 *
+	 *	@param[in] r_dest is the destination matrix (will be overwritten)
+	 *	@param[in] r_other is the right-side matrix
 	 *
 	 *	@return Returns true on success, false on failure (incompatible layout).
 	 *
 	 *	@note This function throws std::bad_alloc.
 	 */
-	bool MultiplyToWith(CUberBlockMatrix &r_dest, const CUberBlockMatrix &r_other,
+	bool MultiplyToWith_LogLookup(CUberBlockMatrix &r_dest, const CUberBlockMatrix &r_other) const; // throw(std::bad_alloc)
+
+	/**
+	 *	@brief performs matrix multiplication using logarithmic time lookup for blocks
+	 *
+	 *	\f$r\_dest = this \cdot r\_other\f$
+	 *
+	 *	@param[in] r_dest is the destination matrix (will be overwritten)
+	 *	@param[in] r_other is the right-side matrix
+	 *	@param[in] b_upper_diag_only is upper-triangular flag (if set, only the upper-triangular
+	 *		part of the product is calculated)
+	 *
+	 *	@return Returns true on success, false on failure (incompatible layout).
+	 *
+	 *	@note This function throws std::bad_alloc.
+	 */
+	bool MultiplyToWith_LogLookup(CUberBlockMatrix &r_dest, const CUberBlockMatrix &r_other,
+		bool b_upper_diag_only) const; // throw(std::bad_alloc)
+
+	/**
+	 *	@brief performs matrix multiplication using block transpose as a fast sort
+	 *
+	 *	\f$r\_dest = this \cdot r\_other\f$
+	 *
+	 *	@param[in] r_dest is the destination matrix (will be overwritten)
+	 *	@param[in] r_other is the right-side matrix
+	 *
+	 *	@return Returns true on success, false on failure (incompatible layout).
+	 *
+	 *	@note This function throws std::bad_alloc.
+	 */
+	bool MultiplyToWith_TransposeSort(CUberBlockMatrix &r_dest, const CUberBlockMatrix &r_other) const; // throw(std::bad_alloc)
+
+	/**
+	 *	@brief performs matrix multiplication using block transpose as a fast sort
+	 *
+	 *	\f$r\_dest = this \cdot r\_other\f$
+	 *
+	 *	@param[in] r_dest is the destination matrix (will be overwritten)
+	 *	@param[in] r_other is the right-side matrix
+	 *	@param[in] b_upper_diag_only is upper-triangular flag (if set, only the upper-triangular
+	 *		part of the product is calculated)
+	 *
+	 *	@return Returns true on success, false on failure (incompatible layout).
+	 *
+	 *	@note This function throws std::bad_alloc.
+	 */
+	bool MultiplyToWith_TransposeSort(CUberBlockMatrix &r_dest, const CUberBlockMatrix &r_other,
+		bool b_upper_diag_only) const; // throw(std::bad_alloc)
+
+	/**
+	 *	@brief performs matrix multiplication using a helper dense lookup array
+	 *
+	 *	\f$r\_dest = this \cdot r\_other\f$
+	 *
+	 *	@param[in] r_dest is the destination matrix (will be overwritten)
+	 *	@param[in] r_other is the right-side matrix
+	 *
+	 *	@return Returns true on success, false on failure (incompatible layout).
+	 *
+	 *	@note This function throws std::bad_alloc.
+	 */
+	bool MultiplyToWith_AccumLookup(CUberBlockMatrix &r_dest, const CUberBlockMatrix &r_other) const; // throw(std::bad_alloc)
+
+	/**
+	 *	@brief performs matrix multiplication using a helper dense lookup array
+	 *
+	 *	\f$r\_dest = this \cdot r\_other\f$
+	 *
+	 *	@param[in] r_dest is the destination matrix (will be overwritten)
+	 *	@param[in] r_other is the right-side matrix
+	 *	@param[in] b_upper_diag_only is upper-triangular flag (if set, only the upper-triangular
+	 *		part of the product is calculated)
+	 *
+	 *	@return Returns true on success, false on failure (incompatible layout).
+	 *
+	 *	@note This function throws std::bad_alloc.
+	 */
+	bool MultiplyToWith_AccumLookup(CUberBlockMatrix &r_dest, const CUberBlockMatrix &r_other,
 		bool b_upper_diag_only) const; // throw(std::bad_alloc)
 
 #ifdef __UBER_BLOCK_MATRIX_FIXED_BLOCK_SIZE_OPS
@@ -2754,9 +2938,12 @@ public:
 	 *	@return Returns true on success, false on failure (incompatible layout).
 	 *
 	 *	@note This function throws std::bad_alloc.
+	 *	@note This calls either \ref MultiplyToWith_TransposeSort_FBS()
+	 *		or \ref MultiplyToWith_AccumLookup_FBS() unless
+	 *		<tt>__UBER_BLOCK_MATRIX_LEGACY_FBS_GEMM</tt> is defined.
 	 */
 	template <class CBlockMatrixTypelistThis, class CBlockMatrixTypelistOther>
-	bool MultiplyToWith_FBS(CUberBlockMatrix &r_dest, const CUberBlockMatrix &r_other) const; // throw(std::bad_alloc)
+	inline bool MultiplyToWith_FBS(CUberBlockMatrix &r_dest, const CUberBlockMatrix &r_other) const; // throw(std::bad_alloc)
 
 	/**
 	 *	@brief performs matrix multiplication
@@ -2772,10 +2959,81 @@ public:
 	 *	@return Returns true on success, false on failure (incompatible layout).
 	 *
 	 *	@note This function throws std::bad_alloc.
+	 *	@note This calls either \ref MultiplyToWith_TransposeSort_FBS()
+	 *		or \ref MultiplyToWith_AccumLookup_FBS() unless
+	 *		<tt>__UBER_BLOCK_MATRIX_LEGACY_FBS_GEMM</tt> is defined.
 	 */
 	template <class CBlockMatrixTypelistThis, class CBlockMatrixTypelistOther>
-	bool MultiplyToWith_FBS(CUberBlockMatrix &r_dest,
+	inline bool MultiplyToWith_FBS(CUberBlockMatrix &r_dest,
 		const CUberBlockMatrix &r_other, bool b_upper_diag_only) const; // throw(std::bad_alloc)
+
+	/**
+	 *	@brief performs matrix multiplication using block transpose as a fast sort
+	 *
+	 *	\f$r\_dest = this \cdot r\_other\f$
+	 *
+	 *	@param[in] r_dest is the destination matrix (will be overwritten)
+	 *	@param[in] r_other is the right-side matrix
+	 *
+	 *	@return Returns true on success, false on failure (incompatible layout).
+	 *
+	 *	@note This function throws std::bad_alloc.
+	 */
+	template <class CBlockMatrixTypelistThis, class CBlockMatrixTypelistOther>
+	inline bool MultiplyToWith_TransposeSort_FBS(CUberBlockMatrix &r_dest, const CUberBlockMatrix &r_other) const; // throw(std::bad_alloc)
+
+	/**
+	 *	@brief performs matrix multiplication using block transpose as a fast sort
+	 *
+	 *	\f$r\_dest = this \cdot r\_other\f$
+	 *
+	 *	@param[in] r_dest is the destination matrix (will be overwritten)
+	 *	@param[in] r_other is the right-side matrix
+	 *	@param[in] b_upper_diag_only is upper-triangular flag (if set, only the upper-triangular
+	 *		part of the product is calculated; otherwise MultiplyToWith() without the third
+	 *		argument is faster and gives identical result)
+	 *
+	 *	@return Returns true on success, false on failure (incompatible layout).
+	 *
+	 *	@note This function throws std::bad_alloc.
+	 */
+	template <class CBlockMatrixTypelistThis, class CBlockMatrixTypelistOther>
+	bool MultiplyToWith_TransposeSort_FBS(CUberBlockMatrix &r_dest, const CUberBlockMatrix &r_other,
+		bool b_upper_diag_only) const; // throw(std::bad_alloc)
+
+	/**
+	 *	@brief performs matrix multiplication using a helper dense lookup array
+	 *
+	 *	\f$r\_dest = this \cdot r\_other\f$
+	 *
+	 *	@param[in] r_dest is the destination matrix (will be overwritten)
+	 *	@param[in] r_other is the right-side matrix
+	 *
+	 *	@return Returns true on success, false on failure (incompatible layout).
+	 *
+	 *	@note This function throws std::bad_alloc.
+	 */
+	template <class CBlockMatrixTypelistThis, class CBlockMatrixTypelistOther>
+	inline bool MultiplyToWith_AccumLookup_FBS(CUberBlockMatrix &r_dest, const CUberBlockMatrix &r_other) const; // throw(std::bad_alloc)
+
+	/**
+	 *	@brief performs matrix multiplication using a helper dense lookup array
+	 *
+	 *	\f$r\_dest = this \cdot r\_other\f$
+	 *
+	 *	@param[in] r_dest is the destination matrix (will be overwritten)
+	 *	@param[in] r_other is the right-side matrix
+	 *	@param[in] b_upper_diag_only is upper-triangular flag (if set, only the upper-triangular
+	 *		part of the product is calculated; otherwise MultiplyToWith() without the third
+	 *		argument is faster and gives identical result)
+	 *
+	 *	@return Returns true on success, false on failure (incompatible layout).
+	 *
+	 *	@note This function throws std::bad_alloc.
+	 */
+	template <class CBlockMatrixTypelistThis, class CBlockMatrixTypelistOther>
+	bool MultiplyToWith_AccumLookup_FBS(CUberBlockMatrix &r_dest, const CUberBlockMatrix &r_other,
+		bool b_upper_diag_only) const; // throw(std::bad_alloc)
 
 #endif // __UBER_BLOCK_MATRIX_FIXED_BLOCK_SIZE_OPS
 
@@ -3512,6 +3770,19 @@ public:
 	bool CholeskyOf_FBS(const CUberBlockMatrix &r_lambda, const std::vector<size_t> &r_elim_tree,
 		std::vector<size_t> &r_workspace, std::vector<size_t> &r_zero_workspace,
 		size_t n_start_on_column); // throw(std::bad_alloc)
+
+#endif // __UBER_BLOCK_MATRIX_FIXED_BLOCK_SIZE_OPS
+
+	bool LUTo(CUberBlockMatrix &r_L, CUberBlockMatrix &r_U, size_t *p_row_perm, size_t *p_col_perm,
+		bool *p_pivoted = 0, bool b_partial_interblock_pivoting = true, double f_min_piv_gain = 0,
+		bool b_full_intrablock_pivoting = true) const;
+
+#ifdef __UBER_BLOCK_MATRIX_FIXED_BLOCK_SIZE_OPS
+
+	template <class CBlockMatrixTypelist>
+	bool LUTo_FBS(CUberBlockMatrix &r_L, CUberBlockMatrix &r_U, size_t *p_row_perm, size_t *p_col_perm,
+		bool *p_pivoted = 0, bool b_partial_interblock_pivoting = true, double f_min_piv_gain = 0,
+		bool b_full_intrablock_pivoting = true) const;
 
 #endif // __UBER_BLOCK_MATRIX_FIXED_BLOCK_SIZE_OPS
 

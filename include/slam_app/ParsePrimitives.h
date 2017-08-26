@@ -900,6 +900,7 @@ public:
 		// read the individual numbers
 
 		Eigen::Quaternion<double> quat(p_vertex[6], p_vertex[3], p_vertex[4], p_vertex[5]);
+		quat.normalize();
 		quat = quat.inverse();
 		//Eigen::Matrix3d Q = quat.toRotationMatrix();
 		//Q = Q.inverse().eval();
@@ -1178,61 +1179,61 @@ public:
 	}
 };
 
-/**
- *	@brief point - camera epipolar edge
- */
-class CEdgeC2CEParsePrimitive {
-public:
-	/**
-	 *	@brief enumerates all tokens that identify this parsed primitive
-	 *
-	 *	@param[in,out] r_token_name_map is map of token names
-	 *	@param[in] n_assigned_id is id assigned by the parser to this primitive
-	 */
-	static void EnumerateTokens(std::map<std::string, int> &r_token_name_map,
-		int n_assigned_id) // throws(std::bad_alloc)
-	{
-		r_token_name_map["EDGE_PROJECT_C2CE"] = n_assigned_id;
-		r_token_name_map["EDGE_C2CE"] = n_assigned_id;
-		// add as uppercase!
-	}
-
-	/**
-	 *	@brief parses this primitive and dispatches it to the parse loop
-	 *
-	 *	@param[in] n_line_no is zero-based line number (for error reporting)
-	 *	@param[in] r_s_line is string, containing the current line (without the token)
-	 *	@param[in] r_s_token is string, containing the token name (in uppercase)
-	 *	@param[in,out] r_parse_loop is target for passing the parsed primitives to
-	 *
-	 *	@return Returns true on success, false on failure.
-	 */
-	template <class _TyParseLoop>
-	static bool Parse_and_Dispatch(size_t n_line_no, const std::string &r_s_line,
-		const std::string &UNUSED(r_s_token), _TyParseLoop &r_parse_loop)
-	{
-		int p_pose_idx[2];
-		double p_measurement[4];
-		double p_matrix[10];
-		if(sscanf(r_s_line.c_str(), "%d %d %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf",
-		   p_pose_idx, p_pose_idx + 1, p_measurement, p_measurement + 1, p_measurement + 2, p_measurement + 3,
-		   p_matrix, p_matrix + 1, p_matrix + 2, p_matrix + 3, p_matrix + 4, p_matrix + 5, p_matrix + 6, p_matrix + 7,
-		   p_matrix + 8, p_matrix + 9) != 2 + 4 + 10) {
-		   	_ASSERTE(n_line_no < SIZE_MAX);
-			fprintf(stderr, "error: line " PRIsize ": line is truncated\n", n_line_no + 1);
-			return false;
-		}
-		// read the individual numbers
-		CParserBase::TEdgeC2CE landmark(p_pose_idx[0], p_pose_idx[1],
-			p_measurement[0], p_measurement[1], p_measurement[2], p_measurement[3], p_matrix);
-		// process the measurement
-
-		r_parse_loop.AppendSystem(landmark);
-		// t_odo - append the measurement to the system, or something
-
-		return true;
-	}
-};
+///**
+// *	@brief point - camera epipolar edge
+// */
+//class CEdgeC2CEParsePrimitive {
+//public:
+//	/**
+//	 *	@brief enumerates all tokens that identify this parsed primitive
+//	 *
+//	 *	@param[in,out] r_token_name_map is map of token names
+//	 *	@param[in] n_assigned_id is id assigned by the parser to this primitive
+//	 */
+//	static void EnumerateTokens(std::map<std::string, int> &r_token_name_map,
+//		int n_assigned_id) // throws(std::bad_alloc)
+//	{
+//		r_token_name_map["EDGE_PROJECT_C2CE"] = n_assigned_id;
+//		r_token_name_map["EDGE_C2CE"] = n_assigned_id;
+//		// add as uppercase!
+//	}
+//
+//	/**
+//	 *	@brief parses this primitive and dispatches it to the parse loop
+//	 *
+//	 *	@param[in] n_line_no is zero-based line number (for error reporting)
+//	 *	@param[in] r_s_line is string, containing the current line (without the token)
+//	 *	@param[in] r_s_token is string, containing the token name (in uppercase)
+//	 *	@param[in,out] r_parse_loop is target for passing the parsed primitives to
+//	 *
+//	 *	@return Returns true on success, false on failure.
+//	 */
+//	template <class _TyParseLoop>
+//	static bool Parse_and_Dispatch(size_t n_line_no, const std::string &r_s_line,
+//		const std::string &UNUSED(r_s_token), _TyParseLoop &r_parse_loop)
+//	{
+//		int p_pose_idx[2];
+//		double p_measurement[4];
+//		double p_matrix[10];
+//		if(sscanf(r_s_line.c_str(), "%d %d %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf",
+//		   p_pose_idx, p_pose_idx + 1, p_measurement, p_measurement + 1, p_measurement + 2, p_measurement + 3,
+//		   p_matrix, p_matrix + 1, p_matrix + 2, p_matrix + 3, p_matrix + 4, p_matrix + 5, p_matrix + 6, p_matrix + 7,
+//		   p_matrix + 8, p_matrix + 9) != 2 + 4 + 10) {
+//		   	_ASSERTE(n_line_no < SIZE_MAX);
+//			fprintf(stderr, "error: line " PRIsize ": line is truncated\n", n_line_no + 1);
+//			return false;
+//		}
+//		// read the individual numbers
+//		CParserBase::TEdgeC2CE landmark(p_pose_idx[0], p_pose_idx[1],
+//			p_measurement[0], p_measurement[1], p_measurement[2], p_measurement[3], p_matrix);
+//		// process the measurement
+//
+//		r_parse_loop.AppendSystem(landmark);
+//		// t_odo - append the measurement to the system, or something
+//
+//		return true;
+//	}
+//};
 
 /**
  *	@brief point - camera projection
@@ -1725,7 +1726,7 @@ typedef CConcatTypelist<MakeTypelist_Safe((CEdge2DParsePrimitive,
 	CEdgeP2SC3DParsePrimitive)), MakeTypelist_Safe((CROCV_Landmark_UF_ParsePrimitive,
 	CROCV_Landmark_ParsePrimitive, CROCV_Pose_ParsePrimitive, CROCV_PoseGroundTruth_ParsePrimitive,
 	CROCV_DeltaTimeEdge_ParsePrimitive, CROCV_RangeEdge_ParsePrimitive,
-	CVertexIntrinsicsParsePrimitive, CEdgeP2CI3DParsePrimitive, CEdgeC2CEParsePrimitive))>::_TyResult CStandardParsedPrimitives; /**< @brief a list of standard parsed primitives @note If you are going to modify this, you will have to modify CParserBase::CParserAdaptor and CDatasetPeeker which implements it. */
+	CVertexIntrinsicsParsePrimitive, CEdgeP2CI3DParsePrimitive))>::_TyResult CStandardParsedPrimitives; /**< @brief a list of standard parsed primitives @note If you are going to modify this, you will have to modify CParserBase::CParserAdaptor and CDatasetPeeker which implements it. */
 
 typedef CParserTemplate<CParserBase::CParserAdaptor, CStandardParsedPrimitives> CStandardParser; /**< @brief standard parser */
 

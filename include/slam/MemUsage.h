@@ -1,13 +1,13 @@
 /*
-								+--------------------------------+
-								|                                |
-								|  ***  Memory usage stats  ***  |
-								|                                |
-								|  Copyright © -tHE SWINe- 2014  |
-								|                                |
-								|           MemUsage.h           |
-								|                                |
-								+--------------------------------+
+								+----------------------------------+
+								|                                  |
+								|   ***  Memory usage stats  ***   |
+								|                                  |
+								|  Copyright (c) -tHE SWINe- 2014  |
+								|                                  |
+								|            MemUsage.h            |
+								|                                  |
+								+----------------------------------+
 */
 
 #pragma once
@@ -24,6 +24,7 @@
  */
 
 #include <new>
+#include <string>
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
@@ -152,6 +153,156 @@ public:
 				return -1;
 			//if(fscanf(p_fr, "VmData: %lf %s ", &f_value, &p_s_unit) < 1) { // dangerous; need to limit unit's size
 			if(fscanf(p_fr, "VmData: %lf ", &f_value) < 1) {
+				fclose(p_fr);
+				remove(p_s_temp_file_name);
+				return -1; // fail
+			}
+
+			{
+				int n_char;
+				while(isspace(uint8(n_char = fgetc(p_fr))) && n_char != EOF)
+					;
+				// skip space
+
+				p_s_unit[0] = n_char; // use this char as well
+				int n_pos = (n_char != EOF)? 0 : -1;
+				while(n_pos + 1 < 63 && !isspace(uint8(n_char = fgetc(p_fr))) && n_char != EOF)
+					p_s_unit[++ n_pos] = n_char;
+				assert(n_pos + 1 < 64);
+				p_s_unit[n_pos + 1] = 0;
+				// read the unit
+			}
+			// read the unit manually, will not overflow
+
+			fclose(p_fr);
+			remove(p_s_temp_file_name);
+		}
+		// read value and unit from the file
+
+		//printf("debug: %g %s\n", f_value, p_s_unit);
+
+		for(size_t i = 0, n = strlen(p_s_unit); i < n; ++ i) {
+			if(isupper(uint8(p_s_unit[i])))
+				p_s_unit[i] = tolower(uint8(p_s_unit[i]));
+		}
+		// convert unit to lowercase
+
+		if(strlen(p_s_unit) > 3)
+			return -1; // no idea what that means
+		else if(strlen(p_s_unit) == 3) {
+			if(p_s_unit[1] != 'i' || p_s_unit[2] != 'b') // "kib", mib", ...
+				return -1;
+		} else if(strlen(p_s_unit) == 2) {
+			if(p_s_unit[1] != 'b') // "kb", "mb", ...
+				return -1;
+		} else if(*p_s_unit == 0)
+			return uint64_t(f_value); // no unit, presumably bytes
+		else {
+			assert(strlen(p_s_unit) == 1); // otherwise
+		}
+		// check unit length / pattern
+
+		switch(*p_s_unit) {
+		case 'b':
+			return uint64_t(f_value); // bytes
+		case 'k':
+			return uint64_t(f_value * 1024); // kB
+		case 'm':
+			return uint64_t(f_value * 1048576); // MB
+		case 'g':
+			return uint64_t((f_value * 1048576) * 1024); // GB
+		case 't':
+			return uint64_t((f_value * 1048576) * 1048576); // TB
+		default:
+			return -1; // fail, unknown unit
+		};
+		// "parse" unit magnitude
+#endif // 0
+#endif // _WIN32 || _WIN64
+	}
+
+	/**
+	 *	@brief gets maximum historic peak memory usage
+	 *	@return Returns the peak memory usage of the current process (in bytes)
+	 *		on success, or -1 on failure (see <tt>orrno</tt> for failure explanation).
+	 *	@note On some systems, the granularity might be more than 1 B, specifically
+	 *		on linux-based systems it is typically 1 kB.
+	 */
+	static uint64_t n_Peak_MemoryUsage()
+	{
+#if defined(_WIN32) || defined(_WIN64)
+		PROCESS_MEMORY_COUNTERS t_info;
+		GetProcessMemoryInfo(GetCurrentProcess(), &t_info, sizeof(t_info));
+		return t_info.PeakWorkingSetSize; // in bytes
+		// there is also t_info.PeakWorkingSetSize, also in bytes
+#elif defined(__APPLE__)
+		struct rusage t_info;
+		getrusage(RUSAGE_SELF, &t_info);
+		return t_info.ru_maxrss; // that should be the peak
+#else // _WIN32 || _WIN64
+#if 0
+		struct rusage t_info;
+		getrusage(RUSAGE_SELF, &t_info);
+		return t_info.ru_maxrss; // integral unshared data size, "This field is currently unused on Linux."
+#else // 0
+		char p_s_temp_file_name[1024];
+		{
+			const char *p_s_temp;
+			{
+				p_s_temp = getenv("TMPDIR"); // environment variable
+				// The caller must take care not to modify this string, since that would change the
+				// environment of the process. Do not free it either.
+				// (e.g. on cluster computers, temp is often directory specific to the job id, like "/tmp/pbs.132048.dm2")
+
+				if(!p_s_temp) {
+					if(P_tmpdir)
+						p_s_temp = P_tmpdir; // in stdio.h
+					else {
+						p_s_temp = "/tmp"; // just hope it is there
+
+						/*TFileInfo t_temp_info(p_s_temp);
+						if(!t_temp_info.b_exists || !t_temp_info.b_directory)
+							return false;*/
+						// don't want to depend on Dir.cpp, some apps already use only the header
+					}
+				}
+				// fallbacks if the environment variable is not set
+			}
+
+			sprintf(p_s_temp_file_name, (p_s_temp[strlen(p_s_temp) - 1] == '/')?
+				"%s%sXXXXXX" :  "%s/%sXXXXXX", p_s_temp, "memuse");
+			// make a name template
+
+			int n_file;
+			if((n_file = mkstemp(p_s_temp_file_name)) < 0)
+				return -1; // fail
+			close(n_file);
+			// create temp file
+		}
+		// get temp file name
+
+		{
+			char p_s_command[1024];
+			int n_pid = getpid();
+			sprintf(p_s_command, "grep VmPeak /proc/%d/status > %s", n_pid, p_s_temp_file_name);
+			if(system(p_s_command)) {
+				remove(p_s_temp_file_name); // don't leave stuff around
+				return -1; // fail
+			}
+			//sprintf(p_s_command, "grep VmData /proc/%d/status > %s", n_pid, "debug.txt");
+			//system(p_s_command);
+		}
+		// format and execute a command that gets the memory usage
+
+		typedef unsigned char uint8;
+		double f_value;
+		char p_s_unit[64] = {0}; // this might overflow if there is some rubbish in /proc/pid/status
+		{
+			FILE *p_fr;
+			if(!(p_fr = fopen(p_s_temp_file_name, "r")))
+				return -1;
+			//if(fscanf(p_fr, "VmPeak: %lf %s ", &f_value, &p_s_unit) < 1) { // dangerous; need to limit unit's size
+			if(fscanf(p_fr, "VmPeak: %lf ", &f_value) < 1) {
 				fclose(p_fr);
 				remove(p_s_temp_file_name);
 				return -1; // fail

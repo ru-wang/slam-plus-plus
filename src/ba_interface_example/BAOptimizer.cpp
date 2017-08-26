@@ -353,8 +353,7 @@ bool CBAOptimizer::Dump_Graph(const char *p_s_filename) const
 		return false;
 	}
 
-	fclose(p_fw);
-	return true;
+	return !fclose(p_fw);
 }
 
 /*

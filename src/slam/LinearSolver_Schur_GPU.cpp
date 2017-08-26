@@ -36,6 +36,7 @@
 #include <cula.hpp>
 #include <cuda.h>
 #include <cublas_v2.h>
+#include <cublas_api.h>
 #include <cusparse_v2.h>
 #include <signal.h>
 
@@ -742,7 +743,7 @@ bool CLinearSolver_DenseGPU::Solve_PosDef(const CUberBlockMatrix &r_lambda, Eige
 			m_gpu.n_lambda_size = 0; // !!
 			char p_s_error[256];
 			sprintf(p_s_error, "CLinearSolver_DenseGPU::Solve_PosDef() failed to allocate"
-				" memory (%d x %d, " PRIsize ")", n, n, r_lambda.n_NonZero_Num());
+				" memory (" PRIsize " x " PRIsize ", " PRIsize ")", n, n, r_lambda.n_NonZero_Num());
 			throw std::runtime_error(p_s_error);
 		}
 		m_gpu.n_lambda_size = n;
@@ -1019,6 +1020,1083 @@ bool CLinearSolver_DenseGPU::Dense_Inverse(double *p_dest, const double *p_src,
  */
 
 /*
+ *								=== block matrix on GPU ===
+ */
+
+#include <map>
+
+class CGPU_BlockMatrix : public CUberBlockMatrix {
+public:
+	inline size_t n_Data_Size() const
+	{
+		return m_data_pool.size() * sizeof(double);
+	}
+
+	// for every operation, need to create a buffer with matrix layout and strategy
+	// (that can be done while the matrix data is copying)
+
+	// ops will be probably implemented differently if only a single block size is present
+	// in contrast to a mixture of block sizes
+
+	void Get_BlockColumn_Indices(std::vector<int> &r_block_column) const
+	{
+		const size_t n = m_block_cols_list.size();
+
+		r_block_column.clear();
+		r_block_column.reserve(n);
+
+		for(size_t i = 0; i < n; ++ i) {
+			r_block_column.insert(r_block_column.end(),
+				m_block_cols_list[i].block_list.size(), i);
+		}
+		// gets block column indices
+	}
+
+	// returns n + 1 numbers!
+	void Get_BlockColumn_BlockNumCumsum(std::vector<int> &r_block_column) const
+	{
+		const size_t n = m_block_cols_list.size();
+
+		r_block_column.clear();
+		r_block_column.resize(n + 1);
+
+		size_t n_cumsum = 0;
+		for(size_t i = 0; i < n; ++ i) {
+			_ASSERTE(n_cumsum <= INT_MAX);
+			r_block_column[i] = (int)n_cumsum;
+			n_cumsum += m_block_cols_list[i].block_list.size();
+		}
+		_ASSERTE(n_cumsum <= INT_MAX);
+		r_block_column.back() = (int)n_cumsum; // !!
+		// gets block column indices
+	}
+
+	void Get_BlockRow_Indices(std::vector<int> &r_block_row) const
+	{
+		const size_t n = m_block_cols_list.size();
+
+		r_block_row.clear();
+		r_block_row.reserve(n);
+
+		for(size_t i = 0, n_dest = 0; i < n; ++ i) {
+			const std::vector<TColumn::TBlockEntry> &r_col = m_block_cols_list[i].block_list;
+			size_t m = r_col.size();
+			_ASSERTE(n_dest == r_block_row.size());
+			r_block_row.resize(n_dest + m);
+			for(size_t j = 0; j < m; ++ j, ++ n_dest)
+				r_block_row[n_dest] = int(r_col[j].first);
+		}
+		// gets block row indices
+	}
+
+	// returns block size if all blocks have same size, otherwise returns -1
+	int n_Get_BlockBuffers_SquareBlocks(std::vector<int> &r_block_offset,
+		std::vector<int> &r_block_size, CGPU_BlockMatrix &r_data_matrix) const
+	{
+		const size_t n = m_block_cols_list.size();
+
+		r_block_size.clear();
+		r_block_offset.clear();
+		//r_block_size.reserve(n); // do not, will be empty for matrices with blocks with the same size
+		r_block_offset.reserve(n);
+
+		int n_block_size = (m_block_cols_list.empty())? -1 :
+			int(m_block_cols_list.front().n_width); // note that this assumes that there is a block in the first block row / block column; if the matrix is sparser than that, it might be overly pedantic
+		{
+			size_t i = 0;
+			for(; i < n; ++ i) {
+				size_t n_size = m_block_cols_list[i].n_width;
+				if(n_block_size != n_size) { // note that this assumes that the block column is not empty
+					r_block_size.reserve(std::max(r_block_offset.size(), n)); // do it now
+					r_block_size.insert(r_block_size.begin(), r_block_offset.size(), n_block_size); // insert prev size, r_block_offset.size() times
+					n_block_size = -1;
+					break;
+				}
+				//n_block_size |= -(n_block_size != n_size);
+
+				const std::vector<TColumn::TBlockEntry> &r_block_list = m_block_cols_list[i].block_list;
+				for(size_t j = 0, m = r_block_list.size(); j < m; ++ j) {
+					const TColumn::TBlockEntry &r_block = r_block_list[j];
+					_ASSERTE(m_block_rows_list[r_block.first].n_height == n_size); // make sure it is a square block
+					size_t n_index = r_data_matrix.m_data_pool.index_of(r_block.second);
+					r_block_offset.push_back(int(n_index)); // needs to have access to the pool
+					_ASSERTE(n_index != size_t(-1));
+				}
+			}
+			// loop over same size blocks
+
+			for(; i < n; ++ i) {
+				size_t n_size = m_block_cols_list[i].n_width;
+				const std::vector<TColumn::TBlockEntry> &r_block_list = m_block_cols_list[i].block_list;
+				for(size_t j = 0, m = r_block_list.size(); j < m; ++ j) {
+					const TColumn::TBlockEntry &r_block = r_block_list[j];
+					_ASSERTE(m_block_rows_list[r_block.first].n_height == n_size); // make sure it is a square block
+					r_block_size.push_back(int(n_size));
+					size_t n_index = r_data_matrix.m_data_pool.index_of(r_block.second);
+					r_block_offset.push_back(int(n_index)); // needs to have access to the pool
+					_ASSERTE(n_index != size_t(-1));
+				}
+			}
+			// loop for blocks of varying sizes (continues since the first size
+			// difference is encountered by the first loop)
+		}
+		// generate arrays of block offsets and sizes
+
+		return n_block_size;
+	}
+
+	std::pair<int, int> t_Get_BlockBuffers(std::vector<int> &r_block_offset,
+		std::vector<int> &r_block_rows, std::vector<int> &r_block_cols, CGPU_BlockMatrix &r_data_matrix) const
+	{
+		const size_t n = m_block_cols_list.size();
+
+		r_block_rows.clear();
+		r_block_cols.clear();
+		r_block_offset.clear();
+		/*r_block_rows.reserve(n);
+		r_block_cols.reserve(n);*/ // do not, will be empty for matrices with blocks with the same size
+		r_block_offset.reserve(n);
+
+		int n_block_rows = (m_block_rows_list.empty())? -1 :
+			int(m_block_rows_list.front().n_height);
+		int n_block_cols = (m_block_cols_list.empty())? -1 :
+			int(m_block_cols_list.front().n_width); // note that this assumes that there is a block in the first block row / block column; if the matrix is sparser than that, it might be overly pedantic
+		{
+			size_t i = 0;
+			for(; i < n; ++ i) {
+				size_t n_cols = m_block_cols_list[i].n_width;
+				if(n_block_cols != n_cols) { // note that this assumes that the block column is not empty
+					r_block_cols.reserve(std::max(r_block_offset.size(), n)); // do it now
+					r_block_cols.insert(r_block_cols.begin(), r_block_offset.size(), n_block_cols); // insert prev size, r_block_offset.size() times
+					n_block_cols = -1;
+					break;
+				}
+				//n_block_size |= -(n_block_size != n_size);
+
+				const std::vector<TColumn::TBlockEntry> &r_block_list = m_block_cols_list[i].block_list;
+				for(size_t j = 0, m = r_block_list.size(); j < m; ++ j) {
+					const TColumn::TBlockEntry &r_block = r_block_list[j];
+					size_t n_rows = m_block_rows_list[r_block.first].n_height;
+					if(n_block_rows != n_rows) {
+						r_block_cols.reserve(std::max(r_block_offset.size(), n)); // do it now
+						r_block_rows.reserve(std::max(r_block_offset.size(), n)); // do it now
+						r_block_cols.insert(r_block_cols.begin(), r_block_offset.size(), n_block_cols);
+						r_block_rows.insert(r_block_rows.begin(), r_block_offset.size(), n_block_rows); // insert prev size, r_block_offset.size() times
+						n_block_rows = -1;
+						break;
+					}
+					//_ASSERTE(m_block_rows_list[r_block.first].n_height == n_size); // make sure it is a square block
+					size_t n_index = r_data_matrix.m_data_pool.index_of(r_block.second);
+					r_block_offset.push_back(int(n_index)); // needs to have access to the pool
+					_ASSERTE(n_index != size_t(-1));
+				}
+				if(n_block_rows == -1)
+					break;
+			}
+			// loop over same size blocks
+
+			for(; i < n; ++ i) {
+				size_t n_cols = m_block_cols_list[i].n_width;
+				const std::vector<TColumn::TBlockEntry> &r_block_list = m_block_cols_list[i].block_list;
+				for(size_t j = 0, m = r_block_list.size(); j < m; ++ j) {
+					const TColumn::TBlockEntry &r_block = r_block_list[j];
+					size_t n_rows = m_block_rows_list[r_block.first].n_height;
+					r_block_cols.push_back(int(n_cols));
+					r_block_rows.push_back(int(n_rows));
+					size_t n_index = r_data_matrix.m_data_pool.index_of(r_block.second);
+					r_block_offset.push_back(int(n_index)); // needs to have access to the pool
+					_ASSERTE(n_index != size_t(-1));
+				}
+			}
+			// loop for blocks of varying sizes (continues since the first size
+			// difference is encountered by the first loop)
+		}
+		// generate arrays of block offsets and sizes
+
+		return std::make_pair(n_block_rows, n_block_cols);
+		// return a pair (rows, cols)
+	}
+
+#if 0
+	inline void Inverse_ThinBlockDiagonal(cl_command_queue h_cmd_queue,
+		cl_mem t_data_buffer)
+	{
+		Inverse_ThinBlockDiagonal(h_cmd_queue, t_data_buffer, *this);
+		// in case the data is in this matrix
+	}
+
+	void Inverse_ThinBlockDiagonal(cl_command_queue h_cmd_queue,
+		cl_mem t_data_buffer, CGPU_BlockMatrix &r_data_matrix)
+	{
+		//_ASSERTE(b_SymmetricLayout()); // todo - reenable
+
+		// note that the block_size could be optimized away if all blocks have the same size
+		// (maybe even using a runtime check, but maybe need to hint to aid the compilation? need to see if loop unrolling is a way to go)
+
+		// note that in case when the matrix is not permuted (and there is no debug bounds checking and the matrix fits in a single page / all pages are completely full), the block offset could also be optimized away
+		// note that this can probably only happen in a very limited number of scenarios, and might be not so important
+
+		// note that the page translation could be done on GPU by also passing first page elem pointers, not sure if that saves something
+
+		// note that the addresses should be sorted for optimum performance
+
+		// to read a matrix block, one needs to engage the whole warp in reading
+		// in case the next matrix block is not within range, the reading will fail
+
+		// each thread has an id of a block that it wants to read in the local memory
+		// probably only a single block is read at a time, the logic to decide how many blocks to read would be very complicated
+		// also, all the blocks still need to fit in the local memory (not a problem for robotic problems)
+
+		// each thread copies *dest_ptr = *src_ptr
+		// where dest_ptr = dest_base + block_size_cumsum[i] + interblock_off
+		// and src_ptr = src_base + block_offset[i] + interblock_off
+		// and basically for each thread, we need to calculate dest_ptr (src_ptr just increases)
+		// the new memory controllers on fermi / kepler maybe wouldn't need strict coalescing, but just permuted one
+
+		// need to calculate block_size_cumsum, which is just a simple scan op (and the longer the scan is, the better)
+		// maybe could get the scan from the CPU, that would make it easier, and on CPU, scan is no problem
+
+		// still need to decide which thread should read which element of which block
+
+		// each thread has its copy sequence number (local_therad_id + local_group_size * n)
+		// each thread needs to calculate both pointers; probably dest_ptr = dest_base + seq_no
+		// then block_size_cumsum[i] + interblock_off = seq_no
+		// then i = lower_bound(block_size_cumsum, seq_no, last_i) // divergent +/- 1 cycle, at each read
+		// then interblock_off = seq_no - block_size_cumsum[i]
+		// then the src_ptr would be approximately coalesced, given that the block_offset is monotonically increasing
+		// this is quite bad, as it requires binary search per every read element
+
+		// could also read every block separately, in srictly coalesced fashion (probably also the copy_? function does that)
+		// then the problem is that block size % warp size != 0
+		// the idle threads should ideally read the next block
+		// could preprocess the block offsets on CPU to have "superblocks" which would signify contiguous
+		// block for transfer by thread group. the superblocks would end at group's work-unit boundaries
+		// and could also load >1 block per thread at a time, as it is simpler to decide on the CPU
+		// the problem comes when the blocks are not sorted at all
+
+		// ideally, the threads after the first block would continue with the next block (that would save
+		// bandwidth, at least if the blocks are not over 32 elements apart in memory, which is often a realistic
+		// assumption)
+
+		// to do that, one needs a translation table. assume blocks 3x3, 3x3, 2x2 and 3x3
+		// the block sizes are 9, 9, 4, 9 (31 elements)
+		// threads read the data as follows:
+		// t0 - t8 : b1
+		// t9 - t17: b2
+		// t18 - t21: b3
+		// t22 - t30: b4
+		// each thread needs block index and intra-block offset
+
+		// what if the thread divergence in lower_bound hides in memory latency?
+		// what if there is a way to avoid that divergence for a cost of some threads copying
+		// elements that are already copied by different threads. is there a lower bound on that?
+
+		// does it matter at all? will we want to do stuff with extremely large data and will anyway
+		// need a streaming strategy that could take care of realigning the data?
+
+		// note that the data is aligned for SSE processing, it could be also somehow aligned for GPU
+
+		// also, keep in mind that those are doubles, that makes each block 18 elements,
+		// and only less than two such blocks fit in a single warp read (four 2x2, less than a half of 6x6)
+		// is it better to use type puning and read the doubles as pairs of uint32_t? probably.
+	}
+#endif // 0
+
+	bool ProductOf_GPU(const CGPU_BlockMatrix &r_a, const CGPU_BlockMatrix &r_b,
+		bool b_upper_diag_only, void *h_cublas)
+	{
+		__GPU_Function;
+
+		double *dp_device_buffer_A = 0;
+		double *dp_device_buffer_B;
+		double *dp_device_buffer_C = 0;
+		size_t n_buff_A, n_buff_B, n_buff_C = 0;
+		if(cuMemAlloc((CUdeviceptr*)&dp_device_buffer_A, n_buff_A = r_a.m_data_pool.size() * sizeof(double)) ||
+		   cuMemAlloc((CUdeviceptr*)&dp_device_buffer_B, n_buff_B = r_b.m_data_pool.size() * sizeof(double))) {
+			if(dp_device_buffer_A)
+				cuMemFree((CUdeviceptr)dp_device_buffer_A);
+			return false;
+		}
+		// alloc memory for A and B
+
+		if(!r_a.UploadData_to_GPU(dp_device_buffer_A, n_buff_A) ||
+		   !r_b.UploadData_to_GPU(dp_device_buffer_B, n_buff_B)) {
+			cuMemFree((CUdeviceptr)dp_device_buffer_A);
+			cuMemFree((CUdeviceptr)dp_device_buffer_B);
+			return false;
+		}
+		// copy the data to the GPU (asynchronous; will compute the structure of the product on the CPU in the meanwhile)
+
+		bool b_result;
+		try {
+			b_result = ProductOf_GPU(r_a, r_b, b_upper_diag_only, dp_device_buffer_A,
+				dp_device_buffer_B, dp_device_buffer_C, n_buff_C, h_cublas);
+		} catch(std::exception &r_exc) {
+			cuMemFree((CUdeviceptr)dp_device_buffer_A);
+			cuMemFree((CUdeviceptr)dp_device_buffer_B);
+			if(dp_device_buffer_C)
+				cuMemFree((CUdeviceptr)dp_device_buffer_C);
+			throw r_exc;
+		}
+		// multiply
+
+		cuMemFree((CUdeviceptr)dp_device_buffer_A);
+		cuMemFree((CUdeviceptr)dp_device_buffer_B);
+		if(dp_device_buffer_C)
+			cuMemFree((CUdeviceptr)dp_device_buffer_C);
+		// delete all
+
+		return b_result;
+	}
+
+		typedef std::pair<std::pair<int, int>, int> TBSKey;
+
+		typedef std::map<double*, std::vector<std::pair<const double*, const double*> > > TProdMap;
+
+		struct TMultInfo {
+			int ra, ca, /*rb,*/ cb/*, rp, cp*/; // rb = ca, rp = ca, cp = cb // dimensions of blocks
+			//int lda, ldb, ldc; // leading dimensions (= nums of rows), lda = ra, ldb = ca, ldc = ra
+
+			inline int n_RowsA() const { return ra; } // number of rows
+			inline int n_RowsB() const { return ca/*rb*/; }
+			inline int n_RowsP() const { return ca/*rp*/; }
+			inline int n_ColsA() const { return ca; } // number of columns
+			inline int n_ColsB() const { return cb; }
+			inline int n_ColsP() const { return cb/*cp*/; }
+			inline int n_LdA() const { return n_RowsA(); } // leading dimension (column major storage)
+			inline int n_LdB() const { return n_RowsB(); }
+			inline int n_LdP() const { return n_RowsP(); }
+
+			TProdMap prod_map; // the pointers to the individual arrays
+
+			size_t n_longest_prod;
+
+			TMultInfo(int _ra = 0, int _ca = 0, int _rb = 0, int _cb = 0)
+				:ra(_ra), ca(_ca), cb(_cb), n_longest_prod(0)
+			{
+				_ASSERTE(_rb == _ca); // so the product is doable?
+			}
+			
+			static TBSKey t_Key(int _ra, int _ca, int _rb, int _cb)
+			{
+				_ASSERTE(_rb == _ca); // so the product is doable?
+				return TBSKey(std::make_pair(_ra, _ca), _cb);
+			}
+
+			TBSKey t_Key() const
+			{
+				return TBSKey(std::make_pair(ra, ca), cb);
+			}
+		};
+
+			struct TLaunchParams {
+				size_t n_first, n_count; // the first prod and the number of prods; if !n_count then this is a barrier
+				TBSKey t_block_size;
+			};
+
+	bool ProductOf_GPU(const CGPU_BlockMatrix &r_a, const CGPU_BlockMatrix &r_b, bool b_upper_diag_only,
+		const double *dp_device_buffer_A, const double *dp_device_buffer_B,
+		double *&r_dp_device_buffer_C, size_t &r_n_device_buffer_C_size,
+		void *h_cublas) // throw(std::bad_alloc)
+	{
+		__GPU_Function;
+
+		r_a.CheckIntegrity(true);
+		r_b.CheckIntegrity(true);
+
+		if(r_a.m_n_col_num != r_b.m_n_row_num)
+			return false;
+		// check common dimension
+
+		CDeltaTimer dt;
+
+		CGPU_BlockMatrix &r_dest = *this;
+		const CUberBlockMatrix &A = r_a;
+		const CUberBlockMatrix &B = r_b;
+		// name the matrices; the operation is r_dest = A * B
+
+		r_dest.Clear();
+
+		double *dp_C_data_base_ptr = (r_n_device_buffer_C_size)? r_dp_device_buffer_C : 0; // worry a bit about integer overflows in pointer arithmetics
+		std::map<TBSKey, TMultInfo> cublas_data;
+		// data for batched GEMM
+
+		const std::vector<TRow> &r_row_list_A = A.m_block_rows_list;
+		const std::vector<TRow> &r_row_list_B = B.m_block_rows_list;
+		std::vector<TRow> &r_row_list_dest = r_dest.m_block_rows_list;
+		const std::vector<TColumn> &r_col_list_A = A.m_block_cols_list;
+		const std::vector<TColumn> &r_col_list_B = B.m_block_cols_list;
+		std::vector<TColumn> &r_col_list_dest = r_dest.m_block_cols_list;
+		// name the cumsums for easier access
+
+		size_t n_dest_col_num = B.m_n_col_num, n_dest_row_num = A.m_n_row_num;
+		// these are the dimensions of the new matrix
+
+		{
+			r_dest.Clear();
+			r_row_list_dest = r_row_list_A; // copy row layout from this
+			r_col_list_dest.resize(r_col_list_B.size());
+			std::transform(r_col_list_B.begin(), r_col_list_B.end(),
+				r_col_list_dest.begin(), t_ColumnCumsumCopy);
+			r_dest.m_n_col_num = n_dest_col_num;
+			r_dest.m_n_row_num = n_dest_row_num;
+			// create layout for the destination matrix (linear time)
+		}
+
+		std::vector<size_t> reindex_rows_B_to_cols_A;
+		{
+			{
+				std::vector<size_t> reindex_cols_A;
+				size_t n_common_size = n_MergeLayout(r_col_list_A,
+					r_row_list_B, reindex_cols_A, reindex_rows_B_to_cols_A);
+				// merge matrix layouts (linear time in max(A column blocks, B row blocks) or something like that)
+
+				std::vector<size_t> common(n_common_size, size_t(-2)); // helper array (note the use of -2 !!)
+				for(size_t i = 0, n = reindex_cols_A.size(); i < n; ++ i) {
+					size_t n_common_A;
+					if((n_common_A = reindex_cols_A[i]) == size_t(-1))
+						continue;
+					_ASSERTE(n_common_A < common.size());
+					common[n_common_A] = i;
+				}
+				// create inverse mapping for columns of A (linear time in number of column blocks of A)
+
+				if(reindex_cols_A.capacity() < reindex_rows_B_to_cols_A.size())
+					reindex_cols_A.clear(); // to prevent resize() on the next line from copying the data (that are going to be overwritten anyway)
+				reindex_cols_A.resize(reindex_rows_B_to_cols_A.size()); // reuse this array as output (may not actually resize in most cases)
+				for(size_t i = 0, n = reindex_rows_B_to_cols_A.size(); i < n; ++ i) {
+					size_t n_common_B;
+					if((n_common_B = reindex_rows_B_to_cols_A[i]) == size_t(-1)) {
+						reindex_cols_A[i] = -1; // !!
+						continue;
+					}
+					_ASSERTE(n_common_B < common.size());
+					reindex_cols_A[i] = common[n_common_B];
+				}
+				reindex_cols_A.swap(reindex_rows_B_to_cols_A); // swap with the array we want output in
+				// map inverse mapping of A to B (linear time in number of row blocks of B)
+			}
+		}
+		// merge the common dimension layout (linear time)
+		// -1 means the row did not map/exist in B, -2 meants it did not map/exist in A
+
+		{
+			std::vector<size_t> cols_load_list(r_col_list_dest.size(), 0);
+			std::vector<std::vector<TColumn::TBlockEntry> >
+				transpose_cols_list(r_row_list_dest.size());
+			// list for storing transpose columns (note that the sizes and cumsums are not initialized and are invalid)
+
+			size_t n_column_id_B = 0;
+			for(_TyColumnConstIter p_col_B_it = r_col_list_B.begin(),
+			   p_col_B_end_it = r_col_list_B.end(); p_col_B_it != p_col_B_end_it;
+			   ++ p_col_B_it, ++ n_column_id_B) {
+				const TColumn &r_t_column_B = *p_col_B_it;
+				// for each column in B (index is n_column_id_B)
+
+				for(_TyBlockConstIter p_block_B_it =
+				   r_t_column_B.block_list.begin(), p_block_B_end_it = r_t_column_B.block_list.end();
+				   p_block_B_it != p_block_B_end_it; ++ p_block_B_it) {
+					const TColumn::TBlockEntry &r_t_block_B = *p_block_B_it;
+					size_t n_row_id_B = r_t_block_B.first; // get row of the block
+					// for each block in the current column in B
+
+					const size_t n_bmB_rows = r_row_list_B[n_row_id_B].n_height, n_bmB_cols = r_t_column_B.n_width;
+					//const double *p_blockB = r_t_block_B.second;
+					const double *dp_blockB = dp_device_buffer_B + B.m_data_pool.index_of(r_t_block_B.second);
+					// want *offsets*, to be usable on the GPU
+
+					size_t n_column_id_A = reindex_rows_B_to_cols_A[n_row_id_B];
+					_ASSERTE(size_t(-1) > size_t(-2)); // just to make sure the next line is correct
+					if(n_column_id_A >= size_t(-2)) {
+						if(n_column_id_A == size_t(-1))
+							return false; // didn't map from B to common and we know it was not empty (we have a block here)
+						continue; // do not fail, it might also mean that there are no blocks in that column in A and hence the result of multiplication is zero
+					}
+					_ASSERTE(n_column_id_A < r_col_list_A.size());
+					const TColumn &r_t_column_A = r_col_list_A[n_column_id_A];
+					_ASSERTE(r_t_column_A.n_width == r_row_list_B[n_row_id_B].n_height);
+					// lookup which column in A corresponds with current block row in B
+
+					for(_TyBlockConstIter p_block_A_it =
+					   r_t_column_A.block_list.begin(), p_block_A_end_it =
+					   r_t_column_A.block_list.end(); p_block_A_it != p_block_A_end_it;
+					   ++ p_block_A_it) {
+						const TColumn::TBlockEntry &r_t_block_A = *p_block_A_it;
+						size_t n_row_id_A = r_t_block_A.first; // get row of the block
+						// for each block in the current column in A
+
+						if(b_upper_diag_only && n_row_id_A > n_column_id_B)
+							break; // these only get higher, might as well break instead of continue
+						// this block would've ended up at lower diagonal, don't want that
+
+						const size_t n_bmA_rows = r_row_list_A[n_row_id_A].n_height, n_bmA_cols = r_t_column_A.n_width;
+						//const double *p_blockA = r_t_block_A.second;
+						const double *dp_blockA = dp_device_buffer_A + A.m_data_pool.index_of(r_t_block_A.second);
+						// want *offsets*, to be usable on the GPU
+
+						// multiplication of blockA * blockB yields block at (n_row_id_A, n_column_id_B)
+
+						_ASSERTE(n_row_id_A < r_row_list_dest.size());
+						_ASSERTE(n_column_id_B < r_col_list_dest.size());
+						_ASSERTE(r_row_list_dest[n_row_id_A].n_height == n_bmA_rows);
+						_ASSERTE(r_col_list_dest[n_column_id_B].n_width == n_bmB_cols);
+						if(n_bmA_cols != n_bmB_rows)
+							return false; // make sure the blocks are multiplicable (not able to verify by just merging the layout)
+						// basic checks about matrix dimensions
+
+						TBSKey k = TMultInfo::t_Key((int)n_bmA_rows, (int)n_bmA_cols, (int)n_bmB_rows, (int)n_bmB_cols);
+						// key to the block size map (possibly there's only one, but this way we can handle VBR matrices)
+
+						_ASSERTE(n_row_id_A < transpose_cols_list.size());
+						std::vector<TColumn::TBlockEntry> &r_transpose_column =
+							transpose_cols_list[n_row_id_A];
+						double *dp_block_data;
+						if(r_transpose_column.empty() ||
+						   r_transpose_column.back().first < n_column_id_B) {
+							double *p_new_block_data =
+								r_dest.p_Get_DenseStorage(n_bmA_rows * n_bmB_cols);
+							// get storage
+
+							r_transpose_column.push_back(
+								TColumn::TBlockEntry(n_column_id_B, p_new_block_data));
+							// add it to the list
+
+							dp_block_data = dp_C_data_base_ptr + r_dest.m_data_pool.index_of(p_new_block_data);
+							// want *offsets*, to be usable on the GPU
+
+							_ASSERTE(n_column_id_B < cols_load_list.size());
+							++ cols_load_list[n_column_id_B];
+							// we have a list of numbers of entries per row, that can be done in linear time and it might help speeding up the final matrix transpose later
+						} else {
+							_ASSERTE(r_transpose_column.back().first == n_column_id_B); // n_column_id_B is monotonically increasing, no matter what, don't have to do log(N) lookup here ;)
+							double *p_block_data = r_transpose_column.back().second;
+
+							dp_block_data = dp_C_data_base_ptr + r_dest.m_data_pool.index_of(p_block_data);
+							// want *offsets*, to be usable on the GPU
+						}
+
+						////_ASSERTE(!cublas_data.count(k)); // this is a new prod, should not exist yet // can exist; this is just a new column but a prod of this size could have been there before // from top branch
+						//_ASSERTE(cublas_data.count(k)); // should exist now // from bottom branch
+						std::map<TBSKey, TMultInfo>::iterator p_bs_it = cublas_data.find(k);
+						if(p_bs_it == cublas_data.end()) {
+							p_bs_it = cublas_data.insert(std::make_pair(k,
+								TMultInfo((int)n_bmA_rows, (int)n_bmA_cols, (int)n_bmB_rows, (int)n_bmB_cols))).first; // only once for each block size
+						}
+						TMultInfo &r_t_info = (*p_bs_it).second;
+						r_t_info.prod_map[dp_block_data].push_back(std::make_pair(dp_blockA, dp_blockB));
+						// add to the existing block product sum
+					}
+				}
+			}
+			// performs sparse matrix multiplication (linear time in number of blocks * constant time to insert the blocks)
+
+			printf("debug: SpDGEMM structure: %.3f msec\n", dt.f_Time() * 1000);
+
+			size_t n_C_buffer_size = r_dest.m_data_pool.size() * sizeof(double);
+			if(!r_dp_device_buffer_C || r_n_device_buffer_C_size < n_C_buffer_size) {
+				if(r_dp_device_buffer_C)
+					cuMemFree((CUdeviceptr)r_dp_device_buffer_C);
+				if(cuMemAlloc((CUdeviceptr*)&r_dp_device_buffer_C, n_C_buffer_size)) {
+					r_n_device_buffer_C_size = 0;
+					r_dp_device_buffer_C = 0;
+					fprintf(stderr, "error: failed to allocate enough device memory for the product result\n");
+					return false;
+				}
+				r_n_device_buffer_C_size = n_C_buffer_size;
+			}
+			// allocate buffer for the data in C
+
+			size_t bnnz = std::accumulate(cols_load_list.begin(), cols_load_list.end(), size_t(0));
+			std::vector<const double*> pA, pB, pC;
+			pA.reserve(bnnz);
+			pB.reserve(bnnz);
+			pC.reserve(bnnz);
+			// global arrays with the ptrs
+
+			std::vector<TLaunchParams> launches;
+
+			size_t n_wave_num = SIZE_MAX, n_longest = 0, n_first_wave_size = 0;
+			for(size_t n_wave = 0; n_wave < n_wave_num; ++ n_wave) {
+				for(std::map<TBSKey, TMultInfo>::iterator p_mult_it = cublas_data.begin(),
+				   p_end_it = cublas_data.end(); p_mult_it != p_end_it; ++ p_mult_it) {
+
+					size_t n_first = pC.size();
+
+					TMultInfo &r_t_prod = (*p_mult_it).second;
+					for(TProdMap::iterator p_prod_it = r_t_prod.prod_map.begin(),
+					   p_prod_end_it = r_t_prod.prod_map.end(); p_prod_it != p_prod_end_it;) { // increment inside
+						double *dp_dest = (*p_prod_it).first;
+						std::vector<std::pair<const double*, const double*> > &r_src_list = (*p_prod_it).second;
+						_ASSERTE(!r_src_list.empty());
+						// get destintation and the product list
+
+						if(r_dp_device_buffer_C != dp_C_data_base_ptr)
+							dp_dest = r_dp_device_buffer_C + (dp_dest - dp_C_data_base_ptr);
+						// in case the base pointer was different or unknown, need to shift it
+
+						n_longest = std::max(n_longest, r_src_list.size());
+
+						if(n_wave < r_src_list.size()) {
+							pA.push_back(r_src_list[n_wave].first);
+							pB.push_back(r_src_list[n_wave].second);
+							pC.push_back(dp_dest);
+						}
+						// emit a product
+
+						if(n_wave + 1 == r_src_list.size()) {
+							TProdMap::iterator p_delete_it = p_prod_it;
+							++ p_prod_it; // increment
+							r_t_prod.prod_map.erase(p_delete_it); // delete; invalidates p_delete_it but not p_prod_it
+						} else
+							++ p_prod_it; // increment
+						// delete this entry so that we don't spend time iterating over it the next time around
+					}
+					// go over all products involving blocks of one size, emit products
+
+					size_t n_count = pC.size() - n_first;
+					if(n_count) {
+						TLaunchParams t_launch;
+						t_launch.n_first = n_first;
+						t_launch.n_count = n_count;
+						t_launch.t_block_size = (*p_mult_it).first;
+						launches.push_back(t_launch);
+					}
+					// schedule this launch to go
+				}
+				// peel off one product from each of the dest elements
+
+				if(!n_wave) {
+					n_first_wave_size = launches.size(); // the ones that do c = a * b rather than c += a * b
+					n_wave_num = n_longest;
+				}
+
+				if(n_wave + 1 < n_longest) {
+					TLaunchParams t_barrier = {0};
+					launches.push_back(t_barrier);
+				}
+				// if there will be another wave, insert a barrier so that
+				// the threads do not overwrite each other's results
+			}
+			// generate a list of launches which are chopped into "waves"
+
+			printf("debug: SpDGEMM preparation: %.3f msec\n", dt.f_Time() * 1000);
+
+			_ASSERTE(pA.size() == pB.size() && pA.size() == pC.size()); // those are triplets
+			_ASSERTE(sizeof(CUdeviceptr) == sizeof(double*)); // otherwise won't work
+			const size_t n_launch_data_size = pA.size() * sizeof(double*);
+
+			double **dpA = 0, **dpB = 0, **dpC = 0;
+			if(cuMemAlloc((CUdeviceptr*)&dpA, n_launch_data_size) ||
+			   cuMemAlloc((CUdeviceptr*)&dpB, n_launch_data_size) ||
+			   cuMemAlloc((CUdeviceptr*)&dpC, n_launch_data_size)) {
+				if(dpA)
+					cuMemFree((CUdeviceptr)dpA);
+				if(dpB)
+					cuMemFree((CUdeviceptr)dpB);
+				_ASSERTE(!dpC); // what failed otherwise?
+				fprintf(stderr, "error: failed to allocate enough device memory for the command buffers\n");
+				return false;
+			}
+			if(cuMemcpyHtoDAsync((CUdeviceptr)dpA, &pA[0], n_launch_data_size, 0) ||
+			   cuMemcpyHtoDAsync((CUdeviceptr)dpB, &pB[0], n_launch_data_size, 0) ||
+			   cuMemcpyHtoDAsync((CUdeviceptr)dpC, &pC[0], n_launch_data_size, 0))
+				fprintf(stderr, "warning: errors while cuMemcpyHtoDAsync()\n");
+			// alloc and copy the launch pointers
+
+#if defined(_DEBUG) && defined(__UBER_BLOCK_MATRIX_BUFFER_BOUNDS_CHECK)
+			if(!r_dest.UploadData_to_GPU(r_dp_device_buffer_C, r_n_device_buffer_C_size))
+				throw std::runtime_error("UploadData_to_GPU() failed " FILE_LINE);
+#endif // _DEBUG && __UBER_BLOCK_MATRIX_BUFFER_BOUNDS_CHECK
+			// in case the block bounds markers are going to be checked, need to upload
+			// the empty blocks to the GPU, along with the bounds markers); this checks
+			// the correctness of the CUBLAS code as a side product
+
+#ifdef _DEBUG // otherwise get unreferenced local variable warning about n_pmode
+			cublasPointerMode_t n_pmode;
+			_ASSERTE(cublasGetPointerMode((cublasHandle_t)h_cublas, &n_pmode) ==
+				CUBLAS_STATUS_SUCCESS && n_pmode == CUBLAS_POINTER_MODE_HOST);
+#endif // _DEBUG
+			// for this to work, the pointers for alpha and beta need to be read from the host
+
+			if(cuCtxSynchronize() != CUDA_SUCCESS)
+				throw std::runtime_error("cuCtxSynchronize() failed " FILE_LINE);
+
+			for(size_t i = 0, n = launches.size(); i < n; ++ i) {
+				const TLaunchParams &t_launch = launches[i];
+				if(t_launch.n_count) {
+					const int ra = t_launch.t_block_size.first.first; // std::make_pair(_ra, _ca), _cb
+					const int ca = t_launch.t_block_size.first.second; // std::make_pair(_ra, _ca), _cb
+					const int rb = ca; // otherwise wouldn't multiply
+					const int cb = t_launch.t_block_size.second; // std::make_pair(_ra, _ca), _cb
+					const int rp = ra;
+					const int cp = cb;
+					// dims of the block
+
+					_ASSERTE(t_launch.n_count <= INT_MAX);
+					const double f_alpha = 1.0, f_beta = (i < n_first_wave_size)? 0.0 : 1.0;
+					cublasStatus_t n_result = cublasDgemmBatched((cublasHandle_t)h_cublas,
+						CUBLAS_OP_N, CUBLAS_OP_N, ra, cb, ca, // not transpose, not transpose
+						&f_alpha, const_cast<const double**>(dpA + t_launch.n_first), ra,
+						const_cast<const double**>(dpB + t_launch.n_first), rb,
+						&f_beta, dpC + t_launch.n_first, rp,
+						(int)t_launch.n_count);
+					// a launch (f_beta controls whether it is doing c = a * b (0.0) or c += a * b (1.0))
+				} else {
+					// a barrier; not needed here as cublas routines are blocking (but is needed for the OpenCL version)
+				}
+			}
+
+			cuMemFree((CUdeviceptr)dpA);
+			cuMemFree((CUdeviceptr)dpB);
+			cuMemFree((CUdeviceptr)dpC);
+			// delete the data
+
+			if(!r_dest.DownloadData_from_GPU(r_dp_device_buffer_C, r_n_device_buffer_C_size))
+				throw std::runtime_error("DownloadData_from_GPU() failed " FILE_LINE);
+			// start downloading the dest matrix
+
+			{
+				_ASSERTE(cols_load_list.size() == r_col_list_dest.size());
+				for(size_t i = 0, n = cols_load_list.size(); i < n; ++ i)
+					r_col_list_dest[i].block_list.reserve(cols_load_list[i]);
+				// allocate block lists
+
+				for(size_t i = 0, n = transpose_cols_list.size(); i < n; ++ i) {
+					const std::vector<TColumn::TBlockEntry> &r_col = transpose_cols_list[i];
+					for(size_t j = 0, m = r_col.size(); j < m; ++ j) {
+						const TColumn::TBlockEntry &r_block = r_col[j];
+						_ASSERTE(r_block.first < r_col_list_dest.size());
+						_ASSERTE(r_col_list_dest[r_block.first].block_list.capacity() >
+							r_col_list_dest[r_block.first].block_list.size()); // since it was preallocated
+						r_col_list_dest[r_block.first].block_list.push_back(
+							TColumn::TBlockEntry(i, r_block.second));
+					}
+				}
+				// performs the final transpose (linear time in number of blocks)
+			}
+			// this part is independent from the GPU computation, can run in the background
+			// (in the hindsight, it is a waste of time to prealloc the columns then, could
+			// have started the kernels slightly earlier if we didnt do it)
+
+			if(cuCtxSynchronize() != CUDA_SUCCESS)
+				throw std::runtime_error("cuCtxSynchronize() failed " FILE_LINE);
+
+			//r_dest.CheckIntegrity();
+			// makes sure the dest matrix is ok
+
+			printf("debug: SpDGEMM execution: %.3f msec\n", dt.f_Time() * 1000);
+		}
+
+		return true;
+	}
+
+// some cuda code that we use
+/*
+		int *csrRowPtrA, *csrColIndA;
+		double *csrValA;
+		{
+			int result = cuMemAlloc((CUdeviceptr*)&csrRowPtrA, sizeof(int) * (p_A->n + 1));
+			result |= cuMemAlloc((CUdeviceptr*)&csrColIndA, sizeof(int) * nnzA);
+			result |= cuMemAlloc((CUdeviceptr*)&csrValA, sizeof(double) * nnzA);
+			if(result)
+				fprintf(stderr, "error: cuMemAlloc() failed (%d, " PRIsize ")\n", result, nnzA);
+			result |= cuMemcpyHtoDAsync((CUdeviceptr)csrRowPtrA, p_A->p, sizeof(int) * (p_A->n + 1), 0);
+			result |= cuMemcpyHtoDAsync((CUdeviceptr)csrColIndA, p_A->i, sizeof(int) * nnzA, 0);
+			result |= cuMemcpyHtoDAsync((CUdeviceptr)csrValA, p_A->x, sizeof(double) * nnzA, 0);
+			if(result != CUDA_SUCCESS)
+				throw std::runtime_error("failed to send the A matrix to GPU");
+		}
+		int *csrRowPtrB, *csrColIndB;
+		double *csrValB;
+		{
+			int result = cuMemAlloc((CUdeviceptr*)&csrRowPtrB, sizeof(int) * (p_B->n + 1));
+			result |= cuMemAlloc((CUdeviceptr*)&csrColIndB, sizeof(int) * nnzB);
+			result |= cuMemAlloc((CUdeviceptr*)&csrValB, sizeof(double) * nnzB);
+			if(result)
+				fprintf(stderr, "error: cuMemAlloc() failed (%d, " PRIsize ")\n", result, nnzB);
+			result |= cuMemcpyHtoDAsync((CUdeviceptr)csrRowPtrB, p_B->p, sizeof(int) * (p_B->n + 1), 0);
+			result |= cuMemcpyHtoDAsync((CUdeviceptr)csrColIndB, p_B->i, sizeof(int) * nnzB, 0);
+			result |= cuMemcpyHtoDAsync((CUdeviceptr)csrValB, p_B->x, sizeof(double) * nnzB, 0);
+			if(result != CUDA_SUCCESS)
+				throw std::runtime_error("failed to send the B matrix to GPU");
+		}
+		// B is symmetric - the same in SCR and CSC
+		// todo - see which combination of transpose flags yields faster results
+
+		if(cuCtxSynchronize() != CUDA_SUCCESS)
+			throw std::runtime_error("cuCtxSynchronize() failed " FILE_LINE);
+
+		//printf("debug: have matrices in GPU\n"); // debug
+
+		// p_A, p_B are not needed anymore // todo - reuse for the second product
+
+		{
+			const double f_x = -1;
+			_ASSERTE(nnzA < INT_MAX);
+			cublasDscal((cublasHandle_t)m_gpu.t_cublas, int(nnzA), &f_x, csrValA, 1);
+		}
+		// use cublasDscal() to flip signs on A (A = C^-1)
+*/
+
+	bool UploadData_to_GPU(double *dp_buffer, size_t n_buffer_size, bool b_blocking = false) const
+	{
+		_ASSERTE(!m_n_ref_elem_num); // if this triggers, make a deep copy of the matrix
+		// must upload data of the original matrix, *will not* work on the ref matrices (would lose performance)
+
+		const size_t n_data_size = m_data_pool.size() * sizeof(double);
+		if(n_buffer_size < n_data_size)
+			return false;
+
+		int n_result = CUDA_SUCCESS;
+		_ASSERTE(!n_result); // if not 0, then |= won't work
+
+		if(n_data_size) {
+			const size_t n_page_size = m_data_pool.page_size(),
+				n_page_num_1 = m_data_pool.page_num() - 1;
+			for(size_t i = 0; i < n_page_num_1; ++ i, dp_buffer += n_page_size) {
+				const double *p_data = &m_data_pool[i * n_page_size];
+
+				if(b_blocking)
+					n_result |= cuMemcpyHtoD((CUdeviceptr)dp_buffer, p_data, sizeof(double) * n_page_size);
+				else
+					n_result |= cuMemcpyHtoDAsync((CUdeviceptr)dp_buffer, p_data, sizeof(double) * n_page_size, 0); // the last arg is stream handle
+			}
+			// upload full pages
+
+			{
+				const double *p_last_data = &m_data_pool[n_page_num_1 * n_page_size];
+				size_t n_last_page_size = m_data_pool.last_page_usage();
+
+				if(b_blocking)
+					n_result |= cuMemcpyHtoD((CUdeviceptr)dp_buffer, p_last_data, sizeof(double) * n_last_page_size);
+				else
+					n_result |= cuMemcpyHtoDAsync((CUdeviceptr)dp_buffer, p_last_data, sizeof(double) * n_last_page_size, 0); // the last arg is stream handle
+			}
+			// upload the last page
+		}
+		// schedule upload of every page
+
+		return n_result == CUDA_SUCCESS;
+	}
+
+	// n_buffer_offset is in bytes
+	bool DownloadData_from_GPU(double *dp_buffer, size_t n_buffer_size, bool b_blocking = false)
+	{
+		_ASSERTE(!m_n_ref_elem_num); // if this triggers, make a deep copy of the matrix
+		// must upload data of the original matrix, *will not* work on the ref matrices (would lose performance)
+
+		const size_t n_data_size = m_data_pool.size() * sizeof(double);
+		if(n_buffer_size < n_data_size)
+			return false;
+
+		int n_result = CUDA_SUCCESS;
+		_ASSERTE(!n_result); // if not 0, then |= won't work
+
+		if(n_data_size) {
+			const size_t n_page_size = m_data_pool.page_size(),
+				n_page_num_1 = m_data_pool.page_num() - 1;
+			for(size_t i = 0; i < n_page_num_1; ++ i, dp_buffer += n_page_size) {
+				double *p_data = &m_data_pool[i * n_page_size];
+
+				if(b_blocking)
+					n_result |= cuMemcpyDtoH(p_data, (CUdeviceptr)dp_buffer, sizeof(double) * n_page_size);
+				else
+					n_result |= cuMemcpyDtoHAsync(p_data, (CUdeviceptr)dp_buffer, sizeof(double) * n_page_size, 0); // the last arg is stream handle
+			}
+			// download full pages
+
+			{
+				double *p_last_data = &m_data_pool[n_page_num_1 * n_page_size];
+				size_t n_last_page_size = m_data_pool.last_page_usage();
+
+				if(b_blocking)
+					n_result |= cuMemcpyDtoH(p_last_data, (CUdeviceptr)dp_buffer, sizeof(double) * n_last_page_size);
+				else
+					n_result |= cuMemcpyDtoHAsync(p_last_data, (CUdeviceptr)dp_buffer, sizeof(double) * n_last_page_size, 0); // the last arg is stream handle
+			}
+			// download the last page
+		}
+		// schedule upload of every page
+
+		return n_result == CUDA_SUCCESS;
+	}
+
+#if 0
+	// n_buffer_offset is in bytes
+	bool UploadData_to_GPU(cl_command_queue h_cmd_queue, cl_mem t_buffer, size_t n_buffer_size,
+		size_t n_buffer_offset = 0, bool b_blocking = false, cl_event *p_event = 0) const
+	{
+		_ASSERTE(!m_n_ref_elem_num);
+		// must upload data of the original matrix, does not work on the ref matrices (so far)
+
+		size_t n_data_size = m_data_pool.size() * sizeof(double);
+
+		_ASSERTE(n_buffer_offset <= n_buffer_size);
+		if(n_buffer_size - n_buffer_offset < n_data_size)
+			return false;
+
+		if(!m_data_pool.empty()) {
+			size_t n_page_size = m_data_pool.page_size(),
+				n_page_num_1 = m_data_pool.page_num() - 1;
+			for(size_t i = 0; i < n_page_num_1; ++ i) {
+				const double *p_data = &m_data_pool[i * n_page_size];
+
+				clEnqueueWriteBuffer(h_cmd_queue, t_buffer, b_blocking,
+					n_buffer_offset, n_page_size * sizeof(double), p_data, 0, 0, 0);
+
+				n_buffer_offset += n_page_size * sizeof(double);
+			}
+			// upload full pages
+
+			{
+				const double *p_last_data = &m_data_pool[n_page_num_1 * n_page_size];
+				size_t n_last_page_size = m_data_pool.last_page_usage();
+
+				clEnqueueWriteBuffer(h_cmd_queue, t_buffer, b_blocking,
+					n_buffer_offset, n_last_page_size * sizeof(double),
+					p_last_data, 0, 0, p_event);
+			}
+			// upload the last page
+		}
+		// schedule upload of every page
+
+		return true;
+	}
+
+	// n_buffer_offset is in bytes
+	bool DownloadData_from_GPU(cl_command_queue h_cmd_queue, cl_mem t_buffer, size_t n_buffer_size,
+		size_t n_buffer_offset = 0, bool b_blocking = false, cl_event *p_event = 0)
+	{
+		_ASSERTE(!m_n_ref_elem_num);
+		// must upload data of the original matrix, does not work on the ref matrices (so far)
+
+		size_t n_data_size = m_data_pool.size() * sizeof(double);
+
+		_ASSERTE(n_buffer_offset <= n_buffer_size);
+		if(n_buffer_size - n_buffer_offset < n_data_size)
+			return false;
+
+		if(!m_data_pool.empty()) {
+			size_t n_page_size = m_data_pool.page_size(),
+				n_page_num_1 = m_data_pool.page_num() - 1;
+			for(size_t i = 0; i < n_page_num_1; ++ i) {
+				double *p_data = &m_data_pool[i * n_page_size];
+
+				clEnqueueReadBuffer(h_cmd_queue, t_buffer, b_blocking,
+					n_buffer_offset, n_page_size * sizeof(double), p_data, 0, 0, 0);
+
+				n_buffer_offset += n_page_size * sizeof(double);
+			}
+			// download full pages
+
+			{
+				double *p_last_data = &m_data_pool[n_page_num_1 * n_page_size];
+				size_t n_last_page_size = m_data_pool.last_page_usage();
+
+				clEnqueueReadBuffer(h_cmd_queue, t_buffer, b_blocking,
+					n_buffer_offset, n_last_page_size * sizeof(double),
+					p_last_data, 0, 0, p_event);
+			}
+			// download the last page
+		}
+		// schedule upload of every page
+
+		return true;
+	}
+
+	// debug function for reference CPU implementations
+	// n_buffer_offset is in bytes
+	bool UploadData_to_Buffer(std::vector<double> &r_t_buffer, size_t n_buffer_offset = 0) const
+	{
+		_ASSERTE(!(n_buffer_offset % sizeof(double))); // we copy doubles, offset must be in doubles
+		_ASSERTE(!m_n_ref_elem_num);
+		// must upload data of the original matrix, does not work on the ref matrices (so far)
+
+		size_t n_data_size = m_data_pool.size() * sizeof(double);
+
+		size_t n_buffer_size = r_t_buffer.size() * sizeof(double);
+		_ASSERTE(n_buffer_offset <= n_buffer_size);
+		if(n_buffer_size - n_buffer_offset < n_data_size)
+			return false;
+
+		n_buffer_offset /= sizeof(double);
+		// !!
+
+		if(!m_data_pool.empty()) {
+			size_t n_page_size = m_data_pool.page_size(),
+				n_page_num_1 = m_data_pool.page_num() - 1;
+			for(size_t i = 0; i < n_page_num_1; ++ i) {
+				const double *p_data = &m_data_pool[i * n_page_size];
+
+				memcpy(&r_t_buffer[n_buffer_offset], p_data, n_page_size * sizeof(double));
+
+				n_buffer_offset += n_page_size;
+			}
+			// upload full pages
+
+			{
+				const double *p_last_data = &m_data_pool[n_page_num_1 * n_page_size];
+				size_t n_last_page_size = m_data_pool.last_page_usage();
+
+				memcpy(&r_t_buffer[n_buffer_offset], p_last_data, n_last_page_size * sizeof(double));
+			}
+			// upload the last page
+		}
+		// schedule upload of every page
+
+		return true;
+	}
+
+	// debug function for reference CPU implementations
+	// n_buffer_offset is in bytes
+	bool DownloadData_from_Buffer(const std::vector<double> &r_t_buffer, size_t n_buffer_offset = 0)
+	{
+		_ASSERTE(!(n_buffer_offset % sizeof(double))); // we copy doubles, offset must be in doubles
+		_ASSERTE(!m_n_ref_elem_num);
+		// must upload data of the original matrix, does not work on the ref matrices (so far)
+
+		size_t n_data_size = m_data_pool.size() * sizeof(double);
+
+		size_t n_buffer_size = r_t_buffer.size() * sizeof(double);
+		_ASSERTE(n_buffer_offset <= n_buffer_size);
+		if(n_buffer_size - n_buffer_offset < n_data_size)
+			return false;
+
+		n_buffer_offset /= sizeof(double);
+		// !!
+
+		if(!m_data_pool.empty()) {
+			size_t n_page_size = m_data_pool.page_size(),
+				n_page_num_1 = m_data_pool.page_num() - 1;
+			for(size_t i = 0; i < n_page_num_1; ++ i) {
+				double *p_data = &m_data_pool[i * n_page_size];
+
+				memcpy(p_data, &r_t_buffer[n_buffer_offset], n_page_size * sizeof(double));
+
+				n_buffer_offset += n_page_size;
+			}
+			// download full pages
+
+			{
+				double *p_last_data = &m_data_pool[n_page_num_1 * n_page_size];
+				size_t n_last_page_size = m_data_pool.last_page_usage();
+
+				memcpy(p_last_data, &r_t_buffer[n_buffer_offset], n_last_page_size * sizeof(double));
+			}
+			// download the last page
+		}
+		// schedule upload of every page
+
+		return true;
+	}
+#endif // 0
+};
+
+/*
+ *								=== ~block matrix on GPU ===
+ */
+
+/*
  *								=== CLinearSolver_Schur_GPUBase ===
  */
 
@@ -1108,6 +2186,177 @@ CLinearSolver_Schur_GPUBase::~CLinearSolver_Schur_GPUBase()
 cs *cs_spalloc32(csi m, csi n, csi nzmax, csi values, csi triplet);
 // in BlockMatrix.cpp, needed for x64 builds as cusparse is always using 32-bit indices
 #endif // _M_X64 || _M_AMD64 || _M_IA64 || __x86_64 || __amd64 || __ia64
+
+bool CLinearSolver_Schur_GPUBase::SpDGEMM(CUberBlockMatrix &r_dest, const CUberBlockMatrix &r_a,
+	const CUberBlockMatrix &r_b, bool b_upper_diag_only /*= false*/)
+{
+	CGPU_BlockMatrix &r_dest_GPU = reinterpret_cast<CGPU_BlockMatrix&>(r_dest);
+	const CGPU_BlockMatrix &r_a_GPU = reinterpret_cast<const CGPU_BlockMatrix&>(r_a);
+	const CGPU_BlockMatrix &r_b_GPU = reinterpret_cast<const CGPU_BlockMatrix&>(r_b);
+	return r_dest_GPU.ProductOf_GPU(r_a_GPU, r_b_GPU, b_upper_diag_only, m_gpu.t_cublas);
+}
+
+#if 0
+
+bool CLinearSolver_Schur_GPUBase::SpDGEMM(cs *&r_p_dest,
+	const cs *p_A, const cs *p_B, size_t nnzC = size_t(-1), // if nnzC is known, can save computation
+	void *h_cusparse, cusparseMatDescr_t t_descr_a,
+	cusparseMatDescr_t t_descr_b, cusparseMatDescr_t t_descr_prod,
+	const int *&csrRowPtrC, const int *&csrColIndC, const double *&csrValC,
+	size_t &r_n_max_nnz_C, size_t &r_n_max_row_C)
+{
+	int *csrRowPtrA, *csrColIndA;
+	double *csrValA;
+	{
+		int result = cuMemAlloc((CUdeviceptr*)&csrRowPtrA, sizeof(int) * (p_A->n + 1));
+		result |= cuMemAlloc((CUdeviceptr*)&csrColIndA, sizeof(int) * nnzA);
+		result |= cuMemAlloc((CUdeviceptr*)&csrValA, sizeof(double) * nnzA);
+		if(result)
+			fprintf(stderr, "error: cuMemAlloc() failed (%d, " PRIsize ")\n", result, nnzA);
+		result |= cuMemcpyHtoDAsync((CUdeviceptr)csrRowPtrA, p_A->p, sizeof(int) * (p_A->n + 1), 0);
+		result |= cuMemcpyHtoDAsync((CUdeviceptr)csrColIndA, p_A->i, sizeof(int) * nnzA, 0);
+		result |= cuMemcpyHtoDAsync((CUdeviceptr)csrValA, p_A->x, sizeof(double) * nnzA, 0);
+		if(result != CUDA_SUCCESS)
+			throw std::runtime_error("failed to send the A matrix to GPU");
+	}
+	int *csrRowPtrB, *csrColIndB;
+	double *csrValB;
+	{
+		int result = cuMemAlloc((CUdeviceptr*)&csrRowPtrB, sizeof(int) * (p_B->n + 1));
+		result |= cuMemAlloc((CUdeviceptr*)&csrColIndB, sizeof(int) * nnzB);
+		result |= cuMemAlloc((CUdeviceptr*)&csrValB, sizeof(double) * nnzB);
+		if(result)
+			fprintf(stderr, "error: cuMemAlloc() failed (%d, " PRIsize ")\n", result, nnzB);
+		result |= cuMemcpyHtoDAsync((CUdeviceptr)csrRowPtrB, p_B->p, sizeof(int) * (p_B->n + 1), 0);
+		result |= cuMemcpyHtoDAsync((CUdeviceptr)csrColIndB, p_B->i, sizeof(int) * nnzB, 0);
+		result |= cuMemcpyHtoDAsync((CUdeviceptr)csrValB, p_B->x, sizeof(double) * nnzB, 0);
+		if(result != CUDA_SUCCESS)
+			throw std::runtime_error("failed to send the B matrix to GPU");
+	}
+	// B is symmetric - the same in CSR and CSC
+	// todo - see which combination of transpose flags yields faster results
+
+	if(cuCtxSynchronize() != CUDA_SUCCESS)
+		throw std::runtime_error("cuCtxSynchronize() failed " FILE_LINE);
+
+	size_t n_max_nnz_C = 0, n_max_rows_C = 0;
+	int *csrRowPtrC = 0, *csrColIndC = 0;
+	double *csrValC = 0;
+	bool b_result = SpDGEMM(r_p_dest, p_A, p_B, nnzC, h_cusparse, t_descr_a,
+		csrRowPtrA, csrColIndA, csrValA, csrRowPtrB, csrColIndB, csrValB,
+		csrRowPtrC, csrColIndC, csrValC, n_max_nnz_C, n_max_rows_C);
+	// multiply
+
+	cuMemFree((CUdeviceptr)csrRowPtrA);
+	cuMemFree((CUdeviceptr)csrColIndA);
+	cuMemFree((CUdeviceptr)csrValA);
+	cuMemFree((CUdeviceptr)csrRowPtrB);
+	cuMemFree((CUdeviceptr)csrColIndB);
+	cuMemFree((CUdeviceptr)csrValB);
+	cuMemFree((CUdeviceptr)csrRowPtrC);
+	cuMemFree((CUdeviceptr)csrColIndC);
+	cuMemFree((CUdeviceptr)csrValC);
+	// cleanup
+
+	return b_result;
+}
+
+bool CLinearSolver_Schur_GPUBase::SpDGEMM(cs *&r_p_dest,
+	const cs *p_A, const cs *p_B, size_t nnzC /*= size_t(-1)*/, // if nnzC is known, can save computation
+	void *h_cusparse, cusparseMatDescr_t t_descr_a,
+	cusparseMatDescr_t t_descr_b, cusparseMatDescr_t t_descr_prod,
+	const int *csrRowPtrA, const int *csrColIndA, const double *csrValA,
+	const int *csrRowPtrB, const int *csrColIndB, const double *csrValB,
+	int *&csrRowPtrC, int *&csrColIndC, double *&csrValC,
+	size_t &r_n_max_nnz_C, size_t &r_n_max_row_C)
+{
+	__GPU_Function;
+
+	const size_t nnzA = ((uint32_t*)p_A->p)[p_A->n], nnzB = ((uint32_t*)p_B->p)[p_B->n];
+	const size_t m = p_A->n; // A is CUSPARSE_OPERATION_NON_TRANSPOSE
+	const size_t n = p_B->m; // B is CUSPARSE_OPERATION_NON_TRANSPOSE
+	const size_t k = p_A->m; // A is CUSPARSE_OPERATION_NON_TRANSPOSE
+	// m, n are also dimensions of C
+	
+	int *csrRowPtrC;
+	/*{
+		int result = cuMemAlloc((CUdeviceptr*)&csrRowPtrC, sizeof(int) * (m + 1));
+		if(result != CUDA_SUCCESS)
+			throw std::runtime_error("failed to allocate product matrix rowptr on GPU");
+	}*/
+	// the same as csrRowPtrB
+
+	if(nnzC != size_t(-1)) {
+		{
+			_ASSERTE(m <= INT_MAX && n <= INT_MAX && k <= INT_MAX);
+			_ASSERTE(nnzA <= INT_MAX && nnzB <= INT_MAX);
+			int nnzCi;
+			int status = cusparseXcsrgemmNnz((cusparseHandle_t)h_cusparse, CUSPARSE_OPERATION_NON_TRANSPOSE,
+				CUSPARSE_OPERATION_NON_TRANSPOSE, int(m), int(n), int(k), t_descr_a,
+				int(nnzA), csrRowPtrA, csrColIndA, t_descr_b, int(nnzB), csrRowPtrB,
+				csrColIndB, t_descr_prod, csrRowPtrC, &nnzCi);
+			nnzC = nnzCi; // !!
+			// calculate the number of nnz in the product
+
+			if(status != CUSPARSE_STATUS_SUCCESS)
+				throw std::runtime_error("cusparseXcsrgemmNnz() failed");
+			//nnzCstat = status; // debug
+		}
+		// t_odo - recaculate this only if !b_keep_ordering, otherwise reuse
+		// t_odo - here we are multiplying a block matrix by a block diagonal matrix
+		//		  the sparsity is therefore always the same, as is the nnz
+
+		if(cuCtxSynchronize() != CUDA_SUCCESS)
+			throw std::runtime_error("cuCtxSynchronize() failed " FILE_LINE);
+		// about to read the NNZs back for cuMemAlloc()
+	}
+	// calculate the amount of NNZ in C, unless known
+
+	//printf("debug: the product has %d nnz (%d)\n", nnzC, nnzCstat); // debug
+
+	int *csrColIndC;
+	double *csrValC;
+	{
+		int result = CUDA_SUCCESS;
+#ifdef _DEBUG
+		int baseC, _nnzC;
+		result |= cuMemcpyDtoH(&_nnzC, (CUdeviceptr)(csrRowPtrC + m), sizeof(int)); // read the nnz
+		_ASSERTE(_nnzC == nnzC);
+		result |= cuMemcpyDtoH(&baseC, (CUdeviceptr)csrRowPtrC, sizeof(int)); // read the base
+		_ASSERTE(!baseC); // debug
+#endif // _DEBUG
+		result |= cuMemAlloc((CUdeviceptr*)&csrColIndC, sizeof(int) * nnzC);
+		result |= cuMemAlloc((CUdeviceptr*)&csrValC, sizeof(double) * nnzC);
+		if(result != CUDA_SUCCESS)
+			throw std::runtime_error("failed to allocate product matrix on GPU");
+	}
+	// alloc C
+
+	//printf("debug: allocated product storage\n"); // debug
+
+	{
+		_ASSERTE(m <= INT_MAX && n <= INT_MAX && k <= INT_MAX);
+		_ASSERTE(nnzA <= INT_MAX && nnzB <= INT_MAX);
+		int status = cusparseDcsrgemm((cusparseHandle_t)m_gpu.t_cusparse, CUSPARSE_OPERATION_NON_TRANSPOSE,
+			CUSPARSE_OPERATION_NON_TRANSPOSE, int(m), int(n), int(k), (cusparseMatDescr_t)m_gpu.t_matrix_descr,
+			int(nnzA), csrValA, csrRowPtrA, csrColIndA, (cusparseMatDescr_t)m_gpu.t_matrix_descr, int(nnzB), csrValB,
+			csrRowPtrB, csrColIndB, (cusparseMatDescr_t)m_gpu.t_matrix_descr, csrValC, csrRowPtrC, csrColIndC);
+		// A is symmetric (A is C^-1)
+
+		if(status != CUSPARSE_STATUS_SUCCESS)
+			throw std::runtime_error("cusparseDcsrgemm() failed");
+	}
+	// gemm
+
+	//printf("debug: GEMM finished\n"); // debug
+
+	if(cuCtxSynchronize() != CUDA_SUCCESS)
+		throw std::runtime_error("cuCtxSynchronize() failed " FILE_LINE);
+
+	return true;
+}
+
+#endif // 0
 
 bool CLinearSolver_Schur_GPUBase::GPUSolve(const CUberBlockMatrix &r_lambda,
 	Eigen::VectorXd &r_v_eta, bool b_keep_ordering, size_t n_landmark_dimension,
@@ -1960,6 +3209,18 @@ bool CLinearSolver_DenseGPU::Solve_PosDef(const CUberBlockMatrix &r_lambda, Eige
 /*
  *								=== CLinearSolver_Schur_GPUBase ===
  */
+
+CLinearSolver_Schur_GPUBase::CLinearSolver_Schur_GPUBase()
+{}
+
+CLinearSolver_Schur_GPUBase::~CLinearSolver_Schur_GPUBase()
+{}
+
+bool CLinearSolver_Schur_GPUBase::SpDGEMM(CUberBlockMatrix &r_dest, const CUberBlockMatrix &r_a,
+	const CUberBlockMatrix &r_b, bool b_upper_diag_only /*= false*/)
+{
+	return r_dest.ProductOf(r_a, r_b, b_upper_diag_only);
+}
 
 bool CLinearSolver_Schur_GPUBase::GPUSolve(const CUberBlockMatrix &r_lambda,
 	Eigen::VectorXd &r_v_eta, bool b_keep_ordering, size_t n_landmark_dimension,

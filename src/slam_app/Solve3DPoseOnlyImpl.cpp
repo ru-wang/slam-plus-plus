@@ -41,7 +41,11 @@ int n_Run_SE3PoseOnly_Solver(const TCommandLineArgs &t_args) // throw(std::runti
 	// define types of vertices, edges
 
 	typedef CFlatSystem<CVertexPose3D, TVertexTypelist_SE3,
-		CEdgePose3D, TEdgeTypelist_SE3> CSystemType;
+		CEdgePose3D, TEdgeTypelist_SE3, CBasicUnaryFactorFactory
+#ifdef __SLAM_APP_USE_CONSTANT_VERTICES
+		, CVertexPose3D, TVertexTypelist_SE3
+#endif // __SLAM_APP_USE_CONSTANT_VERTICES
+		> CSystemType;
 	// make a system permitting SE(3) vertex and edge types
 
 	typedef CSolverCaller<CSystemType, CSE3OnlyPoseEdgeTraits,

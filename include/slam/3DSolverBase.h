@@ -29,16 +29,18 @@
  */
 
 /**
- *	@page rot3d 3D Rotation Representations in SLAM ++
+ *	@page rot3d 3D Rotation Representations in SLAM++
  *
- *	This document contains specifications about rotation formats and transformation models used used in SLAM ++.
+ *	This document contains specifications about rotation formats and transformation models used used in SLAM++.
  *	Only the 3D case is considered, because the 2D representation is straightforward (in 2D, using a single
  *	angle in radians to represent rotations is sufficient).
  *	We assume right-hand coordinate frame for all representations.
  *
+ *	You can also look at the moules that implement the functionality described below, \ref se3 or \ref sim3.
+ *
  *	\section sec_rot Rotations in Three Dimensions
  *
- *	There are several ways to represent rotations in 3D. Internally, SLAM ++ uses a single representation
+ *	There are several ways to represent rotations in 3D. Internally, SLAM++ uses a single representation
  *	(the \ref sec_axisangle). Unfortunately, the datasets and other software often use different representations,
  *	which are also described below.
  *
@@ -49,9 +51,9 @@
  *	component. When normalized, the rotation vector has the magnitude of sine of half of the angle of rotation
  *	(the <em>half-angle</em>), while the real component is the cosine of the half-angle.
  *
- *	The advantage of rotations is that they require small number of elements to represent the rotations
+ *	The advantage of quaternions is that they require small number of elements to represent the rotations
  *	so they are preferable for carrying out transformations and calculating derivatives. Quaternions
- *	are used in SLAM ++ internally for evaluating operations on rotations and their derivatives. However,
+ *	are used in SLAM++ internally for evaluating operations on rotations and their derivatives. However,
  *	they are <b>not</b> used to <em>represent</em> rotations (the \ref sec_axisangle is used for that),
  *	they are merely present as intermediate values.
  *
@@ -80,7 +82,7 @@
  *	R_x(\gamma) &=& \left|\begin{array}{ccc} 1 & 0 & 0 \\ 0 & cos\gamma & -sin\gamma\\ 0 & sin\gamma & cos\gamma\\ \end{array}\right| \\
  *	R(\alpha, \beta, \gamma) &=& R_z(\alpha) \cdot R_y(\beta) \cdot R_x(\gamma) \f}
  *
- *	In SLAM ++, the YPR representation is not widely used, it is only an option for input format, but is converted
+ *	In SLAM++, the YPR representation is not widely used, it is only an option for input format, but is converted
  *	to internal representation still inside the parser.
  *
  *	\subsection sec_axisangle Axis-Angle Representation
@@ -93,14 +95,15 @@
  *	the imaginary part of the quaternion is also the axis of rotation, but scaled by sine of half the angle
  *	of rotation.
  *
- *	The axis-angle representation is somewhat beneficial in nonlinear optimization because,
- *	unlike quaternion, it cannot become denormalized and form only a single cover over SO(3). They are also
- *	better comapred to rotation matrices, since there are fewer numbers being optimized, the scale is not
- *	captured abd there are no orthogonality issues.
+ *	The axis-angle representation is somewhat beneficial in nonlinear optimization because, unlike
+ *	quaternion, it cannot become denormalized and it forms only a single cover over SO(3), provided that
+ *	the rotation angles are kept within \f$[-\frac{\pi}{2}, \frac{\pi}{2}]\f$ (the implementation in SLAM++
+ *	does that). They are also better comapred to rotation matrices, since there are fewer numbers being
+ *	optimized, the scale is not captured and there are no orthogonality issues.
  *
  *	\subsection sec_rotconv Rotation Formats Conversion
  *
- *	This section lists the functions for converting between the rotation representations, implemented in SLAM ++.
+ *	This section lists the functions for converting between the rotation representations, implemented in SLAM++.
  *
  *	* C3DJacobians::v_RotMatrix_to_AxisAngle()
  *	* C3DJacobians::t_AxisAngle_to_RotMatrix()
@@ -112,11 +115,11 @@
  *	\section sec_transmodel Transformation Model
  *
  *	Transformation model which represents location of coordinate frame relative to another coordinate frame is
- *	composed of rotation R and translation C:
+ *	composed of rotation \f$R\f$ and translation \f$\mathbf{t}\f$:
  *
- *	\f[T = [R|C] \f]
+ *	\f[T = [R|\mathbf{t}] \f]
  *
- *	The two types of transformation model are used internally in SLAM ++: <b>direct</b> model which relates target
+ *	The two types of transformation model are used internally in SLAM++: <b>direct</b> model which relates target
  *	coordinate frame to world coordinate frame (e.g. pose of mobile robot in world coordinate frame) and <b>inverse</b>
  *	model which relates world coordinate frame to target frame (e.g. transformation that transforms 3D points from
  *	world coordinate frame to camera coordinate frame). The former one is used internally in pose SLAM and landmark SLAM
@@ -124,7 +127,7 @@
  *	extrinsic parameters representation.
  *	The relation between direct and inverse model is the following:
  *
- *	\f[ T_{inverse} = T_{direct}^{-1} = [R|C]^{-1} = [R^T|-R^TC] \f]
+ *	\f[ T_{inverse} = T_{direct}^{-1} = [R|\mathbf{t}]^{-1} = [R^T|-R^T\mathbf{t}] \f]
  *
  *	\section sec_datasetsrotations Dataset Rotation Formats
  *
@@ -1638,10 +1641,10 @@ public:
 	 *	@brief SE(3) coordinate frame
 	 */
 	struct TSE3 {
-		struct from_se3_vector_tag {}; /**< @brief tag-scheduling type for initialization from an exponent of a se(3) vector */
+		struct from_se3_vector_tag {}; /**< @brief tag-scheduling type for initialization from an exponent of a \f$\mathfrak{se}(3)\f$ vector */
 		struct from_tR_vector_tag {}; /**< @brief tag-scheduling type for initialization from a translation rotation vector */
 
-		static const from_se3_vector_tag from_se3_vector; /**< @brief tag-scheduling value for initialization from an exponent of a se(3) vector */
+		static const from_se3_vector_tag from_se3_vector; /**< @brief tag-scheduling value for initialization from an exponent of a \f$\mathfrak{se}(3)\f$ vector */
 		static const from_tR_vector_tag from_tR_vector; /**< @brief tag-scheduling value for initialization from a translation rotation vector */
 
 		Eigen::Vector3d v_translation; /**< @brief translation vector */
@@ -1656,11 +1659,11 @@ public:
 		{}
 
 		/**
-		 *	@brief constructor; initializes the pose from exponential of a se(3) vector
+		 *	@brief constructor; initializes the pose from exponential of a \f$\mathfrak{se}(3)\f$ vector
 		 *
 		 *	@tparam Derived0 is Eigen derived matrix type for the first matrix argument
 		 *
-		 *	@param[in] r_v_vec is a vector in sE(3) to initialize from, obtained e.g. by a call to v_Log()
+		 *	@param[in] r_v_vec is a vector in \f$\mathfrak{se}(3)\f$ to initialize from, obtained e.g. by a call to v_Log()
 		 *	@param[in] t_tag is used for tag scheduling (value unused)
 		 */
 		template <class Derived0>
@@ -1872,7 +1875,7 @@ public:
 	};
 
 	/**
-	 *	@brief converts a SE(3) coordinate frame to a 6D vector via the logarithmic map to se(3)
+	 *	@brief converts a SE(3) coordinate frame to a 6D vector via the logarithmic map to \f$\mathfrak{se}(3)\f$
 	 *	@param[in] r_t_pose is a SE(3) coordinate frame
 	 *	@return Returns the corresponding 6D vector containing 3D translation component and 3D axis angle rotation.
 	 *	@note This representation is different from the 6D vectors with translation and rotation
@@ -1901,7 +1904,7 @@ public:
 	}
 
 	/**
-	 *	@brief converts a 6D vector in se(3) to a SE(3) coordinate frame via the exponential map
+	 *	@brief converts a 6D vector in \f$\mathfrak{se}(3)\f$ to a SE(3) coordinate frame via the exponential map
 	 *	@tparam Derived is Eigen derived matrix type for the first matrix argument
 	 *	@param[in] r_v_vec is a 6D vector containing 3D translation component and 3D axis angle rotation
 	 *	@return Returns the corresponding SE(3) coordinate frame.

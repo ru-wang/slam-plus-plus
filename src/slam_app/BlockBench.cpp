@@ -164,7 +164,7 @@ void CBlockMatrixBenchmark::Show_Cumulative_Results() const
 		const TCumTimingInfo &r_t_timer = (*p_timer_it).second;
 		_ASSERTE(!r_t_timer.b_span_started);
 
-		printf("timer \'%s\': %f seconds (%d samples)\n", p_s_label, (r_t_timer.n_sample_num)?
+		printf("timer \'%s\': %g seconds (%d samples)\n", p_s_label, (r_t_timer.n_sample_num)?
 			r_t_timer.f_time_total / r_t_timer.n_sample_num : 0, int(r_t_timer.n_sample_num));
 	}
 }

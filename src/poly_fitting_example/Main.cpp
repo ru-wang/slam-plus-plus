@@ -33,7 +33,7 @@
 /**
  *	@brief cubic polynomial vertex type (this is what we want to estimate)
  */
-class CVertexCubicPolynomial : public CBaseVertexImpl<CVertexCubicPolynomial, 4> {
+class CVertexCubicPolynomial : public CBaseVertexImpl<CVertexCubicPolynomial, 4> { // this is a 4D vertex
 public:
 	__GRAPH_TYPES_ALIGN_OPERATOR_NEW
 
@@ -60,7 +60,7 @@ public:
 class CEdgeFunctionSample : public CBaseEdgeImpl<CEdgeFunctionSample,
 	MakeTypelist(CVertexCubicPolynomial), // a list of vertices this edge relates (just the polynomial)
 	1, // dimension of the residual: the difference in observed and evaluated y
-	2> { // dimension of the observation vector: (x, y) sample of te function value (this argument is optional and if not entered, it is assumed to be the same as the residual dimension)
+	2> { // dimension of the observation vector: (x, y) sample of the function value (this argument is optional and if not entered, it is assumed to be the same as the residual dimension)
 public:
 	__GRAPH_TYPES_ALIGN_OPERATOR_NEW
 
@@ -105,7 +105,7 @@ public:
 		r_v_expectation(0) = v_poly(0) + v_poly(1) * x + v_poly(2) * x * x + v_poly(3) * x * x * x; // a simple cubic function
 		// calculates the expectation
 
-		r_v_error(0) = m_v_measurement(1) - r_v_expectation(0);
+		r_v_error(0) = y - r_v_expectation(0);
 		// calculates error as a difference of the observation and the current expectation
 
 		r_t_jacobian << 1, x, x * x, x * x * x;
@@ -182,13 +182,14 @@ int main(int UNUSED(n_arg_num), const char **UNUSED(p_arg_list))
 		system.r_Add_Edge(CEdgeFunctionSample(0, p_observations[i], information, system));
 	// put edges in the system (all observe the same polynomial 0)
 
-	// note that the vertex 0 is zero-initialized automatically; this corresponds
+	// note that vertex 0 is zero-initialized automatically; this corresponds
 	// to the initial guess of a straight horizontal line
 
 	solver.Optimize();
 	// optimize the system, use up to 5 iterations
 
-	solver.Dump(); // show some stats
+	solver.Dump();
+	// show some stats
 
 	Eigen::Vector4d v_poly = system.r_Vertex_Pool()[0].v_State();
 	// get the resulting polynomial
@@ -294,7 +295,7 @@ int main(int UNUSED(n_arg_num), const char **UNUSED(p_arg_list))
  *			r_v_expectation(0) = v_poly(0) + v_poly(1) * x + v_poly(2) * x * x + v_poly(3) * x * x * x;
  *			// calculates the expectation
  *
- *			r_v_error(0) = m_v_measurement(1) - r_v_expectation(0);
+ *			r_v_error(0) = y - r_v_expectation(0);
  *			// calculates error as a difference of the observation and the current expectation
  *
  *			r_t_jacobian << 1, x, x * x, x * x * x;
@@ -340,7 +341,7 @@ int main(int UNUSED(n_arg_num), const char **UNUSED(p_arg_list))
  *	CNonlinearSolver_Lambda<CSystemType, CLinearSolverType> solver(system);
  *	@endcode
  *
- *	The first three lines define a graph; a list of admissible vertices and edges an
+ *	The first three lines define a graph; a list of admissible vertices and edges and
  *	the final system class, where the base types are specified as well. Since there is only
  *	a single vertex type and a single edge type, those are base types themselves.
  *

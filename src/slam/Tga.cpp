@@ -858,9 +858,7 @@ bool CTgaCodec::Save_TGA(const char *p_s_filename,
 	}
 	// write data
 
-	fclose(p_fw);
-
-	return true;
+	return !fclose(p_fw);
 }
 
 /*

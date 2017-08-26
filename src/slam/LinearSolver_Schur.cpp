@@ -250,7 +250,7 @@ static inline bool b_Incident(size_t v0, size_t v1, const cs *p_graph)
 	if(p_graph->p[v0 + 1] - p_graph->p[v0] > p_graph->p[v1 + 1] - p_graph->p[v1])
 		std::swap(v0, v1);
 	const csi *p_where = std::lower_bound(&p_graph->i[p_graph->p[v0]], &p_graph->i[p_graph->p[v0 + 1]], csi(v1));
-	return p_where != &p_graph->i[p_graph->p[v0 + 1]] && *p_where == v1;
+	return p_where != &p_graph->i[p_graph->p[v0 + 1]] && *p_where == csi(v1);
 }
 
 void CSchurOrdering::Suppress_NonmaximalCliques(std::vector<std::vector<size_t> > &linear_clique_list)
@@ -917,8 +917,9 @@ std::vector<size_t> CSchurOrdering::t_MIS_FirstFit(const cs *p_graph, const std:
 					perm.erase(perm.begin() + j);
 				}
 			}
-			_ASSERTE(n_shake_vertex_num >= mis.size());
-			n_shake_vertex_num -= mis.size();
+			/*_ASSERTE(n_shake_vertex_num >= mis.size());
+			n_shake_vertex_num -= mis.size();*/
+			n_shake_vertex_num = perm.size(); // or just do this
 			std::reverse(perm.begin(), perm.begin() + n_shake_vertex_num); // reverse the range of vertices that haven't been used before
 			perm.insert(perm.end(), mis.begin(), mis.end()); // do not throw them away completely!
 			// erase covered vertices, will start with the best uncovered vertex the next time around

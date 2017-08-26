@@ -76,9 +76,16 @@
  *
  *	Added the PRIsize and PRIdiff macros for printing size_t and ptrdiff_t integer types.
  *
+ *	@date 2017-03-28
+ *
+ *	Fixed some issues with Visual Studio 2015 (there is now a new format string for size_t),
+ *	standard integer types are now defined in <tt>stdint.h</tt>.
+ *
  */
 
 #include "slam/Unused.h"
+#include <stddef.h> // needed by Ubuntu
+#include <limits.h>
 
 #if !defined(_WIN32) && !defined(_WIN64)
 #include <sys/types.h>
@@ -123,6 +130,9 @@
 #elif defined(_WIN32) && defined(__GNUC__) // MinGW
 	#include <stdint.h>
 #elif defined(_WIN32) || defined(_WIN64) // MSVC
+#if defined(_MSC_VER) && _MSC_VER >= 1600 // MSVC 10 and upwards
+	#include <stdint.h> // new MSVC has stdint.h
+#else // _MSC_VER && _MSC_VER >= 1600
 	typedef signed __int8 int8_t; /**< 8 bit signed integer */
 	typedef signed __int16 int16_t; /**< 8 bit unsigned integer */
 	typedef signed __int32 int32_t; /**< 16 bit signed integer */
@@ -131,6 +141,7 @@
 	typedef unsigned __int16 uint16_t; /**< 32 bit unsigned integer */
 	typedef unsigned __int32 uint32_t; /**< 64 bit signed integer */
 	typedef unsigned __int64 uint64_t; /**< 64 bit unsigned integer */
+#endif // _MSC_VER && _MSC_VER >= 1600
 #else // fallback
 	#define __STDC_FORMAT_MACROS
 	#include <inttypes.h>
@@ -238,6 +249,14 @@
  *	@brief printf format strings for signed 64-bit integer
  */
 /**
+ *	@def PRIx64
+ *	@brief printf format strings for lowercase hexadecimal unsigned 64-bit integer
+ */
+/**
+ *	@def PRIX64
+ *	@brief printf format strings for uppercase hexadecimal signed 64-bit integer
+ */
+/**
  *	@def _PRIu64
  *	@brief printf format strings for unsigned 64-bit integer, without the percent character
  */
@@ -245,20 +264,82 @@
  *	@def _PRI64
  *	@brief printf format strings for signed 64-bit integer, without the percent character
  */
-#ifndef PRIu64
+/**
+ *	@def _PRIx64
+ *	@brief printf format strings for lowercase hexadecimal unsigned 64-bit integer, without the percent character
+ */
+/**
+ *	@def _PRIX64
+ *	@brief printf format strings for uppercase hexadecimal signed 64-bit integer, without the percent character
+ */
 #if defined(_MSC_VER) && !defined(__MWERKS__)
+#ifndef PRIu64
 #define PRIu64 "%I64u"
+#endif // !PRIu64
+#ifndef PRI64
 #define PRI64 "%I64d"
+#endif // !PRI64
+#ifndef PRIx64
+#define PRIx64 "%I64x"
+#endif // !PRIx64
+#ifndef PRIX64
+#define PRIX64 "%I64X"
+#endif // !PRIX64
+#ifndef _PRIu64
 #define _PRIu64 "I64u"
+#endif // !_PRIu64
+#ifndef _PRI64
 #define _PRI64 "I64d"
-#else // MSVC
+#endif // !_PRI64
+#ifndef _PRIx64
+#define _PRIx64 "I64x"
+#endif // !_PRIx64
+#ifndef _PRIX64
+#define _PRIX64 "I64X"
+#endif // !_PRIX64
+#else // _MSC_VER && !__MWERKS__
+#ifndef PRIu64
 #define PRIu64 "%llu"
+#endif // !PRIu64
+#ifndef PRI64
 #define PRI64 "%ll"
+#endif // !PRI64
+#ifndef PRIx64
+#define PRIx64 "%llx"
+#endif // !PRIx64
+#ifndef PRIX64
+#define PRIX64 "%llX"
+#endif // !PRIX64
+#ifndef _PRIu64
 #define _PRIu64 "llu"
+#endif // !_PRIu64
+#ifndef _PRI64
 #define _PRI64 "ll"
-#endif // MSVC
-#endif // !PRI64U
+#endif // !_PRI64
+#ifndef _PRIx64
+#define _PRIx64 "llx"
+#endif // !_PRIx64
+#ifndef _PRIX64
+#define _PRIX64 "llX"
+#endif // !_PRIX64
+#endif // _MSC_VER && !__MWERKS__
 // printf format strings for 64-bit integers
+
+/**
+ *	@def PRId64
+ *	@copydoc PRI64
+ */
+#ifndef PRId64
+#define PRId64 PRI64
+#endif // !PRId64
+
+/**
+ *	@def _PRId64
+ *	@copydoc _PRI64
+ */
+#ifndef _PRId64
+#define _PRId64 _PRI64
+#endif // !_PRId64
 
 /**
  *	@def PRIsize
@@ -279,11 +360,36 @@
 #define _PRIsize "u"
 // %u is ok for x86
 #endif // _M_X64 || _M_AMD64 || _M_IA64 || __x86_64 || __amd64 || __ia64
-#else // MSVC
+#else // _MSC_VER && !__MWERKS__
 #define PRIsize "%zd"
 #define _PRIsize "zd"
-#endif // MSVC
+#endif // _MSC_VER && !__MWERKS__
 #endif // !PRIsize
+
+/**
+ *	@def PRIsizex
+ *	@brief printf format strings for size_t and hexadecimal
+ */
+/**
+ *	@def _PRIsizex
+ *	@brief printf format strings for size_t and hexadecimal, without the percent character
+ */
+#ifndef PRIsizex
+#if defined(_MSC_VER) && !defined(__MWERKS__)
+#if defined(_M_X64) || defined(_M_AMD64) || defined(_M_IA64) || defined(__x86_64) || defined(__amd64) || defined(__ia64)
+#define PRIsizex "%I64x"
+#define _PRIsizex "I64x"
+// %x doesn't work correctly if compiling for x64
+#else // _M_X64 || _M_AMD64 || _M_IA64 || __x86_64 || __amd64 || __ia64
+#define PRIsizex "%x"
+#define _PRIsizex "x"
+// %x is ok for x86
+#endif // _M_X64 || _M_AMD64 || _M_IA64 || __x86_64 || __amd64 || __ia64
+#else // _MSC_VER && !__MWERKS__
+#define PRIsizex "%zx"
+#define _PRIsizex "zx"
+#endif // _MSC_VER && !__MWERKS__
+#endif // !PRIsizex
 
 /**
  *	@def PRIdiff
@@ -294,13 +400,13 @@
  *	@brief printf format strings for ptrdiff_t, without the percent character
  */
 #ifndef PRIdiff
-#if defined(_MSC_VER) && !defined(__MWERKS__)
+#if defined(_MSC_VER) && !defined(__MWERKS__) && _MSC_VER < 1900
 #define PRIdiff "%ld"
 #define _PRIdiff "ld"
-#else // MSVC
+#else // _MSC_VER && !__MWERKS__
 #define PRIdiff "%td"
 #define _PRIdiff "td"
-#endif // MSVC
+#endif // _MSC_VER && !__MWERKS__
 #endif // !PRIsize
 
 /*
@@ -902,7 +1008,167 @@ public:
 	};
 };
 
-} // ul_bithacks
+/**
+ *	@brief compile-time power helper (only positive powers)
+ *
+ *	@tparam n_base is value of the base
+ *	@tparam n_power is power (can be both positive or negative)
+ */
+template <const int n_base, const unsigned int n_power> // C++03 can't have double template args, n_base must be an integer
+class CUIntPower {
+protected:
+	/**
+	 *	@brief msvc6 workarround for partial template specialization
+	 *
+	 *	@tparam n_pow is power (can be both positive or negative)
+	 *	@tparam _GppDummy is g++ compatibility workarround (avoids full specialization inside a template scope)
+	 */
+	template <const unsigned int n_pow, class _GppDummy>
+	class CRecurseSpec {
+	protected:
+		/**
+		 *	@brief intermediate values stored as enum
+		 */
+		enum {
+			n_next_power = n_pow >> 1, /**< @brief next recursion power value */
+			n_next_base = n_base * (n_next_power != 0) * n_base, /**< @brief next recursion base power */
+			n_cur_multipler = (n_pow & 1)? n_base : 1 /**< @brief value of the current multiplier */
+		};
+
+	public:
+		/**
+		 *	@brief result stored as enum
+		 */
+		enum {
+			n_result = n_cur_multipler * CUIntPower<n_next_base, n_next_power>::n_result /**< @brief value of the result */
+		};
+	};
+
+	/**
+	 *	@brief msvc6 workarround for partial template specialization (specialization for 0th power)
+	 */
+	template <class _GppDummy>
+	class CRecurseSpec<0, _GppDummy> {
+	public:
+		/**
+		 *	@brief result stored as enum
+		 */
+		enum {
+			n_result = 1 /**< @brief value of the result */
+		};
+	};
+
+public:
+	/**
+	 *	@brief result stored as enum
+	 */
+	enum {
+		n_result = CRecurseSpec<n_power, void>::n_result /**< @brief value of the result */
+	};
+};
+
+/**
+ *	@brief compile-time power function
+ *
+ *	@tparam n_base is value of the base
+ *	@tparam n_power is power (can be both positive or negative)
+ *	@tparam T is data type to store the result (default double)
+ */
+template <const int n_base, const int n_power, class T = double> // C++03 can't have double template args, n_base must be an integer
+class CPower {
+#if 0
+public: // msvc 6.0 requires public here
+	/**
+	 *	@brief msvc6 workarround for partial template specialization
+	 *
+	 *	@tparam n_pow is power (can be both positive or negative)
+	 *	@tparam _GppDummy is g++ compatibility workarround (avoids full specialization inside a template scope)
+	 */
+	template <const int n_pow, class _GppDummy>
+	class CPowerHelper {
+	protected:
+		/**
+		 *	@brief intermediate values stored as enum
+		 */
+		enum {
+			b_positive = n_pow > 0, /**< @brief positive power flag */
+			n_next = n_pow + ((b_positive)? -1 : 1) /**< @brief next recursion power value */
+		};
+
+	public:
+		/**
+		 *	@brief gets the power
+		 *	@return Returns the power.
+		 */
+		static inline T f_Result()
+		{
+			return (b_positive)? CPowerHelper<n_next, _GppDummy>::f_Result() * n_base :
+				CPowerHelper<n_next, _GppDummy>::f_Result() / n_base;
+		}
+	};
+
+	/**
+	 *	@brief msvc6 workarround for partial template specialization (specialization for 0th power)
+	 */
+	template <class _GppDummy>
+	class CPowerHelper<0, _GppDummy> {
+	public:
+		/**
+		 *	@brief gets the power
+		 *	@return Returns the power.
+		 */
+		static inline T f_Result()
+		{
+			return 1;
+		}
+	};
+#endif // 0
+
+public:
+	/**
+	 *	@brief gets the power
+	 *	@return Returns the power.
+	 */
+	static inline T f_Result()
+	{
+		enum {
+			n_abs_power = (n_power < 0)? -n_power : n_power,
+			n_abs_quarter_power = n_abs_power / 4, // divide the power to increase range
+			n_abs_remainder_power = n_abs_power - 3 * n_abs_quarter_power,
+			n_abs_quarter_result = CUIntPower<n_base, n_abs_quarter_power>::n_result,
+			n_abs_remainder_result = CUIntPower<n_base, n_abs_remainder_power>::n_result
+		};
+		T f = (T)n_abs_quarter_result * (T)n_abs_quarter_result *
+			(T)n_abs_quarter_result * (T)n_abs_remainder_result;
+		return (n_power < 0)? 1 / f : f; // handle negative powers here
+	}
+};
+
+} // ~ul_bithacks
+
+/**
+ *	@def n_Power_Static
+ *
+ *	@brief calculates integer power at compile-time
+ *
+ *	@param[in] n_base is base
+ *	@param[in] n_power is power (negative powers will yield zero result, as it is integer)
+ *
+ *	@return Returns specified power of the specified base.
+ */
+#define n_Power_Static(n_base,n_power) (ul_bithacks::CPower<n_base, n_power, int>::f_Result())
+
+/**
+ *	@def f_Power_Static
+ *
+ *	@brief calculates floating-point power at compile-time
+ *
+ *	@param[in] n_base is base
+ *	@param[in] n_power is power
+ *
+ *	@return Returns specified power of the specified base.
+ */
+#define f_Power_Static(n_base,n_power) (ul_bithacks::CPower<n_base, n_power, double>::f_Result())
 
 /**
  *	@brief determines whether a number is power of two, or not
@@ -1004,6 +1270,8 @@ inline _Ty n_Make_Lower_POT(_Ty n_x)
 template <class _Ty>
 inline _Ty n_Align_Up(_Ty n_x, _Ty n_alignment)
 {
+	_ASSERTE(n_x >= 0);
+	_ASSERTE(n_alignment > 0);
 	n_x += n_alignment - 1;
 	return n_x - n_x % n_alignment;
 }
@@ -1031,6 +1299,7 @@ inline _Ty n_Align_Up(_Ty n_x, _Ty n_alignment)
 template <class _Ty>
 inline _Ty n_Align_Up_POT(_Ty n_x, _Ty n_pot_alignment)
 {
+	_ASSERTE(n_pot_alignment > 0);
 	_ASSERTE(b_Is_POT(n_pot_alignment)); // alignment must be power of two
 	-- n_pot_alignment;
 	return (n_x + n_pot_alignment) & ~n_pot_alignment;
@@ -1047,7 +1316,8 @@ inline _Ty n_Align_Up_POT(_Ty n_x, _Ty n_pot_alignment)
  *	@note As this is evaluated at compile-time and the speed is of little interest, this just calls
  *		n_Align_Up_Static() macro and the power-of-two requirement is therefore relaxed.
  */
-#define n_Align_Up_POT_Static(n_x,n_alignment) (n_Align_Up_Static((n_x), (n_alignment)))
+#define n_Align_Up_POT_Static(n_x,n_alignment) (((n_x) + (n_alignment) - 1) & ~((n_alignment) - 1))
+//#define n_Align_Up_POT_Static(n_x,n_alignment) (n_Align_Up_Static((n_x), (n_alignment))) // nasty; different behavior than the non-static for negative numbers
 
 /**
  *	@brief calculates number of bits set, in parallel

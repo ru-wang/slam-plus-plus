@@ -37,10 +37,15 @@ int n_Run_BA_Intrinsics_Solver(const TCommandLineArgs &t_args) // throw(std::run
 #ifdef __BA_INTRINSICS_ENABLED
 	_ASSERTE(t_args.b_use_BAI);
 	typedef MakeTypelist_Safe((CVertexCam, CVertexXYZ, CVertexIntrinsics)) TVertexTypelist_BAI;
-	typedef MakeTypelist_Safe((CEdgeP2CI3D, CEdgeC2CE)) TEdgeTypelist_BAI;
+	typedef MakeTypelist_Safe((CEdgeP2CI3D)) TEdgeTypelist_BAI;
 	// define types of vertices, edges
 
-	typedef CFlatSystem<CBaseVertex, TVertexTypelist_BAI, CBaseEdge, TEdgeTypelist_BAI> CSystemType;
+	typedef CFlatSystem<CBaseVertex, TVertexTypelist_BAI,
+			CEdgeP2CI3D, TEdgeTypelist_BAI, CBasicUnaryFactorFactory
+#ifdef __SLAM_APP_USE_CONSTANT_VERTICES
+		, CBaseVertex, TVertexTypelist_BAI
+#endif // __SLAM_APP_USE_CONSTANT_VERTICES
+		> CSystemType;
 	// make a system permitting BA vertex and edge types
 
 	typedef CSolverCaller<CSystemType, CBAIntrinsicsEdgeTraits,

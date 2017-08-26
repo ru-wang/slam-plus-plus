@@ -1,22 +1,22 @@
 /*
-								+-----------------------------------+
-								|                                   |
-								|      ***  Base SE types  ***      |
-								|                                   |
-								|  Copyright  (c) -tHE SWINe- 2014  |
-								|                                   |
-								|         BaseTypes_Unary.h         |
-								|                                   |
-								+-----------------------------------+
+								+----------------------------------+
+								|                                  |
+								|    ***  Base graph types  ***    |
+								|                                  |
+								|  Copyright (c) -tHE SWINe- 2014  |
+								|                                  |
+								|        BaseTypes_Unary.h         |
+								|                                  |
+								+----------------------------------+
 */
 
 #pragma once
-#ifndef __BASE_SE_PRIMITIVE_TYPES_UNARY_EDGE_IMPL_SPECIALIZATION_INCLUDED
-#define __BASE_SE_PRIMITIVE_TYPES_UNARY_EDGE_IMPL_SPECIALIZATION_INCLUDED
+#ifndef __BASE_GRAPH_PRIMITIVE_TYPES_UNARY_EDGE_IMPL_SPECIALIZATION_INCLUDED
+#define __BASE_GRAPH_PRIMITIVE_TYPES_UNARY_EDGE_IMPL_SPECIALIZATION_INCLUDED
 
 /**
  *	@file include/slam/BaseTypes_Unary.h
- *	@brief base SE primitive types
+ *	@brief base graph primitive types, specialization of unary edges
  *	@author -tHE SWINe-
  *	@date 2014-11-05
  *	@note This file is not supposed to be included by itself, it is included from include/slam/BaseTypes.h.
@@ -38,12 +38,13 @@
  *	@tparam _n_residual_dimension is residual vector dimension
  *	@tparam _n_storage_dimension is state vector storage dimension (or -1 if the same as _n_residual_dimension)
  */
-template <class CDerivedEdge, class CVertexType, int _n_residual_dimension, int _n_storage_dimension /*= -1*/>
+template <class CDerivedEdge, class CVertexType, int _n_residual_dimension,
+	int _n_storage_dimension /*= -1*/, unsigned int _n_options /*= 0*/>
 class CBaseEdgeImpl<CDerivedEdge, CTypelist<CVertexType, CTypelistEnd>,
-	_n_residual_dimension, _n_storage_dimension> : public CBaseEdge {
+	_n_residual_dimension, _n_storage_dimension, _n_options> : public CBaseEdge {
 public:
 	typedef CTypelist<CVertexType, CTypelistEnd> _TyVertices; /**< @brief list of vertex types */
-	typedef typename CTypelistItemAt<_TyVertices, 0>::_TyResult _TyVertex; /**< @brief name of the vertex class */
+	typedef CVertexType /*typename CTypelistItemAt<_TyVertices, 0>::_TyResult*/ _TyVertex; /**< @brief name of the vertex class */
 
 	/**
 	 *	@brief copy of template parameters
@@ -54,10 +55,11 @@ public:
 		n_residual_dimension = _n_residual_dimension, /**< @brief residual vector dimension */
 		n_storage_dimension = (_n_storage_dimension == -1)? _n_residual_dimension : _n_storage_dimension, /**< @brief edge state storage dimension */
 #ifdef __BASE_TYPES_USE_ALIGNED_MATRICES
-		n_matrix_alignment = Eigen::AutoAlign | Eigen::ColMajor
+		n_matrix_alignment = Eigen::AutoAlign | Eigen::ColMajor,
 #else // __BASE_TYPES_USE_ALIGNED_MATRICES
-		n_matrix_alignment = Eigen::DontAlign | Eigen::ColMajor
+		n_matrix_alignment = Eigen::DontAlign | Eigen::ColMajor,
 #endif // __BASE_TYPES_USE_ALIGNED_MATRICES
+		n_options = _n_options /**< @brief edge options bitfield */
 	};
 
 	/**
@@ -96,7 +98,6 @@ public:
 	template <class CVertex = _TyVertex>
 	class CInitializeVertex_Disallow : public base_edge_detail::CInitializeVertex_Disallow<CVertex> {};
 
-public:
 	typedef Eigen::Matrix<double, n_residual_dimension, 1> _TyVector; /**< @brief edge dimension vector type */
 	typedef Eigen::Matrix<double, n_storage_dimension, 1> _TyStorageVector; /**< @brief storage dimension vector type */
 	typedef Eigen::Matrix<double, n_residual_dimension, n_residual_dimension> _TyMatrix; /**< @brief edge dimension matrix type */
@@ -104,6 +105,14 @@ public:
 	typedef Eigen::Matrix<double, n_storage_dimension, 1, n_matrix_alignment> _TyStorageVectorAlign; /**< @brief edge dimension storage vector type with member alignment */
 	typedef Eigen::Matrix<double, n_residual_dimension, 1, n_matrix_alignment> _TyVectorAlign; /**< @brief edge dimension vector type with member alignment */
 	typedef Eigen::Matrix<double, n_residual_dimension, n_residual_dimension, n_matrix_alignment> _TyMatrixAlign; /**< @brief edge dimension matrix type with member alignment */
+
+	/**
+	 *	@brief edge parameters, stored as enum
+	 */
+	enum {
+		b_is_robust_edge = (n_options & CBaseEdge::Robust) != 0 /**< @brief robust edge detection */
+		//b_is_robust_edge = base_edge_detail::CIsRobustEdge<CBaseEdgeImpl<CDerivedEdge, _TyVertices, _n_residual_dimension, _n_storage_dimension>, _TyVector>::b_result
+	};
 
 protected:
 	size_t m_p_vertex_id[n_vertex_num]; /**< @brief ids of referenced vertices */
@@ -182,12 +191,9 @@ public:
 	 *	@param[in] r_t_sigma_inv is inverse sigma matrix
 	 *	@param[in] t_tag is used for tag scheduling, specifies this constructor (value unused)
 	 *	@param[in,out] r_system is reference to system (used to query or insert edge vertices)
-	 *	@param[in] n_list_skip is bitfield of vertices for which the initialization should
-	 *		be disabled so that the derived edge can perform it (LSB corresponds to vertex 0,
-	 *		the second least significant bit to vertex 1)
-	 *	@param[in] n_list_disallow is bitfield of vertices for which the initialization is not
+	 *	@param[in] b_disallow_implicit_init is flag determining whether the initialization is
 	 *		allowed - an exception is thrown if the vertex is not explicitly inizialized prior
-	 *		to calling this function (value unused)
+	 *		to calling this function
 	 *
 	 *	@note This fills the structure, including the vertex pointers, except those indicated
 	 *		in CSkipInitIndexList.
@@ -346,6 +352,9 @@ public:
 		// Calculate_Jacobians_Expectation_Error in CDerivedEdge should have been
 		// static and it would be simple, but now we can'T force the users to rewrite
 		// all their code. meh.
+
+		// this will not be modified for robust edges, we're just
+		// after the jacobians here and not the sigma or weight
 	}
 
 #ifdef __SE_TYPES_SUPPORT_A_SOLVERS // --- A-SLAM specific functions ---
@@ -374,6 +383,20 @@ public:
 		// and the edges come in some random order
 	}
 
+protected: // todo - this is overly hackish, just write the code twice for robust / not robust edges
+	template <class V>
+	inline typename CEnableIf<b_is_robust_edge && sizeof(V), double>::T f_Get_RobustWeight(const V &r_v_error)
+	{
+		return ((CDerivedEdge*)this)->f_RobustWeight(r_v_error);
+	}
+
+	template <class V>
+	inline typename CEnableIf<!b_is_robust_edge && sizeof(V), double>::T f_Get_RobustWeight(const V &UNUSED(r_v_error))
+	{
+		return 1;
+	}
+
+public:
 	/**
 	 *	@copydoc base_iface::CEdgeFacade::Calculate_Jacobians
 	 */
@@ -384,15 +407,29 @@ public:
 		_TyVector v_expectation, v_error;
 		((CDerivedEdge*)this)->Calculate_Jacobian_Expectation_Error(t_jacobian0, v_expectation, v_error);
 
-		m_v_error = v_error;
-		// calculates the expectation, error and the jacobians (implemented by the edge)
+		if(b_is_robust_edge) { // compile-time constant
+			double f_robust_weight = sqrt(f_Get_RobustWeight(v_error));
 
-		Eigen::Map<typename CVertexTraits<0>::_TyJacobianMatrix, CUberBlockMatrix::map_Alignment> t_RH0(m_p_RH[0]);
-		// map Jacobian matrices
+			m_v_error = v_error * f_robust_weight;
+			// calculates the expectation, error and the jacobians (implemented by the edge)
 
-		t_RH0 = m_t_square_root_sigma_inv_upper * t_jacobian0;
-		// recalculate RH (transpose cholesky of sigma times the jacobian)
-		// note this references the A block matrix
+			Eigen::Map<typename CVertexTraits<0>::_TyJacobianMatrix, CUberBlockMatrix::map_Alignment> t_RH0(m_p_RH[0]);
+			// map Jacobian matrices
+
+			t_RH0 = m_t_square_root_sigma_inv_upper * t_jacobian0 * f_robust_weight;
+			// recalculate RH (transpose cholesky of sigma times the jacobian)
+			// note this references the A block matrix
+		} else {
+			m_v_error = v_error;
+			// calculates the expectation, error and the jacobians (implemented by the edge)
+
+			Eigen::Map<typename CVertexTraits<0>::_TyJacobianMatrix, CUberBlockMatrix::map_Alignment> t_RH0(m_p_RH[0]);
+			// map Jacobian matrices
+
+			t_RH0 = m_t_square_root_sigma_inv_upper * t_jacobian0;
+			// recalculate RH (transpose cholesky of sigma times the jacobian)
+			// note this references the A block matrix
+		}
 	}
 
 	/**
@@ -514,6 +551,77 @@ public:
 		((CDerivedEdge*)this)->Calculate_Jacobian_Expectation_Error(t_jacobian0, v_expectation, v_error);
 		// calculates the expectation and the jacobian
 
+		if(b_is_robust_edge) { // compile-time constant
+			double f_robust_weight = f_Get_RobustWeight(v_error);
+
+			Eigen::Map<typename CVertexTraits<0>::_TyMatrixAlign, CUberBlockMatrix::map_Alignment>
+				m_t_HtSiH_vertex0(m_p_HtSiH_vert[0]);
+			if(hyperedge_detail::explicit_SymmetricProduct) // compile-time const
+				m_t_HtSiH_vertex0/*.noalias()*/ = (t_jacobian0.transpose() * m_t_sigma_inv * t_jacobian0 * f_robust_weight).template selfadjointView<Eigen::Upper>();
+			else
+				m_t_HtSiH_vertex0.noalias() = t_jacobian0.transpose() * m_t_sigma_inv * t_jacobian0 * f_robust_weight;
+			// calculate diagonal Hessian contribution
+
+			//_ASSERTE(m_t_HtSiH_vertex0 == m_t_HtSiH_vertex0.transpose()); // is this symmetric?
+
+			Eigen::Map<typename CVertexTraits<0>::_TyVectorAlign, CUberBlockMatrix::map_Alignment>
+				m_t_right_hand_vertex0(m_p_RHS_vert[0]);
+			m_t_right_hand_vertex0.noalias() = t_jacobian0.transpose() * (m_t_sigma_inv * v_error * f_robust_weight);
+			// calculate right hand side vector contribution
+		} else {
+			Eigen::Map<typename CVertexTraits<0>::_TyMatrixAlign, CUberBlockMatrix::map_Alignment>
+				m_t_HtSiH_vertex0(m_p_HtSiH_vert[0]);
+			if(hyperedge_detail::explicit_SymmetricProduct) // compile-time const
+				m_t_HtSiH_vertex0/*.noalias()*/ = (t_jacobian0.transpose() * m_t_sigma_inv * t_jacobian0).template selfadjointView<Eigen::Upper>();
+			else
+				m_t_HtSiH_vertex0.noalias() = t_jacobian0.transpose() * m_t_sigma_inv * t_jacobian0;
+			// calculate diagonal Hessian contribution
+
+			//_ASSERTE(m_t_HtSiH_vertex0 == m_t_HtSiH_vertex0.transpose()); // is this symmetric?
+
+			Eigen::Map<typename CVertexTraits<0>::_TyVectorAlign, CUberBlockMatrix::map_Alignment>
+				m_t_right_hand_vertex0(m_p_RHS_vert[0]);
+			m_t_right_hand_vertex0.noalias() = t_jacobian0.transpose() * (m_t_sigma_inv * v_error);
+			// calculate right hand side vector contribution
+		}
+	}
+
+	/**
+	 *	@brief calculates the gradient descent scaling factor
+	 *	@param[in] r_v_g is the g vector from the dogleg paper (\f$-J^T \Sigma^{-1} r\f$)
+	 *	@return Returns the denominator of the gradient descent scaling factor (needed by dogleg).
+	 */
+	inline double f_Calculate_Steepest_Descent_Scale(const Eigen::VectorXd &r_v_g)
+	{
+		typename CVertexTraits<0>::_TyJacobianMatrix t_jacobian0;
+		_TyVector v_expectation, v_error;
+		((CDerivedEdge*)this)->Calculate_Jacobian_Expectation_Error(t_jacobian0, v_expectation, v_error);
+		// calculates the expectation and the jacobian // this is inefficient as it needs to re-evaluate the jacobians
+
+		_TyVector v_Jg = t_jacobian0 * r_v_g.segment<CVertexTraits<0>::n_dimension>(m_p_vertex0->n_Order());
+		// calculate the right hand side vector contribution
+		// no need to change this for robust edges; it works
+
+		return v_Jg.squaredNorm(); // need to sum up in vector first, then take the norm
+	}
+
+	/**
+	 *	@brief calculates Hessian contributions and the gradient descent scaling factor
+	 *
+	 *	@return Returns the denominator of the gradient descent scaling factor (needed by dogleg).
+	 *
+	 *	@note This only calculates the Hessians, either Reduce_Hessians_v2() or the
+	 *		reduction plan needs to be used to fill lambda with values.
+	 */
+	inline double f_Calculate_Hessians_and_Steepest_Descent_Scale()
+	{
+		_ASSERTE(!b_is_robust_edge); // robust edges not supported here (todo if it ends up being used, otherwise remove it)
+
+		typename CVertexTraits<0>::_TyJacobianMatrix t_jacobian0;
+		_TyVector v_expectation, v_error;
+		((CDerivedEdge*)this)->Calculate_Jacobian_Expectation_Error(t_jacobian0, v_expectation, v_error);
+		// calculates the expectation and the jacobian
+
 		Eigen::Map<typename CVertexTraits<0>::_TyMatrixAlign, CUberBlockMatrix::map_Alignment>
 			m_t_HtSiH_vertex0(m_p_HtSiH_vert[0]);
 		m_t_HtSiH_vertex0.noalias() = t_jacobian0.transpose() * m_t_sigma_inv * t_jacobian0;
@@ -521,8 +629,11 @@ public:
 
 		Eigen::Map<typename CVertexTraits<0>::_TyVectorAlign, CUberBlockMatrix::map_Alignment>
 			m_t_right_hand_vertex0(m_p_RHS_vert[0]);
-		m_t_right_hand_vertex0.noalias() = t_jacobian0.transpose() * (m_t_sigma_inv * v_error);
+		typename CVertexTraits<0>::_TyVectorAlign g = t_jacobian0.transpose() * (m_t_sigma_inv * v_error);
+		m_t_right_hand_vertex0.noalias() = g;
 		// calculate right hand side vector contribution
+
+		return (t_jacobian0 * g).squaredNorm();
 	}
 
 #else // __LAMBDA_USE_V2_REDUCTION_PLAN
@@ -666,7 +777,17 @@ public:
  *	to the first vertex in the system which receives one automatically (unless
  *	the system is specialized with \ref CNullUnaryFactorFactory).
  *	This version assumes that the unary error is zero but it would be quite
- *	easy to modify.
+ *	easy to modify. Effectively, this reduces the movement of the vertex
+ *	throughout the optimization but does not anchor it to a specific position
+ *	(it is as if it was always chained to its current position), potentially
+ *	accelerating convergence.
+ *
+ *	To get nonzero errors, it is also trivial to use a binary edge
+ *	in conjunction with a constant vertex, where the constant vertex
+ *	would amount to the anchor (perhaps represented by a null vector
+ *	to anchor at the origin) and the binary edge would provide derivatives
+ *	and error calculation. You can see \ref constvertices for more details
+ *	on the use of constant vertices.
  *
  *	The rules for automatic unary factor placement depend on
  *	\ref __AUTO_UNARY_FACTOR_ON_VERTEX_ZERO being defined. If defined,
@@ -764,7 +885,7 @@ public:
 		_TyError &r_v_expectation, _TyError &r_v_error) const
 	{
 		r_t_jacobian0 = this->m_t_sigma_inv; // !!
-		r_v_expectation.setZero();
+		r_v_expectation = this->m_p_vertex0->r_v_State(); // !!
 		r_v_error.setZero();
 	}
 
@@ -839,8 +960,11 @@ public:
  *	does not need to worry about it too much, but when needed, this can be changed.
  *
  *	The default implicit unary factor is given by the fifth template argument
- *	to the \ref CFlatSystem and by default this is \ref CBasicUnaryFactorFactory.
- *	It is possible to also initialize it via the \ref CFlatSystem constructor.
+ *	to the \ref CFlatSystem and by default this is \ref CBasicUnaryFactorFactory
+ *	(it sets unit covariance and zero error, effectively reducing the norm of the
+ *	updates taken on this vertex by the nonlinear solver; see extended discussion
+ *	in \ref CUnaryFactor documentation). It is possible to also initialize it via
+ *	the \ref CFlatSystem constructor, to e.g. specify different than unit covariance.
  *	Setting the unary factor this way has the advantage that although unary factor
  *	is formally an edge, it does not need to be in the list of edges, and for systems
  *	with only a single edge type in them, this brings some simplifications and possible
@@ -885,7 +1009,7 @@ public:
  *
  *	@code
  *	typedef MakeTypelist(CEdgePose2D, CEdgePoseLandmark2D,
- *		CUnaryFactor<CEdgePose2D>) TEdgeTypelist; // add it here
+ *		CUnaryFactor<CVertexPose2D>) TEdgeTypelist; // add it here
  *
  *	typedef CFlatSystem<CBaseVertex, TVertexTypelist,
  *		CBaseEdge, TEdgeTypelist, CNullUnaryFactorFactory> CSystemType;
@@ -896,9 +1020,9 @@ public:
  *	@code
  *	CSystemType system; // instance of the optimized system
  *
- *	system.r_Add_Edge(CUnaryFactor<CEdgePose2D>(0, Eigen::Matrix3d::Identity() * 100, system));
+ *	system.r_Add_Edge(CUnaryFactor<CVertexPose2D>(0, Eigen::Matrix3d::Identity() * 100, system));
  *	// adds unary factor of eye(3) * 100 on vertex 0, which is a pose
  *	@endcode
  */
 
-#endif // !__BASE_SE_PRIMITIVE_TYPES_UNARY_EDGE_IMPL_SPECIALIZATION_INCLUDED
+#endif // !__BASE_GRAPH_PRIMITIVE_TYPES_UNARY_EDGE_IMPL_SPECIALIZATION_INCLUDED

@@ -379,7 +379,7 @@ protected:
 					rows_cumsums[i] = n_cumsum;
 					if(i && rows_cumsums[i] - rows_cumsums[i - 1] != block_Size &&
 					   rows_cumsums[i] - rows_cumsums[i - 1] != block_Size + 1) {
-						fprintf(stderr, "error: unable to use stored layout: block size %d (must be %d or %d)\n",
+						fprintf(stderr, "error: unable to use stored layout: block size " PRIsize " (must be %d or %d)\n",
 							rows_cumsums[i] - rows_cumsums[i - 1], block_Size, block_Size + 1);
 						b_fail = true;
 						break;
@@ -398,7 +398,7 @@ protected:
 					cols_cumsums[i] = n_cumsum;
 					if(i && cols_cumsums[i] - cols_cumsums[i - 1] != block_Size &&
 					   cols_cumsums[i] - cols_cumsums[i - 1] != block_Size + 1) {
-						fprintf(stderr, "error: unable to use stored layout: block size %d (must be %d or %d)\n",
+						fprintf(stderr, "error: unable to use stored layout: block size " PRIsize " (must be %d or %d)\n",
 							cols_cumsums[i] - cols_cumsums[i - 1], block_Size, block_Size + 1);
 						b_fail = true;
 						break;
@@ -916,7 +916,7 @@ protected:
 #ifdef __BLOCK_BENCH_DUMP_MATRIX_IMAGES
 				if(!n_pass) {
 					char p_s_matrix[256];
-					sprintf(p_s_matrix, "g:/debug/matrix_bench_%04d_cs.tga", m_n_matrix_id);
+					sprintf(p_s_matrix, "matrix_bench_%04d_cs.tga", m_n_matrix_id);
 					CDebug::Dump_SparseMatrix(p_s_matrix, p_A);
 				}
 				// debug write matrices to a .tga file
@@ -1387,7 +1387,7 @@ protected:
 
 #ifdef __BLOCK_BENCH_DUMP_MATRIX_IMAGES
 						char p_s_matrix[256];
-						sprintf(p_s_matrix, "g:/debug/matrix_bench_%04d_ubm.tga", m_n_matrix_id);
+						sprintf(p_s_matrix, "matrix_bench_%04d_ubm.tga", m_n_matrix_id);
 						if(!bm.Rasterize(p_s_matrix))
 							DeleteFile(p_s_matrix);
 #endif // __BLOCK_BENCH_DUMP_MATRIX_IMAGES
@@ -1431,7 +1431,7 @@ protected:
 
 #ifdef __BLOCK_BENCH_DUMP_MATRIX_IMAGES
 						char p_s_matrix[256];
-						sprintf(p_s_matrix, "g:/debug/matrix_bench_%04d_ubm_str.tga", m_n_matrix_id);
+						sprintf(p_s_matrix, "matrix_bench_%04d_ubm_str.tga", m_n_matrix_id);
 						if(!bm.Rasterize(p_s_matrix))
 							DeleteFile(p_s_matrix);
 #endif // __BLOCK_BENCH_DUMP_MATRIX_IMAGES
@@ -1849,7 +1849,7 @@ protected:
 #ifdef __BLOCK_BENCH_DUMP_MATRIX_IMAGES
 					if(!n_pass) {
 						char p_s_matrix[256];
-						sprintf(p_s_matrix, "g:/debug/matrix_bench_%04d_cs_blk.tga", m_n_matrix_id);
+						sprintf(p_s_matrix, "matrix_bench_%04d_cs_blk.tga", m_n_matrix_id);
 						CDebug::Dump_SparseMatrix(p_s_matrix, p_A);
 					}
 					// debug write matrices to a .tga file
@@ -1980,7 +1980,7 @@ protected:
 #ifdef __BLOCK_BENCH_DUMP_MATRIX_IMAGES
 					if(!n_pass) {
 						char p_s_matrix[256];
-						sprintf(p_s_matrix, "g:/debug/matrix_bench_%04d_cs.tga", m_n_matrix_id);
+						sprintf(p_s_matrix, "matrix_bench_%04d_cs.tga", m_n_matrix_id);
 
 						CDebug::Dump_SparseMatrix(p_s_matrix, p_A);
 					}

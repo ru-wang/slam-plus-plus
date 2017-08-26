@@ -180,7 +180,7 @@ public:
 			_ASSERTE(n_vertex_a < size_t(m_p_graph->n));
 			size_t n_incidences_a = 0;
 			for(size_t i = m_p_graph->p[n_vertex_a], n = m_p_graph->p[n_vertex_a + 1]; i < n; ++ i) {
-				if(m_p_graph->i[i] != n_vertex_a)
+				if(size_t(m_p_graph->i[i]) != n_vertex_a)
 					n_incidences_a += m_r_weights[m_p_graph->i[i]];
 			}
 			return n_incidences_a;// + m_r_weights[n_vertex_a]; // make sure the diagonal term is always coutned
@@ -233,7 +233,7 @@ public:
 			_ASSERTE(n_vertex_a < size_t(m_p_graph->n));
 			size_t n_incidences_a = 0;
 			for(size_t i = m_p_graph->p[n_vertex_a], n = m_p_graph->p[n_vertex_a + 1]; i < n; ++ i) {
-				if(m_p_graph->i[i] != n_vertex_a)
+				if(size_t(m_p_graph->i[i]) != n_vertex_a)
 					n_incidences_a += m_r_weights[m_p_graph->i[i]];
 			}
 			return ptrdiff_t(m_r_weights[n_vertex_a]) - ptrdiff_t(n_incidences_a); // what n_vertex_a brings and what it precludes
@@ -1400,6 +1400,15 @@ public:
 	bool GPUSolve(const CUberBlockMatrix &r_lambda, Eigen::VectorXd &r_v_eta,
 		bool b_keep_ordering, size_t n_landmark_dimension, std::vector<double> &m_double_workspace,
 		const std::vector<size_t> &m_order, const size_t m_n_matrix_cut, _TyBaseSolver &m_linear_solver); // throw(std::bad_alloc, std::runtime_error)
+
+	/**
+	 *	@brief fast block matrix product on GPU
+	 *
+	 *	This is not as efficient as it could be, the GPU data is allocated and then deleted.
+	 *	when doing multiple products, allocations and transfers can possibly be saved.
+	 */
+	bool SpDGEMM(CUberBlockMatrix &r_dest, const CUberBlockMatrix &r_a,
+		const CUberBlockMatrix &r_b, bool b_upper_diag_only = false);
 };
 
 /**
@@ -1666,7 +1675,7 @@ public:
 		_ASSERTE(r_lambda.b_SymmetricLayout());
 		_ASSERTE(r_lambda.n_BlockColumn_Num() == m_order.size());
 		_ASSERTE((m_order.empty() && !m_n_matrix_cut) || (!m_order.empty() &&
-			m_n_matrix_cut > 0 && m_n_matrix_cut < SIZE_MAX && m_n_matrix_cut + 1 < m_order.size()));
+			m_n_matrix_cut > 0 /*&& m_n_matrix_cut < SIZE_MAX*/ && m_n_matrix_cut /*+ 1*/ < m_order.size()));
 		_ASSERTE(r_v_eta.rows() == r_lambda.n_Column_Num());
 
 #ifdef __SCHUR_PROFILING

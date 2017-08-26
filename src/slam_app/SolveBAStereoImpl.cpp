@@ -44,7 +44,12 @@ int n_Run_BA_Stereo_Solver(const TCommandLineArgs &t_args) // throw(std::runtime
 	typedef CTypelist<CConsistencyMarker_ParsePrimitive, CStandardParsedPrimitives> CBASParsedPrimitives;
 	// use one more parsed primitive to signal points where incremental optimization should be performed
 
-	typedef CFlatSystem<CBaseVertex, TVertexTypelist_BA, CEdgeP2SC3D, TEdgeTypelist_BA> CSystemType;
+	typedef CFlatSystem<CBaseVertex, TVertexTypelist_BA,
+		CEdgeP2SC3D, TEdgeTypelist_BA, CBasicUnaryFactorFactory
+#ifdef __SLAM_APP_USE_CONSTANT_VERTICES
+		, CBaseVertex, TVertexTypelist_BA
+#endif // __SLAM_APP_USE_CONSTANT_VERTICES
+		> CSystemType;
 	// make a system permitting BA vertex and edge types
 
 	typedef CSolverCaller<CSystemType, CBASEdgeTraits,

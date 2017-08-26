@@ -1,3 +1,15 @@
+Changes from 2.1 to 2.2 (2017-05-15):
+
+* Added robust functions.
+* Improved CMake support for Visual Studio 2015.
+* Added Eigen 3.3 and support for AVX instructions sets.
+* Added block LU decompositions.
+* Added the geometry module (P3P, PNP, five-point, Kabsch, etc.).
+* Improved the order of options in cmake-gui to reduce clutter.
+* Added Notify_LinearizationChange() to the solvers, to be able to do IRLS or
+  otherwise externally change the linearization point.
+* Noted how Sim(3) is slightly different from the representation used in Sophus.
+
 Changes from 1.5 to 2.1 (2016-08-09):
 
 * Added documentation groups.

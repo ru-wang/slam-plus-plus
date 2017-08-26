@@ -107,7 +107,7 @@ protected:
 
 	CUberBlockMatrix m_R; /**< @brief the R matrix (built / updated incrementally) */
 
-	bool m_b_outstandfing_loop_closures; /**< @brief (probable) loop closure flag */
+	bool m_b_outstanding_loop_closures; /**< @brief (probable) loop closure flag */
 	bool m_b_first_iteration_use_R; /**< @brief flag for using the R matrix or rather lambda in the first iteration of nonlinear optimization */
 	bool m_b_R_up_to_date; /**< @brief dirty flag for the R matrix (required to keep track after lambda updates and linearization point changes) */
 	bool m_b_R_updatable; /**< @brief dirty flag for the R matrix (if set, R is only missing some edges, if not set then the linearization changed and a full update is required) */
@@ -244,7 +244,7 @@ public:
 		:_TyBase(r_system, n_linear_solve_threshold, n_nonlinear_solve_threshold,
 		n_nonlinear_solve_max_iteration_num, f_nonlinear_solve_error_threshold,
 		b_verbose, linear_solver, false), /*this->m_r_system(r_system), this->m_linear_solver(linear_solver),*/
-		m_linear_solver2(linear_solver), m_b_outstandfing_loop_closures(false),
+		m_linear_solver2(linear_solver), m_b_outstanding_loop_closures(false),
 		m_b_first_iteration_use_R(true), m_b_R_up_to_date(true), m_b_R_updatable(true), m_n_last_full_R_update_size(0),
 		m_p_lambda_block_ordering(0), m_n_lambda_block_ordering_size(0),
 		m_p_lambda11_block_ordering(0), m_n_lambda_block11_ordering_size(0),
@@ -301,7 +301,7 @@ public:
 		:_TyBase(r_system, t_incremental_config,
 		t_marginals_config, b_verbose, linear_solver, false),
 		/*this->m_r_system(r_system), this->m_linear_solver(linear_solver),*/
-		m_linear_solver2(linear_solver), m_b_outstandfing_loop_closures(false),
+		m_linear_solver2(linear_solver), m_b_outstanding_loop_closures(false),
 		m_b_first_iteration_use_R(true), m_b_R_up_to_date(true), m_b_R_updatable(true), m_n_last_full_R_update_size(0),
 		m_p_lambda_block_ordering(0), m_n_lambda_block_ordering_size(0),
 		m_p_lambda11_block_ordering(0), m_n_lambda_block11_ordering_size(0),
@@ -622,10 +622,16 @@ public:
 			m_b_inhibit_optimization = false;
 
 			if(!this->m_r_system.r_Edge_Pool().b_Empty()) {
-				TryOptimize(this->m_t_incremental_config.n_max_nonlinear_iteration_num,
+				bool b_optimized = TryOptimize(this->m_t_incremental_config.n_max_nonlinear_iteration_num,
 					this->m_t_incremental_config.f_nonlinear_error_thresh,
 					base_iface::r_GetBase(this->m_r_system.r_Edge_Pool()[this->m_r_system.r_Edge_Pool().n_Size() - 1]));
-				// optimize
+				// see if we need to optimize
+
+				if(!b_optimized && m_b_outstanding_loop_closures) {
+					Optimize(this->m_t_incremental_config.n_max_nonlinear_iteration_num,
+						this->m_t_incremental_config.f_nonlinear_error_thresh);
+				}
+				// in case the solver avoided optimization, force it
 			}
 		}
 	}
@@ -898,7 +904,8 @@ public:
 				// want to use from-the-scratch-reference R for comparison
 
 				CUberBlockMatrix margs_ref, margs_untg;
-				CMarginals::Calculate_DenseMarginals_Recurrent_FBS<_TyLambdaMatrixBlockSizes>(margs_ref, R);
+				CMarginals::Calculate_DenseMarginals_Recurrent_FBS<_TyLambdaMatrixBlockSizes>(margs_ref,
+					R, mord, mpart_Diagonal);
 				margs_ref.Permute_UpperTriangular_To(margs_untg, mord.p_Get_Ordering(),
 					mord.n_Ordering_Size(), true); // ref is ok, it will be a short lived matrix
 				Eigen::MatrixXd margs_buffer;
@@ -965,7 +972,7 @@ public:
 			}
 			// todo - encapsulate this code, write code to support hyperedges as well, use it
 		}*/
-		m_b_outstandfing_loop_closures |= this->b_Detect_LoopClosures(r_last_edge);
+		m_b_outstanding_loop_closures |= this->b_Detect_LoopClosures(r_last_edge);
 		// detect loop closures (otherwise the edges are initialized based on measurement and error would be zero)
 
 #ifdef __NONLINEAR_SOLVER_FAST_L_DUMP_TIMESTEPS
@@ -1265,7 +1272,7 @@ protected:
 			CUberBlockMatrix &r_m = const_cast<CUberBlockMatrix&>(this->m_marginals.r_SparseMatrix()); // watch out, need to call Swap_SparseMatrix() afterwards
 			CMarginals::Calculate_DenseMarginals_Recurrent_FBS
 				/*Calculate_DenseMarginals_Fast_Parallel_FBS*/<_TyLambdaMatrixBlockSizes>(
-				r_m, m_R/*, p_order, mord.n_Ordering_Size()*/);
+				r_m, m_R/*, p_order, mord.n_Ordering_Size()*/, mord, mpart_Diagonal);
 			this->m_marginals.Swap_SparseMatrix(r_m); // now the marginals know that the matrix changed
 			// calculate the thing
 #endif // 0
@@ -1328,7 +1335,8 @@ protected:
 				// want to use from-the-scratch-reference R for comparison
 
 				CUberBlockMatrix margs_ref, margs_untg;
-				CMarginals::Calculate_DenseMarginals_Recurrent_FBS<_TyLambdaMatrixBlockSizes>(margs_ref, R);
+				CMarginals::Calculate_DenseMarginals_Recurrent_FBS<_TyLambdaMatrixBlockSizes>(margs_ref,
+					R, mord, mpart_Diagonal);
 				margs_ref.Permute_UpperTriangular_To(margs_untg, mord.p_Get_Ordering(),
 					mord.n_Ordering_Size(), true); // ref is ok, it will be a short lived matrix
 				Eigen::MatrixXd margs_buffer;
@@ -1509,10 +1517,10 @@ protected:
 		// do this before calling this->t_Incremental_Step()
 
 		bool b_new_loops = this->b_Detect_LoopClosures(r_last_edge);
-		_ASSERTE(!b_new_loops || m_b_outstandfing_loop_closures); // no new ones should be detected here, we already tried before
-		m_b_outstandfing_loop_closures |= b_new_loops;
+		_ASSERTE(!b_new_loops || m_b_outstanding_loop_closures); // no new ones should be detected here, we already tried before
+		m_b_outstanding_loop_closures |= b_new_loops;
 		std::pair<bool, int> t_optimize = this->t_Incremental_Step(r_last_edge, true); // trigger even without loop closures, will handle them differently
-		//m_b_outstandfing_loop_closures |= this->b_Had_LoopClosures(); // none can be added here, t_Incremental_Step() would have cleared the flag
+		//m_b_outstanding_loop_closures |= this->b_Had_LoopClosures(); // none can be added here, t_Incremental_Step() would have cleared the flag
 		// run the loop closure detector
 
 		bool b_optimization_triggered = false;
@@ -1574,6 +1582,11 @@ protected:
 		if(!n_measurements_size)
 			return false; // nothing to solve (but no results need to be generated so it's ok)
 		// can't solve in such conditions
+
+		_ASSERTE(this->m_r_system.b_AllVertices_Covered());
+		// if not all vertices are covered then the system matrix will be rank deficient and this will fail
+		// this triggers typically if solving BA problems with incremental solve each N steps (the "proper"
+		// way is to use CONSISTENCY_MARKER and incremental solve period of SIZE_MAX).
 
 		// note that n_order_min can be possibly used in Refresh_Lambda()
 		// to minimize number of vertices that require update of hessian blocks
@@ -1731,6 +1744,25 @@ protected:
 
 public:
 	/**
+	 *	@brief norify the solver of linearization point update (e.g. change in robust
+	 *		function parameters, external change to the current estimate, ...)
+	 *
+	 *	@param[in] n_first_changing_edge is zero-based index of the first edge being changed
+	 *	@param[in] n_first_changing_vertex is zero-based index of the first vertex being changed
+	 */
+	void Notify_LinearizationChange(size_t UNUSED(n_first_changing_edge) = 0,
+		size_t UNUSED(n_first_changing_vertex) = 0)
+	{
+		_ASSERTE(!n_first_changing_edge || n_first_changing_edge < this->m_r_system.r_Edge_Pool().n_Size());
+		_ASSERTE(!n_first_changing_vertex || n_first_changing_vertex < this->m_r_system.r_Vertex_Pool().n_Size());
+		// make sure those are valid indices
+
+		m_b_R_updatable = false; // !!
+		m_b_system_dirty = true;
+		// mark the system matrix as dirty, to force relinearization in the next step
+	}
+
+	/**
 	 *	@brief final optimization function
 	 *
 	 *	@param[in] n_max_iteration_num is the maximal number of iterations
@@ -1757,8 +1789,8 @@ public:
 		// in case we're not required to optimize, do nothing
 		// (the user can still request solution, R is in good shape)
 
-		if(m_b_outstandfing_loop_closures/*m_b_had_loop_closure*/)
-			m_b_outstandfing_loop_closures/*m_b_had_loop_closure*/ = false;
+		if(m_b_outstanding_loop_closures/*m_b_had_loop_closure*/)
+			m_b_outstanding_loop_closures/*m_b_had_loop_closure*/ = false;
 		else {
 			m_b_linearization_dirty = true;
 			TryMarginals(); // !!

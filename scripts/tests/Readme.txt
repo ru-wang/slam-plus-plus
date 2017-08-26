@@ -17,3 +17,19 @@ In case the data path is not specified, the script tries to read
 the SLAMPP_DATA environment variable and if that is not set, falls
 back to the default "../data" (which works, assuming this is being
 run from build).
+
+----
+
+The test_eigen33.sh is another simple benchmark, testing performance
+of the BA solver under different build configurations of Eigen 3.3.
+It compares the effects of AVX and unaligned object vectorization.
+It builds all of SLAM++ several times. It is supposed to be run from
+the root (where src and include directories are).
+
+----
+
+build_tests.sh is yet another test. It builds the whole set of SLAM++
+examples and apps, using several different CMake configurations. It
+also tests that each configuration produces a working binaries. This
+takes about five hours on a decent computer. It is also supposed to
+be run from the root (where src and include directories are).

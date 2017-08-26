@@ -493,8 +493,10 @@ int CUberBlockMatrix_UnitTests::Test_ElemwiseTriangularPredicates() // throw(std
 					const size_t n_min_row = n_col + 1;
 					const size_t n_max_row = block_mat.n_Row_Num();
 
-					size_t n_col_width;
+					size_t n_col_width = size_t(0xbaadf00d);
 					const size_t n_block_col = block_mat.n_Find_BlockColumn(n_col, n_col_width);
+					RuntimeAssert(n_block_col != size_t(-1), n_fail_num);
+					RuntimeAssert(n_col_width != size_t(0xbaadf00d), n_fail_num);
 					const size_t n_col_base = block_mat.n_BlockColumn_Base(n_block_col);
 					RuntimeAssert(n_col_base <= n_col, n_fail_num);
 
@@ -507,8 +509,10 @@ int CUberBlockMatrix_UnitTests::Test_ElemwiseTriangularPredicates() // throw(std
 						const size_t n_row = (!n_inner_pass)? n_min_row : n_min_row + rand() % (n_max_row - n_min_row);
 						// put a single nonzero below the diagonal
 
-						size_t n_row_height;
+						size_t n_row_height = size_t(0xbaadf00d);
 						const size_t n_block_row = not_upper.n_Find_BlockRow(n_row, n_row_height);
+						RuntimeAssert(n_block_row != size_t(-1), n_fail_num);
+						RuntimeAssert(n_row_height != size_t(0xbaadf00d), n_fail_num);
 						const size_t n_row_base = not_upper.n_BlockRow_Base(n_block_row);
 						RuntimeAssert(n_row_base <= n_row, n_fail_num);
 

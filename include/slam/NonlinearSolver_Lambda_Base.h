@@ -289,7 +289,7 @@ public:
 		// make sure that the first segment starts at zero
 
 		for(size_t i = 1, n = allocated_segments.size(); i < n; ++ i)
-			_ASSERTE(allocated_segments[i].first == allocated_segments[i - 1].first + allocated_segments[i - 1].second);
+			_ASSERTE(allocated_segments[i].first == allocated_segments[i - 1].first + allocated_segments[i - 1].second); // if this triggers, most likely there are vertices in the system which are not observed; please, if you have unobserved vertices, do not put them in the system just yet; add them in the system once there are corresponding observations // todo - make an earlier assert which makes sure that a more verbose message is shown to the user
 		// make sure that the next segment starts where the previous one ends
 #endif // _DEBUG
 	}

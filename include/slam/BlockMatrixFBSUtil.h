@@ -1504,9 +1504,7 @@ public:
  *
  *	@tparam CLoopType is a loop type; must be parametrizable by block size and
  *		static context and must implement a <tt>Do<index, list>(context)</tt> function,
- *		by default CCallFnOp
- *
- *	@note In case the loop body does not require the static context, use CWrap instead.
+ *		by default \ref CCallFnOp
  */
 template <template <const int, class> class CLoopType = CCallFnOp>
 class CWrap3 {
@@ -1546,7 +1544,7 @@ public:
 	 *	@note This executes operations at run time.
 	 */
 	template <class CBlockMatrixTypelist, class _TyContext>
-	static __forceinline void In_ColumnWidth_DecisionTree(int n_column_width,
+	static __forceinline void In_ColumnWidth_DecisionTree(size_t n_column_width,
 		_TyContext c, bool b_mind_nonexistent = true)
 	{
 		typedef typename CUniqueTypelist<typename CTransformTypelist<typename
@@ -1571,7 +1569,7 @@ public:
 	 *	@note This executes operations at run time.
 	 */
 	template <class CBlockMatrixTypelist, const int n_column_width, class _TyContext>
-	static __forceinline void In_RowHeight_DecisionTree_Given_ColumnWidth(int n_row_height,
+	static __forceinline void In_RowHeight_DecisionTree_Given_ColumnWidth(size_t n_row_height,
 		_TyContext c, bool b_mind_nonexistent = true)
 	{
 		typedef typename CSortBlockDims<CBlockMatrixTypelist>::_TyResult _TyDimsList;
@@ -1588,7 +1586,7 @@ public:
 	}
 
 	template <class CBlockMatrixTypelist, const int n_max_matrix_size, class _TyContext>
-	static __forceinline void In_SquareMatrixSize_DecisionTree(int n_matrix_size,
+	static __forceinline void In_SquareMatrixSize_DecisionTree(size_t n_matrix_size,
 		_TyContext c, bool b_mind_nonexistent = true)
 	{
 		typedef typename CTransformTypelist<CBlockMatrixTypelist,
@@ -1992,7 +1990,7 @@ public:
 		static void Run(size_t n_specialization_id, CContext t_context)
 		{
 			_ASSERTE(n_specialization_id < n_specialization_num);
-			CWrap2<CLoopType, _TySize2DForest>::template 
+			CWrap2<CLoopType, _TySize2DForest>::template
 				In_ScalarSize_DecisionTree<_TySelectorType>(int(n_specialization_id), t_context);
 		}
 
@@ -2003,6 +2001,11 @@ public:
 			typedef typename MakeTypelist(_TySize2DForest, CStaticContext) _TyStaticContext2;
 			CWrap2<CLoopType, _TyStaticContext2>::template
 				In_ScalarSize_DecisionTree<_TySelectorType>(int(n_specialization_id), t_context);
+		}
+
+		const TBSMix &t_Specialization(size_t n_specialization) const
+		{
+			return m_2D_sizes_forest[n_specialization];
 		}
 
 	protected:

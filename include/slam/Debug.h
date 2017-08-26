@@ -51,6 +51,7 @@
 #include <float.h>
 #include <stdexcept> // runtime_error
 #include <algorithm> // min, max
+#include <vector> // required by the new clang
 
 #if !defined(_WIN32) && !defined(_WIN64)
 
@@ -77,6 +78,27 @@ struct cs_sparse; // forward declaration
 typedef cs_sparse cs; // forward declaration
 
 class CUberBlockMatrix; // forward declaration
+
+/*namespace std {
+
+template <class _Ty, class _Alloc>
+class vector; // forward declaration
+
+}*/ // abolished by the new clang
+
+namespace fap_detail {
+
+template <class _Ty, const int n_page_size_elems, const int n_memory_alignment>
+class fap_base; // forward declaration
+
+}
+
+namespace Eigen {
+
+template <class Derived>
+class MatrixBase; // forward declaration
+
+}
 
 /**
  *	@brief minimalist progress indicator which works in console
@@ -630,6 +652,152 @@ public:
 		}
 		return true;
 	}
+
+	static void Evict_Buffer(const void *p_begin, size_t n_size);
+
+	static void Swamp_Cache(size_t n_buffer_size = 100 * 1048576); // throw(std::bad_alloc)
+
+	template <class _Ty/*, class _Alloc*/>
+	static void Evict(const std::vector<_Ty/*, _Alloc*/> &r_vec)
+	{
+		if(!r_vec.empty()) { // if empty, there might be some buffer but no way to get the front pointer
+			//for(size_t i = 0, n = r_vec.capacity(); i < n; ++ i)
+			//	Evict(&r_vec.front() + i); // evict each element to correctly handle vectors of vectors?
+			// does not handle structs anyway, need to leave it up to the caller
+			Evict_Buffer(&r_vec.front(), r_vec.capacity() * sizeof(_Ty));
+		}
+		Evict_Buffer(&r_vec, sizeof(r_vec));
+	}
+
+	/*template <class Derived>
+	static void Evict(const Eigen::MatrixBase<Derived> &r_mat)
+	{
+		if(Derived::RowsAtCompileTime == Eigen::Dynamic ||
+		   Derived::ColsAtCompileTime == Eigen::Dynamic ||
+		   Derived::MaxRowsAtCompileTime == Eigen::Dynamic ||
+		   Derived::MaxColsAtCompileTime == Eigen::Dynamic)
+			Evict_Buffer(r_mat.data(), r_mat.rows() * r_mat.cols() * sizeof(typename Derived::Scalar));
+		// evict the internal storage
+
+		Evict_Buffer(&r_mat, sizeof(r_mat));
+		// evict the structure
+	}*/
+
+	static void Evict(const cs *p_mat);
+
+protected:
+
+public:
+	template <class _Ty, const int n_page_size_elems, const int n_memory_alignment>
+	static void Evict(const fap_detail::fap_base<_Ty, n_page_size_elems, n_memory_alignment> &r_pool)
+	{
+		for(size_t i = 0, n = r_pool.page_num(), s = r_pool.page_size(); i < n; ++ i)
+			Evict_Buffer(&r_pool[i * s], s * sizeof(_Ty));
+		// evict the page data
+
+		CFAP_EvictUtil<fap_detail::fap_base<_Ty, n_page_size_elems,
+			n_memory_alignment> >::EvictMember(r_pool);
+		// evict the page list
+
+		Evict_Buffer(&r_pool, sizeof(r_pool));
+		// evict the structure
+	}
+
+	static void Evict(const CUberBlockMatrix &r_mat);
+
+protected:
+	template <class CDerived>
+	class CFAP_EvictUtil : public CDerived { // uncool hack to get to the members without having to backport this to the base
+	public:
+		static void EvictMember(const CDerived &r_derived)
+		{
+			const CFAP_EvictUtil &r_cast = (const CFAP_EvictUtil&)r_derived;
+
+			::CDebug::Evict(r_cast.m_page_list);
+		}
+	};
+
+	template <class CDerived>
+	class CUBM_EvictUtil : public CDerived { // uncool hack to get to the members without having to backport this to the base
+	public:
+		static void EvictMembers(const CDerived &r_derived)
+		{
+			const CUBM_EvictUtil &r_cast = (const CUBM_EvictUtil&)r_derived;
+
+			for(size_t i = 0, n = r_cast.m_block_cols_list.size(); i < n; ++ i)
+				::CDebug::Evict(r_cast.m_block_cols_list[i].block_list);
+			::CDebug::Evict(r_cast.m_block_cols_list);
+			::CDebug::Evict(r_cast.m_block_rows_list);
+			::CDebug::Evict(r_cast.m_data_pool);
+		}
+	};
+};
+
+/**
+ *	@brief sparse matrix memory requirements information class
+ */
+class CSparseMatrixMemInfo {
+public:
+	/**
+	 *	@brief calculates allocation size of a sparse matrix
+	 *	@param[in] p_matrix is matrix to measure size of
+	 *	@return Returns allocation size of the matrix, in bytes.
+	 */
+	static uint64_t n_Allocation_Size(const cs *p_matrix);
+
+	/**
+	 *	@brief matrix market sparse matrix header
+	 */
+	struct TMMHeader {
+		bool b_symmetric; /**< @brief symmetry flag (if set, the matrix is symmetric and the nnz of only one triangle, upper or lower, is stored) */
+		bool b_binary; /**< @brief pattern matrix flag (if set, the matrix is binary and there are no values for the elements) */
+		size_t n_rows; /**< @brief number of rows */
+		size_t n_cols; /**< @brief number of columns */
+		size_t n_nnz;  /**< @brief number of stored nonzeros (about a half of the actual nonzeros if the matrix is symmetric) */ // n_nnz contains the number of *stored* nonzeros (about a half if the matrix is symmetric)
+		size_t n_full_nnz; /**< @brief number of full matrix nonzeros (if not symmetric then this equals the stored nonzeros, otherwise this will be about a double of the stored nonzeros) */ // equal to n_nnz if not symmetric, or the about twice that amount (all that are in the full matrix)
+
+		uint64_t n_AllocationSize_CSC(size_t n_idx_size = sizeof(size_t), size_t n_scalar_size = sizeof(double)) const
+		{
+			uint64_t n_size_cols = std::min((std::min(uint64_t(n_cols),
+				UINT64_MAX - 1) + 1), UINT64_MAX / n_idx_size) * n_idx_size;
+			uint64_t n_size_rows = std::min(uint64_t(n_full_nnz), UINT64_MAX / n_idx_size) * n_idx_size;
+			uint64_t n_size_data = 0;
+			if(!b_binary)
+				n_size_data = std::min(uint64_t(n_full_nnz), UINT64_MAX / n_scalar_size) * n_scalar_size;
+			uint64_t n_size = 0;
+			n_size = std::min(n_size, UINT64_MAX - n_size_cols) + n_size_cols;
+			n_size = std::min(n_size, UINT64_MAX - n_size_rows) + n_size_rows;
+			n_size = std::min(n_size, UINT64_MAX - n_size_data) + n_size_data;
+			// calculate size (with saturation arithmetics)
+
+			return n_size;
+		}
+
+		uint64_t n_AllocationSize_COO(size_t n_idx_size = sizeof(size_t), size_t n_scalar_size = sizeof(double)) const
+		{
+			size_t n_triplet_size = (b_binary)? 2 * n_idx_size : 2 * n_idx_size + n_scalar_size;
+			return std::min(uint64_t(n_full_nnz), UINT64_MAX / n_triplet_size) * n_triplet_size;
+		}
+	};
+
+	/**
+	 *	@brief peeks at the matrix header
+	 *
+	 *	@param[in] p_s_filename is null-terminated string containing input file name
+	 *	@param[out] r_t_header is reference to a matrix market header
+	 *
+	 *	@return Returns true on success, false on failure.
+	 */
+	static bool Peek_MatrixMarket_Header(const char *p_s_filename, TMMHeader &r_t_header);
+
+	/**
+	 *	@brief peeks at the matrix header and returns the size of such matrix in memory
+	 *	@param[in] p_s_filename is null-terminated string containing input file name
+	 *	@return Returns the size of the CSC form of the matrix in memory, in bytes,
+	 *		assuming double scalars and csi indices (32 or 64 bit, depending on the
+	 *		target architecture).
+	 */
+	static uint64_t n_Peek_MatrixMarket_SizeInMemory(const char *p_s_filename);
 };
 
 #endif // !__DEBUGGING_FUNCTIONALITY_INCLUDED
