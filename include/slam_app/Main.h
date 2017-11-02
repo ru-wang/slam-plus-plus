@@ -90,20 +90,20 @@
  *
  *	You should now be able to run by typing:
  *
- *	@code{.sh} $ ../bin/SLAM_plus_plus --help @endcode
+ *	@code{.sh} $ ../bin/slam_plus_plus --help @endcode
  *
  *	Which should reveal something like this (also depending on the actual configuration):
  *
  *	\htmlonly
  *	<div class="fragment">
  *	<div class="line">General use:																				</div>
- *	<div class="line">    ./SLAM_plus_plus -i &lt;filename&gt; --no-detailed-timing								</div>
+ *	<div class="line">    ./slam_plus_plus -i &lt;filename&gt; --no-detailed-timing								</div>
  *	<div class="line">																							</div>
  *	<div class="line">To run the pose-only datasets more quickly:												</div>
- *	<div class="line">    ./SLAM_plus_plus -i &lt;filename&gt; --pose-only --no-detailed-timing					</div>
+ *	<div class="line">    ./slam_plus_plus -i &lt;filename&gt; --pose-only --no-detailed-timing					</div>
  *	<div class="line">																							</div>
  *	<div class="line">To run incrementally:																		</div>
- *	<div class="line">    ./SLAM_plus_plus -nsp &lt;optimize-each-N-verts&gt; -fL -i &lt;filename&gt; --no-detailed-timing	</div>
+ *	<div class="line">    ./slam_plus_plus -nsp &lt;optimize-each-N-verts&gt; -fL -i &lt;filename&gt; --no-detailed-timing	</div>
  *	<div class="line">																							</div>
  *	<div class="line">This generates initial.txt and initial.tga, a description and image of the				</div>
  *	<div class="line">system before the final optimization, and solution.txt and solution.tga, a				</div>
@@ -175,16 +175,16 @@
  *
  *	The simplest use case is:
  *
- *	@code{.sh} $ ../bin/SLAM_plus_plus -i ../data/manhattanOlson3500.txt --pose-only @endcode
+ *	@code{.sh} $ ../bin/slam_plus_plus -i ../data/manhattanOlson3500.txt --pose-only @endcode
  *
  *	In case you want to do incremental processing, use:
  *
- *	@code{.sh} $ ../bin/SLAM_plus_plus -i ../data/manhattanOlson3500.txt -nsp 1 -fL --pose-only @endcode
+ *	@code{.sh} $ ../bin/slam_plus_plus -i ../data/manhattanOlson3500.txt -nsp 1 -fL --pose-only @endcode
  *
  *	Where <tt>nsp</tt> is nonlinear solve period (solve at each new vertex) and <tt>fL</tt> selects the
  *	fast incremental solver. To do Bundle Adjustment, one can:
  *
- *	@code{.sh} $ ../bin/SLAM_plus_plus -i ../data/venice791.g2o -us @endcode
+ *	@code{.sh} $ ../bin/slam_plus_plus -i ../data/venice791.g2o -us @endcode
  *
  *	Where <tt>us</tt> enables the use of the Schur complement.
  *
@@ -646,7 +646,7 @@
  *
  *	@section sec8 Modifying Main.cpp to use your new code via commandline
  *
- *	In case you want to update the SLAM_plus_plus program with your new types then you don't have
+ *	In case you want to update the slam_plus_plus program with your new types then you don't have
  *	to write all this, you just find the variable b_10k_opts and follow it around, mirroring
  *	everything that is done for it - that should also include declaring new system type with your
  *	list of vertices and edges per every solver type you want to support (you might e.g. want to
