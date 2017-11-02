@@ -45,7 +45,7 @@
 				Name="VCCLCompilerTool"
 				AdditionalOptions="/MP /Zm500"
 				Optimization="0"
-				AdditionalIncludeDirectories="../external/NIST_BLAS\INCLUDE;../external/Ceres\include;../external/Ceres\internal;../include/slam;../include;../include/eigen;../include/cholmod/SuiteSparse;../include/cholmod;&quot;E:/my-projects/z_libs/g2o/trunk/&quot;;&quot;E:/my-projects/z_libs/g2o/trunk/build/&quot;;&quot;E:\my-projects\z_libs\gtsam\gtsam-2.0.0&quot;;&quot;E:\my-projects\z_libs\boost\boost_1_50_0&quot;"
+				AdditionalIncludeDirectories="../external/NIST_BLAS\INCLUDE;../external/Ceres\include;../external/Ceres\internal;../include/slam;../include;../include/eigen32;../include/cholmod/SuiteSparse;../include/cholmod;&quot;E:/my-projects/z_libs/g2o/trunk/&quot;;&quot;E:/my-projects/z_libs/g2o/trunk/build/&quot;;&quot;E:\my-projects\z_libs\gtsam\gtsam-2.0.0&quot;;&quot;E:\my-projects\z_libs\boost\boost_1_50_0&quot;"
 				PreprocessorDefinitions="WIN32;_DEBUG;_CONSOLE;EIGEN_DONT_PARALLELIZE;_CRT_SECURE_NO_WARNINGS;_USE_MATH_DEFINES;__USE_NATIVE_CHOLESKY;CERES_NO_PROTOCOL_BUFFERS;__DISABLE_GPU"
 				StringPooling="true"
 				MinimalRebuild="false"
@@ -69,8 +69,7 @@
 			/>
 			<Tool
 				Name="VCLinkerTool"
-				AdditionalDependencies="CSparse3.lib CxSparse.lib eigen3.lib cholmod.lib SLAMpp_base.lib cula_core.lib cula_lapack.lib cuda.lib cublas.lib cusparse.lib"
-				OutputFile="$(OutDir)\$(ProjectName)0.exe"
+				AdditionalDependencies="CSparse3.lib CxSparse.lib eigen3.lib cholmod.lib SLAMpp_base.lib"
 				LinkIncremental="2"
 				AdditionalLibraryDirectories="&quot;..\bin\$(ConfigurationName)&quot;;&quot;E:\my-projects\z_libs\g2o\trunk\lib\Debug&quot;;&quot;E:\my-projects\z_libs\boost\boost_1_50_0\stage\lib&quot;"
 				GenerateDebugInformation="true"
@@ -126,7 +125,7 @@
 				Name="VCCLCompilerTool"
 				AdditionalOptions="/bigobj /MP"
 				Optimization="0"
-				AdditionalIncludeDirectories="../external/NIST_BLAS\INCLUDE;../external/Ceres\include;../external/Ceres\internal;../include/slam;../include;../include/eigen;../include/cholmod/SuiteSparse;../include/cholmod;&quot;E:/my-projects/z_libs/g2o/trunk/&quot;;&quot;E:/my-projects/z_libs/g2o/trunk/build/&quot;;&quot;E:\my-projects\z_libs\gtsam\gtsam-2.0.0&quot;;&quot;E:\my-projects\z_libs\boost\boost_1_50_0&quot;"
+				AdditionalIncludeDirectories="../external/NIST_BLAS\INCLUDE;../external/Ceres\include;../external/Ceres\internal;../include/slam;../include;../include/eigen32;../include/cholmod/SuiteSparse;../include/cholmod;&quot;E:/my-projects/z_libs/g2o/trunk/&quot;;&quot;E:/my-projects/z_libs/g2o/trunk/build/&quot;;&quot;E:\my-projects\z_libs\gtsam\gtsam-2.0.0&quot;;&quot;E:\my-projects\z_libs\boost\boost_1_50_0&quot;"
 				PreprocessorDefinitions="WIN32;_WIN64;DLONG;_DEBUG;_CONSOLE;EIGEN_DONT_PARALLELIZE;_CRT_SECURE_NO_WARNINGS;_USE_MATH_DEFINES;__LINEAR_SOLVER_OVERRIDE=3;CERES_NO_PROTOCOL_BUFFERS;__CXSPARSE_SHORT;__DISABLE_GPU"
 				StringPooling="true"
 				MinimalRebuild="false"
@@ -149,7 +148,7 @@
 			/>
 			<Tool
 				Name="VCLinkerTool"
-				AdditionalDependencies="CSparse3_64.lib eigen3_64.lib CxSparse_64.lib CHOLMOD_64.lib SLAMpp_base_64.lib cula_core.lib cula_lapack.lib cuda.lib cublas.lib cusparse.lib"
+				AdditionalDependencies="CSparse3_64.lib eigen3_64.lib CxSparse_64.lib CHOLMOD_64.lib SLAMpp_base_64.lib"
 				LinkIncremental="2"
 				AdditionalLibraryDirectories="..\bin\$(ConfigurationName)64"
 				GenerateDebugInformation="true"
@@ -211,7 +210,7 @@
 				OmitFramePointers="true"
 				EnableFiberSafeOptimizations="false"
 				WholeProgramOptimization="false"
-				AdditionalIncludeDirectories="../external/NIST_BLAS\INCLUDE;../external/Ceres\include;../external/Ceres\internal;../include/slam;../include;../include/eigen;../include/cholmod/SuiteSparse;../include/cholmod;&quot;E:/my-projects/z_libs/g2o/trunk/&quot;;&quot;E:/my-projects/z_libs/g2o/trunk/build/&quot;;&quot;E:\my-projects\z_libs\gtsam\gtsam-2.0.0&quot;;&quot;E:\my-projects\z_libs\boost\boost_1_50_0&quot;"
+				AdditionalIncludeDirectories="../external/NIST_BLAS\INCLUDE;../external/Ceres\include;../external/Ceres\internal;../include/slam;../include;../include/eigen32;../include/cholmod/SuiteSparse;../include/cholmod;&quot;E:/my-projects/z_libs/g2o/trunk/&quot;;&quot;E:/my-projects/z_libs/g2o/trunk/build/&quot;;&quot;E:\my-projects\z_libs\gtsam\gtsam-2.0.0&quot;;&quot;E:\my-projects\z_libs\boost\boost_1_50_0&quot;"
 				PreprocessorDefinitions="WIN32;NDEBUG;_CONSOLE;EIGEN_DONT_PARALLELIZE;_CRT_SECURE_NO_WARNINGS;_USE_MATH_DEFINES;__USE_NATIVE_CHOLESKY;CERES_NO_PROTOCOL_BUFFERS;_SECURE_SCL=0;__DISABLE_GPU"
 				StringPooling="true"
 				RuntimeLibrary="2"
@@ -236,8 +235,7 @@
 			/>
 			<Tool
 				Name="VCLinkerTool"
-				AdditionalDependencies="CSparse3.lib CxSparse.lib eigen3.lib cholmod.lib SLAMpp_base.lib cula_core.lib cula_lapack.lib cuda.lib cublas.lib cusparse.lib"
-				OutputFile="$(OutDir)\$(ProjectName).exe"
+				AdditionalDependencies="CSparse3.lib CxSparse.lib eigen3.lib cholmod.lib SLAMpp_base.lib"
 				LinkIncremental="1"
 				AdditionalLibraryDirectories="&quot;..\bin\$(ConfigurationName)&quot;;&quot;E:\my-projects\z_libs\g2o\trunk\lib\Release&quot;;&quot;E:\my-projects\z_libs\boost\boost_1_50_0\stage\lib&quot;"
 				GenerateDebugInformation="true"
@@ -302,7 +300,7 @@
 				EnableIntrinsicFunctions="true"
 				FavorSizeOrSpeed="1"
 				WholeProgramOptimization="false"
-				AdditionalIncludeDirectories="../external/NIST_BLAS\INCLUDE;../external/Ceres\include;../external/Ceres\internal;../include/slam;../include;../include/eigen;../include/cholmod/SuiteSparse;../include/cholmod;&quot;E:/my-projects/z_libs/g2o/trunk/&quot;;&quot;E:/my-projects/z_libs/g2o/trunk/build/&quot;;&quot;E:\my-projects\z_libs\gtsam\gtsam-2.0.0&quot;;&quot;E:\my-projects\z_libs\boost\boost_1_50_0&quot;"
+				AdditionalIncludeDirectories="../external/NIST_BLAS\INCLUDE;../external/Ceres\include;../external/Ceres\internal;../include/slam;../include;../include/eigen32;../include/cholmod/SuiteSparse;../include/cholmod;&quot;E:/my-projects/z_libs/g2o/trunk/&quot;;&quot;E:/my-projects/z_libs/g2o/trunk/build/&quot;;&quot;E:\my-projects\z_libs\gtsam\gtsam-2.0.0&quot;;&quot;E:\my-projects\z_libs\boost\boost_1_50_0&quot;"
 				PreprocessorDefinitions="WIN32;NDEBUG;_CONSOLE;EIGEN_DONT_PARALLELIZE;_CRT_SECURE_NO_WARNINGS;_USE_MATH_DEFINES;EIGEN_VECTORIZE_SSE3;__LINEAR_SOLVER_OVERRIDE=3;__CXSPARSE_SHORT;_STATIC_CPPLIB;CERES_NO_PROTOCOL_BUFFERS;_SECURE_SCL=0;__DISABLE_GPU"
 				StringPooling="true"
 				RuntimeLibrary="2"
@@ -328,7 +326,7 @@
 			/>
 			<Tool
 				Name="VCLinkerTool"
-				AdditionalDependencies="CSparse3_64.lib eigen3_64.lib CxSparse_64.lib CHOLMOD_64.lib SLAMpp_base_64.lib cula_core.lib cula_lapack.lib cuda.lib cublas.lib cusparse.lib"
+				AdditionalDependencies="CSparse3_64.lib eigen3_64.lib CxSparse_64.lib CHOLMOD_64.lib SLAMpp_base_64.lib"
 				LinkIncremental="1"
 				AdditionalLibraryDirectories="..\bin\$(ConfigurationName)64"
 				GenerateManifest="true"
@@ -407,6 +405,14 @@
 					>
 				</File>
 				<File
+					RelativePath="..\include\slam\BaseTypes_Binary.h"
+					>
+				</File>
+				<File
+					RelativePath="..\include\slam\BaseTypes_Unary.h"
+					>
+				</File>
+				<File
 					RelativePath="..\include\slam\BASolverBase.h"
 					>
 				</File>
@@ -439,6 +445,14 @@
 					>
 				</File>
 				<File
+					RelativePath="..\include\slam\BlockMatrixTests.h"
+					>
+				</File>
+				<File
+					RelativePath="..\include\slam\BlockMatrixVBR.h"
+					>
+				</File>
+				<File
 					RelativePath="..\include\slam\ConfigSolvers.h"
 					>
 				</File>
@@ -447,7 +461,31 @@
 					>
 				</File>
 				<File
+					RelativePath="..\include\slam\Derivatives.h"
+					>
+				</File>
+				<File
+					RelativePath="..\include\slam\Distances.h"
+					>
+				</File>
+				<File
+					RelativePath="..\include\slam\Eigenvalues.h"
+					>
+				</File>
+				<File
+					RelativePath="..\include\slam\Eigenvalues.inl"
+					>
+				</File>
+				<File
+					RelativePath="..\include\slam\ErrorEval.h"
+					>
+				</File>
+				<File
 					RelativePath="..\include\slam\FlatSystem.h"
+					>
+				</File>
+				<File
+					RelativePath="..\include\slam\IncrementalPolicy.h"
 					>
 				</File>
 				<File
@@ -483,11 +521,23 @@
 					>
 				</File>
 				<File
+					RelativePath="..\include\slam\MemUsage.h"
+					>
+				</File>
+				<File
 					RelativePath="..\include\slam\NonlinearSolver_A.h"
 					>
 				</File>
 				<File
+					RelativePath="..\include\slam\NonlinearSolver_Base.h"
+					>
+				</File>
+				<File
 					RelativePath="..\include\slam\NonlinearSolver_FastL.h"
+					>
+				</File>
+				<File
+					RelativePath="..\include\slam\NonlinearSolver_FastL_Base.h"
 					>
 				</File>
 				<File
@@ -496,6 +546,14 @@
 				</File>
 				<File
 					RelativePath="..\include\slam\NonlinearSolver_Lambda.h"
+					>
+				</File>
+				<File
+					RelativePath="..\include\slam\NonlinearSolver_Lambda_Base.h"
+					>
+				</File>
+				<File
+					RelativePath="..\include\slam\NonlinearSolver_Lambda_DL.h"
 					>
 				</File>
 				<File
@@ -515,6 +573,18 @@
 					>
 				</File>
 				<File
+					RelativePath="..\include\slam\Parser.h"
+					>
+				</File>
+				<File
+					RelativePath="..\include\slam\RobustUtils.h"
+					>
+				</File>
+				<File
+					RelativePath="..\include\slam\ROCV_Types.h"
+					>
+				</File>
+				<File
 					RelativePath="..\include\slam\SE2_Types.h"
 					>
 				</File>
@@ -524,6 +594,22 @@
 				</File>
 				<File
 					RelativePath="..\include\slam\Segregated.h"
+					>
+				</File>
+				<File
+					RelativePath="..\include\slam\Self.h"
+					>
+				</File>
+				<File
+					RelativePath="..\include\slam\Sim3_Types.h"
+					>
+				</File>
+				<File
+					RelativePath="..\include\slam\Sim3SolverBase.h"
+					>
+				</File>
+				<File
+					RelativePath="..\include\slam\SolverTraits.h"
 					>
 				</File>
 				<File
@@ -539,7 +625,15 @@
 					>
 				</File>
 				<File
+					RelativePath="..\include\slam\Tuple.h"
+					>
+				</File>
+				<File
 					RelativePath="..\include\slam\TypeList.h"
+					>
+				</File>
+				<File
+					RelativePath="..\include\slam\TypeName.h"
 					>
 				</File>
 				<File
